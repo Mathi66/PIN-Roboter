@@ -20,7 +20,10 @@
 | **OpenSSL 3.6.3** (Referenz) | ✅ | ✅ |
 | **Python 3.14.6** (`ssl`, OpenSSL 3.6.3) | ✅ `ECDHE-ECDSA-AES256-GCM-SHA384` | ❌ `NO_SUITABLE_GROUPS` |
 | **Node.js 25.9.0** (OpenSSL 3.6.3) | ⚠️ nicht abschließend (Testlauf ohne Ausgabe, zu wiederholen) | ❌ `ERR_SSL_NO_SUITABLE_GROUPS` |
-| Go, .NET, Java | noch offen — über Docker zu prüfen | — |
+| **Java 21, Standard-JDK** (Docker `eclipse-temurin:21-jdk`) | ❌ `jdk.tls.namedGroups … contains no supported named groups` | — |
+| **Java 21 + BouncyCastle 1.83** (`bcprov` + `bctls`, BCJSSE) | ✅ Handshake erfolgreich | — |
+| **Go 1.26** (Standardbibliothek, Docker) | ❌ **scheitert bereits beim Laden des CA-Zertifikats** | ❌ |
+| .NET | noch offen | — |
 
 ## Befunde
 
@@ -50,6 +53,36 @@ Lesen der Fehlermeldung wäre daraus ein falscher Ausschluss geworden. Für die
 spätere Fehlerbehandlung im Produkt heißt das: **Zertifikatsfehler und
 Kurvenfehler müssen unterscheidbar gemeldet werden**, sonst sucht der Betreiber
 an der falschen Stelle.
+
+### Der Go-Ausschluss ist fundamentaler als erwartet
+
+Go scheitert **nicht** an der TLS-Gruppenaushandlung, sondern schon eine Ebene
+darunter: `x509.CertPool.AppendCertsFromPEM` kann ein Zertifikat mit
+brainpoolP256r1-Schlüssel **nicht einlesen**. Es kommt gar nicht zu einem
+Handshake. Damit ist Go für dieses Produkt endgültig ausgeschlossen — und zwar
+belegt, nicht vermutet. Auch ein vorgelagerter TLS-Vermittler (Weg 3 in
+ADR-0006) würde das nur verlagern, nicht lösen, sobald Zertifikate der TI-PKI im
+Spiel sind.
+
+### Das Standard-JDK genügt nicht — BouncyCastle ist der Unterschied
+
+Bemerkenswert: Java **ohne** BouncyCastle scheitert mit derselben Klarheit wie
+Go bei den Gruppen. Erst `bcprov` + `bctls` mit dem BCJSSE-Provider und
+`jdk.tls.namedGroups=brainpoolP256r1,brainpoolP384r1` bringen den Handshake
+zustande. Das bestätigt exakt die Konfiguration aus dem (archivierten)
+gematik-Repository `ecc-brainpool-how-to`.
+
+**Praxisbeleg des POs (06.08.2026):** *Im Konnektor ist auch Brainpool und JDK
+verbaut.* Die Gegenstelle unserer wichtigsten Verbindung ist also selbst
+Java-basiert und spricht Brainpool. Das ist kein Argument dafür, dass wir Java
+nehmen müssen — aber ein starkes Indiz, dass dieser Weg in dieser Umgebung
+erprobt ist.
+
+**Hinweis zur Suite-Auswahl:** Der Testlauf einigte sich auf
+`TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256`. Diese Suite ist nach
+`[gemSpec_Krypt]` **nicht zulässig** — erlaubt sind nur `(RSA, AES-CBC)` und
+`(ECC, AES-GCM)`. Für das Produkt ist die angebotene Suite-Liste daher
+ausdrücklich einzuschränken; die Vorgabe der Bibliothek genügt nicht.
 
 ## Verifiziert: TLS 1.2 ist Pflicht, TLS 1.3 ist optional
 
@@ -84,9 +117,10 @@ eigenen Client-Zertifikat passen und darf nicht pauschal alles anbieten.
 ## Offen
 
 1. **Node.js unter TLS 1.2 wiederholen** — der Lauf lieferte keine Ausgabe.
-2. **Go, .NET und Java über Docker prüfen** — für Go wird der Fehlschlag erwartet
-   und ist zu belegen, nicht anzunehmen.
-3. **Welche TLS-Version spricht der KoCo-Konnektor?** Falls er TLS 1.3 verlangt
+2. **.NET prüfen** — als einziger Kandidat noch ohne Messwert.
+3. **Cipher-Suite-Liste festlegen und erzwingen**, passend zu `[gemSpec_Krypt]`
+   und `A_22457`.
+4. **Welche TLS-Version spricht der KoCo-Konnektor?** Falls er TLS 1.3 verlangt
    *und* Brainpool-Zertifikate verwendet, ist das eine Kombination, die nach
    dieser Messung kaum ein Wrapper beherrscht. Diese Frage ist an der realen
    Umgebung zu klären und ist für die Sprachwahl entscheidender als jede weitere
