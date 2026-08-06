@@ -226,14 +226,43 @@ Festlegungen daraus:
 MDR-Verfahren. Der Schutzbedarf ergibt sich ausschließlich aus der Verarbeitung
 der SMC-B-PIN, nicht aus Patientendaten.
 
+### Mengengerüst (PO, 06.08.2026)
+
+Das Produkt muss **skalierbar** sein und dieselbe Codebasis von der Einzelpraxis
+bis zum Klinikverbund tragen:
+
+| | Minimum | Maximum |
+|---|---|---|
+| Konnektoren / HSK-Instanzen | **1** | **1.000 HSK** |
+| Kartenterminals | **3** | **5.000** |
+
+Einsatzszenarien: Einzelpraxis, MVZ, Klinik.
+
+> **Architektonische Konsequenz — früh zu berücksichtigen, nicht nachträglich:**
+> Zwischen Minimum und Maximum liegt der Faktor ~1.600. Daraus folgt zwingend:
+> - **Nebenläufige, entkoppelte Überwachung** mit Warteschlange und
+>   Lastbegrenzung statt einfacher Schleife. Bei 5.000 Terminals und einem
+>   Prüfintervall von 60 s entstehen rund 83 Abfragen pro Sekunde — die
+>   Antwortzeiten von Konnektor und Terminal sind dabei der Engpass, nicht unsere
+>   Anwendung.
+> - **Relationale Datenbank** mit ordentlicher Indizierung; Konfiguration in
+>   Dateien scheidet aus.
+> - **Prüfintervall pro Gerätegruppe konfigurierbar**, damit die Last steuerbar
+>   bleibt.
+> - Gleichzeitig muss der Stack in einer **Einzelpraxis auf schwacher Hardware**
+>   sparsam laufen. Ressourcenbedarf ist zu **messen**, für beide Enden der
+>   Skala.
+> - Die Oberfläche muss 5.000 Geräte **bedienbar** darstellen: Suche, Filter,
+>   Gruppierung nach Standort, serverseitige Paginierung. Eine flache Liste
+>   funktioniert hier nicht.
+
 ### Noch offen (PO)
 
-1. **Mengengerüst:** Wie viele Standorte, Konnektoren, Terminals und SMC-B pro
-   Installation? (Praxis und Klinikverbund unterscheiden sich um Größenordnungen
-   — das bestimmt Datenmodell und Nebenläufigkeit.)
-2. **Testumgebung:** Stehen Testkonnektor, Testterminal und Test-SMC-B zur
+1. **Testumgebung:** Stehen Testkonnektor, Testterminal und Test-SMC-B zur
    Verfügung? Ohne Testaufbau ist keine belastbare Verifikation möglich — das ist
    die wichtigste offene Frage für die Umsetzung.
+2. **GHCR-Sichtbarkeit:** öffentliches oder privates Image? Siehe
+   [ADR-0001](docs/adr/0001-update-und-auslieferungsstrategie.md).
 
 ### Sicherheitsleitplanke (nicht verhandelbar)
 
