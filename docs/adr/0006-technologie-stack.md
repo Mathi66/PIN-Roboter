@@ -151,13 +151,28 @@ Das trennt zwei Dinge, die leicht verwechselt werden:
 | Verfügbar für uns | grundsätzlich alle Konnektoren | **nur KoCo** (Konnektor und HSK, identisch) |
 | Gebraucht für | die Kernfunktion | ergänzende Verwaltungsaufgaben |
 
+**Zweck der Webadmin-Schnittstelle** (Präzisierung des POs, 06.08.2026):
+> Wir brauchen sie, um das **Informationsmodell des Konnektors auszulesen** und
+> die **verbundenen Kartenterminals zu erkennen**. Damit wird die Konfiguration
+> der Kartenterminals einfacher.
+
+Das ist mehr als Bequemlichkeit: Aus dem Informationsmodell stammen
+**Mandanten-ID, Clientsystem-ID und Arbeitsplatz-ID** — die Werte, die jeder
+Aufruf der Fachschnittstelle benötigt. Von Hand abgetippt sind sie die häufigste
+und am schlechtesten diagnostizierbare Fehlerquelle bei der Inbetriebnahme.
+Ausgelesen werden sie zur Auswahlliste. Siehe FA-GER-035.
+
+**Scope-Festlegung des POs:** Version 1 unterstützt **ausschließlich KoCo
+Konnektor und KoCo HSK**.
+
 **Folgerungen:**
 
-1. **Die Kernfunktion ist nicht auf KoCo beschränkt.** Sie nutzt ausschließlich
-   die gematik-spezifizierte Fachschnittstelle. Dass andere Hersteller sich dort
-   gleich verhalten, ist allerdings eine **Erwartung aus der Spezifikation, kein
-   Nachweis** — in der Praxis unterscheiden sich Endpunkte, Authentifizierung und
-   Randverhalten. Belegt ist nur, was am Testaufbau gemessen wurde.
+1. **Die Kernfunktion wird dennoch herstellerneutral gebaut**, über die
+   gematik-spezifizierte Fachschnittstelle. Nicht weil Version 1 es bräuchte,
+   sondern weil es jetzt fast nichts kostet und später einen Umbau erspart. Dass
+   andere Hersteller sich dort gleich verhalten, ist eine **Erwartung aus der
+   Spezifikation, kein Nachweis** — belegt ist nur, was am Testaufbau gemessen
+   wurde.
 2. **Die Webadmin-Funktionen sind zunächst KoCo-exklusiv.** Sie werden deshalb
    von Beginn an so gekapselt, dass Konnektoren anderer Hersteller ohne diese
    Funktionen betrieben werden können — mit klarer Anzeige, was dort nicht zur
@@ -290,10 +305,12 @@ Ehrlich benannt:
 
 ---
 
-## Offene Frage an den PO
+## Externe Vorgaben
 
-Gibt es **Vorgaben oder Vorlieben aus deinem Umfeld**, die ich nicht kenne — etwa
-Erfahrungen eines Dienstleisters, mit dem du zusammenarbeitest, oder eine
-bestehende Systemlandschaft, in die sich das Produkt einfügen soll? Der Vorschlag
-ist fachlich begründet, aber wenn später jemand anderes daran arbeiten soll, ist
-dessen Kenntnisstand ein legitimes und gewichtiges Argument.
+Keine. Der PO hat am 06.08.2026 festgelegt: **Die Entwicklung schlägt vor, der
+Product Owner gibt nach Prüfung frei.** Es bestehen keine Bindungen an einen
+Dienstleister, eine bestehende Systemlandschaft oder vorhandene Kenntnisstände.
+
+Damit ist die Wahl ausschließlich fachlich zu begründen — was oben geschieht.
+Die Verantwortung für die Tragfähigkeit über die Lebensdauer des Produkts liegt
+bei der Entwicklung.

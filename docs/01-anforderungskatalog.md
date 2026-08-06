@@ -81,6 +81,33 @@ und zur Übernahme angeboten.
 - Die Übernahme erfolgt erst nach ausdrücklicher Bestätigung, einzeln oder als
   Auswahl — nie automatisch.
 
+### FA-GER-035 — Informationsmodell des Konnektors auslesen · SOLL · V1 · PO
+Über die Webadmin-Schnittstelle des Konnektors wird dessen Informationsmodell
+ausgelesen, um die Einrichtung der Kartenterminals zu vereinfachen.
+
+**Warum das mehr ist als Komfort:** Jeder Aufruf der Fachschnittstelle benötigt
+einen Aufrufkontext aus **Mandanten-ID, Clientsystem-ID und Arbeitsplatz-ID**
+(`[gemSpec_Kon]`, `TUC_KON_000`). Diese Werte stammen aus der Konfiguration des
+Konnektors. Werden sie von Hand abgetippt, ist das die häufigste und am
+schwersten zu diagnostizierende Fehlerquelle bei der Inbetriebnahme — ein
+Tippfehler äußert sich als Zugriffsfehler ohne erkennbaren Zusammenhang. Aus dem
+Informationsmodell werden sie stattdessen **zur Auswahl angeboten**.
+
+*Akzeptanz:*
+- Ausgelesen und dargestellt werden mindestens: Mandanten, Clientsysteme,
+  Arbeitsplätze, konfigurierte Kartenterminals und deren Zuordnung zueinander.
+- Bei der Erfassung eines Konnektors werden Mandanten-, Clientsystem- und
+  Arbeitsplatz-ID **aus dem Informationsmodell zur Auswahl angeboten**; die
+  manuelle Eingabe bleibt als Rückfallweg möglich.
+- Erkannte Terminals werden mit Zuordnung zum Arbeitsplatz zur Übernahme
+  angeboten (Zusammenspiel mit FA-GER-030); die Übernahme erfolgt nur nach
+  Bestätigung.
+- Ist die Webadmin-Schnittstelle nicht verfügbar oder nicht konfiguriert, bleiben
+  alle Angaben manuell erfassbar; die Oberfläche weist auf die entfallende
+  Unterstützung hin (NFA-QS-035).
+- Ein erneutes Auslesen erkennt Abweichungen zwischen Konnektor-Konfiguration
+  und erfasstem Bestand und zeigt sie an, ohne selbsttätig zu ändern.
+
 ### FA-GER-040 — Karten erfassen · MUSS · V1 · PO
 Zu jedem Terminal werden die eingelegten Karten erfasst; für den Betrieb
 relevant ist ausschließlich die **SMC-B**.
@@ -902,10 +929,15 @@ beiden nachweislich lauffähig.
   Terminal-Modell und Firmware-Stand.
 - Nicht geprüfte Kombinationen werden erkannt und in der Oberfläche
   gekennzeichnet; für sie findet kein Firmware-Rollout statt (FA-FW-090).
-- **Für Version 1 zugesichert unterstützt:** KoCo Konnektor und KoCo HSK
-  (identische Schnittstellen, daher eine Anbindung). Weitere Konnektorhersteller
-  sind über die Fachschnittstelle grundsätzlich nutzbar, aber **nicht
-  zugesichert**, solange sie nicht am Testaufbau geprüft wurden.
+- **Version 1 unterstützt ausschließlich KoCo Konnektor und KoCo HSK**
+  (Festlegung PO, 06.08.2026). Beide sind in den relevanten Punkten identisch und
+  gelten daher als **eine** Anbindung.
+- Konnektoren anderer Hersteller werden in Version 1 **nicht unterstützt**. Wird
+  ein solcher erkannt, weist die Oberfläche darauf hin, statt ein unbestimmtes
+  Verhalten zu zeigen.
+- Die Kernfunktion wird dennoch **herstellerneutral** über die
+  gematik-spezifizierte Fachschnittstelle umgesetzt (NFA-QS-035). Das kostet
+  jetzt nahezu nichts und hält die spätere Aufnahme weiterer Hersteller offen.
 
 ### NFA-QS-035 — Webadmin-Funktionen sind optional · MUSS · V1 · PO, ADR-0006
 Funktionen, die auf der herstellerspezifischen Webadmin-Schnittstelle des

@@ -345,6 +345,26 @@ Firmware-Stände, PEviM-Unterstützung und -Aktivierbarkeit, VPN-Verfahren
 (IPsec/WireGuard), Konnektor-/HSK-Modell und -Version. Diese Aufnahme ist die
 Grundlage mehrerer offener Architekturfragen und kostet wenig Aufwand.
 
+### Unterstützte Konnektoren (PO, 06.08.2026)
+
+**Version 1 unterstützt ausschließlich KoCo Konnektor und KoCo HSK**
+(KoCo Connector GmbH, Tochter der CGM Deutschland AG). Beide sind in den
+relevanten Punkten identisch und gelten als **eine** Anbindung.
+
+Zwei Schnittstellen sind dabei streng zu trennen:
+
+| | Fachschnittstelle (Kartendienst) | Webadmin-Schnittstelle |
+|---|---|---|
+| Spezifiziert von | **gematik**, `[gemSpec_Kon] 4.1.5.5` | niemandem — herstellerspezifisch |
+| Trägt | die **Kernfunktion** | Komfort: Informationsmodell auslesen, Terminals erkennen |
+| Verfügbar | grundsätzlich herstellerübergreifend | nur KoCo |
+
+> Die Kernfunktion wird **herstellerneutral** über die Fachschnittstelle gebaut,
+> auch wenn Version 1 nur KoCo unterstützt. Das kostet jetzt nahezu nichts und
+> erspart später einen Umbau. Funktionen, die auf der Webadmin-Schnittstelle
+> beruhen, sind **immer optional** (NFA-QS-035) — sonst wäre das Produkt an einen
+> Konnektorhersteller gekettet.
+
 ### Weitere Anbindungs- und Verwaltungsfunktionen
 
 - **VPN-Anbindung externer Kartenterminals** — optionale Ausbaustufe, **nicht**
