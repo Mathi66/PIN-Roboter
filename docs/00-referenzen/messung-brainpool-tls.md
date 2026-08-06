@@ -51,6 +51,36 @@ spätere Fehlerbehandlung im Produkt heißt das: **Zertifikatsfehler und
 Kurvenfehler müssen unterscheidbar gemeldet werden**, sonst sucht der Betreiber
 an der falschen Stelle.
 
+## Verifiziert: TLS 1.2 ist Pflicht, TLS 1.3 ist optional
+
+Nachtrag 06.08.2026, geprüft am Volltext `[gemSpec_Krypt] V2.30.0`:
+
+| ID | Wortlaut (gekürzt) |
+|---|---|
+| **`GS-A_4385`** | Alle Produkttypen, die Übertragungen mittels TLS durchführen, **MÜSSEN die TLS-Version 1.2 unterstützen**. |
+| **`A_18467`** | Alle Produkttypen **KÖNNEN** die TLS-Version 1.3 unterstützen, falls sie dabei nur nach `[BSI-TR-02102-2]` empfohlene Konfigurationen verwenden und mindestens `TLS_AES_128_GCM_SHA256` unterstützen. |
+| `A_18464` | TLS 1.1 **DÜRFEN NICHT** unterstützt werden. |
+| `GS-A_4387` | TLS 1.0 **DÜRFEN NICHT** unterstützt werden. |
+| `GS-A_5035` | SSL **DARF NICHT** unterstützt werden. |
+
+**Damit ist die Blockade aufgelöst.** TLS 1.2 ist für jede TI-Komponente
+verpflichtend, TLS 1.3 ausdrücklich nur eine Kann-Bestimmung. Unsere Seite darf
+die Verbindung also auf **TLS 1.2 festlegen**, und genau dort funktioniert
+Brainpool nachweislich (Messung oben).
+
+Die TLS-1.3-Schwäche der Sprach-Wrapper ist damit **kein Ausschlusskriterium
+mehr**. Sie bleibt ein Hinweis für später: Sollte die TI Brainpool eines Tages
+verbindlich unter TLS 1.3 verlangen, wäre das erneut zu bewerten — derzeit
+bewegt sich die gematik jedoch von Brainpool weg, nicht darauf zu.
+
+### Weitere relevante Vorgabe für die Umsetzung
+
+`A_22457`: Ein TLS-Client gegenüber dem eHealth-Kartenterminal **darf bei
+beidseitig authentisierten Verbindungen keine Cipher-Suites mit
+Authentisierungsalgorithmen anbieten, für die er nicht selbst Schlüsselmaterial
+und Zertifikat besitzt.** Praktisch: Die angebotene Suite-Liste muss zu unserem
+eigenen Client-Zertifikat passen und darf nicht pauschal alles anbieten.
+
 ## Offen
 
 1. **Node.js unter TLS 1.2 wiederholen** — der Lauf lieferte keine Ausgabe.
