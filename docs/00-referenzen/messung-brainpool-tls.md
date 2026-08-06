@@ -73,10 +73,19 @@ zustande. Das bestätigt exakt die Konfiguration aus dem (archivierten)
 gematik-Repository `ecc-brainpool-how-to`.
 
 **Praxisbeleg des POs (06.08.2026):** *Im Konnektor ist auch Brainpool und JDK
-verbaut.* Die Gegenstelle unserer wichtigsten Verbindung ist also selbst
-Java-basiert und spricht Brainpool. Das ist kein Argument dafür, dass wir Java
-nehmen müssen — aber ein starkes Indiz, dass dieser Weg in dieser Umgebung
-erprobt ist.
+verbaut.* Nachgereicht: **Konnektor und HSK verwenden BouncyCastle.**
+
+Damit läuft auf der Gegenseite unserer wichtigsten Verbindung **exakt die
+Bibliothek, mit der dieser Test erfolgreich war** — dieselbe Umsetzung von
+Brainpool, denselben Kurvenparametern, derselben Auslegung von RFC 5639
+folgend. Interoperabilitätsprobleme entstehen erfahrungsgemäß nicht dort, wo
+zwei Seiten dieselbe Bibliothek verwenden, sondern an den Rändern
+unterschiedlicher Umsetzungen.
+
+Das macht Java mit BouncyCastle vom „gangbaren Weg" zum **Weg mit dem geringsten
+Interoperabilitätsrisiko**. Es ist kein zwingender Grund — eine OpenSSL-basierte
+Plattform funktioniert nachweislich ebenfalls —, aber es ist das stärkste
+einzelne Argument, das in dieser Messreihe aufgetaucht ist.
 
 **Hinweis zur Suite-Auswahl:** Der Testlauf einigte sich auf
 `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256`. Diese Suite ist nach
