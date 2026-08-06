@@ -60,3 +60,25 @@ Auflösung „PIN-Eingabe via Managementschnittstelle".
 Konsequenz für das Projekt: Zusammenfassungen Dritter werden nie als Beleg
 verwendet. Anforderungs-IDs und Wortlaute werden ausschließlich am Volltext der
 Spezifikation verifiziert.
+
+---
+
+## Nachtrag 06.08.2026 — Kryptographie
+
+| Kürzel | Dokument | Version | Bezug |
+|---|---|---|---|
+| `[gemSpec_Krypt]` | Übergreifende Spezifikation: Verwendung kryptographischer Algorithmen | **2.30.0** | https://gemspec.gematik.de/downloads/gemSpec/gemSpec_Krypt/gemSpec_Krypt_V2.30.0.html |
+
+Maßgeblich für die Frage der TLS-Kurven: `GS-A_4384-*` — P-256 und P-384 sind
+MUSS, brainpoolP256r1 und brainpoolP384r1 sind SOLL.
+
+**Sekundärquellen zu Brainpool-TLS:**
+- https://github.com/gematik/ecc-brainpool-how-to — Codebeispiele der gematik
+  (Java/Spring, Netty, Android, iOS). **Archiviert am 22.04.2025, unmaintained.**
+  Deckt Go, .NET, Python und Node.js nicht ab.
+- https://github.com/bcgit/bc-java/issues/2077 — BouncyCastle: TLS-1.3-Handshake
+  mit Brainpool-Kurven schlägt fehl
+- https://github.com/openssl/openssl/issues/21346 · /issues/24207 — OpenSSL:
+  Brainpool unter TLS 1.3 zuverlässig ab Version 3.2
+- https://groups.google.com/g/golang-dev/c/uq_J83dGjOs — Go lehnt Brainpool in
+  der Standardbibliothek ab

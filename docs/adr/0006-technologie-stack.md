@@ -1,8 +1,16 @@
 # ADR-0006: Technologie-Stack
 
-- **Status:** Vorschlag — Entscheidung des Product Owners ausstehend
+- **Status:** **Überarbeitung nötig** — die Sprachwahl ist bis zur Messung am Testaufbau **offen** (siehe Abschnitt „Brainpool-TLS")
 - **Datum:** 06.08.2026
 - **Betrifft:** Umsetzung, Betrieb, Wartbarkeit, Personalbindung
+
+> ⚠️ **Wichtiger Nachtrag vom 06.08.2026.** Der PO hat auf die Anforderung
+> **Brainpool-TLS** hingewiesen. Die Prüfung ergab: **Go kann das nicht** — die
+> Sprachwahl unten ist damit nicht haltbar, solange nicht geklärt ist, ob und wo
+> Brainpool tatsächlich benötigt wird. Alle übrigen Festlegungen (Oberfläche,
+> Datenhaltung, Agentenprotokoll, Bauumgebung, Kapselung) bleiben unberührt, da
+> sie sprachunabhängig sind. Details und Vorgehen: Abschnitt „Brainpool-TLS" am
+> Ende dieses Dokuments.
 
 ---
 
@@ -302,6 +310,93 @@ Ehrlich benannt:
 3. **Technischer Durchstich.** Der in Abschnitt 10 des Architekturkonzepts als
    größtes Risiko benannte Punkt: die PEviM-Kette am realen Testaufbau
    nachweisen, bevor irgendetwas darauf gebaut wird.
+
+---
+
+## Brainpool-TLS — der Punkt, der die Sprachwahl umwirft
+
+Vorgabe des POs vom 06.08.2026:
+> **Wichtig: Wir müssen auch mit Brainpool-TLS klarkommen.**
+
+### Was die Spezifikationen sagen (geprüft am Volltext)
+
+| Befund | Quelle |
+|---|---|
+| Beim ephemeren ECDH-Schlüsselaustausch **MÜSSEN** die Kurven **P-256 und P-384** unterstützt werden. **brainpoolP256r1 und brainpoolP384r1 SOLLEN** unterstützt werden. | `[gemSpec_Krypt] V2.30.0`, `GS-A_4384-*` |
+| Die TLS-Konfiguration der Clientsystem-Verbindung am Konnektor kennt ausdrücklich die Werte `[RSA, ECC-NIST, ECC-BRAINPOOL]`. | `[gemSpec_Kon] V5.25.0` |
+| **Neue** Brainpool-Zertifikate dürfen nicht mehr angelegt werden; die **Weiternutzung bestehender ist ausdrücklich zulässig**. | `[gemSpec_Kon] V5.25.0` |
+| Für künftige Fachdienste sollen NIST-Kurven statt Brainpool verwendet werden — **ausdrücklich begründet mit der „deutlich besseren Unterstützung der NIST-Kurvenparameter durch verschiedene Standard-Kryptographie-Softwarebibliotheken"**. | `[gemSpec_Krypt] V2.30.0` |
+| Wo Brainpool nur schwer möglich ist, ist der Verzicht wegen der SOLL-Bestimmung zulässig. | `[gemSpec_Krypt] V2.30.0` |
+| Die Chipkarten der TI verwenden für ihre ECC-Schlüssel durchgehend `brainpoolP256r1`; das ist in den Objektsystemen fixiert. | `[gemSpec_Krypt] V2.30.0` |
+
+**Einordnung:** Formal ist Brainpool für TLS eine SOLL-, keine MUSS-Anforderung,
+und die gematik bewegt sich davon weg. **Praktisch ist das kein Freibrief:** Ein
+Konnektor im Feld kann auf `ECC-BRAINPOOL` konfiguriert sein, und
+Bestandszertifikate bleiben zulässig. Trifft unser Produkt auf eine solche
+Installation und kann Brainpool nicht, ist es dort schlicht nicht einsetzbar.
+Die Vorgabe des POs ist damit berechtigt.
+
+### Was das für die Kandidaten bedeutet
+
+| Plattform | Brainpool in TLS | Beleg |
+|---|---|---|
+| **Go** | **nein.** `crypto/tls` unterstützt es nicht; die Maintainer lehnen die Aufnahme ab. Die verfügbare Drittbibliothek arbeitet **nicht in konstanter Zeit** und ist damit für sicherheitskritischen Einsatz ungeeignet. Go bringt eine eigene TLS-Umsetzung mit und profitiert nicht von OpenSSL. | golang-dev, pkg.go.dev |
+| **Java + BouncyCastle** | **ja, der von der gematik selbst gegangene Weg.** Das Repository `gematik/ecc-brainpool-how-to` zeigt genau diese Konfiguration (BouncyCastleProvider + BouncyCastleJsseProvider, `jdk.tls.namedGroups`). Einschränkung: Für **TLS 1.3** mit Brainpool sind bei BouncyCastle Handshake-Fehler dokumentiert. | github.com/gematik/ecc-brainpool-how-to (**archiviert 22.04.2025**), bcgit/bc-java #2077 |
+| **OpenSSL-basierte Plattformen** (Python, Node, Ruby, Rust, C/C++) | **ja**, OpenSSL beherrscht Brainpool. Für **TLS 1.3** zuverlässig erst ab **OpenSSL 3.2**; unter TLS 1.2 gibt es dokumentierte Stolperstellen. | openssl/openssl #21346, #24207 |
+| **.NET** | **nicht belegt.** Auf Linux setzt .NET auf OpenSSL auf, was dafür spricht — eine belastbare Aussage konnte die Recherche jedoch **nicht** liefern. Als „geht" darf das nicht gelten. | — |
+
+Bemerkenswert: Das einzige Repository, in dem die gematik selbst zeigt, wie
+Brainpool-TLS geht, deckt **Java, Netty, Android und iOS** ab — **nicht** Go,
+.NET, Python oder Node. Und es ist seit April 2025 **archiviert**. Das ist ein
+Hinweis auf die Marktlage: Der Weg ist gangbar, aber schmal.
+
+### Konsequenz
+
+**Der Go-Vorschlag ist in dieser Form nicht haltbar.** Das war eine Lücke in
+meiner Analyse: Ich habe SOAP als Kernfrage identifiziert und die
+TLS-Kurvenunterstützung nicht geprüft. Sie ist die härtere Randbedingung, weil
+sie sich nicht durch Eigenarbeit auflösen lässt — eine TLS-Implementierung
+schreibt man nicht selbst.
+
+Drei gangbare Wege:
+
+**Weg 1 — Java oder Kotlin mit BouncyCastle.** Der von der gematik dokumentierte
+Weg. Nachteil: Speicherbedarf gegenüber der 2-GB-Grenze für Praxishardware
+(NFA-LEI-030); zu prüfen wäre, ob ein vorab übersetztes Programmabbild das löst.
+Zusätzlich sind die BouncyCastle-Probleme mit TLS 1.3 zu bewerten.
+
+**Weg 2 — eine OpenSSL-basierte Plattform.** Brainpool kommt dann von OpenSSL
+statt aus der Sprache. Voraussetzung: OpenSSL 3.2 oder neuer im Image, was wir
+kontrollieren, da wir das Image bauen.
+
+**Weg 3 — Go behalten, TLS für die Konnektor-Strecke über einen
+OpenSSL-basierten Vermittler.** Bewahrt alle Go-Vorteile, fügt aber eine
+Komponente **an der sicherheitskritischsten Stelle** hinzu und macht das Argument
+„ein einziges statisches Programm" zunichte. Nur zu erwägen, wenn Brainpool
+ausschließlich auf einer klar abgegrenzten Strecke auftritt.
+
+### Nächster Schritt: messen, nicht abwägen
+
+Die Testumgebung steht. Die Frage ist damit in Minuten beantwortbar statt in
+Stunden diskutierbar:
+
+1. **Welche Kurven und Cipher-Suites bietet der KoCo-Konnektor tatsächlich an?**
+   Ein Verbindungsaufbau mit einem Standardwerkzeug gegen den Konnektor zeigt die
+   angebotene Kurvenliste und die Konfiguration von `TlsKeyCrypt/Algorithm`.
+2. **Dasselbe für die Managementschnittstelle der Kartenterminals.**
+3. **Lässt sich der KoCo-Konnektor auf `ECC-NIST` konfigurieren** — und ist das in
+   Kundeninstallationen realistisch, oder muss mit `ECC-BRAINPOOL` gerechnet
+   werden?
+
+Erst danach ist entscheidbar, ob Brainpool auf **allen** Strecken, auf **einer**
+oder auf **keiner** gebraucht wird. Davon hängt ab, ob Weg 1, 2 oder 3 richtig
+ist. Eine Sprachfestlegung vor dieser Messung wäre genau das Raten, das in diesem
+Projekt ausgeschlossen ist.
+
+**Unberührt bleiben:** Oberfläche vom Server, Datenhaltung, Agentenprotokoll,
+Bauumgebung, Kapselung von Terminal- und Konnektor-Anbindung, der selbst
+geschriebene SOAP-Client. Diese Festlegungen sind sprachunabhängig und behalten
+ihre Begründung.
 
 ---
 
