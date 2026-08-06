@@ -237,10 +237,17 @@ Konsequenzen, die von Anfang an zu berücksichtigen sind:
 - **Onboarding wird mehrstufig:** Instanzbetreiber legt Serviceorganisation an,
   diese legt Einrichtungen an, diese Benutzer.
 
-> **Offen und materiell entscheidend — siehe Rückfrage an den PO:**
-> Läuft je Einrichtung eine eigene Installation, oder betreibt eine
-> Serviceorganisation **eine zentrale Instanz für viele Einrichtungen**? Davon
-> hängen Datenmodell, Netzwerkarchitektur und Ausfallkonzept ab.
+### Betriebsmodell (PO, 06.08.2026)
+
+**Beide Betriebsarten mit derselben Software:**
+- **verteilt** — eine Instanz je Einrichtung, im Praxis-/Kliniknetz
+- **zentral** — eine Instanz je Serviceorganisation für viele Einrichtungen
+
+Daraus folgt der Schnitt in zwei Bausteine — **Zentrale** und
+**Standort-Agent** — mit ausgehendem Verbindungsaufbau durch den Agenten, damit
+keine eingehenden Firewall-Freigaben im Kundennetz nötig sind. Begründung,
+Ausfallverhalten und offene Fragen:
+[ADR-0002](docs/adr/0002-betriebsmodell-und-systemtopologie.md).
 
 ### Betrieb und Auslieferung (PO, 06.08.2026)
 
