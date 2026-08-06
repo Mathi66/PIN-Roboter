@@ -64,27 +64,41 @@ erarbeiten muss, wird es vielleicht.
 
 ---
 
-## Der eine ernsthafte Einwand: Speicherbedarf
+## Speicherbedarf — der Einwand hat sich erledigt
 
-`NFA-LEI-030` verlangt, dass der **vollständige Stack** in der Einzelpraxis mit
-**≤ 2 GB Arbeitsspeicher** auskommt — bei 3 Terminals, auf handelsüblicher
-Praxishardware, Start in unter 60 Sekunden.
+In der Fassung von gestern war dies der einzige ernsthafte Vorbehalt gegen Java:
+Die damalige Anforderung nannte **2 GB** für den gesamten Stack, was mit einer
+JVM knapp geworden wäre.
 
-Das ist mit Java erreichbar, aber **nicht geschenkt**. Im verteilten Betrieb
-laufen Zentrale, Agent und Datenbank auf derselben Maschine. Erforderlich sind
-daher:
+**Diese Zahl war eine zu konservative Annahme der Entwicklung, keine Vorgabe.**
+Der PO hat am 07.08.2026 die tatsächliche Referenzhardware benannt:
+**Linux-Appliance der Klasse Raspberry Pi 5 oder NXP i.MX8 QuadMax mit 8 GB
+RAM** — beide `arm64` —, ergänzend Windows und macOS mit Docker Desktop.
+`NFA-LEI-030` und `NFA-LEI-035` sind entsprechend neu gefasst.
+
+| Zielwert (neu) | |
+|---|---|
+| Vollständiger Stack, Einzelpraxis | **≤ 3 GB** |
+| **Standort-Agent allein** | **≤ 512 MB** |
+| Start bis bedienbar | < 60 s |
+
+Damit ist der Einwand **ausgeräumt**: 3 GB Zielwert auf 8 GB verfügbarer
+Hardware ist für eine JVM komfortabel. Es bleibt eine Messaufgabe, kein Risiko.
+
+Trotzdem bleiben die Maßnahmen verbindlich — Speicher, den man nicht braucht,
+soll man nicht belegen:
 
 - **Feste Speicherobergrenzen je Container**, nicht die Vorgaben der Laufzeit
 - Ein **auf geringen Verbrauch ausgelegter Speicherbereiniger**, kein auf
   Durchsatz optimierter
 - **Schlankes JRE-Image** statt vollständigem JDK; nur benötigte Module
-- **Messung als Abnahmekriterium**, nicht als Hoffnung
+- **Messung auf `arm64`** als Abnahmekriterium, nicht auf Entwicklungshardware
 
-Sollte die Messung ergeben, dass 2 GB nicht reichen, sind in dieser Reihenfolge
-zu prüfen: vorab übersetztes Programmabbild (GraalVM Native Image) für den
-Agenten, dann Anhebung der Grenze in Abstimmung mit dem PO. **Der Stack wird
-deswegen nicht getauscht** — die Brainpool-Anforderung wiegt schwerer als der
-Speicherbedarf, und die Alternativen lösen ihn nicht besser.
+Der **512-MB-Wert für den Agenten** ist dabei der anspruchsvollere und
+wichtigere. Er hält offen, dass der Agent später auf fremder oder schwacher
+Hardware mitlaufen kann. Verfehlt er ihn deutlich, ist für **diesen einen
+Baustein** ein vorab übersetztes Programmabbild (GraalVM Native Image) zu
+prüfen — nicht der Stackwechsel.
 
 ---
 
