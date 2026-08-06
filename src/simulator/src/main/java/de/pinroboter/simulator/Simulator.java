@@ -1,0 +1,134 @@
+package de.pinroboter.simulator;
+
+import com.sun.net.httpserver.*;
+import de.pinroboter.gemeinsam.PinStatus;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executors;
+
+/**
+ * Simulierte TI-Umgebung: Konnektor und Kartenterminals.
+ *
+ * <p>Zweck nach ADR-0007: Drei Nachweise sind mit echter Hardware nicht führbar
+ * — das Mengengerüst von 5.000 Terminals, die geforderten Fehlerfälle, und vor
+ * allem FA-PIN-030 (falsche PIN löst genau einen Versuch aus), der real bei
+ * jedem Durchlauf einen Fehlversuch der Karte verbrennt.
+ *
+ * <p>Der Simulator wird <b>nicht ausgeliefert</b>. Er ist Werkzeug der
+ * Qualitätssicherung und ersetzt nicht die Kalibrierung an echter Hardware.
+ *
+ * <h2>Schnittstellen</h2>
+ * <ul>
+ *   <li>{@code 8443} — Konnektor, SOAP über Brainpool-TLS</li>
+ *   <li>{@code 8444} — Kartenterminal-Management über Brainpool-TLS</li>
+ *   <li>{@code 8480} — Steuerung für Tests, unverschlüsselt, nur im internen Netz</li>
+ * </ul>
+ */
+public class Simulator {
+
+    public static void main(String[] args) throws Exception {
+        Zustand zustand = Zustand.standardaufbau();
+
+        System.out.println("""
+                ────────────────────────────────────────────────────────────
+                  PIN-Roboter · Simulierte TI-Umgebung
+                ────────────────────────────────────────────────────────────""");
+
+        var kette = BrainpoolZertifikate.erzeugen("simulator");
+        System.out.println("  Zertifikatskette erzeugt auf " + BrainpoolZertifikate.KURVE);
+
+        SSLContext ctx = TlsAufbau.serverKontext(kette);
+
+        starteTls(8443, ctx, "/", new KonnektorSoap(zustand), "Konnektor (SOAP)");
+        starteTls(8444, ctx, "/api/", new TerminalVerwaltung(zustand), "Kartenterminal-Management");
+        starteSteuerung(8480, zustand, kette);
+
+        System.out.println("""
+                  TLS: %s, nur zulässige Suites nach [gemSpec_Krypt]
+                ────────────────────────────────────────────────────────────
+                  Bereit. %d Terminals simuliert.
+                """.formatted(String.join(", ", TlsAufbau.PROTOKOLLE), zustand.terminals().size()));
+        zustand.terminals().forEach(t -> System.out.printf(
+                "    %-18s %-22s Firmware %-8s PEviM %s%n",
+                t.id(), t.modell(), t.firmware(),
+                !t.pevimUnterstuetzt() ? "nicht unterstützt" : (t.pevimAktiv() ? "aktiv" : "vorhanden, nicht aktiviert")));
+        System.out.println();
+
+        Thread.currentThread().join();
+    }
+
+    private static void starteTls(int port, SSLContext ctx, String pfad,
+                                  HttpHandler handler, String bezeichnung) throws IOException {
+        HttpsServer server = HttpsServer.create(new InetSocketAddress(port), 0);
+        server.setHttpsConfigurator(new HttpsConfigurator(ctx) {
+            @Override public void configure(HttpsParameters params) {
+                SSLParameters p = ctx.getDefaultSSLParameters();
+                TlsAufbau.parameterSetzen(p);
+                params.setSSLParameters(p);
+            }
+        });
+        server.createContext(pfad, handler);
+        server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        server.start();
+        System.out.printf("  %-28s https://0.0.0.0:%d%n", bezeichnung, port);
+    }
+
+    /**
+     * Steuerschnittstelle für automatisierte Tests: versetzt die Umgebung in
+     * definierte Zustände. Reproduzierbarkeit ist der halbe Wert eines
+     * Simulators — ohne sie ließe sich kein Fehlerfall im Bauvorgang prüfen.
+     */
+    private static void starteSteuerung(int port, Zustand z,
+                                        BrainpoolZertifikate.Kette kette) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+
+        // Der Agent holt hier den Vertrauensanker. An echter Hardware kommt er
+        // aus der TI-PKI; im Simulator entsteht er bei jedem Start neu.
+        server.createContext("/ca.pem", ex -> {
+            try {
+                byte[] b = BrainpoolZertifikate.alsPem(kette.caZertifikat()).getBytes(StandardCharsets.UTF_8);
+                ex.getResponseHeaders().add("Content-Type", "application/x-pem-file");
+                ex.sendResponseHeaders(200, b.length);
+                ex.getResponseBody().write(b);
+            } catch (Exception e) { ex.sendResponseHeaders(500, -1); }
+            ex.close();
+        });
+
+        server.createContext("/steuerung/", ex -> {
+            String[] t = ex.getRequestURI().getPath().split("/");
+            // /steuerung/{terminalId}/{aktion}[/{wert}]
+            if (t.length < 4) { TerminalVerwaltung.antworte(ex, 400, "{\"fehler\":\"Pfad unvollständig\"}"); return; }
+            var opt = z.terminal(t[2]);
+            if (opt.isEmpty()) { TerminalVerwaltung.antworte(ex, 404, "{\"fehler\":\"Terminal unbekannt\"}"); return; }
+            SimuliertesTerminal term = opt.get();
+            String wert = t.length > 4 ? t[4] : null;
+
+            try {
+                switch (t[3]) {
+                    case "erreichbar"    -> term.erreichbarSetzen(Boolean.parseBoolean(wert));
+                    case "pevim"         -> term.pevimAktivSetzen(Boolean.parseBoolean(wert));
+                    case "verzoegerung"  -> term.antwortverzoegerungSetzen(Integer.parseInt(wert));
+                    case "entziehen"     -> term.alleKarten().forEach(SimulierteKarte::verifikationEntziehen);
+                    case "zuruecksetzen" -> term.alleKarten().forEach(SimulierteKarte::zuruecksetzen);
+                    case "sperren"       -> term.alleKarten().forEach(k -> k.sonderzustandSetzen(PinStatus.BLOCKED));
+                    case "transportpin"  -> term.alleKarten().forEach(k -> k.sonderzustandSetzen(PinStatus.TRANSPORT_PIN));
+                    case "firmware"      -> new Thread(() -> {
+                        try { term.firmwareEinspielen(wert); } catch (InterruptedException ignored) {}
+                    }).start();
+                    default -> { TerminalVerwaltung.antworte(ex, 404, "{\"fehler\":\"Aktion unbekannt\"}"); return; }
+                }
+                TerminalVerwaltung.antworte(ex, 200, "{\"ok\":true}");
+            } catch (Exception e) {
+                TerminalVerwaltung.antworte(ex, 400, "{\"fehler\":\"" + e.getMessage() + "\"}");
+            }
+        });
+
+        server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        server.start();
+        System.out.printf("  %-28s http://0.0.0.0:%d  (nur intern)%n", "Steuerung / CA-Ausgabe", port);
+    }
+}
