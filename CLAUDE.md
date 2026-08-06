@@ -140,10 +140,22 @@ und ohne Schulung bedienbar ist.
   eingeplant, Transportverschlüsselung vorgesehen.
 - **Reproduzierbarkeit:** Abhängigkeiten sind gepinnt (Lockfiles im Repo).
 
-> Der konkrete Technologie-Stack ist **noch nicht festgelegt**. Er wird nach
-> Klärung der fachlichen Anforderungen als Architekturentscheidung mit Begründung
-> vorgeschlagen und in `docs/adr/` festgehalten. Bis dahin wird kein Stack
-> vorausgesetzt oder behauptet.
+> **Technologie-Stack (Vorschlag, Freigabe ausstehend):** **Java (LTS)** mit
+> **BouncyCastle** für Kryptographie und TLS, server-gerendertes HTML mit HTMX,
+> PostgreSQL in der Zentrale, eingebettete Datenbank im Agenten.
+> → [ADR-0006](docs/adr/0006-technologie-stack.md)
+>
+> Entscheidend war **Brainpool-TLS**: Die Geräteidentitäten von Konnektor und
+> Kartenterminal stammen von Chipkarten und sind auf `brainpoolP256r1` festgelegt.
+> Gemessen am 06.08.2026: Go scheitert bereits beim Einlesen solcher Zertifikate,
+> das Standard-JDK an den Kurvengruppen — **Java mit BouncyCastle funktioniert**.
+> Konnektor und HSK verwenden dieselbe Bibliothek.
+> → [Messbericht](docs/00-referenzen/messung-brainpool-tls.md)
+>
+> **Verbindlich für die Umsetzung:** TLS auf **1.2** festlegen; Cipher-Suites
+> ausdrücklich auf `(RSA, AES-CBC)` und `(ECC, AES-GCM)` einschränken
+> (`[gemSpec_Krypt]`); `A_22457` beachten; Zertifikats- und Kurvenfehler
+> unterscheidbar melden.
 
 ---
 

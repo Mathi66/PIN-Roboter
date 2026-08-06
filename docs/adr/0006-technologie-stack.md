@@ -1,499 +1,145 @@
 # ADR-0006: Technologie-Stack
 
-- **Status:** **Überarbeitung nötig** — die Sprachwahl ist bis zur Messung am Testaufbau **offen** (siehe Abschnitt „Brainpool-TLS")
-- **Datum:** 06.08.2026
-- **Betrifft:** Umsetzung, Betrieb, Wartbarkeit, Personalbindung
-
-> ⚠️ **Wichtiger Nachtrag vom 06.08.2026.** Der PO hat auf die Anforderung
-> **Brainpool-TLS** hingewiesen. Die Prüfung ergab: **Go kann das nicht** — die
-> Sprachwahl unten ist damit nicht haltbar, solange nicht geklärt ist, ob und wo
-> Brainpool tatsächlich benötigt wird. Alle übrigen Festlegungen (Oberfläche,
-> Datenhaltung, Agentenprotokoll, Bauumgebung, Kapselung) bleiben unberührt, da
-> sie sprachunabhängig sind. Details und Vorgehen: Abschnitt „Brainpool-TLS" am
-> Ende dieses Dokuments.
+- **Status:** Vorschlag — Freigabe durch den Product Owner erbeten
+- **Datum:** 06.08.2026 (Neufassung nach Messung)
+- **Betrifft:** Umsetzung, Betrieb, Wartbarkeit
+- **Ersetzt:** die erste Fassung vom selben Tag (Vorschlag Go — durch Messung widerlegt)
 
 ---
 
-## Entscheidungsvorschlag in einem Bild
+## Entscheidungsvorschlag
 
 | Ebene | Wahl |
 |---|---|
-| Sprache, beide Bausteine | **Go** |
-| Oberfläche | **Server-gerendertes HTML + HTMX + Server-Sent Events** |
+| Sprache, beide Bausteine | **Java (LTS)** |
+| Kryptographie und TLS | **BouncyCastle** (`bcprov`, `bctls`, BCJSSE), TLS **1.2** mit Brainpool |
+| Oberfläche | **server-gerendertes HTML + HTMX + Server-Sent Events** |
 | Datenbank Zentrale | **PostgreSQL** |
-| Datenbank Agent | **SQLite** (eingebettet) |
-| Konnektor-Anbindung | **handgeschriebener SOAP-Client** gegen die veröffentlichten Schnittstellenbeschreibungen |
-| Agentenprotokoll | **WebSocket über TLS**, gegenseitig authentifiziert mit Zertifikaten |
+| Datenbank Agent | **eingebettet** (SQLite oder gleichwertig) |
+| Konnektor-Anbindung | **SOAP-Client** gegen die veröffentlichten Schnittstellenbeschreibungen |
+| Agentenprotokoll | **WebSocket über TLS**, gegenseitig authentifiziert |
 | Bauumgebung | **GitHub Actions**, Multi-Arch, Cosign-Signatur, SBOM |
-| Basisimage | **distroless / statisch**, Nicht-Root |
-
-**Eine Sprache für alles.** Das ist die tragende Entscheidung; alles Weitere folgt
-daraus oder stützt sie.
+| Basisimage | schlankes JRE-Image, **Nicht-Root** |
 
 ---
 
-## Was der Stack leisten muss
+## Wie diese Entscheidung zustande kam
 
-Aus [Anforderungskatalog](../01-anforderungskatalog.md) und
-[Architektur](../02-architektur.md), nach Gewicht:
+Sie ist das Ergebnis einer Korrektur. Der erste Vorschlag lautete **Go** — mit
+dem Argument, SOAP sei bei sechs festen Operationen keine Auswahlfrage, und der
+Ausschlag gebe der schlanke Agent. Dieser Vorschlag war **falsch**, weil er die
+TLS-Kurvenunterstützung nicht geprüft hatte.
 
-| # | Anforderung | Härtegrad |
+Der Hinweis des POs auf **Brainpool-TLS** hat das aufgedeckt. Die anschließende
+Messung ([Bericht](../00-referenzen/messung-brainpool-tls.md)) hat die Frage
+entschieden — nicht durch Abwägung, sondern durch Messwerte.
+
+---
+
+## Die Beweiskette
+
+| # | Befund | Beleg |
 |---|---|---|
-| 1 | Zwei Bausteine, einer davon ein **schlanker Agent** in fremden Netzen | Architektur, ADR-0002 |
-| 2 | **SOAP** gegen Konnektor/HSK | zwingend, gematik |
-| 3 | **≤ 2 GB Arbeitsspeicher** für den gesamten Stack in der Einzelpraxis | NFA-LEI-030 |
-| 4 | **5.000 Geräte nebenläufig** überwachen, ohne dass ein langsamer Konnektor andere blockiert | NFA-LEI-020 |
-| 5 | **Linux, Windows, macOS · amd64 und arm64** | NFA-BET-030 |
-| 6 | **WCAG 2.2 AA** nachweisbar | NFA-USA-010 |
-| 7 | Wartbar über viele Jahre, in einem **kleinen Team** | Produktumfeld |
-| 8 | Kleine Angriffsfläche, prüfbare Lieferkette | NFA-SIC-030/040 |
+| 1 | **Brainpool ist zwingend**, nicht optional. Die Geräteidentitäten von Konnektor (gSMC-K) und Kartenterminal (gSMC-KT) sind auf `brainpoolP256r1` festgelegt — in den Objektsystemen der Chipkarten fixiert. Der Schlüsselaustausch ließe sich auf NIST umstellen, die Zertifikatsprüfung nicht. | `[gemSpec_Krypt]`, `[gemSpec_Kon]`, `[gemSpec_KT] TIP1-A_3227`; Praxisangabe PO |
+| 2 | **TLS 1.2 ist Pflicht, TLS 1.3 nur Kann.** Damit dürfen wir uns auf TLS 1.2 festlegen — genau die Version, unter der Brainpool nachweislich funktioniert. | `GS-A_4385`, `A_18467` |
+| 3 | **Go ist ausgeschlossen** — und zwar fundamental: Die Standardbibliothek kann ein Zertifikat mit Brainpool-Schlüssel **nicht einmal einlesen**. Es kommt zu keinem Handshake. Ein vorgelagerter TLS-Vermittler löst das nicht, sobald TI-Zertifikate im Spiel sind. | Messung 06.08.2026, Go 1.26 |
+| 4 | **Das Standard-JDK genügt nicht** — es meldet „no supported named groups". | Messung, Temurin 21 |
+| 5 | **Java + BouncyCastle funktioniert** — Handshake über TLS 1.2 mit `brainpoolP256r1` erfolgreich. | Messung, BouncyCastle 1.83 |
+| 6 | **Konnektor und HSK verwenden selbst BouncyCastle.** Auf beiden Seiten der wichtigsten Verbindung läuft damit dieselbe Umsetzung von RFC 5639. | Praxisangabe PO, 06.08.2026 |
+| 7 | **Die Entwickler sind Experten in Java und BouncyCastle.** | Angabe PO, 06.08.2026 |
+| 8 | Java bietet zudem **erstklassige SOAP-Unterstützung** — das Problem, das den ersten Vorschlag überhaupt schwierig machte, löst sich nebenbei. | — |
 
-Punkt 7 verdient eine ehrliche Bemerkung: Dieses Produkt wird auf absehbare Zeit
-von sehr wenigen Personen entwickelt. Ein Stack, der zwei Ökosysteme, zwei
-Bauketten und zwei Testwelten erfordert, verdoppelt nicht den Aufwand — er
-vervielfacht ihn, weil beide dauerhaft aktuell gehalten werden müssen. Das ist
-hier ein Auswahlkriterium erster Ordnung, kein Nebenaspekt.
+**Punkt 6 und 7 sind die stärksten.** Interoperabilitätsprobleme entstehen nicht
+dort, wo beide Seiten dieselbe Bibliothek verwenden, sondern an den Rändern
+unterschiedlicher Umsetzungen — wir vermeiden diese Ränder vollständig. Und ein
+Stack, den das Team beherrscht, wird über Jahre gepflegt; einer, den es sich
+erarbeiten muss, wird es vielleicht.
 
----
-
-## Geprüfte Faktenlage (06.08.2026)
-
-| Befund | Quelle |
-|---|---|
-| Die Kommunikation mit dem Konnektor erfolgt über **SOAP**. Die veröffentlichten Schnittstellenbeschreibungen sind Grundlage der Implementierung; **ein Primärsystem muss ohne zur Laufzeit bezogene WSDLs auskommen.** | `[gemILF_PS]` |
-| Wir benötigen nur **wenige Operationen**: `GetPinStatus`, `VerifyPin`, `GetCards`, `GetCardTerminals`, `GetResourceInformation`; später `ChangePin`. | `[gemSpec_Kon] 4.1.5.5` |
-| Go: Releases etwa halbjährlich, Fehlerbehebungen für die **zwei jüngsten** Hauptversionen; aktuell 1.26.5 (07.07.2026). Das **Go-1-Kompatibilitätsversprechen** hält Aktualisierungen praktisch aufwandsarm. | go.dev |
-| .NET 10 ist LTS mit **drei Jahren** Unterstützung; SOAP über WCF-Client/CoreWCF ist erstklassig unterstützt. | dotnet.microsoft.com |
-| Für Go existiert **kein einheitliches SOAP-Framework**, sondern mehrere Abspaltungen von `gowsdl` unterschiedlicher Pflegequalität. Der Weg ohne Generator (Standardbibliothek `encoding/xml`) ist verbreitet und dokumentiert. | pkg.go.dev, GitHub |
-| Eine vergleichbare Überwachungslösung (`cocard`, MIT) spricht dieselben Konnektor-Operationen aus einem Ökosystem **ohne** erstklassige SOAP-Unterstützung an. | github.com/swobspace/cocard |
+> **Anmerkung zum Verfahren:** In der ersten Fassung hatte ich gefragt, ob es
+> Kenntnisstände gibt, die berücksichtigt werden sollten. Die Antwort lautete
+> zunächst, die Entwicklung solle frei vorschlagen. Dass die Expertise nun
+> benannt wurde, ist kein Widerspruch, sondern eine Ergänzung — und sie hätte
+> die Entscheidung auch dann getragen, wenn sie das einzige Argument geblieben
+> wäre. Hier fällt sie mit allen übrigen zusammen.
 
 ---
 
-## Die Kernfrage: SOAP
+## Der eine ernsthafte Einwand: Speicherbedarf
 
-Das ist der Punkt, an dem die Entscheidung hängt — und an dem der erste Reflex
-in die Irre führt.
+`NFA-LEI-030` verlangt, dass der **vollständige Stack** in der Einzelpraxis mit
+**≤ 2 GB Arbeitsspeicher** auskommt — bei 3 Terminals, auf handelsüblicher
+Praxishardware, Start in unter 60 Sekunden.
 
-**Der Reflex:** „SOAP ist zwingend, also nehmen wir die Plattform mit der besten
-SOAP-Unterstützung." Das wäre .NET oder Java.
+Das ist mit Java erreichbar, aber **nicht geschenkt**. Im verteilten Betrieb
+laufen Zentrale, Agent und Datenbank auf derselben Maschine. Erforderlich sind
+daher:
 
-**Der Blick auf den tatsächlichen Bedarf:** Wir sprechen **eine einzige,
-spezifizierte, stabile Schnittstelle** mit **sechs Operationen** an. Das ist kein
-Integrationsprojekt mit dutzenden wechselnden Diensten. Es ist ein festes,
-überschaubares, gut dokumentiertes Protokoll.
+- **Feste Speicherobergrenzen je Container**, nicht die Vorgaben der Laufzeit
+- Ein **auf geringen Verbrauch ausgelegter Speicherbereiniger**, kein auf
+  Durchsatz optimierter
+- **Schlankes JRE-Image** statt vollständigem JDK; nur benötigte Module
+- **Messung als Abnahmekriterium**, nicht als Hoffnung
 
-Ein generierter Client bringt hier wenig Nutzen und zwei konkrete Nachteile:
-
-1. **Abhängigkeit von einem Generator-Ökosystem**, das im Go-Umfeld fragmentiert
-   ist — bei .NET wäre dieser Punkt gelöst, aber dann handelt man sich die
-   Nachteile aus dem Vergleich unten ein.
-2. **Undurchsichtigkeit an der kritischsten Stelle des Produkts.** Der Aufruf,
-   der eine PIN gegen eine Karte prüft, ist die Stelle, an der ein Fehler eine
-   Karte sperrt. Dort will ich **jede Zeile verstehen**, nicht generierten Code
-   aus einem Fremdprojekt.
-
-Ein handgeschriebener Client für sechs Operationen ist überschaubar — wenige
-hundert Zeilen, vollständig testbar, gegen den Testaufbau verifizierbar. Der
-Aufwand ist einmalig, das Verständnis dauerhaft.
-
-> **Damit ist SOAP kein Auswahlkriterium mehr, sondern eine Aufgabe.** Das
-> verschiebt die Entscheidung auf die Kriterien, die im Betrieb tatsächlich
-> wehtun: Ressourcenbedarf, Nebenläufigkeit, Auslieferungsgröße und
-> Wartungslast.
+Sollte die Messung ergeben, dass 2 GB nicht reichen, sind in dieser Reihenfolge
+zu prüfen: vorab übersetztes Programmabbild (GraalVM Native Image) für den
+Agenten, dann Anhebung der Grenze in Abstimmung mit dem PO. **Der Stack wird
+deswegen nicht getauscht** — die Brainpool-Anforderung wiegt schwerer als der
+Speicherbedarf, und die Alternativen lösen ihn nicht besser.
 
 ---
 
-## Vergleich der Kandidaten
+## Was aus der ersten Fassung unverändert gilt
 
-| Kriterium | **Go** | .NET 10 | Java / Kotlin | Node/TypeScript | Python |
-|---|---|---|---|---|---|
-| SOAP-Unterstützung | selbst zu schreiben | **exzellent** | **exzellent** | mäßig | gut (zeep) |
-| Speicherbedarf Agent | **sehr gering** | mittel | hoch | mittel | mittel |
-| Auslieferungsgröße | **~15–25 MB** | ~90–120 MB | ~150–250 MB | ~120 MB | ~100 MB |
-| Nebenläufigkeit 5.000 Geräte | **sehr gut** | gut | gut | mäßig | schwach |
-| Mehrere Architekturen | **trivial** | gut | gut | gut | mittelmäßig |
-| Eine Sprache für beide Bausteine | **ja** | ja | ja | ja | ja |
-| Aktualisierungslast über Jahre | **sehr gering** | mittel | mittel | **hoch** | mittel |
-| Angriffsfläche (Laufzeit im Container) | **minimal** | Laufzeitumgebung | JVM | Laufzeitumgebung | Interpreter |
+Diese Festlegungen waren sprachunabhängig begründet und bleiben bestehen:
 
-**Ausgeschieden:**
-- **Python** — Nebenläufigkeit bei 5.000 Geräten und Ressourcenbedarf sprechen
-  dagegen (Kriterien 3 und 4).
-- **Node/TypeScript** — schwache SOAP-Lage bei gleichzeitig hoher
-  Abhängigkeits- und Aktualisierungslast. Für ein Produkt mit langer Lebensdauer
-  im Medizinumfeld die ungünstigste Kombination.
-- **Java/Kotlin** — beste SOAP-Unterstützung, aber der Speicherbedarf kollidiert
-  mit Kriterium 3. Eine JVM je Praxis, dazu eine je Agent, ist für Praxishardware
-  die falsche Größenordnung.
+- **Oberfläche vom Server**, kein separates JavaScript-Rahmenwerk. Hauptgrund
+  ist die Nachweispflicht für WCAG 2.2 AA; große Listen werden ohnehin
+  serverseitig gefiltert und paginiert.
+- **PostgreSQL** in der Zentrale, **eingebettete Datenbank** im Agenten — die
+  Bausteine haben keine gemeinsame Datenschicht.
+- **WebSocket über TLS**, ausgehend vom Agenten, damit im Kundennetz keine
+  eingehenden Freigaben nötig sind.
+- **Signierte Multi-Arch-Images**, kein `:latest`, SBOM, Schwachstellenprüfung
+  im Bau.
+- **Kapselung** von Terminal- und Konnektor-Anbindung als zentrale
+  Erweiterungsstelle.
 
-**Verbleibend: Go gegen .NET.** Beide könnten das Produkt tragen. Der Ausschlag
-gibt der **Agent**: Er läuft in fremden Netzen, auf unbekannter Hardware,
-potenziell tausendfach. Ein statisch gelinktes Programm von rund 20 MB ohne
-Laufzeitumgebung ist dort in Auslieferung, Ressourcenbedarf und Angriffsfläche
-in einer anderen Klasse als ein Container mit Laufzeitumgebung.
-
-Dazu kommt das **Go-1-Kompatibilitätsversprechen**: Der auf den ersten Blick
-kürzere Unterstützungszeitraum (rund ein Jahr gegenüber drei Jahren bei .NET LTS)
-täuscht, weil Go-Aktualisierungen erfahrungsgemäß ohne Anpassungen durchlaufen.
-Was zählt, ist nicht die Länge des Zeitraums, sondern die Mühe des Wechsels.
+Zum SOAP-Client: Das Argument der ersten Fassung — sechs feste Operationen, ein
+handgeschriebener Client ist kontrollierbarer als generierter Code — bleibt
+gültig, wird aber **entschärft**, weil Java hier ausgereifte Werkzeuge bietet.
+Die Entscheidung zwischen generiert und handgeschrieben wird bei der Umsetzung
+getroffen; maßgeblich ist, dass der Aufruf, der eine PIN prüft, nachvollziehbar
+bleibt.
 
 ---
 
-## Zwei Schnittstellen zum Konnektor — und nur eine ist spezifiziert
+## Verbindliche Vorgaben für die Umsetzung
 
-Vorgabe des POs vom 06.08.2026:
-> Die Webadmin-Schnittstelle kann ich nur für den **KoCo Konnektor** und den
-> **KoCo HSK** bereitstellen. Beide sind in diesen Punkten **identische
-> SOAP-Schnittstellen**.
-
-Hersteller: **KoCo Connector GmbH**, Tochterunternehmen der CGM Deutschland AG;
-Produkt KoCoBox MED+, gematik-Erstzulassung Ende 2017.
-
-Das trennt zwei Dinge, die leicht verwechselt werden:
-
-| | **Fachschnittstelle (Kartendienst)** | **Webadmin-Schnittstelle** |
-|---|---|---|
-| Zweck | `GetPinStatus`, `VerifyPin`, Bestand ermitteln | Konnektor administrieren |
-| Spezifiziert von | **gematik**, `[gemSpec_Kon] 4.1.5.5` | **niemandem** — herstellerspezifisch |
-| Herstellerübergreifend gleich | im Grundsatz **ja** | **nein** |
-| Verfügbar für uns | grundsätzlich alle Konnektoren | **nur KoCo** (Konnektor und HSK, identisch) |
-| Gebraucht für | die Kernfunktion | ergänzende Verwaltungsaufgaben |
-
-**Zweck der Webadmin-Schnittstelle** (Präzisierung des POs, 06.08.2026):
-> Wir brauchen sie, um das **Informationsmodell des Konnektors auszulesen** und
-> die **verbundenen Kartenterminals zu erkennen**. Damit wird die Konfiguration
-> der Kartenterminals einfacher.
-
-Das ist mehr als Bequemlichkeit: Aus dem Informationsmodell stammen
-**Mandanten-ID, Clientsystem-ID und Arbeitsplatz-ID** — die Werte, die jeder
-Aufruf der Fachschnittstelle benötigt. Von Hand abgetippt sind sie die häufigste
-und am schlechtesten diagnostizierbare Fehlerquelle bei der Inbetriebnahme.
-Ausgelesen werden sie zur Auswahlliste. Siehe FA-GER-035.
-
-**Scope-Festlegung des POs:** Version 1 unterstützt **ausschließlich KoCo
-Konnektor und KoCo HSK**.
-
-**Folgerungen:**
-
-1. **Die Kernfunktion wird dennoch herstellerneutral gebaut**, über die
-   gematik-spezifizierte Fachschnittstelle. Nicht weil Version 1 es bräuchte,
-   sondern weil es jetzt fast nichts kostet und später einen Umbau erspart. Dass
-   andere Hersteller sich dort gleich verhalten, ist eine **Erwartung aus der
-   Spezifikation, kein Nachweis** — belegt ist nur, was am Testaufbau gemessen
-   wurde.
-2. **Die Webadmin-Funktionen sind zunächst KoCo-exklusiv.** Sie werden deshalb
-   von Beginn an so gekapselt, dass Konnektoren anderer Hersteller ohne diese
-   Funktionen betrieben werden können — mit klarer Anzeige, was dort nicht zur
-   Verfügung steht.
-3. **KoCo Konnektor und KoCo HSK gelten als eine Anbindung**, weil sie in den
-   relevanten Punkten identisch sind. Das halbiert den Aufwand für die
-   Erstunterstützung und ist ein guter Ausgangspunkt: Einbox-Konnektor und
-   Highspeed-Konnektor decken zusammen Praxis- und Klinikbetrieb ab.
-4. **Die Kapselung gilt damit auf beiden Seiten**, Konnektor wie Kartenterminal
-   — dieselbe Erweiterungsstelle, dasselbe Muster (siehe Architektur 5.4).
+1. **TLS auf Version 1.2 festlegen** für die Verbindungen zu Konnektor und
+   Kartenterminal. TLS 1.3 ist dort nicht zu erwarten und mit Brainpool
+   nachweislich problematisch.
+2. **Cipher-Suite-Liste ausdrücklich einschränken.** Der Testlauf einigte sich
+   auf eine ChaCha20-Poly1305-Suite, die `[gemSpec_Krypt]` **nicht zulässt** —
+   erlaubt sind nur `(RSA, AES-CBC)` und `(ECC, AES-GCM)`. Die Vorgabe der
+   Bibliothek genügt nicht.
+3. **`A_22457` beachten:** Gegenüber dem Kartenterminal dürfen bei beidseitiger
+   Authentisierung nur Suites angeboten werden, für deren
+   Authentisierungsverfahren wir selbst Schlüssel und Zertifikat besitzen.
+4. **Zertifikatsfehler und Kurvenfehler unterscheidbar melden.** In der Messung
+   führte eine fehlende Zertifikatserweiterung beinahe zu einem falschen
+   Ausschluss. Im Betrieb würde derselbe Effekt den Betreiber an der falschen
+   Stelle suchen lassen.
+5. **BouncyCastle-Version festschreiben** und Aktualisierungen bewusst
+   nachziehen — es ist die sicherheitskritischste Abhängigkeit des Produkts.
 
 ---
 
-## Oberfläche: server-gerendert statt Einzelseitenanwendung
-
-**Vorschlag: HTML vom Server, HTMX für Teilaktualisierungen, Server-Sent Events
-für Live-Fortschritt.** Kein React, kein Vue, kein eigener Frontend-Build.
-
-Begründung:
-
-1. **Barrierefreiheit.** WCAG 2.2 AA ist mit echtem, server-geliefertem HTML
-   erheblich einfacher **nachweisbar** zu erreichen als mit einem
-   JavaScript-Rahmenwerk, bei dem Fokusverwaltung, Rollen und Live-Bereiche von
-   Hand nachgebaut werden müssen. Das ist eine MUSS-Anforderung mit Prüfpflicht —
-   kein Bereich für Mehraufwand aus Gewohnheit.
-2. **Große Listen sind ohnehin serverseitig.** 5.000 Geräte und Millionen
-   Protokollzeilen werden serverseitig gefiltert und paginiert (FA-GER-060,
-   FA-PRO-030). Der Hauptvorteil einer Einzelseitenanwendung — Daten im Browser
-   halten und dort verarbeiten — entfällt hier vollständig.
-3. **Eine Sprache, ein Build.** Kein zweites Ökosystem, keine zweite
-   Abhängigkeitskette, keine zweite Aktualisierungslast (Kriterium 7).
-4. **Kleinere Angriffsfläche** und deutlich weniger ausgelieferter Code.
-5. **Live-Ansichten sind gelöst.** Rollout-Fortschritt und Statuswechsel laufen
-   über Server-Sent Events — ein Standardmechanismus des Browsers, keine
-   Zusatzbibliothek.
-
-**Was das kostet:** Sehr aufwendige interaktive Ansichten wären in React
-komfortabler. In diesem Produkt gibt es keine solche Ansicht — die anspruchsvollste
-ist der Geräte-Zeitstrahl, und der ist server-renderbar. Sollte sich das ändern,
-lässt sich eine einzelne Seite gezielt mit JavaScript anreichern, ohne die
-Architektur umzustellen.
-
----
-
-## Datenhaltung: zwei Wahlen, zwei Begründungen
-
-**Zentrale: PostgreSQL.** Relational, ausgereift, exzellente Indizierung für die
-Protokollabfragen (FA-PRO-030: unter 2 Sekunden bei 5 Millionen Einträgen),
-strukturierte Detailfelder als JSON-Spalten, saubere Partitionierung des
-Protokolls nach Zeit, für arm64 verfügbar. Für den zentralen Betrieb mit vielen
-Mandanten ohne Alternative.
-
-**Agent: SQLite, eingebettet.** Der Agent hat eine einzige Instanz, geringe
-Datenmenge (Geheimnisse, Aufträge, Ereignispuffer) und keine Nebenläufigkeit über
-Prozessgrenzen. Eine eingebettete Datenbank spart dort **einen kompletten
-Container je Standort** — bei bis zu 1.000 Agenten ist das kein Detail. Kein
-separater Prozess bedeutet auch: nichts, was unabhängig ausfallen kann.
-
-> Die Wahl unterschiedlicher Datenbanken ist bewusst und **kein** Bruch: Die
-> beiden Bausteine haben keine gemeinsame Datenschicht. Der Agent hält lokalen
-> Zustand, die Zentrale den Bestand. Eine gemeinsame Abstraktion über beide wäre
-> künstlich und würde beide Seiten schlechter machen.
-
----
-
-## Agentenprotokoll
-
-**WebSocket über TLS, ausgehend vom Agenten, beidseitig mit Zertifikaten
-authentifiziert.**
-
-- **Ausgehend über Port 443** — kommt durch Firewalls und Proxys in Kundennetzen
-  (FA-AGT-020). Das ist der praktische Grund gegen gRPC: Es ist technisch
-  eleganter, scheitert aber häufiger an dazwischenliegenden Proxys.
-- **Gegenseitige Authentifizierung:** Bei der Registrierung (FA-AGT-010) erhält
-  der Agent ein eigenes Zertifikat. Danach authentifiziert sich jede Seite
-  gegenüber der anderen — ein gestohlenes Registrierungsgeheimnis nützt nach der
-  einmaligen Verwendung nichts mehr.
-- **Versionierte Nachrichten** (FA-AGT-040), damit Agent und Zentrale
-  unterschiedliche Stände haben dürfen — im zentralen Betrieb der Normalfall.
-
----
-
-## Bauumgebung und Auslieferung
-
-| | |
-|---|---|
-| Bauen und Testen | GitHub Actions, bei jeder Änderung |
-| Images | Multi-Arch (`linux/amd64`, `linux/arm64`) |
-| Basis | distroless bzw. `scratch` mit statischem Programm, **Nicht-Root** |
-| Signatur | Cosign, schlüssellos über die Actions-Identität (ADR-0001) |
-| Stückliste | SBOM je Image, veröffentlicht |
-| Schwachstellenprüfung | im Bau; kritische Befunde brechen den Bau ab |
-| Tags | versioniert, auf Digest festgeschrieben; **kein `:latest`** |
-
-**Tests:** Standardtests der Sprache; Datenbanktests gegen eine echte
-PostgreSQL-Instanz im Container statt gegen Attrappen; Oberflächentests
-einschließlich automatisierter Barrierefreiheitsprüfung; ein eigener Testsatz für
-die Konnektor- und Terminal-Anbindung gegen den realen Testaufbau (NFA-QS-020).
-
----
-
-## Was diese Wahl kostet
-
-Ehrlich benannt:
-
-1. **Der SOAP-Client ist Eigenarbeit.** Einmaliger Aufwand, dauerhaft zu pflegen,
-   wenn sich die Schnittstelle ändert. Bewusst in Kauf genommen — siehe oben.
-2. **HTMX ist weniger verbreitet als React.** Das Risiko ist gering, weil das
-   Ergebnis gewöhnliches HTML ist: Es gibt keine Bindung an ein Rahmenwerk, aus
-   der man sich später lösen müsste.
-3. **Go ist eine bewusst kleine Sprache.** Manches ist ausführlicher zu schreiben
-   als anderswo. Im Gegenzug ist der Code auch nach Jahren und für Dritte lesbar
-   — bei einem Produkt mit dieser Lebensdauer eher Vorteil als Nachteil.
-4. **Zwei Datenbanken** im Gesamtprodukt. Abgegrenzt, weil die Bausteine keine
-   gemeinsame Datenschicht haben.
-
----
-
-## Was zu tun ist, bevor der erste Code entsteht
-
-1. **Schnittstellenbeschreibungen beschaffen.** Die veröffentlichten WSDLs für
-   den Kartendienst des Konnektors vom gematik-Fachportal laden und in
-   `docs/00-referenzen/` mit Versionsstand erfassen.
-2. **Terminal-Schnittstelle klären.** Die Hersteller-Dokumentation der
-   Management-/REST-Schnittstelle für die Modelle des Testaufbaus anfordern —
-   sie war öffentlich nicht abrufbar (siehe ADR-0004).
-3. **Technischer Durchstich.** Der in Abschnitt 10 des Architekturkonzepts als
-   größtes Risiko benannte Punkt: die PEviM-Kette am realen Testaufbau
-   nachweisen, bevor irgendetwas darauf gebaut wird.
-
----
-
-## Brainpool-TLS — der Punkt, der die Sprachwahl umwirft
-
-Vorgabe des POs vom 06.08.2026:
-> **Wichtig: Wir müssen auch mit Brainpool-TLS klarkommen.**
-
-### Was die Spezifikationen sagen (geprüft am Volltext)
-
-| Befund | Quelle |
-|---|---|
-| Beim ephemeren ECDH-Schlüsselaustausch **MÜSSEN** die Kurven **P-256 und P-384** unterstützt werden. **brainpoolP256r1 und brainpoolP384r1 SOLLEN** unterstützt werden. | `[gemSpec_Krypt] V2.30.0`, `GS-A_4384-*` |
-| Die TLS-Konfiguration der Clientsystem-Verbindung am Konnektor kennt ausdrücklich die Werte `[RSA, ECC-NIST, ECC-BRAINPOOL]`. | `[gemSpec_Kon] V5.25.0` |
-| **Neue** Brainpool-Zertifikate dürfen nicht mehr angelegt werden; die **Weiternutzung bestehender ist ausdrücklich zulässig**. | `[gemSpec_Kon] V5.25.0` |
-| Für künftige Fachdienste sollen NIST-Kurven statt Brainpool verwendet werden — **ausdrücklich begründet mit der „deutlich besseren Unterstützung der NIST-Kurvenparameter durch verschiedene Standard-Kryptographie-Softwarebibliotheken"**. | `[gemSpec_Krypt] V2.30.0` |
-| Wo Brainpool nur schwer möglich ist, ist der Verzicht wegen der SOLL-Bestimmung zulässig. | `[gemSpec_Krypt] V2.30.0` |
-| Die Chipkarten der TI verwenden für ihre ECC-Schlüssel durchgehend `brainpoolP256r1`; das ist in den Objektsystemen fixiert. | `[gemSpec_Krypt] V2.30.0` |
-
-**Einordnung:** Formal ist Brainpool für TLS eine SOLL-, keine MUSS-Anforderung,
-und die gematik bewegt sich davon weg. **Praktisch ist das kein Freibrief:** Ein
-Konnektor im Feld kann auf `ECC-BRAINPOOL` konfiguriert sein, und
-Bestandszertifikate bleiben zulässig. Trifft unser Produkt auf eine solche
-Installation und kann Brainpool nicht, ist es dort schlicht nicht einsetzbar.
-Die Vorgabe des POs ist damit berechtigt.
-
-### Was das für die Kandidaten bedeutet
-
-| Plattform | Brainpool in TLS | Beleg |
-|---|---|---|
-| **Go** | **nein.** `crypto/tls` unterstützt es nicht; die Maintainer lehnen die Aufnahme ab. Die verfügbare Drittbibliothek arbeitet **nicht in konstanter Zeit** und ist damit für sicherheitskritischen Einsatz ungeeignet. Go bringt eine eigene TLS-Umsetzung mit und profitiert nicht von OpenSSL. | golang-dev, pkg.go.dev |
-| **Java + BouncyCastle** | **ja, der von der gematik selbst gegangene Weg.** Das Repository `gematik/ecc-brainpool-how-to` zeigt genau diese Konfiguration (BouncyCastleProvider + BouncyCastleJsseProvider, `jdk.tls.namedGroups`). Einschränkung: Für **TLS 1.3** mit Brainpool sind bei BouncyCastle Handshake-Fehler dokumentiert. | github.com/gematik/ecc-brainpool-how-to (**archiviert 22.04.2025**), bcgit/bc-java #2077 |
-| **OpenSSL-basierte Plattformen** (Python, Node, Ruby, Rust, C/C++) | **ja**, OpenSSL beherrscht Brainpool. Für **TLS 1.3** zuverlässig erst ab **OpenSSL 3.2**; unter TLS 1.2 gibt es dokumentierte Stolperstellen. | openssl/openssl #21346, #24207 |
-| **.NET** | **nicht belegt.** Auf Linux setzt .NET auf OpenSSL auf, was dafür spricht — eine belastbare Aussage konnte die Recherche jedoch **nicht** liefern. Als „geht" darf das nicht gelten. | — |
-
-Bemerkenswert: Das einzige Repository, in dem die gematik selbst zeigt, wie
-Brainpool-TLS geht, deckt **Java, Netty, Android und iOS** ab — **nicht** Go,
-.NET, Python oder Node. Und es ist seit April 2025 **archiviert**. Das ist ein
-Hinweis auf die Marktlage: Der Weg ist gangbar, aber schmal.
-
-### Entscheidend: Die Geräteidentitäten kommen von Chipkarten
-
-Präzisierung des POs vom 06.08.2026:
-> OpenSSL und Brainpool funktionieren, es sind die aus der BSI-TR geforderten
-> Kurven. Prinzipiell kann man auf der lokalen LAN-Schnittstelle NIST
-> konfigurieren — **aber wenn das Auth-Zertifikat des Konnektors von der
-> verbauten gSMC-K kommt, ist es Brainpool. Gleiches gilt für die Zertifikate
-> des Kartenterminals: Die kommen von der gSMC-KT und können nur Brainpool.**
-
-**Das ist der Punkt, an dem die Frage sich erledigt.** Die Praxisaussage deckt
-sich mit der Spezifikation:
-
-| Beleg | Quelle |
-|---|---|
-| „Die Chipkarten der TI verwenden für ihre ECC-EE-Schlüssel **alle** die Kurvenparameter `brainpoolP256r1`. Dies ist in den **Objektsystem-Spezifikationen fixiert**." | `[gemSpec_Krypt] V2.30.0` |
-| Die Identität des Konnektors gegenüber Clientsystem und Kartenterminal beruht auf Zertifikaten der **gSMC-K** (`C.AK.AUT`, `C.SAK.AUT`). | `[gemSpec_Kon] V5.25.0` |
-| Die Kartenterminal-Identität beruht auf `C.SMKT.AUT`, bereitgestellt auf der **gSMC-KT**. | `[gemSpec_KT] V3.17.1`, `TIP1-A_3227` |
-
-Daraus folgt eine Unterscheidung, die vorher unscharf war:
-
-| Teil des TLS-Handshakes | Kurve | Konfigurierbar? |
-|---|---|---|
-| **Schlüsselaustausch** (ECDHE) | NIST oder Brainpool | **ja**, am Konnektor umstellbar |
-| **Zertifikat und Signaturprüfung** (ECDSA) | **Brainpool, zwingend** | **nein** — die Kurve steckt im Objektsystem der Chipkarte |
-
-Wer also nur den Schlüsselaustausch auf NIST stellt, hat nichts gewonnen: Die
-Gegenstelle weist sich weiterhin mit einem Brainpool-Zertifikat aus, und unsere
-Seite muss dessen Signatur prüfen können. Eine Bibliothek, die
-`brainpoolP256r1`-Schlüssel nicht einmal einlesen kann, scheitert bereits daran —
-unabhängig von jeder Cipher-Suite-Konfiguration.
-
-**Brainpool ist damit eine harte MUSS-Anforderung auf beiden Strecken** — zum
-Konnektor und zum Kartenterminal. Die formale SOLL-Einstufung in
-`[gemSpec_Krypt]` betrifft den Schlüsselaustausch, nicht die Zertifikatswelt der
-Chipkarten.
-
-### Und die Managementschnittstelle des Terminals? — Drei Fälle, alle zu beherrschen
-
-Vermutung des POs vom 06.08.2026, ausdrücklich als unsicher gekennzeichnet:
-> Ich vermute, dass die Kartenterminals auch die Zertifikate der gSMC-KT für ihre
-> Webadmin-Schnittstelle nutzen, weiß es aber nicht sicher.
-
-**Geprüft — die Vermutung ist eine von drei zulässigen Möglichkeiten.**
-`[gemSpec_KT] A_24102` schreibt abschließend vor, woher das TLS-Schlüsselmaterial
-einer netzwerkbasierten Managementschnittstelle stammen darf:
-
-| # | Quelle | Kurve | Prüfbarkeit gegen eine PKI |
-|---|---|---|---|
-| 1 | privater Schlüssel und Zertifikat eines **SM-KT** (gSMC-KT) | **Brainpool** | ja, TI-PKI |
-| 2 | mit der **Firmware eingebrachter** Schlüssel, Zertifikat des **Herstellers** | offen | nur gegen die Hersteller-PKI |
-| 3 | vom Terminal **selbst erzeugter** Schlüssel, **selbstsigniertes** Zertifikat | offen | **nein** |
-
-Weitere Mechanismen sind unzulässig. Welcher Fall vorliegt, ist damit
-**herstellerabhängig und am Gerät zu ermitteln** — die Vermutung ist weder
-bestätigt noch widerlegt.
-
-**Folgen für uns:**
-
-- **Fall 1 bestätigt die Brainpool-Pflicht ein zweites Mal**, nun auch auf der
-  Strecke, über die wir die PIN liefern.
-- **Fall 3 ist der Grund, warum `NFA-SIC-020` die geräteweise Ausnahme von der
-  Zertifikatsprüfung braucht.** Gegen ein selbstsigniertes Zertifikat gibt es
-  keine Kette zu prüfen. Richtig ist dann, den Fingerabdruck bei der Ersterfassung
-  festzuhalten und bei jedem Verbindungsaufbau zu vergleichen — **nicht**, die
-  Prüfung abzuschalten. Ein unbemerkter Zertifikatswechsel muss ein Alarm sein.
-  Die Anforderung ist entsprechend zu präzisieren.
-- **Ermitteln statt annehmen:** Welcher Fall je Modell vorliegt, gehört in die
-  Bestandsaufnahme am Testaufbau und in die Gerätematrix (`NFA-QS-030`).
-
-### Nebenbefund mit erheblichem Sicherheitswert
-
-`[gemSpec_KT] A_24065`, Hinweis 2:
-> Im Rahmen eines TLS-Handshakes für die netzwerkbasierte Managementschnittstelle
-> ist es möglich, mittels beidseitiger Authentisierung die notwendige
-> Rollenauthentisierung (für die Rolle Administrator oder SMC-B-Nutzer) zu
-> erfüllen. In diesem Fall wäre keine zusätzliche Rollenauthentisierung (wie
-> beispielsweise Username & Passwort) erforderlich.
-
-**Das kann ein ganzes Geheimnis einsparen.** Authentisiert sich der Standort-Agent
-per TLS-Client-Zertifikat als `SMC-B_Nutzer`, muss er **kein
-Terminal-Administrationskennwort vorhalten** — eines der beiden Geheimnisse aus
-dem Architekturkonzept entfiele ersatzlos. Das ist deutlich mehr wert als
-Bequemlichkeit: Was nicht gespeichert wird, kann nicht gestohlen werden.
-
-Ob die Geräte des Testaufbaus das unterstützen, ist herstellerabhängig und zu
-messen. Ist es möglich, sollte es der **Vorzugsweg** werden, mit Benutzername und
-Kennwort als Rückfallweg. Eine entsprechende Anforderung ist zu ergänzen.
-
-### Konsequenz
-
-**Der Go-Vorschlag ist in dieser Form nicht haltbar.** Das war eine Lücke in
-meiner Analyse: Ich habe SOAP als Kernfrage identifiziert und die
-TLS-Kurvenunterstützung nicht geprüft. Sie ist die härtere Randbedingung, weil
-sie sich nicht durch Eigenarbeit auflösen lässt — eine TLS-Implementierung
-schreibt man nicht selbst.
-
-Drei gangbare Wege:
-
-**Weg 1 — Java oder Kotlin mit BouncyCastle.** Der von der gematik dokumentierte
-Weg. Nachteil: Speicherbedarf gegenüber der 2-GB-Grenze für Praxishardware
-(NFA-LEI-030); zu prüfen wäre, ob ein vorab übersetztes Programmabbild das löst.
-Zusätzlich sind die BouncyCastle-Probleme mit TLS 1.3 zu bewerten.
-
-**Weg 2 — eine OpenSSL-basierte Plattform.** Brainpool kommt dann von OpenSSL
-statt aus der Sprache. Voraussetzung: OpenSSL 3.2 oder neuer im Image, was wir
-kontrollieren, da wir das Image bauen.
-
-**Weg 3 — Go behalten, TLS für die Konnektor-Strecke über einen
-OpenSSL-basierten Vermittler.** Bewahrt alle Go-Vorteile, fügt aber eine
-Komponente **an der sicherheitskritischsten Stelle** hinzu und macht das Argument
-„ein einziges statisches Programm" zunichte. Nur zu erwägen, wenn Brainpool
-ausschließlich auf einer klar abgegrenzten Strecke auftritt.
-
-### Nächster Schritt: messen, nicht abwägen
-
-Die Testumgebung steht. Die Frage ist damit in Minuten beantwortbar statt in
-Stunden diskutierbar:
-
-1. **Welche Kurven und Cipher-Suites bietet der KoCo-Konnektor tatsächlich an?**
-   Ein Verbindungsaufbau mit einem Standardwerkzeug gegen den Konnektor zeigt die
-   angebotene Kurvenliste und die Konfiguration von `TlsKeyCrypt/Algorithm`.
-2. **Dasselbe für die Managementschnittstelle der Kartenterminals.**
-3. **Lässt sich der KoCo-Konnektor auf `ECC-NIST` konfigurieren** — und ist das in
-   Kundeninstallationen realistisch, oder muss mit `ECC-BRAINPOOL` gerechnet
-   werden?
-
-Erst danach ist entscheidbar, ob Brainpool auf **allen** Strecken, auf **einer**
-oder auf **keiner** gebraucht wird. Davon hängt ab, ob Weg 1, 2 oder 3 richtig
-ist. Eine Sprachfestlegung vor dieser Messung wäre genau das Raten, das in diesem
-Projekt ausgeschlossen ist.
-
-**Unberührt bleiben:** Oberfläche vom Server, Datenhaltung, Agentenprotokoll,
-Bauumgebung, Kapselung von Terminal- und Konnektor-Anbindung, der selbst
-geschriebene SOAP-Client. Diese Festlegungen sind sprachunabhängig und behalten
-ihre Begründung.
-
----
-
-## Externe Vorgaben
-
-Keine. Der PO hat am 06.08.2026 festgelegt: **Die Entwicklung schlägt vor, der
-Product Owner gibt nach Prüfung frei.** Es bestehen keine Bindungen an einen
-Dienstleister, eine bestehende Systemlandschaft oder vorhandene Kenntnisstände.
-
-Damit ist die Wahl ausschließlich fachlich zu begründen — was oben geschieht.
-Die Verantwortung für die Tragfähigkeit über die Lebensdauer des Produkts liegt
-bei der Entwicklung.
+## Offene Punkte
+
+1. **.NET und Node.js** wurden nicht abschließend gemessen. Das ist nach der
+   Beweislage nicht mehr entscheidungsrelevant und wird nicht nachgeholt.
+2. **Java oder Kotlin?** Der Vorschlag lautet **Java**, weil die Expertise dort
+   benannt ist. Kotlin wäre technisch gleichwertig und auf derselben Laufzeit —
+   die Entscheidung kann das Team treffen, sie berührt diese Architektur nicht.
+3. **Speichermessung** gegen `NFA-LEI-030`, sobald ein lauffähiges Grundgerüst
+   existiert.
