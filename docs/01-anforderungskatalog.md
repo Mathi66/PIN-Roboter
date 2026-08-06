@@ -1,7 +1,7 @@
 # Anforderungskatalog PIN-Roboter
 
 - **Stand:** 06.08.2026
-- **Status:** Entwurf zur Abnahme durch den Product Owner
+- **Status:** **Abgenommen** durch den Product Owner am 06.08.2026
 
 ---
 
@@ -26,8 +26,13 @@ Anforderung, bleibt sie mit dem Vermerk *entfallen* stehen.
 ### Herkunft
 `PO` = Vorgabe des Product Owners · `ADR-n` = Architekturentscheidung ·
 `gemSpec` = zwingend aus der gematik-Spezifikation, mit Anforderungs-ID ·
-**`Vorschlag`** = von der Entwicklung ergänzt, **Abnahme durch den PO
-ausstehend**
+`PO ✓ (freigegeben 06.08.2026)` = von der Entwicklung vorgeschlagen und vom
+Product Owner abgenommen
+
+> **Alle Anforderungen dieses Katalogs sind abgenommen.** Die 13 ursprünglich als
+> Vorschlag der Entwicklung gekennzeichneten Anforderungen wurden am 06.08.2026
+> freigegeben. Neue Vorschläge erhalten wieder die Kennzeichnung `Vorschlag` und
+> gelten erst nach ausdrücklicher Freigabe.
 
 ### Akzeptanzkriterien
 Jede Anforderung trägt Kriterien, die **beobachtbar oder messbar** sind. Wo ein
@@ -71,7 +76,7 @@ Konnektor und Gerätegruppe sowie Administrationszugang erfasst.
 - Administrationszugangsdaten sind nach dem Speichern nicht mehr auslesbar.
 - Ein Terminal ist genau einem Mandanten und genau einer Gerätegruppe zugeordnet.
 
-### FA-GER-030 — Kartenterminals automatisch ermitteln · SOLL · V1 · Vorschlag
+### FA-GER-030 — Kartenterminals automatisch ermitteln · SOLL · V1 · PO ✓ (freigegeben 06.08.2026)
 Über den Konnektor (`GetCardTerminals`) werden vorhandene Terminals ermittelt
 und zur Übernahme angeboten.
 
@@ -162,7 +167,7 @@ Der PIN-Status jeder verwalteten SMC-B wird zyklisch über die Konnektor-Operati
   **keinen** Protokolleintrag, sondern aktualisiert nur den Zeitstempel
   „zuletzt geprüft" (ADR-0005).
 
-### FA-UEB-020 — Erreichbarkeit überwachen · MUSS · V1 · Vorschlag
+### FA-UEB-020 — Erreichbarkeit überwachen · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 Erreichbarkeit von Konnektoren/HSK, Terminals und Standort-Agenten wird
 überwacht.
 
@@ -262,7 +267,7 @@ Das System darf eine SMC-B unter keinen Umständen selbst sperren.
 - Bei `PinStatus = BLOCKED` erfolgt kein Versuch; es wird alarmiert mit dem
   Hinweis, dass nur eine Entsperrung per PUK hilft.
 
-### FA-PIN-040 — Nicht behebbare Zustände melden · MUSS · V1 · Vorschlag
+### FA-PIN-040 — Nicht behebbare Zustände melden · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 Zustände, die das System nicht selbst auflösen kann, werden als Handlungsbedarf
 ausgewiesen.
 
@@ -333,7 +338,7 @@ Der Rollout wird ausschließlich innerhalb freigegebener Fenster ausgeführt.
 - Nicht abgearbeitete Geräte verbleiben in der Warteschlange und werden im
   nächsten freigegebenen Fenster fortgesetzt.
 
-### FA-FW-040 — Kanarienvogel-Prinzip · MUSS · V2 · Vorschlag
+### FA-FW-040 — Kanarienvogel-Prinzip · MUSS · V2 · PO ✓ (freigegeben 06.08.2026)
 Das erste Gerät einer Gruppe wird einzeln aktualisiert und vollständig geprüft.
 
 *Akzeptanz:*
@@ -574,7 +579,7 @@ Zusammengehörige Ereignisse werden als ein Vorgang dargestellt.
 
 ## A.8 Alarmierung (FA-ALA)
 
-### FA-ALA-010 — Alarmzustände · MUSS · V1 · Vorschlag
+### FA-ALA-010 — Alarmzustände · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Alarm entsteht mindestens bei: fehlgeschlagener Verifikation, angehaltener
   Automatik, gesperrter Karte, nicht erreichbarem Konnektor/Terminal/Agent,
@@ -585,7 +590,7 @@ Zusammengehörige Ereignisse werden als ein Vorgang dargestellt.
 - Alarme sind quittierbar; Quittierung wird protokolliert.
 - Ein behobener Zustand schließt den Alarm automatisch.
 
-### FA-ALA-020 — Benachrichtigung per E-Mail · SOLL · V1 · Vorschlag
+### FA-ALA-020 — Benachrichtigung per E-Mail · SOLL · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - SMTP konfigurierbar, mit Testversand aus der Oberfläche.
 - Empfänger und Schweregrad-Schwelle je Einrichtung einstellbar.
@@ -634,7 +639,7 @@ bestätigungspflichtig.
 - Funktioniert nachgewiesen unter Linux, Windows und macOS.
 - Datenbankmigrationen laufen beim Start automatisch und idempotent.
 
-### FA-INS-020 — Einrichtungsassistent · MUSS · V1 · Vorschlag
+### FA-INS-020 — Einrichtungsassistent · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Nach der Erstinstallation führt ein Assistent durch: Administrator anlegen mit
   TOTP, Betriebsart wählen, Speicherbudgets setzen, ersten Konnektor und erstes
@@ -719,7 +724,7 @@ bestätigungspflichtig.
 - *Nachweis:* Automatisierter Test durchsucht Datenbank, Protokolle, Sicherungen
   und Schnittstellenantworten nach hinterlegten Testgeheimnissen — kein Treffer.
 
-### NFA-SIC-020 — Transportverschlüsselung · MUSS · V1 · Vorschlag
+### NFA-SIC-020 — Transportverschlüsselung · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Alle Verbindungen — Browser zur Zentrale, Agent zur Zentrale, Agent zu
   Konnektor und Terminal — sind verschlüsselt.
@@ -744,7 +749,7 @@ bestätigungspflichtig.
 - Ein Stücklistennachweis (SBOM) wird je Image erzeugt und veröffentlicht.
 - Keine `:latest`-Tags im Betrieb; Auslieferung mit festgeschriebenem Digest.
 
-### NFA-SIC-050 — Sitzungen · MUSS · V1 · Vorschlag
+### NFA-SIC-050 — Sitzungen · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Sitzungen laufen nach konfigurierbarer Untätigkeit ab (Vorgabe 30 Minuten).
 - Abmelden beendet die Sitzung serverseitig.
@@ -765,7 +770,7 @@ bestätigungspflichtig.
 - Personenbezogen sind ausschließlich Benutzerkonten und Protokolleinträge über
   Benutzerhandlungen.
 
-### NFA-DAT-020 — Auskunft und Löschung · MUSS · V1 · Vorschlag
+### NFA-DAT-020 — Auskunft und Löschung · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Zu einem Benutzerkonto lassen sich alle gespeicherten personenbezogenen Daten
   ausgeben.
@@ -806,7 +811,7 @@ bestätigungspflichtig.
   Arbeitsspeicher** und startet auf handelsüblicher Praxishardware in **< 60 s**.
 - Der Ruhebedarf an Rechenleistung liegt im Mittel unter 5 % eines Kerns.
 
-### NFA-LEI-040 — Skalierungsverhalten · SOLL · V1 · Vorschlag
+### NFA-LEI-040 — Skalierungsverhalten · SOLL · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Der Ressourcenbedarf wächst höchstens linear mit der Gerätezahl.
 - Messreihe für 3, 100, 1.000 und 5.000 Terminals liegt dokumentiert vor.
@@ -815,7 +820,7 @@ bestätigungspflichtig.
 
 ## B.4 Verfügbarkeit und Robustheit (NFA-VER)
 
-### NFA-VER-010 — Fehlertoleranz gegenüber Fremdsystemen · MUSS · V1 · Vorschlag
+### NFA-VER-010 — Fehlertoleranz gegenüber Fremdsystemen · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Ausfall oder Zeitüberschreitung von Konnektor oder Terminal führt **nicht** zum
   Ausfall der Anwendung.
@@ -823,7 +828,7 @@ bestätigungspflichtig.
   PIN-Verifikationen**, dort gilt FA-PIN-030 (kein zweiter Versuch).
 - Nach Rückkehr eines Fremdsystems nimmt die Überwachung selbsttätig wieder auf.
 
-### NFA-VER-020 — Neustartfestigkeit · MUSS · V1 · Vorschlag
+### NFA-VER-020 — Neustartfestigkeit · MUSS · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - Nach Neustart des Stacks ist der Betrieb ohne manuellen Eingriff wieder
   aufgenommen.
@@ -983,9 +988,9 @@ Ausdrücklich **nicht** Gegenstand des Produkts:
 
 | # | Punkt | Betrifft |
 |---|---|---|
-| 1 | Abnahme aller mit **`Vorschlag`** gekennzeichneten Anforderungen | gesamter Katalog |
+| ~~1~~ | ~~Abnahme der vorgeschlagenen Anforderungen~~ — **erledigt 06.08.2026** | — |
 | 2 | Datenschutzrechtliche Bewertung der Aufbewahrungsfristen | FA-PRO-080, NFA-DAT-020 |
-| 3 | Technologie-Stack — Entscheidung steht aus (ADR-0006) | Umsetzung |
+| 3 | **Technologie-Stack** — ADR-0006 in Überarbeitung: Brainpool-TLS ist zwingend, damit ist Go ausgeschlossen | Umsetzung |
 | 4 | Obergrenze der Parallelität beim Rollout — nach Messung festzulegen | FA-FW-050 |
 | 5 | Referenzhardware für die Leistungsmessungen | NFA-LEI |
 | 6 | Bestandsaufnahme der Testumgebung (Modelle, Firmware, PEviM, VPN) | NFA-QS-020, NFA-QS-030 |

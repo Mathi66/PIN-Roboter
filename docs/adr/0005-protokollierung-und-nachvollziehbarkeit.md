@@ -1,6 +1,6 @@
 # ADR-0005: Protokollierung und Nachvollziehbarkeit
 
-- **Status:** Vorschlag — Bestätigung des PO erbeten
+- **Status:** **Angenommen** (Product Owner, 06.08.2026)
 - **Datum:** 06.08.2026
 - **Betrifft:** UX, Datenmodell, Datenschutz, Betrieb
 

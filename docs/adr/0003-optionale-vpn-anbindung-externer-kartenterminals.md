@@ -1,6 +1,6 @@
 # ADR-0003: Optionale VPN-Anbindung externer Kartenterminals
 
-- **Status:** Vorschlag — als **optionale Ausbaustufe** vorgemerkt, nicht Teil der ersten Version
+- **Status:** **Angenommen** (Product Owner, 06.08.2026) — als **optionale Ausbaustufe** vorgemerkt, nicht Teil der ersten Version
 - **Datum:** 06.08.2026
 - **Betrifft:** Architektur, Netzwerk, Produktstrategie, Scope
 
