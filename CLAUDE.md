@@ -153,7 +153,9 @@ Dokumentation entsteht **mit** der Umsetzung, nicht danach. Ablage im Repository
 
 ```
 docs/
-  01-pflichtenheft.md        Fachliche Anforderungen, Abnahmekriterien
+  00-referenzen/             Quellenverzeichnis und Fachanalysen
+  01-anforderungskatalog.md  Funktionale und nichtfunktionale Anforderungen
+                             mit testbaren Akzeptanzkriterien
   02-architektur.md          Systemüberblick, Komponenten, Datenflüsse
   03-umsetzung/              Umsetzungsbeschreibungen je Feature
   04-betrieb.md              Installation, Konfiguration, Backup, Update
