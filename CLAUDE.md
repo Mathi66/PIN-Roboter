@@ -98,6 +98,20 @@ und ohne Schulung bedienbar ist.
 6. **Deutsch als Oberflächensprache**, medizinisch/organisatorisch korrekte Terminologie.
 7. **Performance als UX-Merkmal** — spürbare Interaktion < 100 ms, Seitenaufbau < 1 s
    im LAN. Zielwerte werden gemessen, nicht geschätzt.
+8. **Nachvollziehbarkeit** — der Roboter handelt selbsttätig; jede seiner
+   Handlungen muss im Nachhinein erklärbar sein. Vier Sichten: Lage-Übersicht,
+   Geräte-Zeitstrahl, Vorgangsansicht, filterbares Protokoll mit Excel-Export.
+   Fehlermeldungen benennen **was zu tun ist**, nicht nur was schiefging;
+   technische Codes wie `4078` werden übersetzt und bleiben nur aufklappbar
+   sichtbar. → [ADR-0005](docs/adr/0005-protokollierung-und-nachvollziehbarkeit.md)
+
+> **Protokoll-Grundregel:** Protokolliert werden **Zustandsänderungen und
+> Handlungen, nicht Abfragen**. Bei 5.000 Terminals im 60-Sekunden-Takt entstehen
+> sonst rund 7,2 Millionen Einträge pro Tag, und das Protokoll wird unbrauchbar.
+> Getrennt geführt werden **Fachprotokoll** (nicht änderbar, in der Oberfläche
+> sichtbar, exportierbar) und **technisches Protokoll** (Diagnose, rotierend).
+> Niemals im Protokoll: PINs, Terminal-Kennwörter, Zugangsdaten, TOTP-Geheimnisse
+> — zentral erzwungen, nicht durch Sorgfalt an jeder Einzelstelle.
 
 ---
 
