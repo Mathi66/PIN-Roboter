@@ -309,19 +309,42 @@ Einsatzszenarien: Einzelpraxis, MVZ, Klinik.
 
 ### Testumgebung (PO, 06.08.2026)
 
-**Steht bereit.** Damit gilt ohne Ausnahme: Jede Aussage über das Verhalten
-gegenüber Konnektor und Kartenterminal wird **am Testaufbau verifiziert**, bevor
-sie als erledigt gemeldet wird. Vermutungen über das Verhalten realer Geräte sind
-ab jetzt nicht mehr zulässig — sie sind messbar.
+**Steht vollständig bereit** (Konnektor/HSK, Kartenterminals, Test-SMC-B).
 
-Noch zu erfassen: konkrete Ausstattung (Konnektor-/HSK-Modell und Version,
-Terminal-Modelle und Firmware, ob PEviM dort unterstützt und aktivierbar ist,
-Test-SMC-B mit bekannter PIN).
+Damit gilt ohne Ausnahme: Jede Aussage über das Verhalten gegenüber Konnektor und
+Kartenterminal wird **am Testaufbau verifiziert**, bevor sie als erledigt gemeldet
+wird. Vermutungen über das Verhalten realer Geräte sind nicht mehr zulässig —
+sie sind messbar.
+
+**Erste Aufgabe am Testaufbau:** Bestandsaufnahme erstellen — Terminal-Modelle,
+Firmware-Stände, PEviM-Unterstützung und -Aktivierbarkeit, VPN-Verfahren
+(IPsec/WireGuard), Konnektor-/HSK-Modell und -Version. Diese Aufnahme ist die
+Grundlage mehrerer offener Architekturfragen und kostet wenig Aufwand.
+
+### Weitere Anbindungs- und Verwaltungsfunktionen
+
+- **VPN-Anbindung externer Kartenterminals** — optionale Ausbaustufe, **nicht**
+  erste Version. Primär gilt: Terminals sind direkt über IP erreichbar.
+  Kartenterminals bringen laut PO in aktueller Firmware herstellerseitig einen
+  VPN-Client mit (IPsec, teils WireGuard); die gematik spezifiziert das nicht.
+  → [ADR-0003](docs/adr/0003-optionale-vpn-anbindung-externer-kartenterminals.md)
+- **Firmware-Verwaltung** in drei Stufen: *kennen* und *respektieren* gehören in
+  die erste Version, *einspielen* ist spätere Ausbaustufe.
+  → [ADR-0004](docs/adr/0004-firmware-verwaltung-der-kartenterminals.md)
+
+> **Harte Anforderung an die Kernfunktion, aus `[gemSpec_Kon] 4.3.10` abgeleitet:**
+> Der Konnektor aktualisiert Kartenterminals über seinen KSR-Client; der
+> Kartenterminaldienst kennt dafür den Zustand **„aktualisierend"**
+> (Ereignisse `KSR/UPDATE/START` … `KSR/UPDATE/END`, `Target=KT`).
+> Der PIN-Roboter **muss** diesen Zustand erkennen und in dieser Zeit **keine
+> PIN-Verifikation versuchen** — sonst belastet er im ungünstigen Fall den
+> Fehlversuchszähler der SMC-B.
 
 ### Noch offen (PO)
 
-1. **Betriebsmodell:** eine Installation je Einrichtung oder eine zentrale
-   Instanz je Serviceorganisation? Siehe Abschnitt Mandantenfähigkeit.
+1. **Firmware-Bezugsweg** für die spätere Ausbaustufe: Bestehen Herstellerkontakte,
+   über die zugelassene Firmware legal bezogen und weitergegeben werden darf?
+   Siehe ADR-0004.
 
 ### Sicherheitsleitplanke (nicht verhandelbar)
 

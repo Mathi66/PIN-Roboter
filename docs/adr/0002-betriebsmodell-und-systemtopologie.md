@@ -1,8 +1,19 @@
 # ADR-0002: Betriebsmodell und Systemtopologie
 
-- **Status:** Vorschlag — technische Ausgestaltung, Bestätigung des PO erbeten
+- **Status:** **Angenommen** (Product Owner, 06.08.2026)
 - **Datum:** 06.08.2026
 - **Betrifft:** Architektur, Netzwerk, Sicherheit, Datenschutz
+
+## Entscheidung
+
+1. **Beide Betriebsarten mit derselben Software**, umgesetzt über den Schnitt in
+   **Zentrale** und **Standort-Agent** entlang der Netzgrenze.
+2. **Die SMC-B-PIN liegt ausschließlich beim Standort-Agenten.** Die Zentrale
+   kennt sie nicht — sie steuert, protokolliert und zeigt an. Der PIN-Wert
+   verlässt das Netz der Einrichtung in keiner Betriebsart.
+3. Bestehende Netzverbindungen zu Kunden gibt es nicht; die Anbindung externer
+   Standorte wird gesondert behandelt in
+   [ADR-0003](0003-optionale-vpn-anbindung-externer-kartenterminals.md).
 
 ---
 
