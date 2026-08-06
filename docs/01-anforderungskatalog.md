@@ -805,11 +805,50 @@ bestätigungspflichtig.
 - Antwortet ein Konnektor langsam, verzögert das **nicht** die Prüfung anderer
   Konnektoren.
 
-### NFA-LEI-030 — Ressourcenbedarf klein · MUSS · V1 · PO
+### NFA-LEI-030 — Ressourcenbedarf am unteren Ende der Skala · MUSS · V1 · PO
+
+**Referenzhardware (PO, 07.08.2026):** eine **Linux-Appliance** der Klasse
+**Raspberry Pi 5** oder **NXP i.MX8 QuadMax mit 8 GB RAM** — beide `arm64`.
+Ergänzend **Windows und macOS mit Docker Desktop**.
+
+> Der Konnektor wird hier ausdrücklich nur als **Vergleichsmaßstab für die
+> Hardware-Klasse** genannt. Die Software läuft **nicht auf dem Konnektor**,
+> sondern auf einer eigenen Appliance.
+
 *Akzeptanz:*
-- Bei 3 Terminals und 5 Benutzern läuft der vollständige Stack in **≤ 2 GB
-  Arbeitsspeicher** und startet auf handelsüblicher Praxishardware in **< 60 s**.
-- Der Ruhebedarf an Rechenleistung liegt im Mittel unter 5 % eines Kerns.
+- Der **vollständige Stack** (Zentrale, Agent, Datenbank) läuft in der
+  Einzelpraxis-Konfiguration — 3 Terminals, 5 Benutzer — mit **≤ 3 GB
+  Arbeitsspeicher** im Dauerbetrieb.
+- Der **Standort-Agent allein** benötigt **≤ 512 MB**. Er ist der Baustein, der
+  auf fremder oder besonders schwacher Hardware mitlaufen können muss.
+- Der Stack startet auf der Referenzhardware in **< 60 Sekunden** bis zur
+  Bedienbarkeit.
+- Der Ruhebedarf an Rechenleistung liegt im Mittel unter **5 % eines Kerns**.
+- **Nachweis auf `arm64`**, nicht nur auf Entwicklungshardware.
+
+### NFA-LEI-035 — Plattenplatz · MUSS · V1 · Vorschlag
+Der Bedarf an Massenspeicher ist vorhersagbar und begrenzt.
+
+*Akzeptanz:*
+- Einzelpraxis: **≤ 8 GB** insgesamt, einschließlich Images, Rollback-Stand,
+  Betriebsdaten und Protokollbudget.
+- Klinik / Serviceorganisation: **≤ 60 GB** bei Vorgabe-Protokollbudget;
+  darüber hinausgehender Bedarf entsteht nur durch bewusst erhöhte Budgets oder
+  die Firmware-Ablage.
+- Der Bedarf wird im Einrichtungsassistenten **vor** der Installation angezeigt.
+- Das Protokollbudget begrenzt den einzigen unbegrenzt wachsenden Anteil
+  (FA-PRO-070).
+
+### NFA-LEI-037 — Docker Desktop auf Windows und macOS · MUSS · V1 · PO
+Unter Windows und macOS läuft der Stack in der virtuellen Maschine von Docker
+Desktop, deren Speicher gesondert zugeteilt wird.
+
+*Akzeptanz:*
+- Die erforderliche Zuteilung ist in der Betriebsdokumentation benannt und wird
+  bei der Einrichtung geprüft.
+- Ist die Zuteilung zu gering, meldet das System das **verständlich vor dem
+  Start** — nicht durch einen abbrechenden Container.
+- Der Nachweis erfolgt auf **beiden** Plattformen, nicht nur auf einer.
 
 ### NFA-LEI-040 — Skalierungsverhalten · SOLL · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
