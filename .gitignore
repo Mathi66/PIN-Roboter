@@ -48,6 +48,12 @@ venv/
 __pycache__/
 *.pyc
 
+# --- Referenzdokumente Dritter --------------------------------------
+# Heruntergeladene gematik-Spezifikationen (Fremdurheberschaft, mehrere MB).
+# Versioniert wird stattdessen docs/00-referenzen/quellen.md mit URL und
+# Versionsstand — die Dokumente sind jederzeit erneut beziehbar.
+docs/00-referenzen/spezifikationen/
+
 # --- Betriebssystem ------------------------------------------------
 .DS_Store
 .DS_Store?

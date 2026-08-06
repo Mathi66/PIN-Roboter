@@ -163,23 +163,83 @@ Ein Feature ist fertig, wenn **alle** Punkte erfüllt sind:
 
 ---
 
-## 8. Offene Punkte (vom PO zu klären)
+## 8. Fachlicher Auftrag — geklärt am 06.08.2026
 
-Diese Punkte sind für die Architekturdefinition erforderlich und werden bewusst
-**nicht geraten**:
+Der **PIN-Roboter überwacht eHealth-Kartenterminals und stellt den verifizierten
+Zustand der eingelegten SMC-B automatisiert wieder her**, indem er die PIN über
+die Managementschnittstelle des Terminals übergibt.
 
-1. **Fachliche Aufgabe:** Was genau automatisiert der PIN-Roboter? Welcher
-   Arbeitsablauf in der Praxis wird ersetzt oder unterstützt?
-2. **Datenumfang:** Werden Patientendaten / Gesundheitsdaten verarbeitet?
-   Falls ja: welche Kategorien?
-3. **Fremdsysteme:** Anbindung an PVS/KIS, Kartenterminals, TI, andere Systeme?
-   Welche Schnittstellen/Protokolle?
-4. **Nutzerzahl und Rollen:** Wie viele gleichzeitige Nutzer, welche Rollen und
-   Berechtigungen?
-5. **Betriebsumgebung:** Welche Hardware/OS beim Kunden, Internetzugang vorhanden,
-   wer installiert und aktualisiert?
-6. **Regulatorik:** Ist eine Einstufung als Medizinprodukt (MDR) relevant, oder
-   handelt es sich um reine Organisationssoftware?
+Das zugrunde liegende Verfahren ist von der gematik spezifiziert:
+**PEviM — „PIN-Eingabe via Managementschnittstelle"**, `[gemSpec_KT] 2.4.9`.
+Es ist ausdrücklich **nur für den Kartentyp SMC-B** zulässig (`A_24080`).
 
-Solange diese Punkte offen sind, wird kein Stack und keine Datenmodellierung
-festgelegt.
+Vollständige Analyse mit allen Anforderungs-IDs:
+[docs/00-referenzen/analyse-ti-kartenterminals.md](docs/00-referenzen/analyse-ti-kartenterminals.md)
+
+Festlegungen daraus:
+- **Keine Patienten-/Gesundheitsdaten** werden verarbeitet (Vorgabe PO). Der
+  Schutzbedarf ergibt sich stattdessen aus der **Verarbeitung der SMC-B-PIN**.
+- Anzubindende Fremdsysteme: **Kartenterminal**, **Konnektor**,
+  **Highspeed-Konnektor (HSK)**.
+- Kartentypen eGK und HBA sind **außerhalb des Scope** und technisch ausgeschlossen.
+
+### Nutzer, Rollen und Anmeldung (PO, 06.08.2026)
+
+| Rolle | Obergrenze | Berechtigung |
+|---|---|---|
+| **Administrator** | max. **4** | Benutzerverwaltung |
+| **Benutzer** | max. **25** | Verwaltung der Kartenterminals |
+
+- Anmeldung am Webfrontend: **Benutzername + Passwort + TOTP** (zweiter Faktor,
+  zeitbasiertes Einmalkennwort). Verpflichtend, nicht abschaltbar.
+- Daraus folgt ein **Onboarding-Prozess**: Ersteinrichtung des ersten
+  Administrators, Einladung weiterer Konten, TOTP-Einrichtung mit Prüfung,
+  Wiederherstellungsverfahren bei Verlust des zweiten Faktors.
+- *Annahme (zu bestätigen):* Die Obergrenzen werden im Produkt **hart
+  durchgesetzt**, nicht nur dokumentiert.
+
+### Betrieb und Auslieferung (PO, 06.08.2026)
+
+- **Zielplattformen:** Docker unter **Linux, Windows und macOS**.
+  → Konsequenz: keine Abhängigkeit von Linux-spezifischen Host-Eigenheiten;
+  Pfade, Volumes und Netzwerkzugriff müssen auf allen drei Plattformen
+  funktionieren. Das ist explizit zu testen, nicht anzunehmen.
+- **Registry:** **GHCR** (GitHub Container Registry).
+- **Update-Mechanismus:** **Watchtower** (automatische Container-Updates).
+- **Multi-Arch:** Images für `linux/amd64` und `linux/arm64` (Apple Silicon).
+
+> **Fachlicher Vorbehalt zu Watchtower — Entscheidung liegt beim PO.**
+> Watchtower ist bequem, bringt in einer Praxis-/Klinikumgebung aber zwei Risiken:
+> 1. **Unkontrollierte Updates:** Ein fehlerhaftes Image legt den TI-Zugang
+>    ohne Vorwarnung lahm. Gegenmaßnahme: nur stabile, geprüfte Tags ausrollen,
+>    kein `:latest`; Update-Zeitfenster außerhalb der Sprechzeiten.
+> 2. **Rechteausweitung:** Watchtower benötigt Zugriff auf den Docker-Socket —
+>    das entspricht Root-Rechten auf dem Host. Gegenmaßnahme: Socket-Proxy mit
+>    eingeschränkten Rechten statt direkter Socket-Einbindung; Watchtower nur
+>    auf die Container dieses Produkts beschränken.
+>
+> Diese Maßnahmen sind Bestandteil der Umsetzung, sofern der PO nicht widerspricht.
+
+### Regulatorik (PO, 06.08.2026)
+
+**Reine Organisationssoftware.** Keine Einstufung als Medizinprodukt, kein
+MDR-Verfahren. Der Schutzbedarf ergibt sich ausschließlich aus der Verarbeitung
+der SMC-B-PIN, nicht aus Patientendaten.
+
+### Noch offen (PO)
+
+1. **Mengengerüst:** Wie viele Standorte, Konnektoren, Terminals und SMC-B pro
+   Installation? (Praxis und Klinikverbund unterscheiden sich um Größenordnungen
+   — das bestimmt Datenmodell und Nebenläufigkeit.)
+2. **Testumgebung:** Stehen Testkonnektor, Testterminal und Test-SMC-B zur
+   Verfügung? Ohne Testaufbau ist keine belastbare Verifikation möglich — das ist
+   die wichtigste offene Frage für die Umsetzung.
+
+### Sicherheitsleitplanke (nicht verhandelbar)
+
+Der PIN-Roboter muss die SMC-B-PIN vorhalten. `A_24114` erlaubt das nur für
+Clients, deren Sicherheit die betreibende Organisation durchsetzen kann. Daraus
+folgen zwingend: keine Klartext-Persistenz, keine PIN in Logs/Backups/Metriken,
+TLS mit geprüften Zertifikaten, Rollentrennung, Audit-Log, **Auswertung von
+`LeftTries` vor jedem Versuch mit Abbruch statt Wiederholung** (sonst sperrt der
+Roboter die Karte) und ein wirksamer Not-Aus.
