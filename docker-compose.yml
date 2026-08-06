@@ -1,0 +1,64 @@
+# PIN-Roboter — Prototyp
+#
+# Ein Befehl genügt:   docker compose up --build
+# Oberfläche danach:   http://localhost:8090
+#
+# Der Simulator ersetzt Konnektor und Kartenterminals (ADR-0007). Er wird
+# NICHT ausgeliefert und ist hier nur enthalten, weil der Prototyp ohne echte
+# TI-Hardware lauffähig sein soll.
+
+services:
+
+  simulator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args: { BAUSTEIN: simulator }
+    container_name: pinroboter-simulator
+    ports:
+      - "8443:8443"   # Konnektor, SOAP über Brainpool-TLS
+      - "8444:8444"   # Kartenterminal-Management über Brainpool-TLS
+      - "8480:8480"   # Steuerung für Tests und Ausgabe des Vertrauensankers
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8480' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  zentrale:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args: { BAUSTEIN: zentrale }
+    container_name: pinroboter-zentrale
+    environment:
+      PORT: "8090"
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8090' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  agent:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args: { BAUSTEIN: agent }
+    container_name: pinroboter-agent
+    environment:
+      KONNEKTOR_URL: "https://simulator:8443/"
+      TERMINAL_URL:  "https://simulator:8444/"
+      ZENTRALE_URL:  "http://zentrale:8090/"
+      CA_URL:        "http://simulator:8480/ca.pem"
+      PRUEFINTERVALL_SEKUNDEN: "10"
+      MANDANT_ID: "Mandant1"
+      CLIENTSYSTEM_ID: "PIN-Roboter"
+      ARBEITSPLATZ_ID: "Arbeitsplatz1"
+      # Der Agent muss ≤ 512 MB bleiben (NFA-LEI-030) — er soll später auch auf
+      # schwacher oder fremder Hardware mitlaufen können.
+      JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
+    depends_on:
+      simulator: { condition: service_healthy }
+      zentrale:  { condition: service_healthy }

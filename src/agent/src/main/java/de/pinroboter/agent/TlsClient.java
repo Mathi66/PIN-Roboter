@@ -33,9 +33,16 @@ import java.time.Duration;
 public final class TlsClient {
 
     static {
+        // Java sperrt Brainpool-Kurven in seiner Standard-Sicherheitsrichtlinie:
+        // jdk.tls.disabledAlgorithms enthaelt "include jdk.disabled.namedCurves",
+        // und dort stehen die Brainpool-Kurven. Ohne diese Freischaltung meldet
+        // BouncyCastle "contained no usable NamedGroup values" und der Handshake
+        // scheitert - obwohl die Bibliothek die Kurven beherrscht.
+        //
+        // Gefunden erst beim Ausfuehren, nicht beim Lesen der Dokumentation.
         Security.addProvider(new BouncyCastleProvider());
         Security.addProvider(new BouncyCastleJsseProvider());
-        System.setProperty("jdk.tls.namedGroups", "brainpoolP256r1,brainpoolP384r1");
+        BrainpoolFreischaltung.kurvenlisteSetzen();   // nach der Provider-Registrierung
     }
 
     private TlsClient() {}
@@ -79,4 +86,5 @@ public final class TlsClient {
         });
         return p;
     }
+
 }

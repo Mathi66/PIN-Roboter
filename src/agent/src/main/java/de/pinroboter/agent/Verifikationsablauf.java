@@ -59,7 +59,7 @@ public class Verifikationsablauf {
                 return new Ergebnis(false, vorgang,
                         "Das Kartenterminal nimmt keine PIN über die Verwaltungsschnittstelle entgegen.",
                         anmeldung.hinweis() != null ? anmeldung.hinweis()
-                                : "Bitte prüfen, ob die Funktion „PIN-Eingabe via Managementschnittstelle" "
+                                : "Bitte prüfen, ob die Funktion \u201ePIN-Eingabe via Managementschnittstelle\u201c "
                                   + "am Gerät aktiviert ist. Die Aktivierung ist nur durch einen "
                                   + "Administrator direkt am Terminal möglich.",
                         false);
@@ -168,7 +168,7 @@ public class Verifikationsablauf {
         if (code == null) return text == null ? "Unbekannter Fehler" : text;
         return switch (code) {
             case "4078" -> "Der Konnektor lässt die PIN-Eingabe über dieses System nicht zu. "
-                    + "Am Kartenterminal ist die Funktion „PIN-Eingabe via Managementschnittstelle" "
+                    + "Am Kartenterminal ist die Funktion \u201ePIN-Eingabe via Managementschnittstelle\u201c "
                     + "vermutlich nicht aktiviert.";
             case "4047" -> "Das Kartenterminal hat nicht rechtzeitig geantwortet.";
             case "4209" -> "Dieser Kartentyp wird nicht unterstützt. Der PIN-Roboter arbeitet "

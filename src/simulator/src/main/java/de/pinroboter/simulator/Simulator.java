@@ -31,6 +31,7 @@ import java.util.concurrent.Executors;
 public class Simulator {
 
     public static void main(String[] args) throws Exception {
+        BrainpoolFreischaltung.anwenden();   // muss als Erstes laufen
         Zustand zustand = Zustand.standardaufbau();
 
         System.out.println("""

@@ -1,0 +1,7 @@
+/p/src/agent/src/main/java/de/pinroboter/agent/Agent.java
+/p/src/agent/src/main/java/de/pinroboter/agent/BrainpoolFreischaltung.java
+/p/src/agent/src/main/java/de/pinroboter/agent/KonnektorClient.java
+/p/src/agent/src/main/java/de/pinroboter/agent/Sicherungspruefung.java
+/p/src/agent/src/main/java/de/pinroboter/agent/TerminalClient.java
+/p/src/agent/src/main/java/de/pinroboter/agent/TlsClient.java
+/p/src/agent/src/main/java/de/pinroboter/agent/Verifikationsablauf.java

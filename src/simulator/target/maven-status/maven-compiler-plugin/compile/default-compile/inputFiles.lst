@@ -1,0 +1,9 @@
+/p/src/simulator/src/main/java/de/pinroboter/simulator/BrainpoolFreischaltung.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/BrainpoolZertifikate.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/KonnektorSoap.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/Simulator.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/SimulierteKarte.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/SimuliertesTerminal.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/TerminalVerwaltung.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/TlsAufbau.java
+/p/src/simulator/src/main/java/de/pinroboter/simulator/Zustand.java
