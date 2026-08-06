@@ -208,6 +208,131 @@ Anforderungen:
 
 ---
 
+## Speicherverwaltung: Wie viel Platz braucht das wirklich?
+
+Vorgabe des POs vom 06.08.2026:
+> Ich habe Angst, dass uns der Speicher platzt. Am besten wäre eine separate
+> Log-Partition, deren Größe beim Setup je nach Umgebung eingestellt wird. Das
+> Log fängt an zu rotieren, wenn 80 % der Partition voll sind.
+
+Die Sorge ist berechtigt und die Zielrichtung richtig. Zwei Dinge sind dabei zu
+trennen: **wie groß das Problem tatsächlich ist** und **wie die Begrenzung
+technisch durchgesetzt wird**.
+
+### Größenordnung — überschlagen, nicht geraten
+
+Ein Fachprotokoll-Eintrag belegt strukturiert und indiziert grob **500 Byte**.
+Entscheidend ist die Ereignisrate, und die hängt an der oben festgelegten
+Grundregel (nur Zustandsänderungen, keine Abfragen):
+
+| Szenario | Ereignisse/Tag | Speicher/Tag | Speicher/Jahr |
+|---|---|---|---|
+| Einzelpraxis, 3 Terminals | ~20 | 10 KB | ~4 MB |
+| Klinik, 5.000 Terminals, Normalbetrieb | ~25.000 | ~12 MB | **~4,5 GB** |
+| Klinik, Tag mit Flotten-Rollout | + ~40.000 | + ~20 MB | einmalig |
+| Klinik, Störungstag (Konnektor weg) | bis ~10-fach | ~120 MB | selten |
+
+> **Annahme, ausdrücklich als solche gekennzeichnet:** ~5 protokollwürdige
+> Ereignisse je Terminal und Tag im Normalbetrieb. Dieser Wert ist **am
+> Testaufbau und im Pilotbetrieb zu messen** und danach zu korrigieren. Die
+> Größenordnung — Gigabyte pro Jahr, nicht Terabyte — ist dabei belastbar, der
+> genaue Wert nicht.
+
+**Ergebnis:** Selbst die größte Ausbaustufe erzeugt im Normalbetrieb wenige
+Gigabyte pro Jahr. Das ist beherrschbar. Der eigentliche Speicherfresser ist
+nicht das Fachprotokoll, sondern das **technische Protokoll** bei Dauerstörungen
+— und genau dort ist eine harte Grenze am wichtigsten.
+
+Die Sorge ist also richtig, aber die Lösung muss nicht groß dimensioniert sein.
+Sie muss **zuverlässig greifen**.
+
+### Warum keine echte Partition
+
+Eine Partition anzulegen ist Sache des Host-Betriebssystems, nicht des
+Containers. Bei drei Zielplattformen (Linux, Windows, macOS) scheidet das als
+Grundmechanismus aus: Unter Docker Desktop liegt der Speicher in einer verwalteten
+virtuellen Maschine, auf die wir keinen Partitionszugriff haben. Ein Mechanismus,
+der nur unter Linux funktioniert, ist für dieses Produkt keiner.
+
+Hinzu kommt ein inhaltlicher Punkt: Wer den **freien Platz der Partition** misst,
+misst auch alles, was andere darauf ablegen. Das Protokoll würde dann rotieren,
+weil jemand anderes die Platte füllt — oder eben nicht rotieren, obwohl es selbst
+längst zu groß ist.
+
+### Umsetzung: drei Ebenen
+
+**Ebene 1 — Speicherbudget in der Anwendung (der Hauptmechanismus)**
+
+Beim Setup wird je Datenart ein **Speicherbudget in Gigabyte** eingestellt,
+passend zur Umgebung. Die Anwendung überwacht **ihre eigene Belegung** und
+handelt selbst:
+
+| Füllstand | Verhalten |
+|---|---|
+| **80 %** | Rotation beginnt: älteste Einträge werden gelöscht, damit der Füllstand unter 80 % bleibt. Hinweis in der Oberfläche. |
+| **90 %** | Warnung als Alarm, mit Empfehlung: Budget erhöhen oder Aufbewahrungsdauer verkürzen. |
+| **95 %** | Verschärfte Rotation. Die **Kernfunktionen laufen weiter** (siehe unten). |
+
+Das entspricht genau der Vorgabe des POs — nur bezogen auf ein eigenes Budget
+statt auf eine Partition, und damit auf allen drei Plattformen funktionsfähig.
+
+**Ebene 2 — getrennte Ablage**
+
+Protokolldaten liegen in einem **eigenen Volume**, getrennt von den Betriebsdaten
+(Geräte, Benutzer, Konfiguration). Damit reißt ein volllaufendes Protokoll die
+Betriebsdatenbank nicht mit. Das ist der wesentliche Nutzen, den die
+Partitionsidee anstrebt — und er ist mit Volumes plattformunabhängig zu haben.
+
+Betreiber, die unter Linux zusätzlich eine echte Partition oder ein eigenes
+Dateisystem für dieses Volume bereitstellen wollen, können das tun. Wir
+**unterstützen** es, aber wir **verlassen uns nicht darauf**.
+
+**Ebene 3 — Beobachtung des tatsächlichen Speichers als Sicherheitsnetz**
+
+Zusätzlich wird der real verfügbare Platz überwacht. Wird er knapp — etwa weil
+etwas anderes auf dem Host die Platte füllt —, greift die verschärfte Rotation,
+unabhängig vom eigenen Budget, und es wird alarmiert.
+
+### Gestufte Rotation: Nicht alle Einträge sind gleich wertvoll
+
+Beim Löschen wird **nach Wichtigkeit** gestaffelt, nicht nur nach Alter:
+
+1. **Zuerst:** technische Diagnosedaten
+2. **Dann:** fachliche Routineereignisse (erfolgreiche Verifikationen,
+   Erreichbarkeitswechsel)
+3. **Zuletzt:** sicherheitsrelevante Ereignisse — Anmeldungen, Rechteänderungen,
+   PIN-Hinterlegungen, Not-Aus, gesperrte Karten, fehlgeschlagene Rollouts
+
+Bevor die dritte Stufe erreicht wird, **fordert das System aktiv zum Export
+auf** und meldet deutlich, dass die Nachweiskette sonst lückenhaft wird. Ein
+Audit-Eintrag, der stillschweigend gelöscht wird, ist ein doppelter Schaden: Die
+Information ist weg, und niemand weiß es.
+
+### Die wichtigste Regel
+
+> **Ein volles Protokoll darf niemals die Kernfunktion anhalten.**
+>
+> Wenn der Speicher knapp wird, rotiert das Protokoll — der PIN-Roboter
+> verifiziert weiter. Eine Praxis darf nicht deshalb den TI-Zugang verlieren,
+> weil eine Protokolldatei voll ist. Umgekehrt darf er auch nicht still ohne
+> Protokoll weiterlaufen: Der Zustand ist deutlich sichtbar zu machen und zu
+> alarmieren.
+
+### Vorgabewerte beim Setup
+
+Der Einrichtungsassistent schlägt anhand der Umgebungsgröße vor und erklärt die
+Wirkung in Klartext („reicht bei Ihrer Gerätezahl für etwa X Monate"):
+
+| Umgebung | Fachprotokoll | Technisches Protokoll |
+|---|---|---|
+| Einzelpraxis / MVZ | 1 GB | 1 GB |
+| Klinik / Serviceorganisation | 20 GB | 5 GB |
+
+Die Werte sind **Vorschläge auf Basis der obigen Überschlagsrechnung** und nach
+der Messung im Pilotbetrieb zu korrigieren.
+
+---
+
 ## Aufbewahrung und Datenschutz
 
 Das Fachprotokoll enthält personenbezogene Daten — es hält fest, welcher Benutzer

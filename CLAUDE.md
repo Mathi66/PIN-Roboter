@@ -112,6 +112,14 @@ und ohne Schulung bedienbar ist.
 > sichtbar, exportierbar) und **technisches Protokoll** (Diagnose, rotierend).
 > Niemals im Protokoll: PINs, Terminal-Kennwörter, Zugangsdaten, TOTP-Geheimnisse
 > — zentral erzwungen, nicht durch Sorgfalt an jeder Einzelstelle.
+>
+> **Speicherbegrenzung:** Protokolldaten liegen in einem **eigenen Volume**,
+> getrennt von den Betriebsdaten. Beim Setup wird je Datenart ein
+> **Speicherbudget** eingestellt; ab **80 % Füllstand rotiert** das Protokoll,
+> gestaffelt nach Wichtigkeit (technische Diagnose zuerst, sicherheitsrelevante
+> Ereignisse zuletzt). Keine echte Partition — die ist auf Windows und macOS
+> nicht durchsetzbar. **Ein volles Protokoll darf die Kernfunktion niemals
+> anhalten**, muss aber deutlich sichtbar alarmieren.
 
 ---
 
