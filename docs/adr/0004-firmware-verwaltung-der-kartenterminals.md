@@ -216,14 +216,51 @@ Daraus folgt verbindlich:
   dass weitere Hersteller ergänzt werden können, ohne die Ablaufsteuerung
   anzufassen.
 
-## Offene Detailfragen
+## Entschiedene Detailfragen (PO, 06.08.2026)
 
-1. **Parallelität:** Dürfen mehrere Terminals einer Gruppe gleichzeitig
-   aktualisiert werden? Bei 24 Geräten und drei Stunden Fenster kann das den
-   Unterschied machen. Empfehlung: konfigurierbar, Vorgabe zunächst sequenziell,
-   nach Messung erhöhen.
-2. **Umgang mit Geräten, die im Fenster nicht erreichbar sind** (abgeschaltet,
-   im Einsatz): überspringen und im nächsten Fenster erneut versuchen, oder nach
-   n Versuchen melden?
-3. **Downgrade:** Soll der Roboter Downgrades unterstützen (`TIP1-A_3170`
-   erlaubt sie eingeschränkt), oder ist das bewusst ein manueller Vorgang?
+### 1. Parallelität — konfigurierbar durch den Administrator
+
+Mehrere Terminals einer Gruppe dürfen gleichzeitig aktualisiert werden. Die
+**Anzahl gleichzeitiger Updates ist je Gruppe vom Administrator einstellbar**.
+
+Umsetzungsvorgaben:
+- **Vorgabewert 1** (sequenziell). Wer erhöht, tut das bewusst.
+- Der **Kanarienvogel bleibt immer sequenziell**: Das erste Gerät einer Gruppe
+  wird einzeln aktualisiert und verifiziert, unabhängig von der eingestellten
+  Parallelität. Erst danach greift sie.
+- Die Oberfläche muss die Wirkung erklären, nicht nur eine Zahl abfragen: höhere
+  Werte verkürzen den Rollout, erhöhen aber die Last auf Netz und Konnektor und
+  vergrößern den Schaden eines fehlerhaften Firmware-Stands.
+- Eine **technische Obergrenze** wird nach Messung am Testaufbau festgelegt.
+
+### 2. Nicht erreichbare Geräte — überspringen, erneut versuchen, dann melden
+
+Ist ein Terminal im Zeitfenster nicht erreichbar (abgeschaltet, in Benutzung),
+wird es **übersprungen und im nächsten freigegebenen Fenster erneut versucht**.
+Nach einer **konfigurierbaren Anzahl erfolgloser Versuche** wird es gemeldet und
+aus dem laufenden Rollout genommen, bis ein Administrator entscheidet.
+
+Begründung für die Meldung: Ein Gerät, das dauerhaft nicht erreichbar ist, ist
+selbst ein Befund — es ist entweder defekt, ausgemustert oder falsch erfasst.
+Ein stiller Endlosversuch würde das verdecken.
+
+> *Auslegungshinweis:* Die Antwort des POs lautete „ja" auf eine
+> Entweder-oder-Frage. Ausgelegt als **beides** — erneut versuchen **und** nach
+> n Versuchen melden —, da nur diese Kombination fachlich vollständig ist. Falls
+> anders gemeint, ist dies zu korrigieren.
+
+### 3. Downgrades — nicht unterstützt
+
+Der PIN-Roboter **rollt keine Firmware-Downgrades aus**, obwohl `TIP1-A_3170`
+sie eingeschränkt erlaubt.
+
+Konsequenzen:
+- Der Roboter **prüft vor dem Rollout die Versionsrichtung** und verweigert den
+  Vorgang, wenn die hochgeladene Firmware älter ist als der installierte Stand.
+  Das ist eine aktive Schutzfunktion, keine bloße Auslassung.
+- Ein Downgrade bleibt ein **manueller Vorgang** über die Werkzeuge des
+  Herstellers, mit dem dort vorgesehenen Hinweis auf die Konsequenzen.
+- Der Rollout hat damit **kein Firmware-Rollback**. Umso wichtiger sind das
+  Kanarienvogel-Prinzip und die Testpflicht: Ein fehlerhafter Stand lässt sich
+  nicht durch Zurückrollen heilen, sondern nur dadurch, dass er gar nicht erst
+  auf die ganze Flotte gelangt.
