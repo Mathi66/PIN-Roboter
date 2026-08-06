@@ -165,26 +165,49 @@ und protokolliert, der Agent besitzt und handelt.
 > muss auch dann greifen, wenn die Verbindung zur Zentrale gerade fehlt. Eine
 > Schutzfunktion, die eine Netzverbindung voraussetzt, ist keine.
 
-### 5.4 Herstellerkapselung
+### 5.4 Herstellerkapselung — auf beiden Seiten
 
-Die Terminal-Anbindung ist der einzige Ort mit herstellerspezifischem Verhalten.
-Sie wird hinter einer **einheitlichen inneren Schnittstelle** gekapselt:
+Herstellerspezifisches Verhalten tritt an **zwei** Stellen auf. Beide werden nach
+demselben Muster hinter einer einheitlichen inneren Schnittstelle gekapselt:
 
 ```
-Ablaufsteuerung
-      │  spricht nur mit dieser Schnittstelle:
-      │  anmelden · pinLiefern · firmwareLesen · firmwareEinspielen · abmelden
-      ▼
-┌─────────────────────────────────────────────┐
-│  Terminal-Anbindung (einheitliche Sicht)    │
-├──────────────┬──────────────┬───────────────┤
-│  Hersteller A│  Hersteller B│  Hersteller C │
-└──────────────┴──────────────┴───────────────┘
+                    Ablaufsteuerung
+                    │              │
+        ┌───────────┘              └───────────┐
+        ▼                                      ▼
+┌─────────────────────────┐    ┌───────────────────────────────┐
+│  Terminal-Anbindung     │    │  Konnektor-Anbindung          │
+│  anmelden · pinLiefern  │    │  pinStatus · pinVerifizieren  │
+│  firmwareLesen          │    │  kartenErmitteln              │
+│  firmwareEinspielen     │    │  terminalsErmitteln           │
+├───────┬────────┬────────┤    ├───────────────┬───────────────┤
+│CHERRY │Ingenico│  …     │    │ Fachschnitt-  │  Webadmin     │
+│       │        │        │    │ stelle (gema- │  (hersteller- │
+│       │        │        │    │ tik, generisch│   spezifisch) │
+└───────┴────────┴────────┘    └───────────────┴───────────────┘
 ```
 
-Ein neuer Hersteller ist damit eine neue Umsetzung dieser Schnittstelle plus ein
-Eintrag in der Gerätematrix (NFA-QS-030) — **ohne Eingriff in die
-Ablaufsteuerung**. Das ist die wichtigste Erweiterungsstelle des Systems.
+**Terminal-Seite:** Ein neuer Hersteller ist eine neue Umsetzung der Schnittstelle
+plus ein Eintrag in der Gerätematrix (NFA-QS-030) — **ohne Eingriff in die
+Ablaufsteuerung**.
+
+**Konnektor-Seite:** Hier ist zusätzlich zwischen zwei Schnittstellenarten zu
+unterscheiden (ADR-0006):
+
+- Die **Fachschnittstelle** (Kartendienst, `[gemSpec_Kon] 4.1.5.5`) ist von der
+  gematik spezifiziert und im Grundsatz herstellerübergreifend gleich. Sie trägt
+  die Kernfunktion. Dass ein bestimmter Hersteller sich spezifikationsgemäß
+  verhält, gilt erst nach Messung am Testaufbau als belegt.
+- Die **Webadmin-Schnittstelle** ist herstellerspezifisch und steht uns nur für
+  **KoCo Konnektor und KoCo HSK** zur Verfügung (in den relevanten Punkten
+  identisch, daher **eine** Anbindung). Funktionen, die darauf beruhen, sind
+  optional: Bei einem Konnektor ohne verfügbare Webadmin-Anbindung entfallen sie
+  und werden in der Oberfläche als nicht verfügbar ausgewiesen — die
+  Kernfunktion bleibt davon unberührt.
+
+Diese Trennung ist die wichtigste Erweiterungsstelle des Systems. Sie entscheidet
+darüber, ob ein weiterer Hersteller ein überschaubarer Zusatz ist oder ein
+Umbau.
 
 ---
 

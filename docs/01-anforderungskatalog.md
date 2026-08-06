@@ -902,6 +902,24 @@ beiden nachweislich lauffähig.
   Terminal-Modell und Firmware-Stand.
 - Nicht geprüfte Kombinationen werden erkannt und in der Oberfläche
   gekennzeichnet; für sie findet kein Firmware-Rollout statt (FA-FW-090).
+- **Für Version 1 zugesichert unterstützt:** KoCo Konnektor und KoCo HSK
+  (identische Schnittstellen, daher eine Anbindung). Weitere Konnektorhersteller
+  sind über die Fachschnittstelle grundsätzlich nutzbar, aber **nicht
+  zugesichert**, solange sie nicht am Testaufbau geprüft wurden.
+
+### NFA-QS-035 — Webadmin-Funktionen sind optional · MUSS · V1 · PO, ADR-0006
+Funktionen, die auf der herstellerspezifischen Webadmin-Schnittstelle des
+Konnektors beruhen, dürfen für die Kernfunktion nicht erforderlich sein.
+
+*Akzeptanz:*
+- Überwachung und automatische PIN-Verifikation funktionieren **ausschließlich
+  über die gematik-spezifizierte Fachschnittstelle**. *Nachweis:* Betrieb gegen
+  einen Konnektor ohne konfigurierte Webadmin-Anbindung.
+- Ist keine Webadmin-Anbindung verfügbar, werden die betroffenen Funktionen in
+  der Oberfläche als nicht verfügbar gekennzeichnet — mit Angabe des Grundes,
+  nicht durch stilles Fehlen.
+- Die Webadmin-Anbindung ist gekapselt; ein weiterer Hersteller ist eine
+  zusätzliche Umsetzung ohne Eingriff in die Ablaufsteuerung.
 
 ### NFA-QS-040 — Dokumentation · MUSS · V1 · PO
 *Akzeptanz:*
