@@ -350,6 +350,94 @@ Brainpool-TLS geht, deckt **Java, Netty, Android und iOS** ab — **nicht** Go,
 .NET, Python oder Node. Und es ist seit April 2025 **archiviert**. Das ist ein
 Hinweis auf die Marktlage: Der Weg ist gangbar, aber schmal.
 
+### Entscheidend: Die Geräteidentitäten kommen von Chipkarten
+
+Präzisierung des POs vom 06.08.2026:
+> OpenSSL und Brainpool funktionieren, es sind die aus der BSI-TR geforderten
+> Kurven. Prinzipiell kann man auf der lokalen LAN-Schnittstelle NIST
+> konfigurieren — **aber wenn das Auth-Zertifikat des Konnektors von der
+> verbauten gSMC-K kommt, ist es Brainpool. Gleiches gilt für die Zertifikate
+> des Kartenterminals: Die kommen von der gSMC-KT und können nur Brainpool.**
+
+**Das ist der Punkt, an dem die Frage sich erledigt.** Die Praxisaussage deckt
+sich mit der Spezifikation:
+
+| Beleg | Quelle |
+|---|---|
+| „Die Chipkarten der TI verwenden für ihre ECC-EE-Schlüssel **alle** die Kurvenparameter `brainpoolP256r1`. Dies ist in den **Objektsystem-Spezifikationen fixiert**." | `[gemSpec_Krypt] V2.30.0` |
+| Die Identität des Konnektors gegenüber Clientsystem und Kartenterminal beruht auf Zertifikaten der **gSMC-K** (`C.AK.AUT`, `C.SAK.AUT`). | `[gemSpec_Kon] V5.25.0` |
+| Die Kartenterminal-Identität beruht auf `C.SMKT.AUT`, bereitgestellt auf der **gSMC-KT**. | `[gemSpec_KT] V3.17.1`, `TIP1-A_3227` |
+
+Daraus folgt eine Unterscheidung, die vorher unscharf war:
+
+| Teil des TLS-Handshakes | Kurve | Konfigurierbar? |
+|---|---|---|
+| **Schlüsselaustausch** (ECDHE) | NIST oder Brainpool | **ja**, am Konnektor umstellbar |
+| **Zertifikat und Signaturprüfung** (ECDSA) | **Brainpool, zwingend** | **nein** — die Kurve steckt im Objektsystem der Chipkarte |
+
+Wer also nur den Schlüsselaustausch auf NIST stellt, hat nichts gewonnen: Die
+Gegenstelle weist sich weiterhin mit einem Brainpool-Zertifikat aus, und unsere
+Seite muss dessen Signatur prüfen können. Eine Bibliothek, die
+`brainpoolP256r1`-Schlüssel nicht einmal einlesen kann, scheitert bereits daran —
+unabhängig von jeder Cipher-Suite-Konfiguration.
+
+**Brainpool ist damit eine harte MUSS-Anforderung auf beiden Strecken** — zum
+Konnektor und zum Kartenterminal. Die formale SOLL-Einstufung in
+`[gemSpec_Krypt]` betrifft den Schlüsselaustausch, nicht die Zertifikatswelt der
+Chipkarten.
+
+### Und die Managementschnittstelle des Terminals? — Drei Fälle, alle zu beherrschen
+
+Vermutung des POs vom 06.08.2026, ausdrücklich als unsicher gekennzeichnet:
+> Ich vermute, dass die Kartenterminals auch die Zertifikate der gSMC-KT für ihre
+> Webadmin-Schnittstelle nutzen, weiß es aber nicht sicher.
+
+**Geprüft — die Vermutung ist eine von drei zulässigen Möglichkeiten.**
+`[gemSpec_KT] A_24102` schreibt abschließend vor, woher das TLS-Schlüsselmaterial
+einer netzwerkbasierten Managementschnittstelle stammen darf:
+
+| # | Quelle | Kurve | Prüfbarkeit gegen eine PKI |
+|---|---|---|---|
+| 1 | privater Schlüssel und Zertifikat eines **SM-KT** (gSMC-KT) | **Brainpool** | ja, TI-PKI |
+| 2 | mit der **Firmware eingebrachter** Schlüssel, Zertifikat des **Herstellers** | offen | nur gegen die Hersteller-PKI |
+| 3 | vom Terminal **selbst erzeugter** Schlüssel, **selbstsigniertes** Zertifikat | offen | **nein** |
+
+Weitere Mechanismen sind unzulässig. Welcher Fall vorliegt, ist damit
+**herstellerabhängig und am Gerät zu ermitteln** — die Vermutung ist weder
+bestätigt noch widerlegt.
+
+**Folgen für uns:**
+
+- **Fall 1 bestätigt die Brainpool-Pflicht ein zweites Mal**, nun auch auf der
+  Strecke, über die wir die PIN liefern.
+- **Fall 3 ist der Grund, warum `NFA-SIC-020` die geräteweise Ausnahme von der
+  Zertifikatsprüfung braucht.** Gegen ein selbstsigniertes Zertifikat gibt es
+  keine Kette zu prüfen. Richtig ist dann, den Fingerabdruck bei der Ersterfassung
+  festzuhalten und bei jedem Verbindungsaufbau zu vergleichen — **nicht**, die
+  Prüfung abzuschalten. Ein unbemerkter Zertifikatswechsel muss ein Alarm sein.
+  Die Anforderung ist entsprechend zu präzisieren.
+- **Ermitteln statt annehmen:** Welcher Fall je Modell vorliegt, gehört in die
+  Bestandsaufnahme am Testaufbau und in die Gerätematrix (`NFA-QS-030`).
+
+### Nebenbefund mit erheblichem Sicherheitswert
+
+`[gemSpec_KT] A_24065`, Hinweis 2:
+> Im Rahmen eines TLS-Handshakes für die netzwerkbasierte Managementschnittstelle
+> ist es möglich, mittels beidseitiger Authentisierung die notwendige
+> Rollenauthentisierung (für die Rolle Administrator oder SMC-B-Nutzer) zu
+> erfüllen. In diesem Fall wäre keine zusätzliche Rollenauthentisierung (wie
+> beispielsweise Username & Passwort) erforderlich.
+
+**Das kann ein ganzes Geheimnis einsparen.** Authentisiert sich der Standort-Agent
+per TLS-Client-Zertifikat als `SMC-B_Nutzer`, muss er **kein
+Terminal-Administrationskennwort vorhalten** — eines der beiden Geheimnisse aus
+dem Architekturkonzept entfiele ersatzlos. Das ist deutlich mehr wert als
+Bequemlichkeit: Was nicht gespeichert wird, kann nicht gestohlen werden.
+
+Ob die Geräte des Testaufbaus das unterstützen, ist herstellerabhängig und zu
+messen. Ist es möglich, sollte es der **Vorzugsweg** werden, mit Benutzername und
+Kennwort als Rückfallweg. Eine entsprechende Anforderung ist zu ergänzen.
+
 ### Konsequenz
 
 **Der Go-Vorschlag ist in dieser Form nicht haltbar.** Das war eine Lücke in
