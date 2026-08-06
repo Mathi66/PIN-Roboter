@@ -185,18 +185,62 @@ Festlegungen daraus:
 
 ### Nutzer, Rollen und Anmeldung (PO, 06.08.2026)
 
-| Rolle | Obergrenze | Berechtigung |
-|---|---|---|
-| **Administrator** | max. **4** | Benutzerverwaltung |
-| **Benutzer** | max. **25** | Verwaltung der Kartenterminals |
+**Größenordnungen — Richtwerte, keine hart durchgesetzten Grenzen:**
 
-- Anmeldung am Webfrontend: **Benutzername + Passwort + TOTP** (zweiter Faktor,
-  zeitbasiertes Einmalkennwort). Verpflichtend, nicht abschaltbar.
-- Daraus folgt ein **Onboarding-Prozess**: Ersteinrichtung des ersten
-  Administrators, Einladung weiterer Konten, TOTP-Einrichtung mit Prüfung,
-  Wiederherstellungsverfahren bei Verlust des zweiten Faktors.
-- *Annahme (zu bestätigen):* Die Obergrenzen werden im Produkt **hart
-  durchgesetzt**, nicht nur dokumentiert.
+| Szenario | Administratoren | Benutzer |
+|---|---|---|
+| Einzelpraxis / kleine Einrichtung | ~4 | ~25 |
+| HSK-Betrieb (Klinik, Rechenzentrum) | bis **150** | bis **1.000** |
+
+Das Produkt setzt diese Zahlen **nicht technisch durch**. Es muss stattdessen so
+gebaut sein, dass es bei 1.000 Benutzern nicht unbedienbar wird — das betrifft
+Suche, Filter, Massenoperationen und serverseitige Paginierung in der
+Benutzerverwaltung.
+
+**Anmeldung:** Benutzername + Passwort + **TOTP** (zeitbasiertes Einmalkennwort).
+Verpflichtend, nicht abschaltbar. Daraus folgt ein **Onboarding-Prozess**:
+Ersteinrichtung des ersten Administrators, Einladung weiterer Konten,
+TOTP-Einrichtung mit Verifikationsschritt, Wiederherstellung bei Verlust des
+zweiten Faktors.
+
+### Mandantenfähigkeit: Serviceorganisationen (PO, 06.08.2026)
+
+Bei 1.000 Benutzern und 150 Administratoren ist eine flache Benutzerliste nicht
+mehr handhabbar. Es wird eine **Zwischenschicht von Serviceorganisationen**
+eingezogen — typischerweise IT-Dienstleister, die mehrere Einrichtungen betreuen.
+
+Damit ist das Produkt **mandantenfähig**. Vorgesehene Struktur:
+
+```
+Instanz
+ └── Serviceorganisation        (IT-Dienstleister)
+      └── Einrichtung/Mandant   (Praxis, MVZ, Klinik, Standort)
+           └── Konnektor / HSK
+                └── Kartenterminal → SMC-B
+```
+
+Konsequenzen, die von Anfang an zu berücksichtigen sind:
+
+- **Berechtigungen sind hierarchisch und mandantengebunden.** Jede Abfrage muss
+  auf den Geltungsbereich des Aufrufers eingeschränkt sein. Mandantentrennung
+  wird zentral erzwungen, nicht in jeder einzelnen Abfrage von Hand — sonst wird
+  sie irgendwann vergessen. Das ist die häufigste schwere Sicherheitslücke in
+  mandantenfähigen Anwendungen.
+- **Nachrüsten ist unverhältnismäßig teuer.** Mandantenfähigkeit gehört ins
+  Datenmodell der ersten Version, auch wenn die erste Installation sie nicht
+  nutzt.
+- **Abgrenzung zum Konnektor-Mandanten:** Der Konnektor kennt bereits eigene
+  Mandanten (`MandantId`, `ClientSystemId`, `WorkplaceId` im Aufrufkontext, siehe
+  Fachanalyse). Diese sind **nicht identisch** mit unseren Mandanten. Die
+  Zuordnung ist explizit zu modellieren und darf nicht stillschweigend
+  gleichgesetzt werden.
+- **Onboarding wird mehrstufig:** Instanzbetreiber legt Serviceorganisation an,
+  diese legt Einrichtungen an, diese Benutzer.
+
+> **Offen und materiell entscheidend — siehe Rückfrage an den PO:**
+> Läuft je Einrichtung eine eigene Installation, oder betreibt eine
+> Serviceorganisation **eine zentrale Instanz für viele Einrichtungen**? Davon
+> hängen Datenmodell, Netzwerkarchitektur und Ausfallkonzept ab.
 
 ### Betrieb und Auslieferung (PO, 06.08.2026)
 
@@ -256,13 +300,21 @@ Einsatzszenarien: Einzelpraxis, MVZ, Klinik.
 >   Gruppierung nach Standort, serverseitige Paginierung. Eine flache Liste
 >   funktioniert hier nicht.
 
+### Testumgebung (PO, 06.08.2026)
+
+**Steht bereit.** Damit gilt ohne Ausnahme: Jede Aussage über das Verhalten
+gegenüber Konnektor und Kartenterminal wird **am Testaufbau verifiziert**, bevor
+sie als erledigt gemeldet wird. Vermutungen über das Verhalten realer Geräte sind
+ab jetzt nicht mehr zulässig — sie sind messbar.
+
+Noch zu erfassen: konkrete Ausstattung (Konnektor-/HSK-Modell und Version,
+Terminal-Modelle und Firmware, ob PEviM dort unterstützt und aktivierbar ist,
+Test-SMC-B mit bekannter PIN).
+
 ### Noch offen (PO)
 
-1. **Testumgebung:** Stehen Testkonnektor, Testterminal und Test-SMC-B zur
-   Verfügung? Ohne Testaufbau ist keine belastbare Verifikation möglich — das ist
-   die wichtigste offene Frage für die Umsetzung.
-2. **GHCR-Sichtbarkeit:** öffentliches oder privates Image? Siehe
-   [ADR-0001](docs/adr/0001-update-und-auslieferungsstrategie.md).
+1. **Betriebsmodell:** eine Installation je Einrichtung oder eine zentrale
+   Instanz je Serviceorganisation? Siehe Abschnitt Mandantenfähigkeit.
 
 ### Sicherheitsleitplanke (nicht verhandelbar)
 

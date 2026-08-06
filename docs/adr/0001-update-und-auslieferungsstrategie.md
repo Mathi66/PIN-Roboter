@@ -1,8 +1,14 @@
 # ADR-0001: Update- und Auslieferungsstrategie
 
-- **Status:** Vorschlag — Entscheidung des Product Owners ausstehend
+- **Status:** **Angenommen** (Product Owner, 06.08.2026)
 - **Datum:** 06.08.2026
 - **Betrifft:** Auslieferung, Betrieb, Sicherheit
+
+## Entscheidung
+
+1. **Option D — produkteigener Update-Manager mit geführter Ausführung.**
+   Watchtower entfällt vollständig.
+2. **Das Container-Image auf GHCR ist privat.**
 
 ---
 
@@ -154,18 +160,25 @@ Diese Punkte sind Bestandteil der Umsetzung in jedem Fall:
 
 ---
 
-## Offener Punkt für den PO
+## Entschieden: privates Image auf GHCR
 
-**Wird das Image auf GHCR öffentlich oder privat sein?**
+Der PO hat sich für ein **privates** Image entschieden. Daraus folgen konkrete
+Pflichten, die in der Umsetzung abgedeckt sein müssen:
 
-- **Öffentlich:** Kunden können ohne Zugangsdaten aktualisieren. Einfachster
-  Betrieb. Das Image ist dann aber für jeden abrufbar.
-- **Privat:** Jede Installation benötigt Zugangsdaten für GHCR. Das bedeutet
-  Verteilung, Rotation und Widerruf von Zugangstoken beim Kunden — spürbarer
-  organisatorischer Aufwand, dafür Kontrolle über die Verbreitung.
-
-Diese Entscheidung betrifft alle Optionen gleichermaßen und sollte vor der
-Umsetzung fallen.
+1. **Jede Installation benötigt Zugangsdaten für GHCR.** Diese sind ein Geheimnis
+   und unterliegen denselben Regeln wie die SMC-B-PIN: nicht im Image, nicht im
+   Repository, nicht im Klartext in Logs.
+2. **Der Update-Manager muss authentifiziert abfragen.** Die Erkennung neuer
+   Versionen benötigt damit — anders als bei einem öffentlichen Image — ein
+   gültiges Token. Läuft es ab, meldet das Produkt keine Updates mehr. Deshalb:
+   **Ablaufende oder ungültige Zugangsdaten müssen als sichtbarer Fehlerzustand
+   in der Oberfläche erscheinen**, nicht still zu ausbleibenden Updates führen.
+   Das ist ein realistischer Ausfallpfad, kein Randfall.
+3. **Token-Verwaltung gehört zur Serviceorganisation.** Die eingeführte
+   Zwischenschicht (siehe `CLAUDE.md`) ist die natürliche Stelle, an der
+   Zugangsdaten hinterlegt und erneuert werden — nicht die einzelne Praxis.
+4. **Ausgabe, Erneuerung und Entzug** der Token sind ein organisatorischer
+   Prozess und gehören in die Betriebsdokumentation (`docs/04-betrieb.md`).
 
 ---
 
