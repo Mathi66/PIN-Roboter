@@ -328,9 +328,26 @@ Grundlage mehrerer offener Architekturfragen und kostet wenig Aufwand.
   Kartenterminals bringen laut PO in aktueller Firmware herstellerseitig einen
   VPN-Client mit (IPsec, teils WireGuard); die gematik spezifiziert das nicht.
   → [ADR-0003](docs/adr/0003-optionale-vpn-anbindung-externer-kartenterminals.md)
-- **Firmware-Verwaltung** in drei Stufen: *kennen* und *respektieren* gehören in
-  die erste Version, *einspielen* ist spätere Ausbaustufe.
+- **Firmware-Verwaltung der Kartenterminals** — beschlossen, gestuft umgesetzt.
+  Der Hersteller liefert die Firmware an den Administrator, dieser lädt sie hoch;
+  wir beziehen und verteilen keine Firmware selbst. Der Administrator legt
+  **Rollout-Pläne je Gerätegruppe** an (z. B. Abteilung A: Mi und Fr,
+  01:00–04:00); der Roboter arbeitet sie ab und setzt im nächsten freigegebenen
+  Fenster fort. Notwendig für Kliniken und Apotheken im 24-Stunden-Betrieb.
   → [ADR-0004](docs/adr/0004-firmware-verwaltung-der-kartenterminals.md)
+
+  **Gerätegruppen und Zeitfenster gehören ins Datenmodell der ersten Version**,
+  auch wenn der Rollout selbst eine spätere Stufe ist.
+
+  Zwei Regeln, die nicht verhandelbar sind:
+  - **Ein begonnenes Geräteupdate wird zu Ende geführt**, auch wenn das Fenster
+    ausläuft. Das Fenster begrenzt den *Start* weiterer Geräte. Ein
+    abgebrochenes Firmware-Update ist der einzige Weg, ein Terminal doch zu
+    beschädigen.
+  - **Nach jedem Update:** Erreichbarkeit, Firmware-Stand und PIN-Status prüfen
+    und die SMC-B wieder verifizieren. Der Neustart nach dem Update entzieht der
+    Karte den verifizierten Zustand — das zu beheben ist der Kernzweck dieses
+    Produkts.
 
 > **Harte Anforderung an die Kernfunktion, aus `[gemSpec_Kon] 4.3.10` abgeleitet:**
 > Der Konnektor aktualisiert Kartenterminals über seinen KSR-Client; der

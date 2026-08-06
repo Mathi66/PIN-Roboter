@@ -1,147 +1,229 @@
 # ADR-0004: Firmware-Verwaltung der Kartenterminals
 
-- **Status:** Vorschlag — Entscheidung des Product Owners ausstehend
+- **Status:** **Angenommen** (Product Owner, 06.08.2026) — Umsetzung gestuft
 - **Datum:** 06.08.2026
 - **Betrifft:** Funktionsumfang, Architektur, Betrieb, Haftung
 
 ---
 
-## Kontext
+## Entscheidung
 
-Frage des POs vom 06.08.2026: Akzeptieren Kartenterminals Firmware-Updates über
-die Web-/Managementschnittstelle? Falls ja, könnte der PIN-Roboter das
-Firmware-Management übernehmen.
+Der PIN-Roboter übernimmt die **Firmware-Verwaltung der Kartenterminals**,
+einschließlich des gesteuerten Ausrollens nach **Rollout-Plänen je Gerätegruppe**.
 
-Der Bedarf ist offensichtlich: Bei bis zu 5.000 Terminals ist Firmware-Pflege von
-Hand nicht leistbar. Hinzu kommt eine unmittelbare Abhängigkeit — **PEviM
-(unser Kernfeature) und der VPN-Client (ADR-0003) sind an Firmware-Stände
-gebunden.** Ohne Kenntnis der Firmware wissen wir nicht, was ein Gerät kann.
+Festlegungen des POs:
+
+1. **Bezugsweg:** Die Firmware wird **vom Hersteller an den Administrator**
+   verteilt. Der Administrator lädt sie in den PIN-Roboter. Wir beziehen und
+   verteilen keine Firmware selbst.
+2. **Der Administrator erstellt Rollout-Pläne**, damit der Praxis- und
+   Klinikbetrieb nicht unterbrochen wird. Der Roboter führt die Updates gemäß
+   Plan aus.
+3. **Gerätegruppen** (z. B. Abteilungen) erhalten **eigene Rollout-Pläne**.
+4. **Wiederaufnahme:** Was in einem Zeitfenster nicht fertig wird, läuft im
+   nächsten freigegebenen Fenster weiter.
+5. **Das Risiko wird bewusst getragen** — im Gegenzug gilt eine erhöhte
+   Testpflicht.
+
+---
+
+## Kontext und Motivation
+
+Bei bis zu 5.000 Terminals ist Firmware-Pflege von Hand nicht leistbar. Der
+eigentliche Bedarf ist aber ein anderer: **Kliniken und Apotheken arbeiten rund
+um die Uhr.** Es gibt kein allgemeines Wartungsfenster — es gibt nur
+abteilungsweise Zeiträume, in denen gerade nicht gearbeitet wird.
+
+Beispiel des POs:
+> Abteilung A hat 24 Kartenterminals und ist jeden Mittwoch und Freitag von
+> 01:00 bis 04:00 Uhr nicht besetzt. In dieser Zeit darf der Roboter
+> aktualisieren. Was er nicht schafft, macht er im nächsten freigegebenen
+> Zeitfenster.
+
+Genau das kann heute niemand: Der Konnektor rollt Firmware aus, **kennt aber
+keinen Rollout-Plan** (Feststellung des POs: „Der Konnektor ist stumpf beim
+Updaten"). Er aktualisiert, wann es ihm passt — in einer Klinik mitten im
+Nachtdienst.
 
 ---
 
 ## Faktenlage (geprüft am 06.08.2026, `[gemSpec_KT] V3.17.1`)
 
-### Firmware-Updates aus dem LAN sind ausdrücklich vorgesehen
+### Updates aus dem LAN sind ausdrücklich vorgesehen
 
 | ID | Inhalt (sinngemäß) |
 |---|---|
-| `TIP1-A_2965` | Das Terminal **muss** eine sichere Update-Möglichkeit der Firmware besitzen — einschließlich Downgrade auf eine über das Firmware-Gruppen-Konzept zugelassene Version. |
+| `TIP1-A_2965` | Das Terminal **muss** eine sichere Update-Möglichkeit besitzen — auch Downgrade auf eine über das Firmware-Gruppen-Konzept zugelassene Version. |
 | `TIP1-A_3152` | Der Hersteller **muss** eine Update-Komponente bereitstellen, mit der die Firmware **innerhalb des LANs** aktualisiert werden kann. |
-| `TIP1-A_3153` | Der Hersteller **muss** mindestens eine von zwei Varianten umsetzen: **Push** — eine Update-Komponente auf einem **Drittsystem innerhalb des LANs** spielt Updates ein; **Pull** — die Terminals holen sich Updates von einem Update-Server, der auf einem **Drittsystem innerhalb des LANs** liegen kann. |
-| — | Realisierung und Mechanismus sind ausdrücklich **herstellerspezifisch**. Ergänzend unterstützt das Terminal die Update-Funktionen der SICCT-Spezifikation, wodurch eine ansteuernde Komponente das Terminal aktualisieren kann (z. B. der KSR-Dienst der TI). |
-| `TIP1-A_3188` | Nach einem Update **müssen** alle Konfigurationen erhalten bleiben — Terminalname, IP-Adresse, Pairing-Informationen. |
-| `TIP1-A_6481` | Der Hersteller **muss** jede zugelassene Firmware-Version umgehend als Update-Paket im Konfigurationsdienst (KSR) ablegen. |
+| `TIP1-A_3153` | Mindestens eine von zwei Varianten: **Push** — eine Update-Komponente auf einem **Drittsystem innerhalb des LANs** spielt ein; **Pull** — die Terminals holen von einem Update-Server, der auf einem **Drittsystem innerhalb des LANs** liegen kann. Realisierung ausdrücklich **herstellerspezifisch**. |
+| `TIP1-A_3188` | Nach dem Update bleiben **alle Konfigurationen erhalten** — Terminalname, IP-Adresse, Pairing-Informationen. |
+| `TIP1-A_3170` | Downgrades nur im Rahmen des Firmware-Gruppen-Konzepts, mit Hinweis auf die Konsequenzen und Abbruchmöglichkeit. |
 
 **Die Position „Drittsystem innerhalb des LANs" ist exakt die des Standort-Agenten
-aus [ADR-0002](0002-betriebsmodell-und-systemtopologie.md).** Der Weg ist also
-nicht nur möglich, sondern vorgesehen.
+aus [ADR-0002](0002-betriebsmodell-und-systemtopologie.md).**
 
 ### Das Terminal schützt sich selbst
 
-| ID | Inhalt (sinngemäß) |
-|---|---|
-| `TIP1-A_2976` | Einspielen erst **nach erfolgreicher Prüfung von Integrität und Authentizität** der Firmware. |
-| `TIP1-A_2977` | Fehlerhafte oder nicht authentische Übertragung wird abgewiesen. |
-| `TIP1-A_3245` | Bei fehlerhafter Übertragung **darf** die installierte Firmware **nicht** verändert werden. |
-| `TIP1-A_2978` | Übernahme als aktive Firmware erst nach vollständiger, korrekter Speicherung. |
-| `TIP1-A_3182`, `TIP1-A_3185` | Der Sicherheitsanker liegt auslese- und schreibgeschützt im Terminal. |
+`TIP1-A_2976` (Einspielen nur nach erfolgreicher Prüfung von Integrität und
+Authentizität), `TIP1-A_2977` (fehlerhafte Übertragung wird abgewiesen),
+`TIP1-A_3245` (bei fehlerhafter Übertragung bleibt die installierte Firmware
+unverändert), `TIP1-A_2978` (Übernahme erst nach vollständiger, korrekter
+Speicherung), `TIP1-A_3182`/`TIP1-A_3185` (Sicherheitsanker auslese- und
+schreibgeschützt im Gerät).
 
-Das ist eine wichtige Entlastung: **Wir können ein Terminal nicht durch ein
-fehlerhaftes oder manipuliertes Paket zerstören** — es weist es ab. Das Risiko
-liegt nicht im Einspielen selbst, sondern im Drumherum (siehe unten).
+**Folge:** Ein fehlerhaftes oder manipuliertes Paket kann ein Terminal nicht
+zerstören — es wird abgewiesen. Das Risiko liegt nicht im Einspielen, sondern im
+Zeitpunkt und in der Nachbehandlung.
 
-### Downgrades sind reglementiert
+### Abgrenzung zum Konnektor
 
-`TIP1-A_3170`: Downgrades sind nur im Rahmen des **Firmware-Gruppen-Konzepts**
-zulässig, und der Administrator muss vorher auf die Konsequenzen hingewiesen
-werden und abbrechen können. Ein Rollback ist also **kein freier Versionswechsel**.
+`[gemSpec_Kon] V5.25.0` Kapitel 4.3.10: Der Konnektor besitzt einen **KSR-Client**
+zur Aktualisierung von Konnektor **und Kartenterminals**. Der
+Kartenterminaldienst kennt dafür den Zustand **„aktualisierend"**
+(`KSR/UPDATE/START` … `KSR/UPDATE/END`, `Target=KT`).
 
-### Der Konnektor macht das bereits
+Die Abgrenzung ist nach Feststellung des POs praktisch gelöst:
+> **Ohne den Admin-Key des Kartenterminals kann der Konnektor nicht aktualisieren.**
 
-`[gemSpec_Kon] V5.25.0`, Kapitel 4.3.10: Der Konnektor besitzt einen
-**KSR-Client zur Software- und Konfigurationsaktualisierung für Konnektor
-**und Kartenterminals**. Der Kartenterminaldienst kennt einen eigenen Zustand
-**„aktualisierend"**, ausgelöst durch den Konnektor, begrenzt durch die Ereignisse
-`KSR/UPDATE/START` und `KSR/UPDATE/END` mit `Target=KT`.
+Damit ist die Zuständigkeit steuerbar: Wer den Admin-Zugang hält, aktualisiert.
+Für unser Produkt ist das ohnehin gegeben — es benötigt die Terminal-Anmeldung
+bereits für PEviM (Rolle `SMC-B_Nutzer`, die laut `A_24075` mit der
+Administrator-Rolle identisch sein darf).
 
-**Das ist der wichtigste Befund dieser Analyse** — und er betrifft das
-Kernprodukt unabhängig von jeder Firmware-Funktion:
-
-> Der PIN-Roboter **muss** den Zustand „aktualisierend" erkennen und in dieser
-> Zeit **keine PIN-Verifikation versuchen**. Ein Verifikationsversuch gegen ein
-> gerade aktualisierendes Terminal führt im besten Fall zu einem Fehler, im
-> schlechteren zu einem Fehlversuch, der den Fehlversuchszähler der SMC-B
-> belastet. Das ist eine harte Anforderung an die Kernfunktion, nicht an eine
-> Zusatzfunktion.
+> **Bleibt trotzdem verpflichtend:** Der PIN-Roboter **muss** den Zustand
+> „aktualisierend" erkennen und in dieser Zeit **keine PIN-Verifikation
+> versuchen** — sonst belastet er im ungünstigen Fall den Fehlversuchszähler der
+> SMC-B. Das gilt unabhängig davon, wer das Update ausgelöst hat.
 
 ---
 
-## Bewertung
+## Der Zusammenhang, der das Produkt zusammenhält
 
-Die Frage zerfällt in zwei sehr unterschiedliche Teile:
+Ein Firmware-Update erfordert in aller Regel einen Neustart des Terminals. Damit
+verliert die eingelegte SMC-B ihren verifizierten Zustand — **genau das Problem,
+für das der PIN-Roboter gebaut wird.**
 
-### Teil 1: Firmware-Stände **kennen** — unkritisch, hoher Nutzen
+Daraus folgt ein Ablauf, den keine andere Komponente leisten kann:
 
-Das Auslesen der Firmware-Version ist eine reine Leseoperation
-(`TIP1-A_3939` fordert die Darstellung der Firmware-Gruppen-Version, `A_19423`
-das Ablesen der Version interner Firmware).
+```
+Zeitfenster beginnt
+  └─ Firmware einspielen        (Terminal aktualisiert, startet neu)
+  └─ warten bis erreichbar
+  └─ Firmware-Stand prüfen      (hat das Update funktioniert?)
+  └─ PIN-Status prüfen          (GetPinStatus → VERIFIABLE?)
+  └─ SMC-B wieder verifizieren  (PEviM)
+  └─ Erfolg protokollieren      → nächstes Gerät
+```
 
-Nutzen:
-- **Wir brauchen es ohnehin.** Ob ein Terminal PEviM beherrscht, hängt am
-  Firmware-Stand. Ohne diese Information kann der PIN-Roboter nicht einmal
-  verlässlich sagen, warum ein Gerät nicht automatisierbar ist.
-- Flottenübersicht über bis zu 5.000 Geräte: Wer ist veraltet, wer uneinheitlich?
-  Das ist für Klinik-IT ein eigenständiger Wert.
-- Voraussetzung für die VPN-Ausbaustufe (ADR-0003).
-
-**Risiko: praktisch keines.**
-
-### Teil 2: Firmware **einspielen** — machbar, aber mit erheblichen Folgen
-
-Technisch zulässig und vorgesehen (`TIP1-A_3153`, Push-Verfahren). Aber:
-
-1. **Herstellerspezifisch.** Es gibt kein einheitliches Verfahren. Jeder
-   Hersteller bedeutet eine eigene Implementierung, eigene Tests, eigene
-   Pflege — dauerhaft, bei jeder Firmware-Generation.
-2. **Woher kommt die Firmware?** `TIP1-A_6481` legt sie im KSR ab — das ist ein
-   TI-Dienst, den ein Drittsystem nicht ohne Weiteres erreicht. Der Bezug wäre
-   also über die Hersteller zu klären, jeweils einzeln und rechtlich sauber
-   (Weitergabe, Zulassungsstand, Haftung). **Das ist der eigentliche Engpass —
-   kein technischer, sondern ein organisatorischer.**
-3. **Zuständigkeitskonflikt mit dem Konnektor.** Der Konnektor rollt über seinen
-   KSR-Client selbst Terminal-Updates aus. Zwei Instanzen, die unabhängig
-   voneinander dasselbe Gerät aktualisieren, sind eine Quelle schwer
-   diagnostizierbarer Störungen.
-4. **Verantwortungsübernahme.** Wer Firmware ausrollt, haftet für die Folgen.
-   Ein Terminal, das nach einem Update nicht mehr korrekt pairt, legt den
-   TI-Zugang lahm — und wir haben es angefasst.
-5. **Nur zugelassene Stände.** Das Firmware-Gruppen-Konzept muss abgebildet
-   werden, sonst rollen wir Nicht-Zugelassenes aus.
+Der Konnektor kann Schritt 1 auslösen. Die Schritte danach kann er nicht — er
+kennt weder Plan noch PIN. **Firmware-Rollout und PIN-Wiederherstellung gehören
+fachlich zusammen**, und dass beides in einem Produkt liegt, ist kein
+Funktionsanhäufung, sondern der eigentliche Grund, warum es funktioniert.
 
 ---
 
-## Empfehlung: in drei Stufen
+## Fachliches Konzept: Gruppen und Rollout-Pläne
+
+### Gerätegruppen
+- Ein Terminal gehört zu genau einer Gruppe (z. B. „Abteilung A", „Notaufnahme",
+  „Apotheke Nachtdienst").
+- Gruppen liegen innerhalb einer Einrichtung und damit innerhalb eines Mandanten.
+- Jede Gruppe hat einen eigenen Rollout-Plan.
+
+### Rollout-Plan
+- **Freigegebene Zeitfenster** als wiederkehrende Regel: Wochentage plus
+  Uhrzeitbereich (Beispiel: Mi und Fr, 01:00–04:00).
+- **Zeitzone und Sommerzeit** sind ausdrücklich zu berücksichtigen — ein Fenster,
+  das durch die Zeitumstellung wandert oder doppelt auftritt, ist eine reale
+  Fehlerquelle.
+- **Wiederaufnahme:** Nicht abgearbeitete Geräte bleiben in der Warteschlange und
+  kommen im nächsten freigegebenen Fenster an die Reihe. Ein Rollout ist ein
+  Vorgang über mehrere Fenster hinweg, kein einmaliger Lauf.
+- **Kein Abbruch mitten im Gerät:** Ein bereits gestartetes Update wird zu Ende
+  geführt, auch wenn das Fenster ausläuft. Was das Fenster begrenzt, ist der
+  **Start** weiterer Geräte, nicht der Abschluss des laufenden. Ein abgebrochenes
+  Firmware-Update ist der einzige Weg, ein Terminal doch noch zu beschädigen.
+- **Restzeitprüfung:** Vor dem Start eines weiteren Geräts wird geprüft, ob die
+  erwartete Dauer noch in das Fenster passt. Die Dauer wird aus tatsächlichen
+  Messwerten gelernt, nicht geschätzt.
+- **Not-Aus:** Ein laufender Rollout muss sich anhalten lassen. Bereits laufende
+  Geräteupdates laufen aus, weitere starten nicht.
+
+### Sicherheitsnetze
+- **Kanarienvogel-Prinzip:** Das erste Gerät einer Gruppe wird einzeln
+  aktualisiert und vollständig verifiziert, bevor die übrigen folgen. Scheitert
+  es, stoppt der Rollout automatisch. Das begrenzt einen fehlerhaften
+  Firmware-Stand auf ein Gerät statt auf 24.
+- **Nach jedem Gerät:** Erreichbarkeit, Firmware-Stand und PIN-Status prüfen.
+  Weicht etwas ab, wird angehalten und alarmiert — nicht weitergemacht.
+- **Vollständiges Protokoll:** wer welche Firmware wann für welche Gruppe
+  freigegeben hat, welches Gerät wann von welchem Stand auf welchen wechselte,
+  mit Ergebnis.
+
+---
+
+## Umsetzung in Stufen
 
 | Stufe | Inhalt | Einordnung |
 |---|---|---|
-| **1 — Kennen** | Firmware-Version je Terminal auslesen, anzeigen, Flottenübersicht, Abweichungen und veraltete Stände melden. Ableitung: „Dieses Gerät unterstützt PEviM (nicht)." | **Erste Version.** Wird ohnehin gebraucht. |
-| **2 — Respektieren** | Zustand „aktualisierend" erkennen; währenddessen keine Verifikationsversuche. Firmware-Wechsel im Protokoll festhalten, damit Störungen zeitlich zuzuordnen sind. | **Erste Version, verpflichtend.** Betrifft die Kernfunktion. |
-| **3 — Einspielen** | Firmware-Verteilung über den Standort-Agenten im Push-Verfahren, herstellerweise nachgezogen, mit Wartungsfenster, Freigabe und Protokoll. | **Spätere Ausbaustufe**, erst nach Klärung von Bezugsweg, Haftung und Konnektor-Abgrenzung. |
+| **1 — Kennen** | Firmware-Version je Terminal auslesen, Flottenübersicht, abweichende und veraltete Stände melden, Ableitung der PEviM-Fähigkeit | **erste Version** — wird ohnehin gebraucht |
+| **2 — Respektieren** | Zustand „aktualisierend" erkennen, in dieser Zeit nicht verifizieren; Firmware-Wechsel protokollieren | **erste Version, verpflichtend** — betrifft die Kernfunktion |
+| **3 — Ausrollen** | Firmware-Upload durch den Administrator, Gruppen, Rollout-Pläne, gesteuerte Ausführung über den Standort-Agenten, anschließende PIN-Wiederherstellung | **eigene Ausbaustufe**, unmittelbar nach dem Kernprodukt |
 
-Stufe 1 und 2 liefern den größten Teil des Nutzens bei nahezu keinem Risiko.
-Stufe 3 ist ein eigenes Produktthema, kein Nebenprodukt.
+**Zur Reihenfolge:** Stufe 3 setzt auf der Geräteanbindung, der Gruppenstruktur
+und dem Zeitplanwerk auf, die im Kernprodukt entstehen. Sie danach zu bauen ist
+deutlich billiger als parallel — nicht, weil sie unwichtig wäre, sondern weil
+sie sonst dieselben Bausteine ein zweites Mal bräuchte.
+
+Vorzubereiten ist sie aber von Anfang an: **Gerätegruppen und Zeitfenster gehören
+ins Datenmodell der ersten Version.** Sie werden dort ohnehin gebraucht — auch
+die PIN-Automatik profitiert von abteilungsweisen Regeln.
 
 ---
 
-## Offene Fragen an den PO
+## Risiko und Testpflicht
 
-1. **Bezugsweg der Firmware:** Bestehen Herstellerkontakte, über die zugelassene
-   Firmware-Pakete legal bezogen und weitergegeben werden dürfen? Ohne
-   gesicherten Bezugsweg ist Stufe 3 nicht umsetzbar — das ist die entscheidende
-   Frage, und sie ist organisatorisch, nicht technisch.
-2. **Abgrenzung zum Konnektor:** Soll unser Produkt die Firmware-Hoheit
-   übernehmen und der KSR-Weg des Konnektors dann abgeschaltet werden? Beides
-   parallel zu betreiben ist nicht empfehlenswert.
-3. **Haftung:** Ist die Übernahme der Verantwortung für ausgerollte Firmware
-   gewollt — auch für den Fall, dass ein Update ein Terminal betriebsunfähig
-   macht?
+Der PO hat das Risiko ausdrücklich anerkannt und die Konsequenz gezogen:
+**„Das ist ein Risiko, darum muss alles gut getestet werden."**
+
+Daraus folgt verbindlich:
+
+1. **Kein Firmware-Rollout ohne vorherigen vollständigen Durchlauf am
+   Testaufbau** — je Hersteller und Modell, das unterstützt werden soll.
+2. **Getestet wird auch der Fehlerfall**, nicht nur der Erfolgsfall: Terminal
+   kommt nach dem Update nicht zurück, Netzabbruch während der Übertragung,
+   Fenster läuft während des Updates aus, SMC-B lässt sich danach nicht
+   verifizieren.
+3. **Unterstützte Modelle und Firmware-Stände werden ausdrücklich benannt.**
+   Was nicht getestet ist, wird nicht unterstützt — und der Roboter verweigert
+   den Rollout auf unbekannten Modellen, statt es zu versuchen.
+4. **Messwerte statt Annahmen:** Update-Dauer je Modell wird gemessen und in die
+   Fensterplanung übernommen.
+
+---
+
+## Konsequenzen
+
+- Der PIN-Roboter hält **Terminal-Administrationszugänge** vor — ein zweites
+  Geheimnis neben der SMC-B-PIN, mit denselben Schutzanforderungen (keine
+  Klartext-Persistenz, nie in Logs, Backups oder Metriken, nur beim
+  Standort-Agenten).
+- **Gerätegruppen und Zeitfenster** gehören ins Datenmodell der ersten Version.
+- Die Firmware-Ablage braucht **Prüfsummen und Herkunftsnachweis**: Welcher
+  Administrator hat welche Datei wann hochgeladen?
+- Der Standort-Agent wird zur **Update-Komponente im Sinne von `TIP1-A_3153`**.
+  Der herstellerspezifische Einspielmechanismus wird je Hersteller gekapselt, so
+  dass weitere Hersteller ergänzt werden können, ohne die Ablaufsteuerung
+  anzufassen.
+
+## Offene Detailfragen
+
+1. **Parallelität:** Dürfen mehrere Terminals einer Gruppe gleichzeitig
+   aktualisiert werden? Bei 24 Geräten und drei Stunden Fenster kann das den
+   Unterschied machen. Empfehlung: konfigurierbar, Vorgabe zunächst sequenziell,
+   nach Messung erhöhen.
+2. **Umgang mit Geräten, die im Fenster nicht erreichbar sind** (abgeschaltet,
+   im Einsatz): überspringen und im nächsten Fenster erneut versuchen, oder nach
+   n Versuchen melden?
+3. **Downgrade:** Soll der Roboter Downgrades unterstützen (`TIP1-A_3170`
+   erlaubt sie eingeschränkt), oder ist das bewusst ein manueller Vorgang?
