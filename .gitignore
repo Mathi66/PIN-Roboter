@@ -1,0 +1,72 @@
+# ------------------------------------------------------------------
+# .gitignore — PIN-Roboter
+# Stand: Technologie-Stack noch nicht festgelegt.
+# Diese Datei enthält bewusst nur allgemeingültige Regeln und wird mit
+# der Stack-Entscheidung (ADR) um stackspezifische Einträge ergänzt.
+# ------------------------------------------------------------------
+
+# --- Secrets und lokale Konfiguration -----------------------------
+# Niemals im Repository: Zugangsdaten, Schlüssel, Zertifikate.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+**/secrets.*
+
+# --- Betriebsdaten / Persistenz -----------------------------------
+# Docker-Volumes und Laufzeitdaten gehören nie in die Versionierung.
+data/
+volumes/
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Logs und temporäre Dateien -----------------------------------
+logs/
+*.log
+tmp/
+temp/
+*.pid
+
+# --- Build-Ergebnisse ---------------------------------------------
+dist/
+build/
+out/
+coverage/
+
+# --- Abhängigkeiten -----------------------------------------------
+# Hinweis: Lockfiles (z. B. package-lock.json, poetry.lock) gehören
+# ausdrücklich INS Repository — sie sichern reproduzierbare Builds.
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- Betriebssystem ------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+
+# --- Editoren und IDEs ---------------------------------------------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+*.swp
+*.swo
+*~
+
+# --- Claude Code ---------------------------------------------------
+# Projektvorgaben (CLAUDE.md) werden versioniert.
+# Lokale, maschinenspezifische Einstellungen nicht.
+.claude/settings.local.json
