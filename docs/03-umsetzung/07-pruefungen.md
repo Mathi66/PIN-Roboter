@@ -9,8 +9,8 @@ Testaufbau)
 
 | | Was | Wo |
 |---|---|---|
-| **Modultests** | Logik isoliert, 65 Stück | `mvn test` |
-| **Systemnachweise** | Zusammenspiel am laufenden Stack, 37 Stück | `pruefungen/systemnachweise.sh` |
+| **Modultests** | Logik isoliert, 97 Stück | `mvn test` |
+| **Systemnachweise** | Zusammenspiel am laufenden Stack, 64 Stück | `pruefungen/systemnachweise.sh` |
 
 Modultests prüfen, ob eine Klasse tut, was sie soll. Systemnachweise prüfen, ob
 das *Produkt* tut, was der Anforderungskatalog verlangt. Nach CLAUDE.md gilt ein

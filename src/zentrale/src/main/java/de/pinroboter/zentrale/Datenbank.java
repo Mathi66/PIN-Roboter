@@ -295,6 +295,89 @@ public class Datenbank implements AutoCloseable {
             ALTER TABLE benutzer ADD COLUMN ist_demo BOOLEAN NOT NULL DEFAULT FALSE;
             CREATE INDEX benutzer_org_idx ON benutzer (organisation_id);
             """);
+
+        migration(9, """
+            -- Arbeitsplaetze aus dem Informationsmodell des Konnektors
+            -- ([gemSpec_Kon]). Ein Arbeitsplatz buendelt ein oder mehrere
+            -- Kartenterminals; der Aufrufkontext jeder Fachoperation nennt ihn
+            -- neben Mandant und Clientsystem (TUC_KON_000).
+            --
+            -- Warum das hier steht und nicht nur im Konnektor: Der Aufrufkontext
+            -- entscheidet, WELCHES Terminal der Konnektor anspricht. Ohne die
+            -- Zuordnung im eigenen Bestand koennte der Agent nicht bestimmen,
+            -- mit welcher Arbeitsplatz-Kennung er eine bestimmte SMC-B erreicht.
+            CREATE TABLE arbeitsplatz (
+              id              BIGSERIAL PRIMARY KEY,
+              konnektor_id    BIGINT      NOT NULL REFERENCES konnektor(id) ON DELETE CASCADE,
+              organisation_id BIGINT      NOT NULL REFERENCES organisation(id) ON DELETE CASCADE,
+              arbeitsplatz_id TEXT        NOT NULL,
+              bezeichnung     TEXT        NOT NULL,
+              art             TEXT        NOT NULL
+                                CHECK (art IN ('EMPFANG','BEHANDLUNG','SONSTIGES')),
+              ist_demo        BOOLEAN     NOT NULL DEFAULT FALSE,
+              angelegt        TIMESTAMPTZ NOT NULL DEFAULT now(),
+              UNIQUE (konnektor_id, arbeitsplatz_id)
+            );
+            CREATE INDEX arbeitsplatz_konnektor_idx ON arbeitsplatz (konnektor_id);
+
+            ALTER TABLE kartenterminal ADD COLUMN arbeitsplatz_id BIGINT
+              REFERENCES arbeitsplatz(id) ON DELETE SET NULL;
+
+            -- Ob in diesem Terminal eine SMC-B steckt. In einer Praxis steckt sie
+            -- typischerweise am Empfang; die Behandlungsterminals lesen eGK und
+            -- brauchen keine. Nur Terminals MIT SMC-B sind fuer die PIN-Automatik
+            -- ueberhaupt von Belang - die uebrigen werden erfasst und ueberwacht,
+            -- aber nie verifiziert.
+            ALTER TABLE kartenterminal ADD COLUMN hat_smcb BOOLEAN NOT NULL DEFAULT FALSE;
+
+            -- Managementschnittstelle freigeschaltet (PEviM aktiv, A_24078).
+            ALTER TABLE kartenterminal ADD COLUMN pevim_aktiv BOOLEAN NOT NULL DEFAULT FALSE;
+
+            CREATE INDEX kartenterminal_smcb_idx ON kartenterminal (hat_smcb)
+              WHERE hat_smcb;
+            """);
+
+        migration(10, """
+            -- Bestandsverwaltung (FA-GER-010, FA-GER-020).
+            --
+            -- Zugangsdaten liegen VERSCHLUESSELT (AES-GCM, siehe
+            -- Geheimnisspeicher). Sie muessen wieder verwendbar sein - ein Hash
+            -- genuegt hier also nicht, anders als beim Anmeldekennwort. Die
+            -- Spalten heissen bewusst "_chiffrat": Wer sie in einer Abfrage
+            -- sieht, soll sofort erkennen, dass hier kein Klartext steht.
+            ALTER TABLE konnektor ADD COLUMN benutzer_name       TEXT;
+            ALTER TABLE konnektor ADD COLUMN passwort_chiffrat   TEXT;
+
+            -- Nur gesetzt, wenn die herstellerspezifische Webadmin-Schnittstelle
+            -- genutzt wird. Sie ist immer optional (NFA-QS-035) - ohne sie
+            -- bleibt alles von Hand erfassbar.
+            ALTER TABLE konnektor ADD COLUMN webadmin_adresse    TEXT;
+
+            -- Ergebnis der letzten Erreichbarkeitspruefung. Ein nicht
+            -- erreichbarer Konnektor darf gespeichert werden: Bei der
+            -- Ersteinrichtung steht die Gegenstelle oft noch gar nicht.
+            ALTER TABLE konnektor ADD COLUMN zuletzt_erreichbar  BOOLEAN;
+            ALTER TABLE konnektor ADD COLUMN zuletzt_geprueft    TIMESTAMPTZ;
+            ALTER TABLE konnektor ADD COLUMN pruefhinweis        TEXT;
+
+            -- Administrationszugang des Kartenterminals. Ueber ihn laeuft
+            -- PEviM: die PIN wird an die Managementschnittstelle uebergeben
+            -- ([gemSpec_KT] 2.4.9).
+            ALTER TABLE kartenterminal ADD COLUMN adresse            TEXT;
+            ALTER TABLE kartenterminal ADD COLUMN admin_benutzer     TEXT;
+            ALTER TABLE kartenterminal ADD COLUMN admin_chiffrat     TEXT;
+            ALTER TABLE kartenterminal ADD COLUMN seriennummer       TEXT;
+            ALTER TABLE kartenterminal ADD COLUMN firmware           TEXT;
+            ALTER TABLE kartenterminal ADD COLUMN zuletzt_erreichbar BOOLEAN;
+            ALTER TABLE kartenterminal ADD COLUMN zuletzt_geprueft   TIMESTAMPTZ;
+            ALTER TABLE kartenterminal ADD COLUMN pruefhinweis       TEXT;
+
+            -- Suche ueber Bezeichnung und Standort (FA-GER-060). Bei 5.000
+            -- Geraeten entscheidet der Index darueber, ob die Liste in unter
+            -- einer Sekunde steht.
+            CREATE INDEX kartenterminal_suche_idx
+              ON kartenterminal (lower(bezeichnung), lower(coalesce(standortangabe,'')));
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

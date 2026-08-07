@@ -554,3 +554,127 @@ Datenbank lag — je nach Ausführungsreihenfolge grün oder rot. Sie bemessen d
 Budget jetzt nach dem Befüllen.
 
 ## Stand: 65 Modultests, 34 Systemnachweise — alle grün
+
+---
+
+# Iteration 11 — Informationsmodell im Demodatensatz
+
+Deine Vorgabe: *„das Infomodell der Konnektoren simulieren wir ebenfalls, je
+Praxis 3 Behandler Arbeitsplätze mit eigenem KT ohne SMCB und 1 Arbeitsplatz im
+Empfang mit KT und SMCB"* — dazu: alle Terminals mit freigeschalteter
+Adminschnittstelle.
+
+## Umgesetzt
+
+Je Praxis entstehen jetzt vier Arbeitsplätze mit je einem Kartenterminal:
+
+```
+Praxis
+ ├── Empfang        → Terminal MIT SMC-B
+ ├── Behandlung 1   → Terminal ohne SMC-B
+ ├── Behandlung 2   → Terminal ohne SMC-B
+ └── Behandlung 3   → Terminal ohne SMC-B
+```
+
+Im gesamten Verbund: **36 Arbeitsplätze, 36 Terminals, davon 9 mit SMC-B** —
+genau eine je Praxis, alle mit freigeschalteter Managementschnittstelle.
+
+**Warum die Arbeitsplätze im eigenen Datenmodell stehen** und nicht nur im
+Konnektor: Der Aufrufkontext (Mandant / Clientsystem / Arbeitsplatz) entscheidet,
+*welches* Terminal der Konnektor anspricht. Ohne diese Zuordnung im eigenen
+Bestand könnte der Agent nicht bestimmen, mit welcher Kennung er eine bestimmte
+SMC-B erreicht.
+
+## Nachgewiesen
+
+8 Modultests und 13 Systemnachweise, darunter die beiden, auf die es ankommt:
+
+- **Genau eine SMC-B je Praxis, und zwar am Empfang** — keine an einem
+  Behandlungsplatz
+- **Löschen fasst ausschließlich Demodaten an.** Der Nachweis legt vorher einen
+  Datensatz ohne Demo-Kennzeichen an und prüft danach, dass er noch da ist.
+
+---
+
+# Iteration 12 — Bestandsverwaltung (FA-GER-010, FA-GER-020)
+
+Bis hierher kamen alle Geräte aus dem Simulator oder dem Demodatensatz. Jetzt
+lassen sich **Konnektoren und Kartenterminals von Hand erfassen** — die
+Voraussetzung dafür, das Produkt an einer echten Praxis einzurichten.
+
+Neuer Navigationspunkt **Bestand**: oben die Konnektoren, darunter die Terminals
+mit Suche, Filter und Seitenblättern.
+
+## Vier Regeln, die die Umsetzung bestimmen
+
+**1. Zugangsdaten gehen nur hinein, nie heraus.** Verschlüsselt mit AES-256-GCM,
+Schlüssel aus der Umgebung (`GEHEIMNIS_SCHLUESSEL`), nie im Abbild und nie im
+Repository. Kein Lesepfad gibt einen Klartext zurück — die Oberfläche zeigt nur,
+*dass* ein Kennwort hinterlegt ist.
+
+**2. Ein nicht erreichbares Gerät ist speicherbar.** Bei der Ersteinrichtung
+steht der Konnektor oft noch gar nicht. Erzwungene Erreichbarkeit treibt zu
+Fantasiewerten, die später niemand korrigiert. Also: prüfen und melden, nicht
+erzwingen.
+
+**3. Löschen darf nicht mehr mitnehmen als gemeint.** Das Schema würde die
+Terminals eines Konnektors stillschweigend mitlöschen — ein Fehlgriff hätte einen
+halben Standort aus der Überwachung entfernt. Die Anwendung verweigert und
+**benennt die betroffenen Geräte**, statt sie nur zu zählen.
+
+**4. PIN-Automatik nur mit SMC-B** (`A_24080`). Ein Versuch gegen die falsche
+Karte könnte deren Fehlversuchszähler belasten. Beim Anlegen *und* beim Ändern
+abgelehnt, mit Nennung der Anforderungs-ID.
+
+## Eine Architekturfrage, die dabei aufbrach
+
+Der Quelltext der Zentrale behauptete: *„kennt bewusst keine SMC-B-PIN und keine
+Terminal-Zugänge"*. Der Anforderungskatalog verlangt aber, Zugangsdaten in der
+Zentrale zu erfassen. Beides ging nicht.
+
+Aufgelöst in **[ADR-0008](docs/adr/0008-ablage-von-geraete-zugangsdaten.md)**:
+Zwei Arten von Geheimnissen, verschieden behandelt.
+
+- Die **SMC-B-PIN** liegt niemals in der Zentrale. Ihr Missbrauch sperrt die
+  Karte und legt die Praxis still; bei zentralem Betrieb wären das hunderte
+  Praxen gleichzeitig.
+- **Geräte-Zugänge** liegen verschlüsselt in der Zentrale. Ihr Verlust ist
+  reparabel und trifft ein Gerät, nicht den Kartenbetrieb.
+
+Der ADR benennt auch, was der Schutz **nicht** leistet: Wer Datenbank und
+Schlüssel gleichzeitig hat, kann entschlüsseln. Er schützt gegen Sicherungen,
+Datenauszüge und versehentliche Ausgaben — nicht gegen vollen Systemzugriff.
+
+**Betrieblich wichtig:** Der Schlüssel gehört in die Sicherung, aber nicht in
+dieselbe Datei wie der Datenbankauszug. Sonst schützt die Verschlüsselung vor
+nichts.
+
+## Zwei Nachweise, die falsch gebaut waren
+
+`Not-Aus ist protokolliert` und `abgelehnte Registrierungen werden protokolliert`
+flatterten — mal grün, mal rot, ohne Änderung am Produkt. Beide prüften in
+*einem* Griff zwei verschiedene Dinge: ob ein Ereignis im Protokoll steht, und ob
+es in der Ansicht erscheint. Bei einem Fehlschlag war nicht erkennbar, welches
+von beidem gescheitert war.
+
+Jetzt getrennt, und im Fehlerfall geben sie eine Diagnose aus. Das ist dieselbe
+Erfahrung wie schon mehrfach: **Ein Nachweis, der nicht sagt, was er misst, ist
+kein Nachweis.**
+
+## Zwei echte Fehler, die die Tests gefunden haben
+
+- **Die Seitengröße war nach unten auf 10 geklemmt** — eine willkürliche Zahl,
+  die kleinere Seiten unmöglich machte. Der Schutz gehört nach oben (gegen eine
+  manipulierte URL, die 5.000 Datensätze zieht), nach unten reicht „größer null".
+- Der Test für den Löschschutz erwartete einen bestimmten Gerätenamen in der
+  Meldung. Aufgezählt werden aber die ersten fünf alphabetisch — der Test war zu
+  eng, nicht das Produkt falsch.
+
+## Was von FA-GER-060 noch fehlt
+
+Serverseitige Paginierung, Volltextsuche, Filter und der passende Index stehen.
+**Nicht** umgesetzt sind Sortierung nach Spalten, Filter nach Status/Modell/
+Firmware und Massenaktionen (Gruppe zuweisen, Intervall setzen, aktivieren).
+Die Anforderung gilt damit als **teilweise erfüllt**, nicht als erledigt.
+
+## Stand nach Iteration 12: 97 Modultests, 64 Systemnachweise — alle grün

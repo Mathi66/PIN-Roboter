@@ -27,6 +27,18 @@ public enum Ereignisart {
     GRUPPE_ANGELEGT("Gerätegruppe angelegt", Stufe.ROUTINE),
     GRUPPE_GEAENDERT("Gerätegruppe geändert", Stufe.ROUTINE),
     GRUPPE_GELOESCHT("Gerätegruppe gelöscht", Stufe.ROUTINE),
+    // Bestandspflege (FA-GER-010, FA-GER-020). Sicherheitsstufe, weil hier
+    // Zugangsdaten hinterlegt werden und weil eine geloeschte Erfassung
+    // bedeutet, dass ein Geraet nicht mehr ueberwacht wird - beides muss
+    // nachvollziehbar bleiben, auch wenn das Protokoll rotiert.
+    KONNEKTOR_ANGELEGT("Konnektor erfasst", Stufe.SICHERHEIT),
+    KONNEKTOR_GEAENDERT("Konnektor geändert", Stufe.SICHERHEIT),
+    KONNEKTOR_GELOESCHT("Konnektor gelöscht", Stufe.SICHERHEIT),
+    TERMINAL_ANGELEGT("Kartenterminal erfasst", Stufe.SICHERHEIT),
+    TERMINAL_GEAENDERT("Kartenterminal geändert", Stufe.SICHERHEIT),
+    TERMINAL_GELOESCHT("Kartenterminal gelöscht", Stufe.SICHERHEIT),
+    ERREICHBARKEIT_GEPRUEFT("Erreichbarkeit geprüft", Stufe.ROUTINE),
+
     GERAET_ERREICHBAR("Gerät wieder erreichbar", Stufe.ROUTINE),
     GERAET_NICHT_ERREICHBAR("Gerät nicht erreichbar", Stufe.ROUTINE),
     KONNEKTOR_NICHT_ERREICHBAR("Konnektor nicht erreichbar", Stufe.ROUTINE),

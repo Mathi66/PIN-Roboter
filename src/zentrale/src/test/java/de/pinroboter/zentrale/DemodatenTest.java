@@ -1,0 +1,161 @@
+package de.pinroboter.zentrale;
+
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+
+import java.sql.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Prüft den Demodatensatz (MVZ-Verbund) gegen eine echte Datenbank.
+ *
+ * <p>Der Datensatz ist mehr als Beiwerk: An ihm entscheidet sich, ob
+ * Mandantentrennung und Berechtigungsebenen tragen, und ob die Oberfläche bei
+ * echten Stückzahlen bedienbar bleibt.
+ */
+@EnabledIfEnvironmentVariable(named = "TEST_DB_URL", matches = ".+")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class DemodatenTest {
+
+    private static Datenbank db;
+    private static Demodaten dd;
+
+    @BeforeAll
+    static void verbinden() throws Exception {
+        db = new Datenbank(System.getenv("TEST_DB_URL"),
+                System.getenv().getOrDefault("TEST_DB_USER", "pinroboter"),
+                System.getenv().getOrDefault("TEST_DB_PASSWORD", "test"));
+        dd = new Demodaten(db);
+        if (dd.bestand().vorhanden()) dd.loeschen();
+    }
+
+    @AfterAll
+    static void aufraeumen() throws Exception {
+        if (dd != null && dd.bestand().vorhanden()) dd.loeschen();
+        if (db != null) db.close();
+    }
+
+    private long zaehle(String sql) throws SQLException {
+        try (Statement s = db.verbindung().createStatement(); ResultSet rs = s.executeQuery(sql)) {
+            return rs.next() ? rs.getLong(1) : -1;
+        }
+    }
+
+    @Test @Order(1)
+    @DisplayName("Der Verbund entsteht in der vorgegebenen Größe")
+    void groesse() throws Exception {
+        var konten = dd.anlegen();
+        var b = dd.bestand();
+
+        assertEquals(13, b.organisationen(), "1 Verbund + 3 Standorte + 9 Praxen");
+        assertEquals(9, b.konnektoren(), "je Praxis ein Konnektor");
+        assertEquals(36, b.arbeitsplaetze(), "je Praxis 1 Empfang + 3 Behandlung");
+        assertEquals(36, b.terminals(), "je Arbeitsplatz ein Terminal");
+        assertEquals(16, b.benutzer(), "9 Ebene 1 + 3 Ebene 2 + 1 Ebene 3 + 3 Administratoren");
+        assertEquals(16, konten.size(), "alle Konten werden zurückgegeben");
+    }
+
+    @Test @Order(2)
+    @DisplayName("Genau eine SMC-B je Praxis, und zwar am Empfang")
+    void smcbNurAmEmpfang() throws Exception {
+        assertEquals(9, zaehle("SELECT count(*) FROM kartenterminal WHERE ist_demo AND hat_smcb"),
+                "eine SMC-B je Praxis");
+        assertEquals(0, zaehle("""
+                SELECT count(*) FROM kartenterminal t JOIN arbeitsplatz a ON a.id = t.arbeitsplatz_id
+                WHERE t.ist_demo AND t.hat_smcb AND a.art <> 'EMPFANG'"""),
+                "keine SMC-B an einem Behandlungsplatz");
+        assertEquals(0, zaehle("""
+                SELECT count(*) FROM kartenterminal t JOIN arbeitsplatz a ON a.id = t.arbeitsplatz_id
+                WHERE t.ist_demo AND NOT t.hat_smcb AND a.art = 'EMPFANG'"""),
+                "jeder Empfang hat eine SMC-B");
+    }
+
+    @Test @Order(3)
+    @DisplayName("Alle Terminals haben die Managementschnittstelle freigeschaltet")
+    void pevimUeberall() throws Exception {
+        assertEquals(36, zaehle("SELECT count(*) FROM kartenterminal WHERE ist_demo AND pevim_aktiv"));
+    }
+
+    @Test @Order(4)
+    @DisplayName("Die Hierarchie ist dreistufig und lückenlos")
+    void hierarchie() throws Exception {
+        assertEquals(1, zaehle("SELECT count(*) FROM organisation WHERE ist_demo AND art='VERBUND'"));
+        assertEquals(3, zaehle("SELECT count(*) FROM organisation WHERE ist_demo AND art='STANDORT'"));
+        assertEquals(9, zaehle("SELECT count(*) FROM organisation WHERE ist_demo AND art='EINRICHTUNG'"));
+        assertEquals(0, zaehle("""
+                SELECT count(*) FROM organisation WHERE ist_demo AND art <> 'VERBUND'
+                  AND eltern_id IS NULL"""), "nur der Verbund hat keine Eltern");
+        assertEquals(9, zaehle("""
+                SELECT count(*) FROM organisation p JOIN organisation s ON s.id = p.eltern_id
+                JOIN organisation v ON v.id = s.eltern_id
+                WHERE p.art='EINRICHTUNG' AND s.art='STANDORT' AND v.art='VERBUND'"""),
+                "jede Praxis hängt über einen Standort am Verbund");
+    }
+
+    @Test @Order(5)
+    @DisplayName("Benutzer decken alle drei Berechtigungsebenen ab")
+    void berechtigungsebenen() throws Exception {
+        assertEquals(9, zaehle("""
+                SELECT count(*) FROM benutzer b JOIN organisation o ON o.id = b.organisation_id
+                WHERE b.ist_demo AND o.art='EINRICHTUNG' AND b.rolle='BENUTZER'"""),
+                "Ebene 1: je Praxis ein Benutzer");
+        assertEquals(3, zaehle("""
+                SELECT count(*) FROM benutzer b JOIN organisation o ON o.id = b.organisation_id
+                WHERE b.ist_demo AND o.art='STANDORT' AND b.rolle='BENUTZER'"""),
+                "Ebene 2: je Standort ein Benutzer");
+        assertEquals(1, zaehle("""
+                SELECT count(*) FROM benutzer b JOIN organisation o ON o.id = b.organisation_id
+                WHERE b.ist_demo AND o.art='VERBUND' AND b.rolle='BENUTZER'"""),
+                "Ebene 3: einer für den ganzen Verbund");
+        assertEquals(3, zaehle("SELECT count(*) FROM benutzer WHERE ist_demo AND rolle='ADMINISTRATOR'"));
+
+        // Die drei Administratoren haben unterschiedliche Geltungsbereiche -
+        // daran zeigt sich spaeter, ob die Rechtepruefung wirklich greift.
+        assertEquals(3, zaehle("""
+                SELECT count(DISTINCT o.art) FROM benutzer b
+                JOIN organisation o ON o.id = b.organisation_id
+                WHERE b.ist_demo AND b.rolle='ADMINISTRATOR'"""),
+                "je ein Administrator auf Verbund-, Standort- und Praxisebene");
+    }
+
+    @Test @Order(6)
+    @DisplayName("Ein zweiter Anlauf legt nichts doppelt an")
+    void keinDoppeltesAnlegen() {
+        assertThrows(IllegalStateException.class, () -> dd.anlegen());
+    }
+
+    @Test @Order(7)
+    @DisplayName("Löschen entfernt Demodaten restlos — und nur diese")
+    void loeschenNurDemodaten() throws Exception {
+        // Ein Datensatz OHNE Demo-Kennzeichen, der überleben muss.
+        try (Statement s = db.verbindung().createStatement()) {
+            s.executeUpdate("""
+                    INSERT INTO organisation (bezeichnung, art, ist_demo)
+                    VALUES ('Echte Praxis Dr. Musterfrau', 'VERBUND', FALSE)""");
+        }
+        long echteVorher = zaehle("SELECT count(*) FROM organisation WHERE NOT ist_demo");
+
+        dd.loeschen();
+
+        assertFalse(dd.bestand().vorhanden(), "Demodaten müssen weg sein");
+        assertEquals(0, zaehle("SELECT count(*) FROM kartenterminal WHERE ist_demo"));
+        assertEquals(0, zaehle("SELECT count(*) FROM arbeitsplatz   WHERE ist_demo"));
+        assertEquals(0, zaehle("SELECT count(*) FROM konnektor      WHERE ist_demo"));
+        assertEquals(0, zaehle("SELECT count(*) FROM benutzer       WHERE ist_demo"));
+
+        assertEquals(echteVorher, zaehle("SELECT count(*) FROM organisation WHERE NOT ist_demo"),
+                "Datensätze ohne Demo-Kennzeichen dürfen NIE angefasst werden");
+
+        try (Statement s = db.verbindung().createStatement()) {
+            s.executeUpdate("DELETE FROM organisation WHERE bezeichnung = 'Echte Praxis Dr. Musterfrau'");
+        }
+    }
+
+    @Test @Order(8)
+    @DisplayName("Nach dem Löschen lässt sich der Datensatz neu anlegen")
+    void wiederherstellbar() throws Exception {
+        dd.anlegen();
+        assertEquals(36, dd.bestand().terminals());
+    }
+}

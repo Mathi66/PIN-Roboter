@@ -1,8 +1,6 @@
 # ------------------------------------------------------------------
 # .gitignore — PIN-Roboter
-# Stand: Technologie-Stack noch nicht festgelegt.
-# Diese Datei enthält bewusst nur allgemeingültige Regeln und wird mit
-# der Stack-Entscheidung (ADR) um stackspezifische Einträge ergänzt.
+# Stack: Java 21 mit Maven (ADR-0006).
 # ------------------------------------------------------------------
 
 # --- Secrets und lokale Konfiguration -----------------------------
@@ -37,6 +35,15 @@ dist/
 build/
 out/
 coverage/
+
+# Maven. Nachgetragen am 07.08.2026 — bis dahin lagen rund 82 MB
+# Bauartefakte im Repository, weil die Datei nach der Stack-Entscheidung
+# (ADR-0006) nie ergänzt wurde. Übersetzte Klassen und Archive sind aus
+# dem Quelltext jederzeit reproduzierbar; im Repository richten sie nur
+# Schaden an (Umfang, unlesbare Änderungslisten, verdeckte Unterschiede
+# zwischen Quelltext und ausgeliefertem Stand).
+target/
+*.class
 
 # --- Abhängigkeiten -----------------------------------------------
 # Hinweis: Lockfiles (z. B. package-lock.json, poetry.lock) gehören

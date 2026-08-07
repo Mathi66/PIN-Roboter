@@ -31,6 +31,10 @@ datenbank_starten() {
   sleep 10
 }
 
+# Schluessel fuer die verschluesselte Ablage von Zugangsdaten. Wird je Lauf
+# neu gezogen - im Betrieb kommt er aus der Konfiguration, nie aus dem Repo.
+SCHLUESSEL=$(openssl rand -base64 32 | tr -d '\n')
+
 KEKSE=/tmp/pr-kekse.txt
 TOTP_GEHEIMNIS=""
 ADMIN_PW=RichtigPferdBatterieKlammer
@@ -88,6 +92,7 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
     -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
     -e DB_USER=pinroboter -e DB_PASSWORD=test \
+    -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
     $JRE java -jar /app.jar >/dev/null
   for _ in $(seq 40); do
     curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break
@@ -180,8 +185,26 @@ curl -s -b "$KEKSE" -X POST http://localhost:8090/notaus >/dev/null
 sleep 20; N=$(verifikationen)
 [ $((N-W)) -ge 1 ] && F=ja || F=nein
 ergebnis "Automatik läuft nach Aufhebung wieder (gemessen: $((N-W)))" "$F"
-curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Not-Aus" && G=ja || G=nein
-ergebnis "Not-Aus ist protokolliert" "$G"
+# Getrennt gefragt: steht es im Protokoll, und steht es in der Ansicht?
+# Der Nachweis flatterte, solange er beides in einem Griff geprueft hat.
+DB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+     "SELECT count(*) FROM fachprotokoll WHERE art LIKE 'NOT_AUS%'" | tr -d ' \n')
+[ "${DB:-0}" -ge 2 ] && G=ja || G=nein
+ergebnis "Not-Aus und Aufhebung stehen im Fachprotokoll ($DB von 2)" "$G"
+
+ANTWORT=$(curl -s -b "$KEKSE" -w '\n%{http_code}' http://localhost:8090/teil/protokoll)
+STATUS=$(echo "$ANTWORT" | tail -1)
+echo "$ANTWORT" | grep -q "Not-Aus" && GA=ja || GA=nein
+if [ "$GA" = "nein" ]; then
+  GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+        "SELECT count(*) FROM fachprotokoll" | tr -d ' \n')
+  JUENGER=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+        "SELECT count(*) FROM fachprotokoll WHERE zeitpunkt >
+           (SELECT max(zeitpunkt) FROM fachprotokoll WHERE art LIKE 'NOT_AUS%')" | tr -d ' \n')
+  echo "    Diagnose: HTTP $STATUS, $GES Eintraege im Protokoll, davon $JUENGER juenger"
+  echo "    als der letzte Not-Aus-Eintrag (die Ansicht zeigt die 200 juengsten)."
+fi
+ergebnis "Not-Aus erscheint in der Protokollansicht" "$GA"
 
 # ---------------------------------------------------------------- FA-PRO-020
 hinweis "FA-PRO-020 — keine Geheimnisse in Protokollen"
@@ -200,7 +223,8 @@ docker rm -f pr-zen >/dev/null 2>&1
 docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
   -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
-  -e DB_USER=pinroboter -e DB_PASSWORD=test $JRE java -jar /app.jar >/dev/null
+  -e DB_USER=pinroboter -e DB_PASSWORD=test -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
+  $JRE java -jar /app.jar >/dev/null
 for _ in $(seq 40); do curl -sf http://localhost:8090/api/notaus >/dev/null 2>&1 && break; sleep 1; done
 NACH=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc "SELECT count(*) FROM fachprotokoll")
 [ "$NACH" -ge "$VOR" ] && [ "$VOR" -gt 0 ] && B=ja || B=nein
@@ -312,6 +336,7 @@ docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
   -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e PROTOKOLL_BUDGET=400KB \
+  -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
   $JRE java -jar /app.jar >/dev/null
 for _ in $(seq 40); do curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1; done
 anmelden
@@ -343,7 +368,8 @@ docker rm -f pr-zen >/dev/null 2>&1
 docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
   -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
-  -e DB_USER=pinroboter -e DB_PASSWORD=test $JRE java -jar /app.jar >/dev/null
+  -e DB_USER=pinroboter -e DB_PASSWORD=test -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
+  $JRE java -jar /app.jar >/dev/null
 for _ in $(seq 40); do curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1; done
 anmelden
 
@@ -389,8 +415,169 @@ curl -s -X POST -H "X-Registrierung: $G2" http://localhost:8090/api/registrieren
   | grep -q "bereits verwendet" && E2=ja || E2=nein
 ergebnis "dasselbe Geheimnis ein zweites Mal wird abgewiesen" "$E2"
 
-curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Registrierung abgelehnt" && PR=ja || PR=nein
-ergebnis "abgelehnte Registrierungen werden protokolliert" "$PR"
+# Zwei getrennte Fragen, weil sie unterschiedliche Fehler bedeuten: Steht der
+# Eintrag ueberhaupt im Protokoll (sonst fehlt die Nachvollziehbarkeit), und
+# erscheint er in der Ansicht (sonst greift die Rotation oder die Anzeigegrenze)?
+DB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+     "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_REGISTRIERUNG_ABGELEHNT'" | tr -d ' \n')
+[ "${DB:-0}" -gt 0 ] && PR=ja || PR=nein
+ergebnis "abgelehnte Registrierungen stehen im Fachprotokoll ($DB Eintraege)" "$PR"
+
+curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Registrierung abgelehnt" && PA=ja || PA=nein
+if [ "$PA" = "nein" ] && [ "${DB:-0}" -gt 0 ]; then
+  GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+        "SELECT count(*) FROM fachprotokoll" | tr -d ' \n')
+  echo "    Diagnose: $DB Eintrag/Eintraege in der Datenbank, aber nicht in der"
+  echo "    Ansicht. Gesamtzahl im Protokoll: $GES (Ansicht zeigt die 200 juengsten)."
+fi
+ergebnis "abgelehnte Registrierungen erscheinen in der Protokollansicht" "$PA"
+
+hinweis "Demodatensatz — MVZ-Verbund (Block C)"
+# Der Demodatensatz ist Werkzeug, nicht Beiwerk: An ihm wird die Oberflaeche
+# bei realistischen Stueckzahlen geprueft, bevor echte Bestandsdaten da sind.
+sql() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d ' \n'; }
+
+curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' -X POST \
+  http://localhost:8090/verwaltung/demodaten/anlegen | grep -qE '^(200|302)$' && DA=ja || DA=nein
+ergebnis "Demodatensatz laesst sich auf Knopfdruck anlegen" "$DA"
+
+for paar in "organisation:13" "konnektor:9" "arbeitsplatz:36" "kartenterminal:36"; do
+  T=${paar%%:*}; SOLL=${paar##*:}
+  IST=$(sql "SELECT count(*) FROM $T WHERE ist_demo")
+  [ "$IST" = "$SOLL" ] && R=ja || R=nein
+  ergebnis "$T: $IST von $SOLL erwartet" "$R"
+done
+
+# Kernaussage des Informationsmodells: genau eine SMC-B je Praxis, am Empfang.
+# Eine SMC-B an einem Behandlungsplatz waere fachlich falsch.
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo AND hat_smcb")
+[ "$IST" = "9" ] && R=ja || R=nein
+ergebnis "genau eine SMC-B je Praxis (9 von 36 Terminals), IST: $IST" "$R"
+
+IST=$(sql "SELECT count(*) FROM kartenterminal t JOIN arbeitsplatz a ON a.id=t.arbeitsplatz_id
+           WHERE t.ist_demo AND t.hat_smcb AND a.art<>'EMPFANG'")
+[ "$IST" = "0" ] && R=ja || R=nein
+ergebnis "keine SMC-B an einem Behandlungsplatz (gefunden: $IST)" "$R"
+
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo AND NOT pevim_aktiv")
+[ "$IST" = "0" ] && R=ja || R=nein
+ergebnis "alle Terminals mit freigeschalteter Managementschnittstelle (ohne: $IST)" "$R"
+
+# Drei Berechtigungsebenen: Praxis, Standort, Verbund - die Grundlage dafuer,
+# dass sich Mandantentrennung ueberhaupt pruefen laesst.
+IST=$(sql "SELECT count(DISTINCT o.art) FROM benutzer b JOIN organisation o ON o.id=b.organisation_id
+           WHERE b.ist_demo AND b.rolle='BENUTZER'")
+[ "$IST" = "3" ] && R=ja || R=nein
+ergebnis "Benutzer auf allen drei Berechtigungsebenen ($IST von 3)" "$R"
+
+curl -s -b "$KEKSE" http://localhost:8090/verwaltung | grep -q "Arbeitsplätze" && VA=ja || VA=nein
+ergebnis "Verwaltungsseite zeigt den Bestand einschliesslich Arbeitsplaetzen" "$VA"
+
+# Loeschen darf ausschliesslich Demodaten treffen. Wuerde es echte Daten
+# mitnehmen, waere der Knopf eine Falle statt eines Werkzeugs.
+docker exec pr-db psql -U pinroboter -d pinroboter -c \
+  "INSERT INTO organisation (bezeichnung, art, ist_demo) VALUES ('Nachweis Echtdaten','VERBUND',FALSE)" >/dev/null 2>&1
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/demodaten/loeschen
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
+[ "$IST" = "0" ] && R=ja || R=nein
+ergebnis "Loeschen entfernt alle Demodaten (Rest: $IST)" "$R"
+IST=$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='Nachweis Echtdaten'")
+[ "$IST" = "1" ] && R=ja || R=nein
+ergebnis "Loeschen laesst Daten ohne Demo-Kennzeichen unberuehrt" "$R"
+
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/demodaten/anlegen
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
+[ "$IST" = "36" ] && R=ja || R=nein
+ergebnis "Demodatensatz laesst sich wiederherstellen ($IST von 36)" "$R"
+
+docker exec pr-db psql -U pinroboter -d pinroboter -c \
+  "DELETE FROM organisation WHERE bezeichnung='Nachweis Echtdaten'" >/dev/null 2>&1
+
+hinweis "FA-GER-010 / FA-GER-020 — Bestandsverwaltung"
+ORG=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
+
+# Anlegen ueber die Maske, mit absichtlich unerreichbarer Adresse.
+# 192.0.2.0/24 ist nach RFC 5737 fuer Dokumentation reserviert und wird
+# nirgends geroutet - ein verlaesslicher Nichterreichbarkeitsfall.
+ANTWORT=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/konnektor \
+  --data-urlencode "organisationId=$ORG" \
+  --data-urlencode "bezeichnung=Nachweiskonnektor" \
+  --data-urlencode "adresse=192.0.2.77:443" \
+  --data-urlencode "mandantId=M-NW" --data-urlencode "clientsystemId=CS-NW" \
+  --data-urlencode "arbeitsplatzId=AP-NW" --data-urlencode "benutzerName=admin" \
+  --data-urlencode "passwort=NachweisKennwortXY")
+KID=$(sql "SELECT id FROM konnektor WHERE bezeichnung='Nachweiskonnektor'")
+[ -n "$KID" ] && KA=ja || KA=nein
+ergebnis "nicht erreichbarer Konnektor laesst sich trotzdem speichern" "$KA"
+
+echo "$ANTWORT" | grep -q "antwortet innerhalb" && KM=ja || KM=nein
+ergebnis "die Meldung sagt, was zu tun ist, statt nur zu scheitern" "$KM"
+
+# Kernzusage FA-GER-010: nach dem Speichern nicht mehr auslesbar.
+CHIFFRAT=$(sql "SELECT coalesce(passwort_chiffrat,'') FROM konnektor WHERE id=$KID")
+case "$CHIFFRAT" in v1:*) KC=ja ;; *) KC=nein ;; esac
+ergebnis "das Kennwort liegt verschluesselt in der Datenbank" "$KC"
+
+TREFFER=0
+for pfad in "/bestand" "/bestand/konnektor/$KID"; do
+  curl -s -b "$KEKSE" "http://localhost:8090$pfad" | grep -q "NachweisKennwortXY" && TREFFER=$((TREFFER+1))
+done
+[ $TREFFER -eq 0 ] && KO=ja || KO=nein
+ergebnis "das Kennwort erscheint auf keiner Oberflaechenseite (Treffer: $TREFFER)" "$KO"
+
+# A_24080: PEviM ist ausschliesslich fuer SMC-B zulaessig.
+curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+  --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
+  --data-urlencode "bezeichnung=Behandlung" --data-urlencode "adresse=192.0.2.90" \
+  --data-urlencode "pevimAktiv=ja" | grep -q "A_24080" && PV=ja || PV=nein
+ergebnis "PIN-Automatik ohne SMC-B wird abgelehnt (A_24080)" "$PV"
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01'")
+[ "$IST" = "0" ] && PN=ja || PN=nein
+ergebnis "das abgelehnte Terminal wurde auch nicht angelegt" "$PN"
+
+curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+  --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
+  --data-urlencode "bezeichnung=Empfang Nachweis" --data-urlencode "adresse=192.0.2.90" \
+  --data-urlencode "adminPasswort=TerminalKennwortXY" \
+  --data-urlencode "hatSmcb=ja" --data-urlencode "pevimAktiv=ja" >/dev/null
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01' AND hat_smcb AND pevim_aktiv")
+[ "$IST" = "1" ] && TA=ja || TA=nein
+ergebnis "Terminal mit SMC-B und PIN-Automatik laesst sich anlegen" "$TA"
+
+curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+  --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
+  --data-urlencode "bezeichnung=Doppelt" --data-urlencode "adresse=192.0.2.91" \
+  | grep -q "bereits vergeben" && TD=ja || TD=nein
+ergebnis "eine doppelte Kennung wird verstaendlich abgewiesen" "$TD"
+
+# Ein Konnektor mit Terminals darf nicht stillschweigend einen halben
+# Standort mitreissen - das Schema wuerde per CASCADE genau das tun.
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/konnektor/$KID/loeschen" \
+  | grep -q "zugeordnet" && LS=ja || LS=nein
+ergebnis "Konnektor mit zugeordneten Terminals wird nicht geloescht" "$LS"
+IST=$(sql "SELECT count(*) FROM konnektor WHERE id=$KID")
+[ "$IST" = "1" ] && LB=ja || LB=nein
+ergebnis "der Konnektor ist nach dem Loeschversuch noch da" "$LB"
+
+TID=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01'")
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID/loeschen" >/dev/null
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/konnektor/$KID/loeschen" >/dev/null
+IST=$(sql "SELECT count(*) FROM konnektor WHERE id=$KID")
+[ "$IST" = "0" ] && LN=ja || LN=nein
+ergebnis "nach dem Entfernen der Terminals laesst er sich loeschen" "$LN"
+
+# Bestandspflege ist protokollpflichtig - ein geloeschtes Geraet wird nicht
+# mehr ueberwacht, und das muss nachvollziehbar bleiben.
+IST=$(sql "SELECT count(DISTINCT art) FROM fachprotokoll
+           WHERE art IN ('KONNEKTOR_ANGELEGT','TERMINAL_ANGELEGT',
+                         'KONNEKTOR_GELOESCHT','TERMINAL_GELOESCHT')")
+[ "$IST" = "4" ] && BP=ja || BP=nein
+ergebnis "Anlegen und Loeschen sind protokolliert ($IST von 4 Ereignisarten)" "$BP"
+
+IST=$(sql "SELECT count(*) FROM fachprotokoll
+           WHERE text LIKE '%KennwortXY%' OR coalesce(handlung,'') LIKE '%KennwortXY%'")
+[ "$IST" = "0" ] && BG=ja || BG=nein
+ergebnis "kein Kennwort im Fachprotokoll (Treffer: $IST)" "$BG"
 
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1

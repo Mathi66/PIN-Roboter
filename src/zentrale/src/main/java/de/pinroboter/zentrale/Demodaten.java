@@ -41,7 +41,8 @@ public class Demodaten {
 
     public Demodaten(Datenbank db) { this.db = db; }
 
-    public record Bestand(int organisationen, int konnektoren, int terminals, int benutzer) {
+    public record Bestand(int organisationen, int konnektoren, int arbeitsplaetze,
+                          int terminals, int terminalsMitSmcb, int benutzer) {
         public boolean vorhanden() { return organisationen > 0; }
     }
 
@@ -53,16 +54,18 @@ public class Demodaten {
     public Bestand bestand() {
         try (Statement s = db.verbindung().createStatement();
              ResultSet rs = s.executeQuery("""
-                     SELECT (SELECT count(*) FROM organisation    WHERE ist_demo) AS orgs,
-                            (SELECT count(*) FROM konnektor       WHERE ist_demo) AS kon,
-                            (SELECT count(*) FROM kartenterminal  WHERE ist_demo) AS term,
-                            (SELECT count(*) FROM benutzer        WHERE ist_demo) AS ben""")) {
+                     SELECT (SELECT count(*) FROM organisation   WHERE ist_demo) AS orgs,
+                            (SELECT count(*) FROM konnektor      WHERE ist_demo) AS kon,
+                            (SELECT count(*) FROM arbeitsplatz   WHERE ist_demo) AS ap,
+                            (SELECT count(*) FROM kartenterminal WHERE ist_demo) AS term,
+                            (SELECT count(*) FROM kartenterminal WHERE ist_demo AND hat_smcb) AS smcb,
+                            (SELECT count(*) FROM benutzer       WHERE ist_demo) AS ben""")) {
             if (rs.next()) {
-                return new Bestand(rs.getInt("orgs"), rs.getInt("kon"),
-                        rs.getInt("term"), rs.getInt("ben"));
+                return new Bestand(rs.getInt("orgs"), rs.getInt("kon"), rs.getInt("ap"),
+                        rs.getInt("term"), rs.getInt("smcb"), rs.getInt("ben"));
             }
         } catch (SQLException ignored) { }
-        return new Bestand(0, 0, 0, 0);
+        return new Bestand(0, 0, 0, 0, 0, 0);
     }
 
     // ---------------------------------------------------------------- Anlegen
@@ -101,18 +104,40 @@ public class Demodaten {
                             "https://10.%d.%d.10:443/".formatted(standortIndex(standortname) + 1, laufendeNummer),
                             "KoCo Konnektor", "Mandant-" + kuerzel);
 
-                    // Vier Kartenterminals je Praxis. Alle mit freigeschalteter
-                    // Managementschnittstelle (Vorgabe PO) - in einem
-                    // eingerichteten Verbund ist das der Regelfall.
-                    String[] raeume = {"Empfang", "Behandlung 1", "Behandlung 2", "Labor"};
-                    for (int t = 0; t < raeume.length; t++) {
-                        kartenterminal(konnektor, praxis,
-                                "KT-%s-%02d".formatted(kuerzel, t + 1),
-                                raeume[t],
+                    // Informationsmodell des Konnektors (Vorgabe PO, 07.08.2026):
+                    // ein Empfangs-Arbeitsplatz mit SMC-B, drei Behandler-
+                    // Arbeitsplaetze mit je einem Terminal ohne SMC-B.
+                    //
+                    // Das entspricht der Wirklichkeit in einer Praxis: Die SMC-B
+                    // weist die Einrichtung aus und steckt an einer Stelle; die
+                    // Behandlungsraeume lesen eGK und brauchen keine.
+                    //
+                    // Fuer die PIN-Automatik ist damit genau EIN Terminal je
+                    // Praxis von Belang. Die uebrigen werden erfasst und
+                    // ueberwacht, aber nie verifiziert - sie haben nichts
+                    // freizuschalten.
+                    int oktett = 20;
+
+                    long apEmpfang = arbeitsplatz(konnektor, praxis,
+                            "AP-EMPFANG", "Empfang", "EMPFANG");
+                    kartenterminal(konnektor, praxis, apEmpfang,
+                            "KT-%s-EMP".formatted(kuerzel), "Empfang",
+                            "10.%d.%d.%d".formatted(standortIndex(standortname) + 1,
+                                    laufendeNummer, oktett++),
+                            "CHERRY ST-1506", "card-smcb-" + kuerzel,
+                            true,    // SMC-B steckt hier
+                            true);   // Managementschnittstelle freigeschaltet
+
+                    for (int b = 1; b <= 3; b++) {
+                        long apBehandlung = arbeitsplatz(konnektor, praxis,
+                                "AP-BEHANDLUNG-" + b, "Behandlung " + b, "BEHANDLUNG");
+                        kartenterminal(konnektor, praxis, apBehandlung,
+                                "KT-%s-B%d".formatted(kuerzel, b), "Behandlung " + b,
                                 "10.%d.%d.%d".formatted(standortIndex(standortname) + 1,
-                                        laufendeNummer, 20 + t),
-                                "CHERRY ST-1506",
-                                "card-smcb-" + kuerzel);
+                                        laufendeNummer, oktett++),
+                                "CHERRY ST-1506", null,
+                                false,   // keine SMC-B
+                                true);   // Managementschnittstelle dennoch freigeschaltet
                     }
 
                     // Ebene 1: zustaendig fuer genau diese Praxis
@@ -167,6 +192,7 @@ public class Demodaten {
         db.verbindung().setAutoCommit(false);
         try (Statement s = db.verbindung().createStatement()) {
             s.executeUpdate("DELETE FROM kartenterminal WHERE ist_demo");
+            s.executeUpdate("DELETE FROM arbeitsplatz   WHERE ist_demo");
             s.executeUpdate("DELETE FROM konnektor      WHERE ist_demo");
             s.executeUpdate("DELETE FROM benutzer       WHERE ist_demo");
             // Der Verbund loescht Standorte und Praxen per ON DELETE CASCADE mit.
@@ -217,20 +243,41 @@ public class Demodaten {
         }
     }
 
-    private void kartenterminal(long konnektor, long org, String terminalId,
-                                String raum, String adresse, String modell,
-                                String kartenhandle) throws SQLException {
+    private long arbeitsplatz(long konnektor, long org, String kennung,
+                              String bezeichnung, String art) throws SQLException {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO arbeitsplatz (konnektor_id, organisation_id, arbeitsplatz_id,
+                        bezeichnung, art, ist_demo)
+                VALUES (?,?,?,?,?,TRUE) RETURNING id""")) {
+            p.setLong(1, konnektor);
+            p.setLong(2, org);
+            p.setString(3, kennung);
+            p.setString(4, bezeichnung);
+            p.setString(5, art);
+            try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
+        }
+    }
+
+    private void kartenterminal(long konnektor, long org, long arbeitsplatz,
+                                String terminalId, String raum, String adresse,
+                                String modell, String kartenhandle,
+                                boolean hatSmcb, boolean pevimAktiv) throws SQLException {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO kartenterminal (terminal_id, konnektor_id, organisation_id,
-                        bezeichnung, standortangabe, modell, kartenhandle, ist_demo)
-                VALUES (?,?,?,?,?,?,?,TRUE)""")) {
+                        arbeitsplatz_id, bezeichnung, standortangabe, modell,
+                        kartenhandle, hat_smcb, pevim_aktiv, ist_demo)
+                VALUES (?,?,?,?,?,?,?,?,?,?,TRUE)""")) {
             p.setString(1, terminalId);
             p.setLong(2, konnektor);
             p.setLong(3, org);
-            p.setString(4, raum);
-            p.setString(5, adresse);
-            p.setString(6, modell);
-            p.setString(7, kartenhandle);
+            p.setLong(4, arbeitsplatz);
+            p.setString(5, raum);
+            p.setString(6, adresse);
+            p.setString(7, modell);
+            if (kartenhandle == null) p.setNull(8, Types.VARCHAR);
+            else p.setString(8, kartenhandle);
+            p.setBoolean(9, hatSmcb);
+            p.setBoolean(10, pevimAktiv);
             p.executeUpdate();
         }
     }

@@ -13,9 +13,14 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Zentrale: Oberfläche, Fachprotokoll, Zustandsübersicht.
  *
- * <p>Kennt bewusst <b>keine</b> SMC-B-PIN und keine Terminal-Zugänge — die
- * liegen ausschließlich beim Standort-Agenten (ADR-0002). Die Zentrale steuert,
- * protokolliert und zeigt an; der Agent besitzt und handelt.
+ * <p>Kennt bewusst <b>keine SMC-B-PIN</b> — die liegt ausschließlich beim
+ * Standort-Agenten (ADR-0002). Die Zentrale steuert, protokolliert und zeigt an;
+ * der Agent besitzt die PIN und handelt.
+ *
+ * <p>Seit der Bestandsverwaltung hält die Zentrale sehr wohl <b>Geräte-Zugänge</b>
+ * (Konnektor-Anmeldung, Terminal-Administrationszugang), verschlüsselt und nie
+ * wieder anzeigbar. Diese Abgrenzung zwischen „PIN" und „Geräte-Zugang" ist
+ * bewusst und begründet: {@link Bestandsverwaltung}, ADR-0008.
  *
  * <p>Die Oberfläche wird server-seitig erzeugt. Grund ist die Nachweispflicht
  * für WCAG 2.2 AA und der Umstand, dass große Listen ohnehin serverseitig
@@ -32,6 +37,7 @@ public class Zentrale {
     private final Alarmverwaltung alarme;
     private final Speicherwaechter speicher;
     private final Demodaten demodaten;
+    private final Bestandsverwaltung bestand;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -71,6 +77,8 @@ public class Zentrale {
         this.gruppen = new Gruppenverwaltung(db);
         this.alarme = new Alarmverwaltung(db);
         this.demodaten = new Demodaten(db);
+        this.bestand = new Bestandsverwaltung(db,
+                de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
     }
 
     private static String env(String name, String vorgabe) {
@@ -301,6 +309,205 @@ public class Zentrale {
             c.html(gruppenTabelle());
         });
 
+        // ------------------------------------------------------------ Bestand
+        // FA-GER-010, FA-GER-020: Konnektoren und Kartenterminals erfassen.
+        app.get("/bestand", c -> c.html(seite("bestand", bestandsSeite(c, null, false), angemeldeter(c))));
+
+        app.post("/bestand/konnektor", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long orgId;
+            try { orgId = Long.parseLong(Anmeldeseiten.feld(c, "organisationId")); }
+            catch (NumberFormatException e) {
+                c.html(seite("bestand", bestandsSeite(c, "Bitte eine Einrichtung auswählen.", true),
+                        angemeldeter(c)));
+                return;
+            }
+            var e = bestand.konnektorAnlegen(orgId,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
+                    Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
+                    Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
+                    Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
+                    Anmeldeseiten.feld(c, "webadminAdresse"));
+            if (!e.geklappt()) {
+                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            // Die Erreichbarkeit wird direkt geprueft und gemeldet - aber sie
+            // entscheidet nicht ueber das Speichern (FA-GER-010).
+            var erreichbar = bestand.konnektorPruefen(e.id());
+            var k = bestand.konnektor(e.id()).orElseThrow();
+            protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_ANGELEGT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Konnektor „" + k.bezeichnung() + "“ erfasst ("
+                            + k.adresse() + ", Aufrufkontext " + k.mandantId() + "/"
+                            + k.clientsystemId() + "/" + k.arbeitsplatzId() + ")",
+                    erreichbar.erreichbar() ? null
+                            : "Der Konnektor ist derzeit nicht erreichbar: " + erreichbar.hinweis());
+            c.html(seite("bestand", bestandsSeite(c,
+                    "Konnektor gespeichert. " + erreichbar.hinweis(), !erreichbar.erreichbar()),
+                    angemeldeter(c)));
+        });
+
+        app.get("/bestand/konnektor/{id}", c -> {
+            var k = bestand.konnektor(Long.parseLong(c.pathParam("id")));
+            if (k.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Diesen Konnektor gibt es nicht mehr.", true), angemeldeter(c))); return; }
+            c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), null), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = bestand.konnektorAendern(id,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
+                    Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
+                    Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
+                    Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
+                    Anmeldeseiten.feld(c, "webadminAdresse"), angekreuzt(c, "aktiv"));
+            if (!e.geklappt()) {
+                var k = bestand.konnektor(id);
+                c.html(seite("bestand", k.isPresent()
+                        ? Bestandsseiten.konnektorMaske(k.get(), e.fehler())
+                        : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            var k = bestand.konnektor(id).orElseThrow();
+            protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Konnektor „" + k.bezeichnung() + "“ geändert"
+                            + (k.aktiv() ? "" : ", Gerät deaktiviert"), null);
+            c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}/kennwort-entfernen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = bestand.konnektor(id);
+            var e = bestand.konnektorPasswortEntfernen(id);
+            if (e.geklappt() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT,
+                        true, angemeldeter(c).anzeigename(), null,
+                        "Hinterlegtes Kennwort des Konnektors „" + vorher.get().bezeichnung()
+                                + "“ entfernt",
+                        "Ohne Kennwort kann der Roboter sich an diesem Konnektor nicht "
+                        + "selbsttätig anmelden.");
+            }
+            c.html(seite("bestand", bestandsSeite(c,
+                    e.geklappt() ? "Kennwort entfernt." : e.fehler(), !e.geklappt()), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}/loeschen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = bestand.konnektor(id);
+            var e = bestand.konnektorLoeschen(id);
+            if (e.geklappt() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GELOESCHT,
+                        true, angemeldeter(c).anzeigename(), null,
+                        "Konnektor „" + vorher.get().bezeichnung() + "“ gelöscht", null);
+            }
+            c.html(seite("bestand", bestandsSeite(c,
+                    e.geklappt() ? "Konnektor gelöscht." : e.fehler(), !e.geklappt()), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}/pruefen", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            var k = bestand.konnektor(id);
+            var e = bestand.konnektorPruefen(id);
+            c.html(Bestandsseiten.pruefmeldung(k.map(Bestandsverwaltung.Konnektor::bezeichnung)
+                    .orElse("Konnektor"), e));
+        });
+
+        app.post("/bestand/terminal", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long konnektorId;
+            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
+            catch (NumberFormatException ex) {
+                c.html(seite("bestand", bestandsSeite(c,
+                        "Bitte einen Konnektor auswählen, an dem das Terminal betrieben wird.", true),
+                        angemeldeter(c)));
+                return;
+            }
+            var e = bestand.terminalAnlegen(Anmeldeseiten.feld(c, "terminalId"), konnektorId,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
+                    Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
+                    Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
+                    Anmeldeseiten.feld(c, "adminPasswort"),
+                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"));
+            if (!e.geklappt()) {
+                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            var erreichbar = bestand.terminalPruefen(e.id());
+            var t = bestand.terminal(e.id()).orElseThrow();
+            protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_ANGELEGT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Kartenterminal „" + t.bezeichnung() + "“ erfasst (" + t.adresse()
+                            + (t.hatSmcb() ? ", mit SMC-B" : ", ohne SMC-B")
+                            + (t.pevimAktiv() ? ", PIN-Automatik aktiv" : "") + ")",
+                    erreichbar.erreichbar() ? null
+                            : "Das Terminal ist derzeit nicht erreichbar: " + erreichbar.hinweis());
+            c.html(seite("bestand", bestandsSeite(c,
+                    "Kartenterminal gespeichert. " + erreichbar.hinweis(), !erreichbar.erreichbar()),
+                    angemeldeter(c)));
+        });
+
+        app.get("/bestand/terminal/{id}", c -> {
+            var t = bestand.terminal(Long.parseLong(c.pathParam("id")));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+            c.html(seite("bestand", Bestandsseiten.terminalMaske(t.get(), null), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = bestand.terminalAendern(id,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
+                    Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
+                    Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
+                    Anmeldeseiten.feld(c, "adminPasswort"),
+                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), angekreuzt(c, "aktiv"));
+            if (!e.geklappt()) {
+                var t = bestand.terminal(id);
+                c.html(seite("bestand", t.isPresent()
+                        ? Bestandsseiten.terminalMaske(t.get(), e.fehler())
+                        : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            var t = bestand.terminal(id).orElseThrow();
+            protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_GEAENDERT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Kartenterminal „" + t.bezeichnung() + "“ geändert"
+                            + (t.aktiv() ? "" : ", Gerät deaktiviert"), null);
+            c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/loeschen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = bestand.terminal(id);
+            var e = bestand.terminalLoeschen(id);
+            if (e.geklappt() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().organisation(), vorher.get().terminalId(),
+                        Ereignisart.TERMINAL_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
+                        "Kartenterminal „" + vorher.get().bezeichnung() + "“ gelöscht",
+                        "Dieses Gerät wird nicht mehr überwacht.");
+            }
+            c.html(seite("bestand", bestandsSeite(c,
+                    e.geklappt() ? "Kartenterminal gelöscht." : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/pruefen", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id);
+            var e = bestand.terminalPruefen(id);
+            c.html(Bestandsseiten.pruefmeldung(t.map(Bestandsverwaltung.Terminal::bezeichnung)
+                    .orElse("Kartenterminal"), e));
+        });
+
         // ---------------------------------------------------------- Verwaltung
         app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null),
                 angemeldeter(c))));
@@ -312,9 +519,9 @@ public class Zentrale {
                 var b = demodaten.bestand();
                 protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
                         angemeldeter(c).anzeigename(), null,
-                        "Demodatensatz angelegt: %d Organisationseinheiten, %d Konnektoren, %d Kartenterminals, %d Konten"
-                                .formatted(b.organisationen(), b.konnektoren(),
-                                           b.terminals(), b.benutzer()), null);
+                        "Demodatensatz angelegt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals (%d mit SMC-B), %d Konten"
+                                .formatted(b.organisationen(), b.konnektoren(), b.arbeitsplaetze(),
+                                           b.terminals(), b.terminalsMitSmcb(), b.benutzer()), null);
                 c.html(seite("verwaltung", verwaltungsSeite(null, konten), angemeldeter(c)));
             } catch (IllegalStateException e) {
                 c.html(seite("verwaltung", verwaltungsSeite(e.getMessage(), null), angemeldeter(c)));
@@ -326,9 +533,9 @@ public class Zentrale {
             var weg = demodaten.loeschen();
             protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
                     angemeldeter(c).anzeigename(), null,
-                    "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Kartenterminals, %d Konten"
+                    "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals, %d Konten"
                             .formatted(weg.organisationen(), weg.konnektoren(),
-                                       weg.terminals(), weg.benutzer()), null);
+                                       weg.arbeitsplaetze(), weg.terminals(), weg.benutzer()), null);
             c.html(seite("verwaltung", verwaltungsSeite(null, null), angemeldeter(c)));
         });
 
@@ -643,6 +850,41 @@ public class Zentrale {
         return wert == null || wert.isBlank() ? ersatz : wert;
     }
 
+    /**
+     * Baut die Bestandsseite mit den Filtern aus der Anfrage.
+     *
+     * <p>Der Platzhalter {@code #bestandsmeldung} nimmt die Rückmeldung der
+     * Erreichbarkeitsprüfung auf, ohne die Seite neu zu laden — sonst ginge die
+     * Position in einer langen Geräteliste verloren.
+     */
+    private String bestandsSeite(Context c, String meldung, boolean istFehler) {
+        String suche = c.queryParam("suche");
+        Long konnektorFilter = null;
+        try {
+            String k = c.queryParam("konnektor");
+            if (k != null && !k.isBlank()) konnektorFilter = Long.parseLong(k);
+        } catch (NumberFormatException ignored) { }
+        int seitenNummer = 1;
+        try {
+            String s = c.queryParam("seite");
+            if (s != null && !s.isBlank()) seitenNummer = Integer.parseInt(s);
+        } catch (NumberFormatException ignored) { }
+
+        return "<div id=\"bestandsmeldung\" aria-live=\"polite\"></div>"
+                + Bestandsseiten.seite(
+                        bestand.konnektoren(),
+                        bestand.terminals(suche, konnektorFilter, false,
+                                seitenNummer, Bestandsseiten.SEITENGROESSE),
+                        bestand.organisationen(),
+                        suche, konnektorFilter, bestand.zugangsdatenMoeglich(),
+                        meldung, istFehler);
+    }
+
+    /** Ein nicht angekreuztes Kästchen wird vom Browser gar nicht gesendet. */
+    private static boolean angekreuzt(Context c, String name) {
+        return c.formParam(name) != null;
+    }
+
     private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten) {
         var b = demodaten.bestand();
         StringBuilder s = new StringBuilder("""
@@ -658,7 +900,9 @@ public class Zentrale {
                     <div class="lage">
                       <div class="kachel"><div class="zahl">%d</div><div class="bez">Organisationseinheiten</div></div>
                       <div class="kachel"><div class="zahl">%d</div><div class="bez">Konnektoren</div></div>
+                      <div class="kachel"><div class="zahl">%d</div><div class="bez">Arbeitsplätze</div></div>
                       <div class="kachel"><div class="zahl">%d</div><div class="bez">Kartenterminals</div></div>
+                      <div class="kachel ok"><div class="zahl">%d</div><div class="bez">davon mit SMC-B</div></div>
                       <div class="kachel"><div class="zahl">%d</div><div class="bez">Benutzerkonten</div></div>
                     </div>
                     <div class="hinweis">
@@ -670,14 +914,17 @@ public class Zentrale {
                           onsubmit="return confirm('Demodatensatz entfernen?\\n\\n%d Organisationseinheiten, %d Konnektoren, %d Kartenterminals und %d Benutzerkonten werden gelöscht.\\n\\nEchte Daten sind nicht betroffen.')">
                       <button class="knopf warnend" type="submit">Demodatensatz entfernen</button>
                     </form>"""
-                    .formatted(b.organisationen(), b.konnektoren(), b.terminals(), b.benutzer(),
+                    .formatted(b.organisationen(), b.konnektoren(), b.arbeitsplaetze(),
+                               b.terminals(), b.terminalsMitSmcb(), b.benutzer(),
                                b.organisationen(), b.konnektoren(), b.terminals(), b.benutzer()));
         } else {
             s.append("""
                     <p class="unterzeile">
                       Legt einen vollständigen MVZ-Verbund zum Ausprobieren an:
                       3 Standorte mit je 2 Facharztpraxen und 1 Allgemeinpraxis,
-                      je Praxis ein Konnektor mit eigener SMC-B und 4 Kartenterminals.
+                      je Praxis ein Konnektor mit eigener SMC-B, ein Empfangs-Arbeitsplatz
+                      mit SMC-B-Terminal und drei Behandler-Arbeitsplätze mit je einem
+                      Terminal ohne SMC-B.
                       Dazu Benutzerkonten auf allen drei Berechtigungsebenen und
                       3 Administratoren.
                     </p>
@@ -980,6 +1227,7 @@ public class Zentrale {
                   <nav aria-label="Hauptnavigation">
                     <a href="/" %s>Übersicht</a>
                     <a href="/geraete" %s>Kartenterminals</a>
+                    <a href="/bestand" %s>Bestand</a>
                     <a href="/gruppen" %s>Gruppen</a>
                     <a href="/verwaltung" %s>Verwaltung</a>
                     <a href="/protokoll" %s>Protokoll</a>
@@ -994,6 +1242,7 @@ public class Zentrale {
                 .formatted(esc(agentText),
                         aktiv.equals("uebersicht") ? "aria-current=\"page\"" : "",
                         aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
+                        aktiv.equals("bestand") ? "aria-current=\"page\"" : "",
                         aktiv.equals("gruppen") ? "aria-current=\"page\"" : "",
                         aktiv.equals("verwaltung") ? "aria-current=\"page\"" : "",
                         aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",

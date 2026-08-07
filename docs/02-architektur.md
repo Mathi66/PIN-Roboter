@@ -19,15 +19,24 @@
 | Baustein | Stand |
 |---|---|
 | **Standort-Agent** | Überwachung, Sicherungslogik, PEviM-Ablauf, Registrierung — läuft |
-| **Zentrale** | Oberfläche, Anmeldung mit TOTP, Fachprotokoll, Alarme, Gruppen, Export — läuft |
+| **Zentrale** | Oberfläche, Anmeldung mit TOTP, Fachprotokoll, Alarme, Gruppen, Export, Bestandsverwaltung — läuft |
 | **Simulator** | Konnektor und Terminals mit Brainpool-TLS — läuft, ersetzt echte Hardware **nicht** |
 | Herstellerkapselung | angelegt, bisher nur eine Umsetzung (CHERRY-artig) |
+| Bestandsverwaltung | Konnektoren und Terminals erfassen, ändern, löschen (FA-GER-010/020) — läuft |
+| Geräte-Zugangsdaten | verschlüsselt in der Zentrale (AES-GCM), Abgrenzung zur PIN in ADR-0008 |
+| Bedienbarkeit bei 5.000 Geräten | Paginierung, Suche, Filter, Index stehen; Sortierung und Massenaktionen **fehlen** (FA-GER-060 teilweise) |
+| Automatische Terminal-Ermittlung | **nicht umgesetzt** (FA-GER-030, FA-GER-035) |
 | Mandantentrennung | im Datenmodell, **in der Oberfläche noch nicht nutzbar** |
 | Update-Manager | **nicht umgesetzt** |
 | Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-6.300 Zeilen in 42 Dateien, 65 Modultests, 37 Systemnachweise.
+rund 8.000 Zeilen, **97 Modultests, 64 Systemnachweise**.
+
+> **Unverändert offen und weiterhin der wichtigste Punkt:** Alle Nachweise
+> laufen gegen den selbstgebauten Simulator. Die in
+> [ADR-0007](adr/0007-simulierte-endpunkte-und-teststrategie.md) geforderte
+> Kalibrierung an echter Hardware steht aus.
 
 ---
 

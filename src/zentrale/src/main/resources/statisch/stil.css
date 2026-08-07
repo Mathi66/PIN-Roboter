@@ -167,3 +167,64 @@ form input:focus-visible { border-color:var(--akzent); }
   border-left:1px solid var(--rand); margin-left:.4rem;
 }
 tr.quittiert { opacity:.62; }
+
+/* ---------------------------------------------------------------- Bestand
+   Erfassungsmasken. Die Vorgabe aus CLAUDE.md 4.4 (WCAG 2.2 AA) heisst hier
+   konkret: sichtbarer Fokus, Beschriftung ueber dem Feld statt daneben
+   (bleibt bei Vergroesserung lesbar), Mindestkontrast auch fuer Hilfetexte,
+   und Bedienelemente ab 24x24 px. */
+.maske { padding:1.2rem; display:flex; flex-direction:column; gap:1.1rem; }
+.feldgruppe { display:flex; flex-direction:column; gap:.32rem; flex:1 1 14rem; min-width:0; }
+.feldgruppe label { font-size:.86rem; font-weight:600; color:var(--gedaempft); }
+.feldreihe { display:flex; gap:1rem; flex-wrap:wrap; }
+.maske input[type=text], .maske input[type=password], .maske input[type=search],
+.maske input:not([type]), .maske select {
+  padding:.5rem .7rem; border:1px solid var(--rand); border-radius:7px;
+  background:var(--karte); color:var(--text); font:inherit; font-size:.93rem; width:100%;
+}
+.maske input[readonly] { background:var(--unbekannt-hg); color:var(--gedaempft); }
+.maske fieldset {
+  border:1px solid var(--rand); border-radius:var(--radius); padding:1rem 1.1rem;
+  display:flex; flex-direction:column; gap:.9rem; margin:0;
+}
+.maske legend { font-size:.86rem; font-weight:640; padding:0 .4rem; }
+.hilfe { margin:0; font-size:.85rem; color:var(--gedaempft); line-height:1.5; }
+.optional { font-weight:400; color:var(--gedaempft); }
+.ankreuz { display:flex; align-items:flex-start; gap:.6rem; }
+.ankreuz input { width:1.15rem; height:1.15rem; margin:.15rem 0 0; flex:none; }
+.ankreuz label { font-size:.93rem; font-weight:500; }
+
+/* Zusammenklappbares Formular: Die Liste bleibt der Hauptinhalt, das Anlegen
+   ist die Ausnahme - aber nur einen Tastendruck entfernt. */
+.ausklapp { border-top:1px solid var(--rand); }
+.ausklapp > summary {
+  padding:.8rem 1.2rem; cursor:pointer; font-weight:600; font-size:.92rem;
+  color:var(--akzent); list-style-position:inside;
+}
+.ausklapp > summary:hover { background:var(--akzent-hg); }
+.ausklapp[open] > summary { border-bottom:1px solid var(--rand); }
+
+.filterleiste {
+  display:flex; gap:.9rem; align-items:flex-end; flex-wrap:wrap;
+  padding:.9rem 1.2rem; border-bottom:1px solid var(--rand);
+}
+.filterleiste .feldgruppe { flex:0 1 16rem; }
+.filterleiste .knopf { height:2.3rem; }
+
+.blaettern {
+  display:flex; align-items:center; justify-content:space-between; gap:1rem;
+  padding:.8rem 1.2rem; border-top:1px solid var(--rand); font-size:.9rem;
+  color:var(--gedaempft); flex-wrap:wrap;
+}
+.knopf.gesperrt { opacity:.45; cursor:default; }
+.knopf.gesperrt:hover { border-color:var(--rand); color:var(--text); }
+.knopf.klein { padding:.3rem .65rem; font-size:.85rem; }
+
+td.aktionen { display:flex; gap:.45rem; flex-wrap:wrap; align-items:flex-start; }
+td.aktionen .reihe { display:inline; margin:0; }
+td.klein, .klein { font-size:.85rem; color:var(--gedaempft); }
+tr.stillgelegt { opacity:.6; }
+.hinweis.gut { background:var(--ok-hg); border-left-color:var(--ok); }
+
+/* Ohne sichtbaren Fokus ist Tastaturbedienung unbrauchbar (WCAG 2.4.7). */
+:focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }

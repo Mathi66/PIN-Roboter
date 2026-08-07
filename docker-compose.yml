@@ -53,6 +53,16 @@ services:
       DB_URL: "jdbc:postgresql://datenbank:5432/pinroboter"
       DB_USER: "pinroboter"
       DB_PASSWORD: ${DB_PASSWORD:-nur-fuer-die-entwicklung}
+      # Verschluesselt die hinterlegten Geraete-Zugangsdaten (FA-GER-010/020).
+      # 32 Byte, Base64. Erzeugen mit:  openssl rand -base64 32
+      # Ohne diese Variable bleibt die Bestandserfassung vollstaendig nutzbar,
+      # nur Kennwoerter lassen sich nicht speichern - die Oberflaeche sagt das.
+      #
+      # ACHTUNG beim Betrieb: Geht der Schluessel verloren, sind die
+      # gespeicherten Zugangsdaten unbrauchbar und muessen neu hinterlegt
+      # werden. Er gehoert in die Sicherung, aber NICHT in dieselbe Datei wie
+      # der Datenbankauszug - sonst schuetzt die Verschluesselung vor nichts.
+      GEHEIMNIS_SCHLUESSEL: ${GEHEIMNIS_SCHLUESSEL:-}
     ports:
       - "8090:8090"
     depends_on:
