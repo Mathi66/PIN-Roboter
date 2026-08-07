@@ -715,6 +715,28 @@ public class Zentrale {
             c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
         });
 
+        /**
+         * FA-ALA-010: Einen Alarm quittieren.
+         *
+         * <p>Die Oberfläche bot diesen Knopf schon an, bevor es die Route gab —
+         * ein Klick lief ins Leere. Gefunden hat das der Systemnachweis, nicht
+         * der Modultest: {@code Alarmverwaltung.quittieren} war geprüft, nur nie
+         * angebunden. Eine Funktion, die nur in der Klasse existiert, ist für
+         * den Benutzer keine.
+         */
+        app.post("/alarme/{id}/quittieren", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            var b = angemeldeter(c);
+            if (alarme.quittieren(id, b.anzeigename(), bereich(c))) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null, Ereignisart.ALARM_QUITTIERT,
+                        true, b.anzeigename(), null,
+                        "Alarm " + id + " quittiert",
+                        "Quittieren heißt „zur Kenntnis genommen“ — der Alarm bleibt bestehen, "
+                        + "solange der Zustand besteht.");
+            }
+            c.header("HX-Refresh", "true").result("");
+        });
+
         // ------------------------------------------------------- Organisation
         // FA-ORG-020. Wer den Baum aendert, aendert Geltungsbereiche - deshalb
         // ist jede Aenderung protokollpflichtig und auf Standortebene begrenzt.

@@ -1482,4 +1482,33 @@ Grundzustand. Die Terminalmaske mit PIN-Formular und die aufgeklappte
 Bearbeitungszeile der Organisation waren damit ungeprüft. Beide sind jetzt
 drin — 13 Seiten statt 10.
 
-## Stand: 224 Modultests, 188 Systemnachweise — alle grün
+## FA-GER-050 und das Quittieren — und was dabei herauskam
+
+Beide waren bisher nur durch Modultests abgesichert. Der Auftrag war, sie mit
+Systemnachweisen zu unterlegen. Dabei kamen zwei Dinge zutage, die kein
+Modultest hätte finden können.
+
+**Der Quittierknopf zeigte ins Leere.** Die Oberfläche bot ihn an, die Route
+`/alarme/{id}/quittieren` gab es nicht. `Alarmverwaltung.quittieren` war
+geprüft — nur nie angebunden. Eine Funktion, die nur in ihrer Klasse existiert,
+ist für den Benutzer keine. Die Route ist ergänzt, die Quittierung wird
+protokolliert, wie die Akzeptanz von FA-ALA-010 es verlangt.
+
+**Das Quittieren prüfte den Geltungsbereich nicht.** Ein Praxisbenutzer hätte
+einen fremden Alarm stillstellen können. Der Geltungsbereich ist jetzt
+Pflichtparameter, wie überall sonst — und ein Modultest hält fest, dass ein
+leerer Bereich nichts quittieren kann.
+
+**Falsche Beschriftung im Umsetzungsstand.** Dort stand das Quittieren unter
+FA-ALA-020. Im Anforderungskatalog ist FA-ALA-020 aber die
+E-Mail-Benachrichtigung — SMTP, Empfänger je Einrichtung, Sammelfenster gegen
+5.000 Mails bei einem Konnektorausfall. **Die ist nicht begonnen.** Quittieren
+gehört zu FA-ALA-010. Richtiggestellt, damit der Stand nicht mehr sagt, etwas
+sei erledigt, das es nicht ist.
+
+Bei FA-GER-050 war der wichtigste Nachweis nicht das Anlegen, sondern das
+Löschen: Ein Gerät darf durch eine gelöschte Gruppe nicht aus der Überwachung
+fallen. Geprüft ist, dass es in die Vorgabegruppe umzieht und weiter existiert —
+und dass die Vorgabegruppe selbst sich nicht löschen lässt.
+
+## Stand: 230 Modultests, 204 Systemnachweise — alle grün

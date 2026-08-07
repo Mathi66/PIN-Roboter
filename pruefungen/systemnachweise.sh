@@ -1484,6 +1484,97 @@ else
 fi
 rm -f /tmp/pr-org.html
 
+# ---------------------------------------------------------------- FA-GER-050
+# Gerätegruppen tragen das Prüfintervall. Bisher nur durch Modultests
+# abgesichert - die prüfen die Logik, nicht das Zusammenspiel mit Oberfläche,
+# Protokoll und Datenbank.
+hinweis "FA-GER-050 — Gerätegruppen anlegen, zuordnen, löschen"
+
+curl -s -b "$KEKSE" http://localhost:8090/gruppen > /tmp/pr-gruppen.html
+grep -q "Nicht zugeordnet" /tmp/pr-gruppen.html && GV=ja || GV=nein
+ergebnis "die Vorgabegruppe existiert und ist sichtbar" "$GV"
+
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+  --data-urlencode "bezeichnung=Nachweis Notaufnahme" --data-urlencode "intervall=30"
+GID=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Notaufnahme'")
+[ -n "$GID" ] && GA=ja || GA=nein
+ergebnis "eine Gruppe laesst sich mit eigenem Pruefintervall anlegen" "$GA"
+[ "$(sql "SELECT pruefintervall_sekunden FROM geraetegruppe WHERE id=$GID")" = "30" ] && GI=ja || GI=nein
+ergebnis "das Pruefintervall wird uebernommen (30 s)" "$GI"
+[ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GRUPPE_ANGELEGT'")" != "0" ] && GP=ja || GP=nein
+ergebnis "das Anlegen steht im Fachprotokoll" "$GP"
+
+# Ein zu kurzes Intervall muss abgelehnt werden - 5 Sekunden mal 5.000 Geraete
+# waeren 1.000 Abfragen pro Sekunde.
+curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/gruppen/$GID/intervall" \
+  --data-urlencode "intervall=1"
+[ "$(sql "SELECT pruefintervall_sekunden FROM geraetegruppe WHERE id=$GID")" = "30" ] && GK=ja || GK=nein
+ergebnis "ein unzulaessig kurzes Intervall wird nicht uebernommen" "$GK"
+
+# Geraet zuordnen und die Gruppe loeschen: Kein Geraet darf aus der
+# Ueberwachung fallen.
+KT_G=$(sqltext "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 1")
+VORGABE=$(sql "SELECT id FROM geraetegruppe WHERE ist_vorgabe")
+if [ -n "$KT_G" ] && [ -n "$GID" ]; then
+  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_G/gruppe" \
+    --data-urlencode "gruppe=$GID"
+  [ "$(sql "SELECT gruppe_id FROM geraet WHERE terminal_id='$KT_G'")" = "$GID" ] && GZ=ja || GZ=nein
+  ergebnis "ein Geraet laesst sich einer Gruppe zuordnen" "$GZ"
+
+  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/gruppen/$GID/loeschen"
+  [ "$(sql "SELECT count(*) FROM geraetegruppe WHERE id=$GID")" = "0" ] && GL=ja || GL=nein
+  ergebnis "die Gruppe laesst sich loeschen" "$GL"
+  # Der entscheidende Punkt: Das Geraet ist umgezogen, nicht verschwunden.
+  NACH=$(sql "SELECT gruppe_id FROM geraet WHERE terminal_id='$KT_G'")
+  [ "$NACH" = "$VORGABE" ] && GU=ja || GU=nein
+  ergebnis "das Geraet ist in die Vorgabegruppe umgezogen, nicht verschwunden" "$GU"
+  [ "$(sql "SELECT count(*) FROM geraet WHERE terminal_id='$KT_G'")" = "1" ] && GE=ja || GE=nein
+  ergebnis "das Geraet existiert nach der Loeschung weiterhin" "$GE"
+fi
+
+# Die Vorgabegruppe darf nicht verschwinden - neu erkannte Geraete brauchen
+# eine Gruppe, in der sie landen koennen.
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/gruppen/$VORGABE/loeschen" > /tmp/pr-gruppe-vg.html
+[ "$(sql "SELECT count(*) FROM geraetegruppe WHERE id=$VORGABE")" = "1" ] && GD=ja || GD=nein
+ergebnis "die Vorgabegruppe laesst sich nicht loeschen" "$GD"
+grep -q "Vorgabegruppe" /tmp/pr-gruppe-vg.html && GDM=ja || GDM=nein
+ergebnis "die Meldung erklaert, warum" "$GDM"
+rm -f /tmp/pr-gruppen.html /tmp/pr-gruppe-vg.html
+
+# ---------------------------------------------------------------- FA-ALA-010
+# Alarme quittieren. Der Umsetzungsstand fuehrte das faelschlich unter
+# FA-ALA-020 - das ist im Katalog die E-Mail-Benachrichtigung und NICHT
+# umgesetzt. Quittieren gehoert zu FA-ALA-010.
+hinweis "FA-ALA-010 — Alarme quittieren"
+
+ALARM=$(sql "SELECT id FROM alarm WHERE quittiert_von IS NULL AND behoben_am IS NULL
+             ORDER BY id LIMIT 1")
+if [ -z "$ALARM" ]; then
+  echo "  uebersprungen: derzeit kein offener Alarm im System"
+else
+  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/alarme/$ALARM/quittieren"
+  QUITT=$(sqltext "SELECT coalesce(quittiert_von,'-') FROM alarm WHERE id=$ALARM")
+  [ "$QUITT" != "-" ] && AQ=ja || AQ=nein
+  ergebnis "ein offener Alarm laesst sich quittieren (durch: $QUITT)" "$AQ"
+  [ -n "$(sql "SELECT quittiert_am FROM alarm WHERE id=$ALARM")" ] && AZ=ja || AZ=nein
+  ergebnis "der Zeitpunkt der Quittierung wird festgehalten" "$AZ"
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ALARM_QUITTIERT'")" != "0" ] && AP=ja || AP=nein
+  ergebnis "die Quittierung steht im Fachprotokoll" "$AP"
+
+  # Quittieren heisst "zur Kenntnis genommen", nicht "behoben". Der Alarm muss
+  # bestehen bleiben, solange der Zustand besteht - sonst verschwindet ein
+  # echtes Problem per Mausklick.
+  [ -z "$(sql "SELECT behoben_am FROM alarm WHERE id=$ALARM")" ] && AB=ja || AB=nein
+  ergebnis "das Quittieren behebt den Alarm NICHT" "$AB"
+
+  # Und die Oberflaeche bietet keinen zweiten Quittierknopf an.
+  curl -s -b "$KEKSE" http://localhost:8090/teil/uebersicht > /tmp/pr-alarme.html
+  QK=$(grep -c "/alarme/$ALARM/quittieren" /tmp/pr-alarme.html || true)
+  [ "${QK:-1}" = "0" ] && AK=ja || AK=nein
+  ergebnis "ein quittierter Alarm bietet keinen zweiten Quittierknopf ($QK)" "$AK"
+  rm -f /tmp/pr-alarme.html
+fi
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

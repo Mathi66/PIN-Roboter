@@ -37,7 +37,7 @@ mit 84 Anforderungen
 | ✓ | FA-GER-030 | Terminals automatisch ermitteln | Agent ermittelt, Übernahme einzeln oder als Auswahl, nie automatisch |
 | ✓ | FA-GER-035 | Informationsmodell auslesen | Aufrufkontext steht zur Auswahl; ohne Webadmin bleibt alles von Hand erfassbar |
 | ✓ | FA-GER-040 | Karten erfassen | Alle Karten mit Typ, ICCSN und Ablaufdatum; eGK und HBA ausdrücklich als „nicht verwaltet" gekennzeichnet, mit Begründung (A_24080). Nachgewiesen: der Roboter fasst sie nicht an |
-| ○ | FA-GER-050 | Gerätegruppen | Anlegen, Zuordnen, Vorgabegruppe, Löschen mit Umzug — Modultests, kein eigener Systemnachweis |
+| ✔ | FA-GER-050 | Gerätegruppen | Anlegen, Zuordnen, eigenes Prüfintervall, Löschen mit Umzug in die Vorgabegruppe. Jetzt mit Systemnachweisen — geprüft ist auch, dass kein Gerät durch eine Löschung aus der Überwachung fällt und die Vorgabegruppe nicht löschbar ist |
 | ✓ | FA-GER-060 | Bestandsübersicht bei 5.000 Geräten | Paginierung, Suche, Sortierung, Filter, Massenaktionen; gemessen: erste Seite 14 ms |
 
 ## A.2 Überwachung (FA-UEB)
@@ -102,7 +102,8 @@ mit 84 Anforderungen
 | | Anforderung | Stand |
 |---|---|---|
 | ✓ | FA-ALA-010 | Alarme entstehen und verschwinden selbsttätig, keine Alarmflut |
-| ○ | FA-ALA-020 | Quittieren — Modultests |
+| ✔ | FA-ALA-010 (Quittieren) | Zuvor **falsch unter FA-ALA-020 geführt**. Die Oberfläche bot den Knopf an, die Route gab es nicht — ein Klick lief ins Leere. Route ergänzt, Quittierung protokolliert, Geltungsbereich als Pflichtparameter. Nachgewiesen, auch dass Quittieren den Alarm nicht behebt |
+| – | FA-ALA-020 | Benachrichtigung per E-Mail (SMTP, Empfänger je Einrichtung, Sammelfenster) — **nicht begonnen** |
 
 ## A.9 Updates (FA-UPD)
 

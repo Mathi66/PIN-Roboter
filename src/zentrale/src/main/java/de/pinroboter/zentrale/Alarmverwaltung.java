@@ -124,12 +124,31 @@ public class Alarmverwaltung {
         } catch (SQLException e) { return false; }
     }
 
-    public boolean quittieren(long id, String benutzer) {
+    /**
+     * Quittiert einen Alarm: „zur Kenntnis genommen".
+     *
+     * <p><b>Quittieren behebt nichts.</b> {@code behoben_am} bleibt leer, der
+     * Alarm besteht weiter, solange der Zustand besteht. Sonst ließe sich ein
+     * echtes Problem per Mausklick verschwinden lassen — und genau das ist der
+     * Fehler, den man in einer Praxis unter Zeitdruck macht.
+     *
+     * <p>Der Geltungsbereich ist <b>Pflichtparameter</b>. Ein Alarm nennt Gerät
+     * und Betriebszustand einer Einrichtung; ihn quittieren zu können hieße,
+     * fremde Vorgänge stillzustellen.
+     *
+     * @return ob quittiert wurde. {@code false} auch dann, wenn der Alarm
+     *         außerhalb des Bereichs liegt — der Aufrufer erfährt nicht, ob es
+     *         ihn gibt.
+     */
+    public boolean quittieren(long id, String benutzer, Geltungsbereich bereich) {
+        if (bereich.leer()) return false;
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 UPDATE alarm SET quittiert_von = ?, quittiert_am = now()
-                WHERE id = ? AND behoben_am IS NULL AND quittiert_von IS NULL""")) {
+                WHERE id = ? AND behoben_am IS NULL AND quittiert_von IS NULL"""
+                + bereich.bedingung("organisation_id"))) {
             p.setString(1, benutzer);
             p.setLong(2, id);
+            bereich.wertSetzen(db.verbindung(), p, 3);
             return p.executeUpdate() == 1;
         } catch (SQLException e) { return false; }
     }

@@ -90,8 +90,8 @@ class AlarmverwaltungTest {
         var alarm = av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).findFirst().orElseThrow();
         assertFalse(alarm.quittiert());
 
-        assertTrue(av.quittieren(alarm.id(), "Anna Beispiel"));
-        assertFalse(av.quittieren(alarm.id(), "Jemand anders"), "Zweimal quittieren geht nicht");
+        assertTrue(av.quittieren(alarm.id(), "Anna Beispiel", Geltungsbereich.alles()));
+        assertFalse(av.quittieren(alarm.id(), "Jemand anders", Geltungsbereich.alles()), "Zweimal quittieren geht nicht");
 
         var danach = av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).findFirst().orElseThrow();
         assertTrue(danach.quittiert());
@@ -107,7 +107,7 @@ class AlarmverwaltungTest {
         av.melden(E, o, Alarmverwaltung.Art.KARTE_GESPERRT, "gesperrt", "PUK");
         int vorher = av.zaehlen(E).get(Alarmverwaltung.Schweregrad.KRITISCH);
         var a = av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).findFirst().orElseThrow();
-        av.quittieren(a.id(), "Prüfer");
+        av.quittieren(a.id(), "Prüfer", Geltungsbereich.alles());
         assertEquals(vorher - 1, av.zaehlen(E).get(Alarmverwaltung.Schweregrad.KRITISCH));
     }
 
@@ -133,4 +133,18 @@ class AlarmverwaltungTest {
         assertEquals(Alarmverwaltung.Schweregrad.KRITISCH, liste.get(0).schweregrad(),
                 "Was den Betrieb anhält, muss zuerst ins Auge fallen");
     }
+    @Test
+    @DisplayName("Ein Alarm außerhalb des Geltungsbereichs lässt sich nicht quittieren")
+    void quittierenNurImBereich() {
+        String o = obj();
+        av.melden(E, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
+                "nicht erreichbar", "Netzwerk prüfen");
+        var a = av.offene(E, ALLES).stream()
+                .filter(x -> o.equals(x.objekt())).findFirst().orElseThrow();
+        // Ein leerer Bereich sieht nichts und darf auch nichts stillstellen.
+        assertFalse(av.quittieren(a.id(), "Fremder", Geltungsbereich.keiner()));
+        assertFalse(av.offene(E, ALLES).stream()
+                .filter(x -> x.id() == a.id()).findFirst().orElseThrow().quittiert());
+    }
+
 }
