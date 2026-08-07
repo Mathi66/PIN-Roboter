@@ -796,6 +796,46 @@ else
 fi
 rm -f /tmp/pr-best.html /tmp/pr-erm3.html
 
+hinweis "NFA-LEI-010 — Antwortzeiten am Mengengeruest"
+# Hier mit 1.000 Geraeten statt 5.000: Die Groessenordnung stimmt, der Lauf
+# bleibt kurz. Die volle Messung mit 5.000 Terminals und 5 Mio
+# Protokolleintraegen steht in docs/00-referenzen/messung-leistung-mengengeruest.md
+# und wird von Hand wiederholt.
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/lasttest/anlegen \
+  --data-urlencode "anzahl=1000"
+LAST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-%'")
+[ "${LAST:-0}" = "1000" ] && LE=ja || LE=nein
+ergebnis "Lasttestbestand angelegt ($LAST Geraete)" "$LE"
+
+# Gemessen wird die HTTP-Gesamtzeit. Erst ein Aufruf zum Warmlaufen, damit
+# nicht der Verbindungsaufbau in die Messung faellt.
+zeitms() {
+  curl -s -b "$KEKSE" -o /dev/null "http://localhost:8090$1"
+  local ges=0
+  for _ in 1 2 3; do
+    local ms=$(curl -s -b "$KEKSE" -o /dev/null -w '%{time_total}' "http://localhost:8090$1" \
+               | awk '{printf "%d", $1*1000}')
+    ges=$((ges+ms))
+  done
+  echo $((ges/3))
+}
+for paar in "Bestandsliste, erste Seite:/bestand" \
+            "Suche:/bestand?suche=Raum+123" \
+            "Sortierung nach Firmware:/bestand?sortierung=firmware&richtung=ab" \
+            "Filter nach Modell:/bestand?modell=CHERRY+ST-1506" \
+            "Uebersicht:/" ; do
+  NAME=${paar%%:*}; PFAD=${paar#*:}
+  MS=$(zeitms "$PFAD")
+  # NFA-LEI-010: Seitenaufbau unter 1 s.
+  [ "${MS:-9999}" -lt 1000 ] && LR=ja || LR=nein
+  ergebnis "$NAME unter 1 s (gemessen: ${MS} ms)" "$LR"
+done
+
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/lasttest/entfernen
+REST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-%'")
+[ "${REST:-1}" = "0" ] && LX=ja || LX=nein
+ergebnis "Lasttestbestand rueckstandsfrei entfernt (Rest: $REST)" "$LX"
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"

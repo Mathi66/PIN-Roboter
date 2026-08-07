@@ -890,3 +890,76 @@ noch nicht in einem Vollauf bestätigt** — sie geht in den nächsten Lauf.
 Damit ist FA-GER-060 bis auf die Leistungsmessung erfüllt. Die steht als
 Nächstes an: erste Seite bei 5.000 Terminals unter einer Sekunde — gemessen,
 nicht geschätzt.
+
+
+---
+
+# Iteration 16 — Leistungsmessung am Mengengerüst (NFA-LEI-010)
+
+Bisher stand im Anforderungskatalog ein Zielwert, den niemand nachgemessen hatte:
+*„Seitenaufbau unter 1 Sekunde bei 5.000 Terminals"*. Jetzt ist er gemessen.
+
+## Der Lasterzeuger steht in der Oberfläche
+
+Unter **Verwaltung → Leistungsmessung** lassen sich 5.000 Testgeräte auf
+Knopfdruck anlegen (dauert 257 ms) und rückstandsfrei entfernen.
+
+**Warum im Produkt und nicht nur im Prüfskript:** Der Betreiber soll die Messung
+auf *seiner* Hardware wiederholen können. Ein Zielwert, der nur auf der
+Entwicklungsmaschine gilt, sagt über einen Raspberry Pi 5 in einer Praxis
+nichts aus — und genau der ist die Referenzhardware.
+
+## Die Zahlen
+
+Bei **5.000 Kartenterminals**:
+
+| | gemessen | Ziel |
+|---|---:|---:|
+| Bestandsliste, erste Seite | **14 ms** | < 1.000 ms |
+| Suche über Bezeichnung | 12 ms | < 1.000 ms |
+| Sortierung nach Modell | 11 ms | < 1.000 ms |
+| Filter kombiniert | 8 ms | < 1.000 ms |
+
+Bei **5.000.004 Protokolleinträgen** (2,1 GB):
+
+| | gemessen | Ziel |
+|---|---:|---:|
+| Protokollseite, erste Seite | **110 ms** | < 2.000 ms |
+| Gefiltert nach Ereignisart | 141 ms | < 2.000 ms |
+| Gefiltert nach Gerät | 6 ms | < 2.000 ms |
+
+**Beide Zielwerte erfüllt**, mit Faktor 14 bis 140 Abstand.
+
+## Ein Befund, der nicht unterschlagen wird
+
+**Sehr tiefes Blättern überschreitet den Zielwert.** Gemessen:
+
+| Seite | Antwortzeit |
+|---:|---:|
+| 10.000 | 258 ms |
+| 50.000 | 683 ms |
+| **100.000** | **1.310 ms** |
+
+Ursache, am Abfrageplan abgelesen statt vermutet: `OFFSET` muss alle
+übersprungenen Zeilen lesen — bei Seite 100.000 sind das 4,9 Millionen Zeilen
+für 50 angezeigte.
+
+Im Betrieb ist der Fall nicht erreichbar (man müsste 100.000-mal klicken), aber
+es ist eine echte Grenze. Sie steht im Messbericht, mit der Lösung, falls sie je
+gebraucht wird: Schlüsselsatz-Blättern statt `OFFSET`.
+
+## Was die Messung ausdrücklich nicht abdeckt
+
+Gemessen auf einem **M2 Pro**, Zielhardware ist ein Raspberry Pi 5 oder i.MX8.
+Nicht gemessen: 1.000 Benutzer im Bestand, der Überwachungsdurchsatz über
+24 Stunden (NFA-LEI-020), echtes LAN, gleichzeitige Benutzer.
+
+Das steht so im [Messbericht](docs/00-referenzen/messung-leistung-mengengeruest.md)
+— damit niemand mehr hineinliest, als drinsteht.
+
+## Stand: 138 Modultests, 102 Systemnachweise — alle grün
+
+Auch der Modellfilter-Nachweis, der zuletzt an einer Hilfsfunktion scheiterte,
+ist bestätigt. Die Zielwerte aus NFA-LEI-010 werden jetzt bei **jedem** Lauf
+nachgemessen (mit 1.000 Geräten, damit der Bauvorgang kurz bleibt) — nicht nur
+einmalig von Hand.

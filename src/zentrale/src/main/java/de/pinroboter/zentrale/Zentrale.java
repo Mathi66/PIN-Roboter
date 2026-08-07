@@ -39,6 +39,7 @@ public class Zentrale {
     private final Demodaten demodaten;
     private final Bestandsverwaltung bestand;
     private final Ermittlung ermittlung;
+    private final Lasterzeuger last;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -81,6 +82,7 @@ public class Zentrale {
         this.bestand = new Bestandsverwaltung(db,
                 de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
         this.ermittlung = new Ermittlung(db);
+        this.last = new Lasterzeuger(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -656,6 +658,48 @@ public class Zentrale {
             }
         });
 
+        // NFA-LEI-010/020: Bestand in Zielgroesse erzeugen, damit die
+        // Leistungswerte am echten Mengengeruest gemessen werden koennen -
+        // auch beim Betreiber auf dessen Hardware.
+        app.post("/verwaltung/lasttest/anlegen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            int anzahl = zahl(Anmeldeseiten.feld(c, "anzahl"), Lasterzeuger.TERMINALS_ZIEL);
+            try {
+                var e = last.erzeugen(anzahl);
+                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren (%d ms)"
+                                .formatted(e.terminals(), e.konnektoren(), e.dauerMs()),
+                        "Dieser Bestand dient nur der Leistungsmessung und ist als Demo "
+                        + "gekennzeichnet. Er sollte nach der Messung wieder entfernt werden.");
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren in %d ms."
+                                .formatted(e.terminals(), e.konnektoren(), e.dauerMs()), null),
+                        angemeldeter(c)));
+            } catch (Exception e) {
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Der Lasttestbestand konnte nicht angelegt werden: " + e.getMessage(),
+                        null), angemeldeter(c)));
+            }
+        });
+
+        app.post("/verwaltung/lasttest/entfernen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            try {
+                int weg = last.entfernen();
+                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Lasttestbestand entfernt: %d Kartenterminals".formatted(weg), null);
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Lasttestbestand entfernt: %d Kartenterminals.".formatted(weg), null),
+                        angemeldeter(c)));
+            } catch (Exception e) {
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Der Lasttestbestand konnte nicht entfernt werden: " + e.getMessage(),
+                        null), angemeldeter(c)));
+            }
+        });
+
         app.post("/verwaltung/demodaten/loeschen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
             var weg = demodaten.loeschen();
@@ -1128,6 +1172,37 @@ public class Zentrale {
                     </form>""");
         }
         s.append("</div></div>");
+
+        // NFA-LEI-010: Der Betreiber soll die Leistungsmessung auf seiner
+        // eigenen Hardware wiederholen koennen. Ein Zielwert, der nur auf der
+        // Entwicklungsmaschine gilt, sagt ueber einen Raspberry Pi nichts aus.
+        int lastVorhanden = last.vorhandene();
+        s.append("""
+                <div class="tafel"><h3>Leistungsmessung
+                  <span class="zaehler">%s</span></h3>
+                <div class="anmeldeinhalt">
+                  <p class="unterzeile">Legt einen Bestand in der Größe des Mengengerüsts an
+                     (%d Kartenterminals), damit sich die Zielwerte aus NFA-LEI-010 auf
+                     dieser Hardware nachmessen lassen — statt sie zu schätzen.</p>
+                  <div class="hinweis">Alle erzeugten Datensätze sind als Demo gekennzeichnet
+                     und lassen sich rückstandsfrei entfernen. Echte Bestandsdaten bleiben
+                     unberührt.</div>
+                  <div class="reihe" style="display:flex;gap:.6rem;flex-wrap:wrap">
+                    <form method="post" action="/verwaltung/lasttest/anlegen">
+                      <input type="hidden" name="anzahl" value="%d">
+                      <button class="knopf" type="submit">%d Testgeräte anlegen</button>
+                    </form>
+                    %s
+                  </div>
+                </div></div>"""
+                .formatted(lastVorhanden == 0 ? "kein Testbestand"
+                                : lastVorhanden + " Testgeräte vorhanden",
+                        Lasterzeuger.TERMINALS_ZIEL, Lasterzeuger.TERMINALS_ZIEL,
+                        Lasterzeuger.TERMINALS_ZIEL,
+                        lastVorhanden == 0 ? "" : """
+                        <form method="post" action="/verwaltung/lasttest/entfernen">
+                          <button class="knopf warnend" type="submit">Testbestand entfernen</button>
+                        </form>"""));
 
         if (neueKonten != null && !neueKonten.isEmpty()) {
             s.append("""
