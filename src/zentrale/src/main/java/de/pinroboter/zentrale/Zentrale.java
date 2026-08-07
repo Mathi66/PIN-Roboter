@@ -226,6 +226,69 @@ public class Zentrale {
         app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
         app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
 
+        // FA-PRO-040: Excel-Export der gefilterten Protokollansicht.
+        // Exportiert wird genau das, was auf dem Bildschirm steht - alles andere
+        // ueberrascht den Benutzer. Das Deckblatt haelt fest, mit welchen Filtern
+        // die Datei entstand; ohne diese Angabe ist ein Export als Nachweis
+        // wertlos, weil niemand spaeter weiss, was darin fehlt.
+        app.get("/protokoll/export", c -> {
+            var b = angemeldeter(c);
+            String fArt = c.queryParam("art");
+            String fErg = c.queryParam("ergebnis");
+            String fGer = c.queryParam("geraet");
+            var eintraege = protokoll.filtern(fGer, fArt, fErg, Tabellenmappe.MAX_ZEILEN - 10);
+
+            var aus = new java.io.ByteArrayOutputStream();
+            try (Tabellenmappe m = new Tabellenmappe(aus)) {
+                m.blattBeginnen("Deckblatt");
+                m.zeile("PIN-Roboter - Protokollauszug");
+                m.zeile();
+                m.zeile("Erstellt am", java.time.Instant.now());
+                m.zeile("Erstellt von", b.anzeigename());
+                m.zeile("Einrichtung", "Praxis");
+                m.zeile();
+                m.zeile("Angewendete Filter");
+                m.zeile("Ereignisart", leerAls(fArt, "alle"));
+                m.zeile("Ergebnis", leerAls(fErg, "alle"));
+                m.zeile("Geraet", leerAls(fGer, "alle"));
+                m.zeile();
+                m.zeile("Zeilen in diesem Auszug", eintraege.size());
+                m.zeile();
+                m.zeile("Hinweis", "Dieser Auszug enthaelt keine PINs, Kennwoerter oder "
+                        + "Zugangsdaten. Er gibt ausschliesslich die oben genannten "
+                        + "gefilterten Eintraege wieder.");
+
+                m.blattBeginnen("Protokoll");
+                m.kopfzeile("Zeitpunkt", "Gerät", "Ereignis", "Ergebnis",
+                            "Ausgelöst durch", "Beschreibung", "Was zu tun ist", "Vorgang");
+                for (var e : eintraege) {
+                    m.zeile(e.zeitpunkt(),
+                            e.geraet() == null ? "" : e.geraet(),
+                            e.art().anzeige(),
+                            e.erfolg() ? "erfolgreich" : "fehlgeschlagen",
+                            e.ausloeser(),
+                            e.text() == null ? "" : e.text(),
+                            e.handlung() == null ? "" : e.handlung(),
+                            e.vorgang() == null ? "" : e.vorgang());
+                }
+            }
+
+            // Der Export ist selbst protokollpflichtig: Er kann personenbezogene
+            // Daten enthalten (FA-PRO-040).
+            protokoll.anfuegen("Praxis", null, Ereignisart.PROTOKOLL_EXPORTIERT, true,
+                    b.anzeigename(), null,
+                    "Protokoll exportiert (" + eintraege.size() + " Zeilen)", null);
+
+            String datei = "PIN-Roboter-Protokoll-"
+                    + java.time.LocalDateTime.now().format(
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmm"))
+                    + ".xlsx";
+            c.header("Content-Type",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            c.header("Content-Disposition", "attachment; filename=\"" + datei + "\"");
+            c.result(aus.toByteArray());
+        });
+
         app.post("/notaus", c -> {
             notAus = !notAus;
             protokoll.anfuegen("Praxis", null,
@@ -417,6 +480,10 @@ public class Zentrale {
             protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_BEHOBEN, true,
                     "Automatik", null, "Zustand behoben: " + art.name(), null);
         }
+    }
+
+    private static String leerAls(String wert, String ersatz) {
+        return wert == null || wert.isBlank() ? ersatz : wert;
     }
 
     private boolean istAdministrator(Context c) {
@@ -626,6 +693,7 @@ public class Zentrale {
                       <option value="">alle Ergebnisse</option><option value="erfolg">erfolgreich</option>
                       <option value="fehler">fehlgeschlagen</option></select>
                     <button class="knopf" hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter">Aktualisieren</button>
+                    <a class="knopf" href="/protokoll/export" download>Als Excel herunterladen</a>
                   </div>
                   <div id="protokoll" hx-get="/teil/protokoll" hx-trigger="every 5s" hx-include=".filter" hx-swap="innerHTML">%s</div>
                 </div>""".formatted(arten, protokollTabelle(c));

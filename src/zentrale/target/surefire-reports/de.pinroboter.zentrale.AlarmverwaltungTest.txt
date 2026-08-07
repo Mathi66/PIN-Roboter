@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: de.pinroboter.zentrale.AlarmverwaltungTest
 -------------------------------------------------------------------------------
-Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.227 s -- in de.pinroboter.zentrale.AlarmverwaltungTest
+Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.213 s -- in de.pinroboter.zentrale.AlarmverwaltungTest

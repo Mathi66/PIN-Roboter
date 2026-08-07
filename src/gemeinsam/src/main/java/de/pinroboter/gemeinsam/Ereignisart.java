@@ -43,6 +43,8 @@ public enum Ereignisart {
     TOTP_EINGERICHTET("Zweiter Faktor eingerichtet", Stufe.SICHERHEIT),
     TOTP_ZURUECKGESETZT("Zweiter Faktor zurückgesetzt", Stufe.SICHERHEIT),
 
+    PROTOKOLL_EXPORTIERT("Protokoll exportiert", Stufe.SICHERHEIT),
+
     ALARM_AUSGELOEST("Alarm ausgelöst", Stufe.ROUTINE),
     ALARM_BEHOBEN("Alarm behoben", Stufe.ROUTINE),
     ALARM_QUITTIERT("Alarm quittiert", Stufe.ROUTINE),

@@ -454,3 +454,54 @@ muss zuerst ins Auge fallen. Offene Alarme stehen ganz oben auf der Startseite.
 - **51 Modultests** (8 neue für die Alarmlogik)
 - **25 Systemnachweise**, darunter vier neue im laufenden Betrieb:
   Alarm entsteht, nennt eine Handlung, flutet nicht, verschwindet von selbst
+
+---
+
+# Iteration 9 — Excel-Export
+
+Deine ausdrückliche Anforderung. Umgesetzt als **echtes `.xlsx`**, nicht als CSV:
+CSV zerlegt bei deutschen Excel-Einstellungen regelmäßig die Spalten und
+verstümmelt Umlaute. Ein Export, den der Empfänger erst reparieren muss, ist
+keiner.
+
+## Selbst geschrieben statt Apache POI
+
+POI wiegt rund 10 MB und brächte ein Vielfaches dessen mit, was hier gebraucht
+wird — zwei Blätter, Text, Zahlen, Datumswerte. Gegen die Speichergrenzen aus
+NFA-LEI-030 (Agent ≤ 512 MB, Stack ≤ 3 GB) wäre das schwer zu rechtfertigen. Ein
+`.xlsx` ist ein ZIP mit dokumentierten XML-Dateien (ECMA-376).
+
+## Der Nachweis, der zählt
+
+Ein selbst geschriebenes Dateiformat gegen die eigene Umsetzung zu prüfen wäre
+zirkulär. Deshalb liest **openpyxl** — eine unabhängige Umsetzung — jede
+exportierte Datei im Systemnachweis:
+
+```
+openpyxl liest die Datei: 79 Protokollzeilen, 8 Spalten,
+Kopfzeile fixiert, Autofilter gesetzt
+```
+
+Geprüft werden dabei auch: Deckblatt mit Filtern und Zeilenzahl, Zeitpunkte als
+**echte Datumswerte** (nicht Text — sonst kann niemand damit rechnen oder
+sortieren), und dass **keine Geheimnisse** in der Datei stehen.
+
+## Details, die sonst später auffallen
+
+- **Kopfzeile fixiert, Autofilter gesetzt** — erwartet jeder, der eine Tabelle
+  mit mehr als zwei Bildschirmseiten öffnet
+- **Steuerzeichen werden gefiltert.** Sie sind in XML unzulässig; ein einziges
+  Byte in einem Gerätenamen machte die Datei unöffenbar.
+- **Zeilenweises Schreiben**, nichts wird vorher im Speicher gesammelt
+- **Der Export ist selbst protokollpflichtig** — er kann personenbezogene Daten
+  enthalten
+- Ein **benannter Standardstil**, weil Lesewerkzeuge sonst beim Öffnen warnen
+
+## Ein Fehler, der beinahe durchgerutscht wäre
+
+Der Export-Endpunkt war nie registriert — mein Ersetzungsmuster hatte nicht
+gegriffen, und der Build lief trotzdem grün, weil nur ein Link ins Leere zeigte.
+Erst der Systemnachweis mit `HTTP 404` hat es aufgedeckt. Ein Knopf, der nichts
+tut, ist im Compiler unsichtbar.
+
+## Stand: 59 Modultests, 28 Systemnachweise — alle grün

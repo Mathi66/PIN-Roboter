@@ -263,6 +263,23 @@ A3=$(alarmzahl)
 [ "$A3" -lt "$A1" ] && BE=ja || BE=nein
 ergebnis "behobener Zustand schließt den Alarm selbsttätig ($A1 -> $A3)" "$BE"
 
+# ---------------------------------------------------------------- Excel-Export
+hinweis "FA-PRO-040 — Excel-Export"
+XLSX=/tmp/pr-export.xlsx
+CODE=$(curl -s -b "$KEKSE" -o "$XLSX" -w "%{http_code}" http://localhost:8090/protokoll/export)
+[ "$CODE" = "200" ] && [ -s "$XLSX" ] && EX=ja || EX=nein
+ergebnis "Export liefert eine Datei (HTTP $CODE, $(wc -c < "$XLSX" 2>/dev/null || echo 0) Bytes)" "$EX"
+
+# Der eigentliche Nachweis: eine UNABHAENGIGE Umsetzung liest die Datei.
+# Das eigene Format gegen die eigene Umsetzung zu pruefen waere zirkulaer.
+PYBIN=/private/tmp/claude-501/-Users-mni-Projekte-KT-PIN-Roboter/fb51524a-e2f5-4cb6-ad89-0656d47c45a8/scratchpad/venv/bin/python
+if [ -x "$PYBIN" ] && "$PYBIN" pruefungen/xlsx-pruefen.py "$XLSX"; then OP=ja; else OP=nein; fi
+ergebnis "openpyxl (unabhaengige Bibliothek) liest die Datei fehlerfrei" "$OP"
+
+curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Protokoll exportiert" && PE=ja || PE=nein
+ergebnis "der Export ist selbst protokolliert" "$PE"
+rm -f "$XLSX"
+
 # ---------------------------------------------------------------- Agent-Zugang
 hinweis "FA-AGT-010 / FA-AGT-020 — Agent-Registrierung und Token"
 OFFEN=0
