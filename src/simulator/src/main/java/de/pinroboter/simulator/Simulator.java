@@ -118,9 +118,18 @@ public class Simulator {
                     case "zuruecksetzen" -> term.alleKarten().forEach(SimulierteKarte::zuruecksetzen);
                     case "sperren"       -> term.alleKarten().forEach(k -> k.sonderzustandSetzen(PinStatus.BLOCKED));
                     case "transportpin"  -> term.alleKarten().forEach(k -> k.sonderzustandSetzen(PinStatus.TRANSPORT_PIN));
-                    case "firmware"      -> new Thread(() -> {
-                        try { term.firmwareEinspielen(wert); } catch (InterruptedException ignored) {}
-                    }).start();
+                    case "firmware"      -> {
+                        // /steuerung/{id}/firmware/{version}?dauer=<ms>
+                        String q = ex.getRequestURI().getQuery();
+                        long dauer = 2000;
+                        if (q != null && q.startsWith("dauer=")) {
+                            try { dauer = Long.parseLong(q.substring(6)); } catch (Exception ignored) {}
+                        }
+                        final long d = dauer;
+                        new Thread(() -> {
+                            try { term.firmwareEinspielen(wert, d); } catch (InterruptedException ignored) {}
+                        }).start();
+                    }
                     default -> { TerminalVerwaltung.antworte(ex, 404, "{\"fehler\":\"Aktion unbekannt\"}"); return; }
                 }
                 TerminalVerwaltung.antworte(ex, 200, "{\"ok\":true}");

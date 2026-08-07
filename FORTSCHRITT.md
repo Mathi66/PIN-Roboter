@@ -178,3 +178,36 @@ Sicherheitsrichtlinie die Kurven längst freigegeben hat. Richtig ist
 
 Die Fehlermeldung weist in die völlig falsche Richtung. Das gehört in die
 Umsetzungsbeschreibung, sonst kostet es jeden, der das nachbaut, dieselbe Zeit.
+
+---
+
+# Iteration 2 — Systemnachweise
+
+Neu: **`pruefungen/systemnachweise.sh`** prüft den laufenden Stack gegen die
+Akzeptanzkriterien. Modultests prüfen Logik isoliert; dieses Skript prüft das
+Zusammenspiel. Nach CLAUDE.md gilt ein Kriterium erst als erfüllt, wenn es am
+laufenden System nachgewiesen wurde — dieses Skript macht den Nachweis
+wiederholbar statt einmalig.
+
+## Ergebnis: 10 von 10 bestanden
+
+| Anforderung | Nachweis |
+|---|---|
+| Durchstich | SMC-B wird selbsttätig freigeschaltet, 0 TLS-Fehler |
+| **FA-PIN-030** | genau 1 Versuch bei ~10 Gelegenheiten; Restversuche in Klartext |
+| **FA-UEB-050** | **0** Versuche während 30 s Firmware-Update (~7 Gelegenheiten), danach Wiederherstellung |
+| **FA-PIN-050** | 0 Versuche bei aktivem Not-Aus, Wiederanlauf nach Aufhebung, protokolliert |
+| **FA-PRO-020** | keine PIN in Agent-Ausgabe oder Fachprotokoll |
+
+## Ein verworfener Scheinnachweis
+
+Der erste Anlauf für FA-UEB-050 „bestand" — war aber wertlos: Das simulierte
+Update dauerte 2 Sekunden, das Prüfintervall 4. Der Agent hatte den kritischen
+Moment mit hoher Wahrscheinlichkeit gar nicht getroffen.
+
+Behoben durch eine konfigurierbare Update-Dauer im Simulator. Jetzt läuft das
+Update 30 Sekunden bei 4 Sekunden Intervall — der Agent prüft **zwangsläufig**
+rund sieben Mal währenddessen. Erst damit ist das Ergebnis eine Aussage und
+kein Zufall.
+
+Das ist die Art Fehler, die einen Test wertlos macht, ohne dass er rot wird.

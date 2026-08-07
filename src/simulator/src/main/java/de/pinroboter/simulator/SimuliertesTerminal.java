@@ -109,9 +109,20 @@ public class SimuliertesTerminal {
 
     /** Firmware-Update: Neustart entzieht der SMC-B den verifizierten Zustand. */
     public void firmwareEinspielen(String neueVersion) throws InterruptedException {
+        firmwareEinspielen(neueVersion, 2000);
+    }
+
+    /**
+     * @param dauerMs wie lange der Zustand „aktualisierend" anhält. Für Tests
+     *                bewusst einstellbar: Nur wenn das Update länger dauert als
+     *                das Prüfintervall des Agenten, trifft dieser den kritischen
+     *                Moment zwangsläufig — sonst ist ein bestandener Test bloß
+     *                Zufall.
+     */
+    public void firmwareEinspielen(String neueVersion, long dauerMs) throws InterruptedException {
         aktualisierend = true;
         try {
-            Thread.sleep(2000);
+            Thread.sleep(dauerMs);
             this.firmware = neueVersion;
             karten.values().forEach(SimulierteKarte::verifikationEntziehen);
         } finally {
