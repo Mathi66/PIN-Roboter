@@ -33,7 +33,16 @@ public class Zustand {
         // Regelfall: modernes Terminal, PEviM vorhanden und aktiviert
         SimuliertesTerminal t1 = new SimuliertesTerminal(
                 "KT-EMPFANG-01", "Empfang", "CHERRY ST-1506", "4.2.1", true, true);
-        t1.karteEinlegen(1, new SimulierteKarte("card-smcb-001", "80276001011699901101", "SMC-B", "123456"));
+        t1.karteEinlegen(1, new SimulierteKarte("card-smcb-001", "80276001011699901101",
+                "SMC-B", "123456", "2027-06-30"));
+        // eGK und HBA stecken in der Praxis regelmaessig mit im Terminal. Sie
+        // sind fuer PEviM AUSDRUECKLICH unzulaessig (A_24080) - der Roboter
+        // muss sie erkennen und in Ruhe lassen. Ein Simulator ohne sie wuerde
+        // diesen Fall nie pruefen.
+        t1.karteEinlegen(2, new SimulierteKarte("card-egk-001", "80276883110000123456",
+                "EGK", null, "2030-03-31"));
+        t1.karteEinlegen(3, new SimulierteKarte("card-hba-001", "80276001081234567890",
+                "HBA", null, "2028-09-30"));
         z.terminalHinzufuegen(t1);
 
         // Zweites Terminal, ebenfalls betriebsbereit — für Nebenläufigkeitstests

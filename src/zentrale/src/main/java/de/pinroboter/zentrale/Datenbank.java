@@ -525,6 +525,32 @@ public class Datenbank implements AutoCloseable {
             END;
             $$ LANGUAGE plpgsql;
             """);
+
+        migration(15, """
+            -- Karten je Terminal (FA-GER-040).
+            --
+            -- Erfasst werden ALLE Karten, nicht nur die SMC-B. eGK und HBA
+            -- stecken in der Praxis regelmaessig mit im Terminal und sind fuer
+            -- PEviM ausdruecklich unzulaessig (A_24080). Sie zu verschweigen
+            -- waere bequem - der Betreiber soll aber sehen, was in seinem
+            -- Geraet steckt und dass der Roboter sie in Ruhe laesst.
+            CREATE TABLE ermittelte_karte (
+              id             BIGSERIAL PRIMARY KEY,
+              agent_id       BIGINT      REFERENCES agent(id) ON DELETE CASCADE,
+              terminal_id    TEXT        NOT NULL,
+              kartenhandle   TEXT        NOT NULL,
+              kartentyp      TEXT        NOT NULL,
+              iccsn          TEXT,
+              verwaltet      BOOLEAN     NOT NULL DEFAULT FALSE,
+              gueltig_bis    DATE,
+              gesehen        TIMESTAMPTZ NOT NULL DEFAULT now(),
+              UNIQUE (agent_id, kartenhandle)
+            );
+            CREATE INDEX ermittelte_karte_terminal_idx ON ermittelte_karte (terminal_id);
+
+            -- Ablaufdatum am erfassten Terminal, fuer die Bestandsansicht.
+            ALTER TABLE kartenterminal ADD COLUMN zertifikat_gueltig_bis DATE;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

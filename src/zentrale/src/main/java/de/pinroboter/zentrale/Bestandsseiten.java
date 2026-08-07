@@ -650,7 +650,77 @@ final class Bestandsseiten {
         return s.toString();
     }
 
-    static String terminalMaske(Bestandsverwaltung.Terminal t, String fehler) {
+    /**
+     * Karten im Terminal (FA-GER-040).
+     *
+     * <p>Angezeigt werden <b>alle</b> Karten, nicht nur die SMC-B. eGK und HBA
+     * stecken in der Praxis regelmäßig mit im Gerät; sie zu verschweigen wäre
+     * bequem, aber der Betreiber soll sehen, was drinsteckt — und dass der
+     * Roboter sie ausdrücklich in Ruhe lässt.
+     */
+    static String kartenTafel(List<Ermittlung.Karte> karten) {
+        if (karten.isEmpty()) {
+            return """
+                    <div class="tafel"><h3>Karten im Terminal</h3>
+                    <p class="leer">Noch keine Karten gemeldet. Der Standort-Agent meldet sie,
+                       sobald er das Gerät abgefragt hat.</p></div>""";
+        }
+        StringBuilder s = new StringBuilder("""
+                <div class="tafel"><h3>Karten im Terminal <span class="zaehler">%d</span></h3>
+                <div class="rollbar"><table>
+                <caption class="nurLeser">Karten im Kartenterminal</caption>
+                <thead><tr>
+                  <th scope="col">Kartentyp</th><th scope="col">ICCSN</th>
+                  <th scope="col">Zertifikat gültig bis</th><th scope="col">Verwaltung</th>
+                </tr></thead><tbody>""".formatted(karten.size()));
+        for (var k : karten) {
+            s.append("""
+                    <tr><td>%s</td><td><code class="klein">%s</code></td>
+                    <td>%s</td><td>%s</td></tr>"""
+                    .formatted(esc(k.typAnzeige()), esc(nz(k.iccsn())),
+                            ablaufMarke(k), verwaltungsMarke(k)));
+        }
+        s.append("</tbody></table></div>");
+        // A_24080 gehoert erklaert, nicht nur durchgesetzt. Wer liest, warum
+        // eine Karte nicht verwaltet wird, fragt nicht beim Support nach.
+        if (karten.stream().anyMatch(k -> !k.verwaltet())) {
+            s.append("""
+                    <div class="hinweis">
+                      <strong>eGK und HBA werden nicht verwaltet.</strong> Die automatische
+                      PIN-Eingabe über die Managementschnittstelle ist ausschließlich für die
+                      SMC-B zulässig (gematik A_24080). Der Roboter erfasst diese Karten, zeigt
+                      sie an — und fasst sie nie an.
+                    </div>""");
+        }
+        return s.append("</div>").toString();
+    }
+
+    private static String ablaufMarke(Ermittlung.Karte k) {
+        if (k.gueltigBis() == null || k.gueltigBis().isBlank()) {
+            return "<span class=\"marke\">nicht gemeldet</span>";
+        }
+        String datum = esc(k.gueltigBis());
+        if (k.abgelaufen()) {
+            return "<span class=\"marke fehler\"><span class=\"sym\">×</span>" + datum
+                 + " — abgelaufen</span>";
+        }
+        if (k.laeuftBaldAb()) {
+            // Der Austausch einer SMC-B braucht Vorlauf bei der
+            // Kartenherausgabe. Drei Monate sind knapp, aber machbar.
+            return "<span class=\"marke warnung\">" + datum + " — läuft bald ab</span>";
+        }
+        return datum;
+    }
+
+    private static String verwaltungsMarke(Ermittlung.Karte k) {
+        return k.verwaltet()
+                ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>vom Roboter verwaltet</span>"
+                : "<span class=\"marke\" title=\"PEviM ist nur für SMC-B zulässig (A_24080).\">"
+                  + "nicht verwaltet</span>";
+    }
+
+    static String terminalMaske(Bestandsverwaltung.Terminal t, List<Ermittlung.Karte> karten,
+                                String fehler) {
         StringBuilder s = new StringBuilder();
         s.append("<h2>Kartenterminal: ").append(esc(t.bezeichnung())).append("</h2>");
         s.append("<p class=\"unterzeile\">Kennung <code>").append(esc(t.terminalId()))
@@ -715,6 +785,7 @@ final class Bestandsseiten {
                                 : "Es ist kein Kennwort hinterlegt.",
                         t.hatSmcb() ? "checked" : "", t.pevimAktiv() ? "checked" : "",
                         t.aktiv() ? "checked" : ""));
+        s.append(kartenTafel(karten));
         return s.toString();
     }
 

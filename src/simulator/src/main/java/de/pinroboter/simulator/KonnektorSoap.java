@@ -73,8 +73,10 @@ public class KonnektorSoap implements HttpHandler {
             for (SimulierteKarte k : t.alleKarten()) {
                 sb.append("""
                         <Card><CardHandle>%s</CardHandle><CardType>%s</CardType>
-                          <Iccsn>%s</Iccsn><CtId>%s</CtId></Card>
-                        """.formatted(k.kartenhandle(), k.kartentyp(), k.iccsn(), t.id()));
+                          <Iccsn>%s</Iccsn><CtId>%s</CtId>
+                          <CertificateExpirationDate>%s</CertificateExpirationDate></Card>
+                        """.formatted(k.kartenhandle(), k.kartentyp(), k.iccsn(), t.id(),
+                        k.zertifikatGueltigBis()));
             }
         }
         return umschlag("<GetCardsResponse>" + sb + "</GetCardsResponse>");

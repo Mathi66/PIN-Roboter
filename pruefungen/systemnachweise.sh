@@ -1196,6 +1196,50 @@ IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='PROTOKOLL_PSEUDONYMISIE
 [ "${IST:-0}" -ge 1 ] && PP=ja || PP=nein
 ergebnis "die Pseudonymisierung ist selbst protokolliert" "$PP"
 
+hinweis "FA-GER-040 — Karten erfassen, eGK und HBA nicht anfassen"
+IST=$(sql "SELECT count(*) FROM ermittelte_karte")
+[ "${IST:-0}" -ge 3 ] && KE=ja || KE=nein
+ergebnis "der Agent meldet die Karten der Terminals ($IST)" "$KE"
+
+# eGK und HBA stecken in der Praxis mit im Terminal. Sie zu verschweigen waere
+# bequem - der Betreiber soll sehen, was drinsteckt.
+EGK=$(sql "SELECT count(*) FROM ermittelte_karte WHERE kartentyp='EGK'")
+HBA=$(sql "SELECT count(*) FROM ermittelte_karte WHERE kartentyp='HBA'")
+[ "${EGK:-0}" -ge 1 ] && [ "${HBA:-0}" -ge 1 ] && KA=ja || KA=nein
+ergebnis "auch eGK ($EGK) und HBA ($HBA) werden erfasst" "$KA"
+
+# A_24080: PEviM ist ausschliesslich fuer SMC-B zulaessig.
+FALSCH=$(sql "SELECT count(*) FROM ermittelte_karte WHERE verwaltet AND kartentyp <> 'SMC-B'")
+[ "${FALSCH:-1}" = "0" ] && KV=ja || KV=nein
+ergebnis "nur die SMC-B gilt als verwaltet (falsch eingestuft: $FALSCH)" "$KV"
+
+OHNE=$(sql "SELECT count(*) FROM ermittelte_karte WHERE kartentyp='SMC-B' AND NOT verwaltet")
+[ "${OHNE:-1}" = "0" ] && KS=ja || KS=nein
+ergebnis "jede SMC-B gilt als verwaltet (nicht eingestuft: $OHNE)" "$KS"
+
+MIT_DATUM=$(sql "SELECT count(*) FROM ermittelte_karte WHERE gueltig_bis IS NOT NULL")
+[ "${MIT_DATUM:-0}" -ge 3 ] && KD=ja || KD=nein
+ergebnis "das Ablaufdatum des Zertifikats wird uebernommen ($MIT_DATUM)" "$KD"
+
+# Der Roboter darf eGK und HBA nie verifizieren.
+VERSUCHE=$(docker logs pr-agt 2>&1 | grep -cE "card-egk|card-hba" || true)
+[ "${VERSUCHE:-1}" = "0" ] && KN=ja || KN=nein
+ergebnis "der Roboter fasst eGK und HBA nicht an ($VERSUCHE Erwaehnungen)" "$KN"
+
+# Die Oberflaeche muss A_24080 erklaeren, nicht nur durchsetzen.
+TID_K=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='KT-EMPFANG-01' AND NOT ist_demo
+             ORDER BY id LIMIT 1")
+if [ -n "$TID_K" ]; then
+  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_K" > /tmp/pr-karten.html
+  grep -q "A_24080" /tmp/pr-karten.html && KX=ja || KX=nein
+  ergebnis "die Oberflaeche erklaert, warum eGK und HBA nicht verwaltet werden" "$KX"
+  grep -q "Gesundheitskarte" /tmp/pr-karten.html && KT=ja || KT=nein
+  ergebnis "die Kartentypen werden verstaendlich benannt" "$KT"
+  rm -f /tmp/pr-karten.html
+else
+  echo "  uebersprungen: kein erfasstes Terminal KT-EMPFANG-01"
+fi
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

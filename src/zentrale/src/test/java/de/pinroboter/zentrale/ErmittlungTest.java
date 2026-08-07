@@ -75,6 +75,7 @@ class ErmittlungTest {
 
     private static void aufraeumen() throws SQLException {
         try (Statement s = db.verbindung().createStatement()) {
+            s.executeUpdate("DELETE FROM ermittelte_karte");
             s.executeUpdate("DELETE FROM ermittelt_terminal");
             s.executeUpdate("DELETE FROM ermitteltes_modell");
             s.executeUpdate("""
@@ -267,6 +268,90 @@ class ErmittlungTest {
         try (Statement s = db.verbindung().createStatement()) {
             s.executeUpdate("UPDATE agent SET aktiv = TRUE WHERE bezeichnung = 'Testagent Ermittlung'");
         }
+    }
+
+    @Test @Order(40)
+    @DisplayName("Alle Karten werden erfasst — auch eGK und HBA")
+    void kartenErfassen() {
+        // eGK und HBA stecken in der Praxis regelmaessig mit im Terminal. Sie
+        // zu verschweigen waere bequem; der Betreiber soll aber sehen, was in
+        // seinem Geraet steckt.
+        erm.kartenAufnehmen(agentId, "KT-A", List.of(
+                karte("card-smcb", "SMC-B", true, "2027-06-30"),
+                karte("card-egk", "EGK", false, "2030-03-31"),
+                karte("card-hba", "HBA", false, "2028-09-30")));
+
+        var karten = erm.karten("KT-A");
+        assertEquals(3, karten.size());
+        assertTrue(karten.get(0).verwaltet(), "die SMC-B steht zuerst");
+        assertEquals("SMC-B", karten.get(0).kartentyp());
+        assertEquals(2, karten.stream().filter(k -> !k.verwaltet()).count());
+    }
+
+    @Test @Order(41)
+    @DisplayName("Nur die SMC-B gilt als verwaltet (A_24080)")
+    void nurSmcbVerwaltet() {
+        for (var k : erm.karten("KT-A")) {
+            assertEquals("SMC-B".equals(k.kartentyp()), k.verwaltet(),
+                    k.kartentyp() + " ist falsch eingestuft");
+        }
+    }
+
+    @Test @Order(42)
+    @DisplayName("Ablaufende und abgelaufene Zertifikate werden erkannt")
+    void ablaufErkennen() {
+        var heute = java.time.LocalDate.now();
+        erm.kartenAufnehmen(agentId, "KT-ABLAUF", List.of(
+                karte("card-alt",  "SMC-B", true, heute.minusDays(1).toString()),
+                karte("card-bald", "SMC-B", true, heute.plusDays(30).toString()),
+                karte("card-lang", "SMC-B", true, heute.plusYears(3).toString()),
+                karte("card-ohne", "SMC-B", true, null)));
+
+        var nach = new java.util.HashMap<String, Ermittlung.Karte>();
+        for (var k : erm.karten("KT-ABLAUF")) nach.put(k.kartenhandle(), k);
+
+        assertTrue(nach.get("card-alt").abgelaufen(), "gestern abgelaufen");
+        assertTrue(nach.get("card-alt").laeuftBaldAb());
+
+        assertFalse(nach.get("card-bald").abgelaufen());
+        assertTrue(nach.get("card-bald").laeuftBaldAb(),
+                "in 30 Tagen — der Austausch einer SMC-B braucht Vorlauf");
+
+        assertFalse(nach.get("card-lang").laeuftBaldAb());
+        assertFalse(nach.get("card-ohne").laeuftBaldAb(),
+                "ohne gemeldetes Datum wird nicht geraten");
+        assertFalse(nach.get("card-ohne").abgelaufen());
+    }
+
+    @Test @Order(43)
+    @DisplayName("Die Kartentypen werden verständlich benannt")
+    void typAnzeige() {
+        // "EGK" sagt einer Praxiskraft nichts, "eGK (Gesundheitskarte)" schon.
+        var k = erm.karten("KT-A");
+        assertTrue(k.stream().anyMatch(x -> x.typAnzeige().contains("Institutionsausweis")));
+        assertTrue(k.stream().anyMatch(x -> x.typAnzeige().contains("Gesundheitskarte")));
+        assertTrue(k.stream().anyMatch(x -> x.typAnzeige().contains("Heilberufsausweis")));
+    }
+
+    @Test @Order(44)
+    @DisplayName("Eine zweite Meldung derselben Karte legt nichts doppelt an")
+    void kartenIdempotent() {
+        erm.kartenAufnehmen(agentId, "KT-A", List.of(
+                karte("card-smcb", "SMC-B", true, "2028-01-01")));
+        var karten = erm.karten("KT-A");
+        assertEquals(3, karten.size(), "keine Dublette");
+        assertEquals("2028-01-01", karten.get(0).gueltigBis(), "der neue Stand gilt");
+    }
+
+    private static Map<String, Object> karte(String handle, String typ, boolean verwaltet,
+                                             String bis) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("kartenhandle", handle);
+        m.put("kartentyp", typ);
+        m.put("iccsn", "8027600101169990" + handle.length());
+        m.put("verwaltet", verwaltet);
+        m.put("zertifikatGueltigBis", bis == null ? "" : bis);
+        return m;
     }
 
     @Test @Order(14)

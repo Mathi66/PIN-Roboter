@@ -96,6 +96,96 @@ public class Ermittlung {
         return n;
     }
 
+    /**
+     * Eine im Terminal gefundene Karte (FA-GER-040).
+     *
+     * @param verwaltet nur SMC-B. eGK und HBA werden erfasst und angezeigt,
+     *        aber nie angefasst — PEviM ist für sie unzulässig (A_24080).
+     */
+    public record Karte(String terminalId, String kartenhandle, String kartentyp,
+                        String iccsn, boolean verwaltet, String gueltigBis) {
+        public String typAnzeige() {
+            return switch (kartentyp) {
+                case "SMC-B" -> "SMC-B (Institutionsausweis)";
+                case "EGK"   -> "eGK (Gesundheitskarte)";
+                case "HBA"   -> "HBA (Heilberufsausweis)";
+                default      -> kartentyp;
+            };
+        }
+
+        /** Ob das Zertifikat in weniger als 90 Tagen abläuft. */
+        public boolean laeuftBaldAb() {
+            if (gueltigBis == null || gueltigBis.isBlank()) return false;
+            try {
+                return java.time.LocalDate.parse(gueltigBis)
+                        .isBefore(java.time.LocalDate.now().plusDays(90));
+            } catch (Exception e) { return false; }
+        }
+
+        public boolean abgelaufen() {
+            if (gueltigBis == null || gueltigBis.isBlank()) return false;
+            try {
+                return java.time.LocalDate.parse(gueltigBis).isBefore(java.time.LocalDate.now());
+            } catch (Exception e) { return false; }
+        }
+    }
+
+    /** Nimmt die Karten eines Terminals entgegen. */
+    public int kartenAufnehmen(long agentId, String terminalId, List<Map<String, Object>> karten) {
+        int n = 0;
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO ermittelte_karte (agent_id, terminal_id, kartenhandle, kartentyp,
+                    iccsn, verwaltet, gueltig_bis, gesehen)
+                VALUES (?,?,?,?,?,?,?::date,now())
+                ON CONFLICT (agent_id, kartenhandle) DO UPDATE SET
+                    terminal_id = EXCLUDED.terminal_id, kartentyp = EXCLUDED.kartentyp,
+                    iccsn = EXCLUDED.iccsn, verwaltet = EXCLUDED.verwaltet,
+                    gueltig_bis = EXCLUDED.gueltig_bis, gesehen = now()""")) {
+            for (var k : karten) {
+                String handle = text(k.get("kartenhandle"));
+                if (handle.isBlank()) continue;
+                p.setLong(1, agentId);
+                p.setString(2, terminalId);
+                p.setString(3, handle);
+                p.setString(4, text(k.get("kartentyp")));
+                p.setString(5, nullWennLeer(text(k.get("iccsn"))));
+                p.setBoolean(6, wahr(k.get("verwaltet")));
+                p.setString(7, nullWennLeer(text(k.get("zertifikatGueltigBis"))));
+                p.addBatch();
+                n++;
+            }
+            p.executeBatch();
+        } catch (SQLException e) {
+            System.err.println("Karten nicht aufnehmbar: " + e.getMessage());
+            return 0;
+        }
+        return n;
+    }
+
+    /** Karten eines Terminals, SMC-B zuerst. */
+    public List<Karte> karten(String terminalId) {
+        List<Karte> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT DISTINCT ON (kartenhandle) terminal_id, kartenhandle, kartentyp,
+                       iccsn, verwaltet, gueltig_bis
+                FROM ermittelte_karte k
+                JOIN agent a ON a.id = k.agent_id AND a.aktiv
+                WHERE terminal_id = ?
+                ORDER BY kartenhandle, gesehen DESC""")) {
+            p.setString(1, terminalId);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) {
+                    java.sql.Date d = rs.getDate("gueltig_bis");
+                    liste.add(new Karte(rs.getString("terminal_id"), rs.getString("kartenhandle"),
+                            rs.getString("kartentyp"), rs.getString("iccsn"),
+                            rs.getBoolean("verwaltet"), d == null ? null : d.toString()));
+                }
+            }
+        } catch (SQLException ignored) { }
+        liste.sort((a, b) -> Boolean.compare(b.verwaltet(), a.verwaltet()));
+        return liste;
+    }
+
     /** Legt das gelesene Informationsmodell ab, oder vermerkt, dass es fehlt. */
     public void modellAblegen(long agentId, boolean verfuegbar, String inhalt) {
         try (PreparedStatement p = db.verbindung().prepareStatement("""

@@ -36,7 +36,7 @@
 | Protokollansicht | Paginierung, 50 Zeilen je Seite; bei 5 Mio Einträgen 110 ms. **Grenze:** sehr tiefes Blättern (ab ~Seite 75.000) überschreitet 1 s |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-rund 14.700 Zeilen, **197 Modultests, 149 Systemnachweise** — im letzten Vollauf alle grün.
+rund 15.200 Zeilen, **202 Modultests, 157 Systemnachweise** — im letzten Vollauf alle grün.
 
 > Umsetzungsstand je Anforderung: [docs/01a-umsetzungsstand.md](01a-umsetzungsstand.md).
 > Was der PO entscheiden muss: [docs/ENTSCHEIDUNGEN-PO.md](ENTSCHEIDUNGEN-PO.md).

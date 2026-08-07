@@ -1365,3 +1365,58 @@ Ist das Werkzeug nicht beschaffbar, überspringt die Prüfung und sagt das —
 statt „bestanden" zu melden. Eine übersprungene Prüfung ist keine bestandene.
 
 ## Stand: 197 Modultests, 149 Systemnachweise — alle grün
+
+
+---
+
+# Iteration 25 — Karten erfassen (FA-GER-040) und ADR-0009
+
+## eGK und HBA werden angezeigt, nicht verschwiegen
+
+Sie stecken in der Praxis regelmäßig mit im Terminal. Sie wegzulassen wäre
+bequem gewesen — sie sind für die Kernfunktion irrelevant. Zwei Gründe dagegen:
+Der Betreiber soll sehen, **was in seinem Gerät steckt**, und er soll sehen,
+**dass der Roboter sie in Ruhe lässt**. Eine Zusage, die man nicht prüfen kann,
+beruhigt niemanden.
+
+Die Kürzel werden ausgeschrieben: „eGK (Gesundheitskarte)" statt „EGK". Und
+darunter steht, warum sie nicht verwaltet werden — mit Nennung von `A_24080`.
+Eine Regel durchzusetzen genügt nicht; wer nicht weiß, warum eine Karte
+ausgelassen wird, ruft beim Dienstleister an.
+
+## Das Ablaufdatum in drei Zuständen
+
+Mehr als 90 Tage: schlichtes Datum. Weniger: „läuft bald ab". Überschritten:
+„abgelaufen". **Ohne gemeldetes Datum wird nicht geraten** — dann steht „nicht
+gemeldet". Ein erfundenes Datum würde Sicherheit vortäuschen.
+
+Der Austausch einer SMC-B braucht Vorlauf bei der Kartenherausgabe; drei Monate
+sind knapp, aber machbar.
+
+## Der Simulator kannte den Fall nicht
+
+Er meldete nur SMC-B. Ein Simulator, der den zu prüfenden Fall gar nicht kennt,
+kann ihn nicht prüfen. Jetzt stecken in `KT-EMPFANG-01` auch eine eGK und ein
+HBA, jede mit eigenem Ablaufdatum.
+
+## ADR-0009 — der Weg für die PIN-Hinterlegung
+
+Die PIN kommt derzeit über eine **Umgebungsvariable** in den Agenten. Für einen
+Prototyp vertretbar, für den Betrieb untragbar: Klartext in einer Datei, in
+jeder Sicherung, sichtbar über `docker inspect`, und jede Änderung verlangt
+einen Neustart.
+
+Der Konflikt: Die Oberfläche läuft in der Zentrale — die PIN darf sie aber
+**nie erreichen**. Bei 1.000 Standorten wäre eine Zentrale mit allen PINs ein
+Ziel, dessen Kompromittierung hunderte Praxen lahmlegt.
+
+**Entschieden: Ende-zu-Ende.** Der Agent erzeugt ein Schlüsselpaar und meldet
+den öffentlichen Teil. Der Browser verschlüsselt die PIN damit lokal; die
+Zentrale reicht nur das Chiffrat weiter und kann es nicht lesen.
+
+Das erfordert JavaScript in genau einer Maske — bisher kommt die Oberfläche
+ohne aus, und das war eine bewusste Wahl. Die Einschränkung wird in der Maske
+ausgesprochen, statt sie stillschweigend hinzunehmen. **Die Umsetzung steht
+noch aus.**
+
+## Stand: 202 Modultests, 157 Systemnachweise — alle grün

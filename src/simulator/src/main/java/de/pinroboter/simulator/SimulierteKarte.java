@@ -20,16 +20,32 @@ public class SimulierteKarte {
     private final String kartentyp;
     private final String richtigePin;
 
+    /**
+     * Ablaufdatum des Zertifikats (FA-GER-040).
+     *
+     * <p>Es steht im Zertifikat der Karte, nicht auf der Karte selbst. Für den
+     * Betrieb ist es die wichtigste Angabe nach dem PIN-Status: Eine abgelaufene
+     * SMC-B nimmt keine Verifikation mehr an, und der Austausch braucht Vorlauf
+     * bei der Kartenherausgabe.
+     */
+    private final String zertifikatGueltigBis;
+
     private int verbleibendeVersuche = MAX_VERSUCHE;
     private boolean verifiziert = false;
     private boolean gesperrt = false;
     private PinStatus sonderzustand = null;
 
     public SimulierteKarte(String kartenhandle, String iccsn, String kartentyp, String richtigePin) {
+        this(kartenhandle, iccsn, kartentyp, richtigePin, "2029-12-31");
+    }
+
+    public SimulierteKarte(String kartenhandle, String iccsn, String kartentyp,
+                           String richtigePin, String zertifikatGueltigBis) {
         this.kartenhandle = kartenhandle;
         this.iccsn = iccsn;
         this.kartentyp = kartentyp;
         this.richtigePin = richtigePin;
+        this.zertifikatGueltigBis = zertifikatGueltigBis;
     }
 
     public synchronized PinStatus status() {
@@ -78,6 +94,7 @@ public class SimulierteKarte {
     public synchronized void sonderzustandSetzen(PinStatus s) { this.sonderzustand = s; }
 
     public String kartenhandle() { return kartenhandle; }
+    public String zertifikatGueltigBis() { return zertifikatGueltigBis; }
     public String iccsn() { return iccsn; }
     public String kartentyp() { return kartentyp; }
 

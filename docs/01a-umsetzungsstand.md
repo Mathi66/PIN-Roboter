@@ -36,7 +36,7 @@ mit 84 Anforderungen
 | ✓ | FA-GER-020 | Kartenterminals erfassen | dito; A_24080 durchgesetzt |
 | ✓ | FA-GER-030 | Terminals automatisch ermitteln | Agent ermittelt, Übernahme einzeln oder als Auswahl, nie automatisch |
 | ✓ | FA-GER-035 | Informationsmodell auslesen | Aufrufkontext steht zur Auswahl; ohne Webadmin bleibt alles von Hand erfassbar |
-| ◐ | FA-GER-040 | Karten erfassen | Kartenhandle und ICCSN werden übernommen. **Offen:** Ablaufdatum des Zertifikats, ausdrückliche Kennzeichnung von eGK/HBA als „nicht verwaltet" |
+| ✓ | FA-GER-040 | Karten erfassen | Alle Karten mit Typ, ICCSN und Ablaufdatum; eGK und HBA ausdrücklich als „nicht verwaltet" gekennzeichnet, mit Begründung (A_24080). Nachgewiesen: der Roboter fasst sie nicht an |
 | ○ | FA-GER-050 | Gerätegruppen | Anlegen, Zuordnen, Vorgabegruppe, Löschen mit Umzug — Modultests, kein eigener Systemnachweis |
 | ✓ | FA-GER-060 | Bestandsübersicht bei 5.000 Geräten | Paginierung, Suche, Sortierung, Filter, Massenaktionen; gemessen: erste Seite 14 ms |
 
@@ -54,7 +54,7 @@ mit 84 Anforderungen
 
 | | Anforderung | Stand | Anmerkung |
 |---|---|---|---|
-| ◐ | FA-PIN-010 | PIN hinterlegen | Der Agent nimmt sie über die Umgebung entgegen. **Offen:** Hinterlegen über die Oberfläche mit verschlüsselter Ablage beim Agenten |
+| ◐ | FA-PIN-010 | PIN hinterlegen | Der Agent nimmt sie über die Umgebung entgegen. **Weg entschieden** in [ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md): Ende-zu-Ende vom Browser zum Agenten, die Zentrale sieht nie Klartext. **Umsetzung offen** |
 | ✓ | FA-PIN-020 | PIN automatisch verifizieren | vollständiger PEviM-Durchstich über Brainpool-TLS |
 | ✓ | FA-PIN-030 | **Falsche PIN löst genau einen Versuch aus** | vor jeder Auslieferung verpflichtend; nachgewiesen: 1 Versuch bei ~10 Gelegenheiten |
 | ○ | FA-PIN-040 | Fehlversuchszähler auswerten | Sicherungsprüfung mit 10 Modultests |

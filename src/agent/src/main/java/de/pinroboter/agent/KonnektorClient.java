@@ -42,7 +42,20 @@ public class KonnektorClient {
     public record Terminal(String id, String name, String modell, String firmware,
                            boolean erreichbar, boolean pevimUnterstuetzt, boolean pevimAktiv) {}
 
-    public record Karte(String kartenhandle, String kartentyp, String iccsn, String terminalId) {}
+    /**
+     * Eine Karte im Terminal.
+     *
+     * @param kartentyp {@code SMC-B}, {@code EGK} oder {@code HBA}. Nur SMC-B
+     *        ist für PEviM zulässig (A_24080); die anderen werden erfasst und
+     *        angezeigt, aber nie angefasst.
+     * @param zertifikatGueltigBis Ablaufdatum, leer wenn der Konnektor es nicht
+     *        liefert
+     */
+    public record Karte(String kartenhandle, String kartentyp, String iccsn, String terminalId,
+                        String zertifikatGueltigBis) {
+        /** Ob diese Karte vom Roboter verwaltet wird. */
+        public boolean verwaltet() { return "SMC-B".equals(kartentyp); }
+    }
 
     public record StatusAntwort(PinStatus status, int verbleibendeVersuche, boolean aktualisierend) {}
 
@@ -77,7 +90,8 @@ public class KonnektorClient {
         while (m.find()) {
             String b = m.group(1);
             ergebnis.add(new Karte(tag(b, "CardHandle"), tag(b, "CardType"),
-                    tag(b, "Iccsn"), tag(b, "CtId")));
+                    tag(b, "Iccsn"), tag(b, "CtId"),
+                    tag(b, "CertificateExpirationDate")));
         }
         return ergebnis;
     }

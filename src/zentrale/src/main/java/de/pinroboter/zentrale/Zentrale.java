@@ -611,7 +611,7 @@ public class Zentrale {
             if (t.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
                     angemeldeter(c))); return; }
-            c.html(seite("bestand", Bestandsseiten.terminalMaske(t.get(), null), angemeldeter(c)));
+            c.html(seite("bestand", Bestandsseiten.terminalMaske(t.get(), ermittlung.karten(t.get().terminalId()), null), angemeldeter(c)));
         });
 
         app.post("/bestand/terminal/{id}", c -> {
@@ -626,7 +626,7 @@ public class Zentrale {
             if (!e.geklappt()) {
                 var t = bestand.terminal(id, bereich(c));
                 c.html(seite("bestand", t.isPresent()
-                        ? Bestandsseiten.terminalMaske(t.get(), e.fehler())
+                        ? Bestandsseiten.terminalMaske(t.get(), ermittlung.karten(t.get().terminalId()), e.fehler())
                         : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
@@ -966,6 +966,15 @@ public class Zentrale {
             var terminals = (List<Map<String, Object>>) m.getOrDefault("terminals", List.of());
             int n = ermittlung.aufnehmen(agent.id(), terminals);
 
+            // FA-GER-040: Karten je Terminal, einschliesslich eGK und HBA.
+            int karten = 0;
+            for (var eintrag : terminals) {
+                @SuppressWarnings("unchecked")
+                var liste = (List<Map<String, Object>>) eintrag.getOrDefault("karten", List.of());
+                karten += ermittlung.kartenAufnehmen(agent.id(),
+                        String.valueOf(eintrag.get("terminalId")), liste);
+            }
+
             boolean modellDa = Boolean.TRUE.equals(m.get("informationsmodellVerfuegbar"));
             ermittlung.modellAblegen(agent.id(), modellDa,
                     modellDa ? String.valueOf(m.get("informationsmodell")) : null);
@@ -973,7 +982,8 @@ public class Zentrale {
             int neu = ermittlung.neueAnzahl();
             protokoll.anfuegen(agent.einrichtung(), null, Ereignisart.BESTAND_ERMITTELT, true,
                     "Standort-Agent", null,
-                    "Bestand beim Konnektor ermittelt: %d Kartenterminal(s)%s".formatted(n,
+                    "Bestand beim Konnektor ermittelt: %d Kartenterminal(s), %d Karte(n)%s"
+                            .formatted(n, karten,
                             modellDa ? ", Informationsmodell gelesen"
                                      : ", Informationsmodell nicht verfügbar"),
                     neu == 0 ? null : neu + " Gerät(e) sind noch nicht erfasst. "

@@ -175,7 +175,26 @@ public class Agent {
             if (smcb != null) {
                 e.put("kartenhandle", smcb.kartenhandle());
                 e.put("iccsn", smcb.iccsn());
+                e.put("zertifikatGueltigBis", smcb.zertifikatGueltigBis());
             }
+
+            // FA-GER-040: ALLE Karten melden, nicht nur die SMC-B. eGK und HBA
+            // stecken in der Praxis regelmaessig mit im Terminal; sie sind fuer
+            // PEviM ausdruecklich unzulaessig (A_24080). Sie zu verschweigen
+            // waere bequem, aber der Betreiber soll sehen, was in seinem Geraet
+            // steckt - und dass der Roboter sie in Ruhe laesst.
+            var alleKarten = new ArrayList<Map<String, Object>>();
+            for (var k : karten) {
+                if (!k.terminalId().equals(t.id())) continue;
+                var km = new LinkedHashMap<String, Object>();
+                km.put("kartenhandle", k.kartenhandle());
+                km.put("kartentyp", k.kartentyp());
+                km.put("iccsn", k.iccsn());
+                km.put("verwaltet", k.verwaltet());
+                km.put("zertifikatGueltigBis", k.zertifikatGueltigBis());
+                alleKarten.add(km);
+            }
+            e.put("karten", alleKarten);
             eintraege.add(e);
         }
 
