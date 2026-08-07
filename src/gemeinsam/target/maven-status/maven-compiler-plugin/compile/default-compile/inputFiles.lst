@@ -1,4 +1,6 @@
 /p/src/gemeinsam/src/main/java/de/pinroboter/gemeinsam/Ampel.java
 /p/src/gemeinsam/src/main/java/de/pinroboter/gemeinsam/Ereignisart.java
+/p/src/gemeinsam/src/main/java/de/pinroboter/gemeinsam/Passwort.java
 /p/src/gemeinsam/src/main/java/de/pinroboter/gemeinsam/PinErgebnis.java
 /p/src/gemeinsam/src/main/java/de/pinroboter/gemeinsam/PinStatus.java
+/p/src/gemeinsam/src/main/java/de/pinroboter/gemeinsam/Totp.java

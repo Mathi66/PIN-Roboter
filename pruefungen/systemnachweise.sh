@@ -66,6 +66,16 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
   sleep 2
 }
 
+# ---------------------------------------------------------------- Modul- und Integrationstests
+hinweis "Modul- und Integrationstests (inkl. Benutzerverwaltung gegen echte Datenbank)"
+datenbank_starten
+if docker run --rm --network $NETZ -v "$PWD":/p -v pinroboter-m2:/root/.m2 -w /p \
+     -e TEST_DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
+     -e TEST_DB_USER=pinroboter -e TEST_DB_PASSWORD=test \
+     maven:3.9-eclipse-temurin-21 mvn -B -q test >/tmp/pr-tests.log 2>&1; then T=ja; else T=nein; fi
+ergebnis "alle automatisierten Tests grün" "$T"
+[ "$T" = "nein" ] && tail -20 /tmp/pr-tests.log
+
 # ---------------------------------------------------------------- Durchstich
 hinweis "Durchstich — vollständige PEviM-Kette über Brainpool-TLS"
 stack_starten 123456 4

@@ -106,6 +106,34 @@ public class Datenbank implements AutoCloseable {
               BEFORE UPDATE OR DELETE ON fachprotokoll
               FOR EACH ROW EXECUTE FUNCTION fachprotokoll_unveraenderlich();
             """);
+
+        migration(3, """
+            CREATE TABLE benutzer (
+              id             BIGSERIAL PRIMARY KEY,
+              benutzername   TEXT        NOT NULL UNIQUE,
+              anzeigename    TEXT        NOT NULL,
+              passwort_hash  TEXT        NOT NULL,
+              totp_geheimnis TEXT,
+              totp_bestaetigt BOOLEAN    NOT NULL DEFAULT FALSE,
+              rolle          TEXT        NOT NULL,
+              aktiv          BOOLEAN     NOT NULL DEFAULT TRUE,
+              fehlversuche   INTEGER     NOT NULL DEFAULT 0,
+              gesperrt_bis   TIMESTAMPTZ,
+              letztes_totp_fenster BIGINT,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX benutzer_name_idx ON benutzer (lower(benutzername));
+            """);
+
+        migration(4, """
+            CREATE TABLE sitzung (
+              kennung     TEXT        PRIMARY KEY,
+              benutzer_id BIGINT      NOT NULL REFERENCES benutzer(id) ON DELETE CASCADE,
+              angelegt    TIMESTAMPTZ NOT NULL DEFAULT now(),
+              letzte_tat  TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX sitzung_benutzer_idx ON sitzung (benutzer_id);
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

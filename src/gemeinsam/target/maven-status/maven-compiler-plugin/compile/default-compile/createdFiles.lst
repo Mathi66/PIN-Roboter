@@ -1,5 +1,7 @@
+de/pinroboter/gemeinsam/Passwort.class
+de/pinroboter/gemeinsam/Totp.class
+de/pinroboter/gemeinsam/PinStatus.class
 de/pinroboter/gemeinsam/Ampel.class
 de/pinroboter/gemeinsam/Ereignisart.class
-de/pinroboter/gemeinsam/PinStatus.class
 de/pinroboter/gemeinsam/Ereignisart$Stufe.class
 de/pinroboter/gemeinsam/PinErgebnis.class

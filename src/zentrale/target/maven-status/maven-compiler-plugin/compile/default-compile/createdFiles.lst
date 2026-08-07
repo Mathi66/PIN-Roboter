@@ -1,5 +1,13 @@
 de/pinroboter/zentrale/Fachprotokoll.class
+de/pinroboter/zentrale/Benutzerverwaltung$Rolle.class
 de/pinroboter/zentrale/Geraetezustand.class
 de/pinroboter/zentrale/Datenbank.class
+de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$TotpEinrichten.class
+de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Abgelehnt.class
 de/pinroboter/zentrale/Ereignis.class
+de/pinroboter/zentrale/Benutzerverwaltung.class
+de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung.class
+de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Erfolg.class
+de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Gesperrt.class
+de/pinroboter/zentrale/Benutzerverwaltung$Benutzer.class
 de/pinroboter/zentrale/Zentrale.class

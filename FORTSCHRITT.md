@@ -255,3 +255,54 @@ löschbar.
 
 Beides ist die Sorte Fehler, die Vertrauen in eine Testsuite zerstört: Sie wird
 rot, ohne dass etwas kaputt ist — und irgendwann schaut niemand mehr hin.
+
+---
+
+# Iteration 4 — Anmeldung mit zweitem Faktor
+
+Bis hierher konnte jeder im Netz den Not-Aus drücken. Das war der größte offene
+Punkt.
+
+## Umgesetzt
+
+| | |
+|---|---|
+| **TOTP nach RFC 6238** | selbst umgesetzt, **gegen die offiziellen Testvektoren des Standards geprüft** |
+| **Argon2id** für Passwörter | Parameter nach OWASP-Empfehlung, selbstbeschreibendes Format |
+| **Benutzer, Rollen, Sitzungen** | in der Datenbank, Migrationen 3 und 4 |
+| **Kontosperre** | nach 5 Fehlversuchen für 15 Minuten |
+
+## Sicherheitsentscheidungen, die im Code begründet sind
+
+- **Der Algorithmus ist selbst umgesetzt, nicht eingebunden.** Fünfzig Zeilen,
+  und der Standard liefert Testvektoren, gegen die sich das beweisen lässt. Eine
+  Bibliothek wäre eine ungeprüfte Abhängigkeit mehr an sicherheitskritischer
+  Stelle.
+- **Vergleiche laufen in konstanter Zeit.** Ein `equals` verrät über die
+  Laufzeit, wie viele Stellen stimmen — bei sechs Ziffern ausnutzbar.
+- **Unbekannter Benutzer und falsches Passwort ergeben dieselbe Meldung.**
+  Unterschiedliche Meldungen verraten, welche Konten existieren. Wird getestet.
+- **Ein verbrauchtes Einmalkennwort gilt kein zweites Mal.** Sonst nützt ein
+  abgefangener Code bis zu 90 Sekunden lang.
+- **Der letzte Administrator ist geschützt** — sonst sperrt sich eine Praxis
+  versehentlich selbst aus.
+- **Keine Zeichenklassen-Regeln, nur Länge.** Erzwungene Sonderzeichen führen zu
+  `Passwort1!` und zu Zetteln am Monitor; das BSI empfiehlt seit 2020 Länge.
+
+## Tests: 35 grün
+
+15 im gemeinsamen Modul (TOTP, Passwort), 10 Sicherungsprüfung, 10
+Benutzerverwaltung **gegen eine echte PostgreSQL-Datenbank**.
+
+## Ein Testfehler mit Aussagekraft
+
+Neun Tests schlugen zunächst fehl, weil das gewählte Testpasswort
+`EinLangesPruefPasswort` die Zeichenfolge „passwort" enthält — die
+Stärkeprüfung hat es zu Recht abgelehnt. Der Schutz funktionierte; der Test war
+schlecht gewählt.
+
+## Noch offen in diesem Block
+
+Die **Oberflächen-Integration** (Anmeldemaske, Onboarding-Assistent,
+Benutzerverwaltung als Seite) steht noch aus. Die Fachlogik ist fertig und
+geprüft, die Oberfläche ist noch ungeschützt.
