@@ -100,7 +100,7 @@ class BestandslisteTest {
     }
 
     private Bestandsverwaltung.Filter nurUnsere() {
-        return new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null);
+        return new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null, null);
     }
 
     private List<String> bezeichnungen(Bestandsverwaltung.Sortierung s, boolean ab) {
@@ -178,15 +178,15 @@ class BestandslisteTest {
     @DisplayName("Filter nach Modell und Firmware")
     void filterModellFirmware() {
         var nachModell = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                "Ingenico ORGA 6141", null, null), null, false, 1, 50, ALLES);
+                "Ingenico ORGA 6141", null, null, null), null, false, 1, 50, ALLES);
         assertEquals(2, nachModell.gesamt());
 
         var nachFirmware = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                null, "3.7.4", null), null, false, 1, 50, ALLES);
+                null, "3.7.4", null, null), null, false, 1, 50, ALLES);
         assertEquals(2, nachFirmware.gesamt());
 
         var beides = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                "CHERRY ST-1506", "3.7.4", null), null, false, 1, 50, ALLES);
+                "CHERRY ST-1506", "3.7.4", null, null), null, false, 1, 50, ALLES);
         assertEquals(0, beides.gesamt(), "Filter wirken zusammen, nicht alternativ");
     }
 
@@ -194,11 +194,11 @@ class BestandslisteTest {
     @DisplayName("Filter nach SMC-B und Status")
     void filterSmcbUndStatus() {
         var mitSmcb = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                null, null, true), null, false, 1, 50, ALLES);
+                null, null, true, null), null, false, 1, 50, ALLES);
         assertEquals(3, mitSmcb.gesamt());
 
         assertEquals(4, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, true, null,
-                null, null, null), null, false, 1, 50, ALLES).gesamt(), "alle sind zunächst aktiv");
+                null, null, null, null), null, false, 1, 50, ALLES).gesamt(), "alle sind zunächst aktiv");
     }
 
     @Test @Order(12)
@@ -207,11 +207,11 @@ class BestandslisteTest {
         // Ein nie geprueftes Geraet ist unbekannt, nicht ausgefallen. Wuerde der
         // Filter es einsammeln, suchte der Betreiber Fehler, wo keine sind.
         var unerreichbar = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null,
-                false, null, null, null), null, false, 1, 50, ALLES);
+                false, null, null, null, null), null, false, 1, 50, ALLES);
         assertEquals(0, unerreichbar.gesamt(), "noch wurde nichts geprüft");
 
         var erreichbar = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null,
-                true, null, null, null), null, false, 1, 50, ALLES);
+                true, null, null, null, null), null, false, 1, 50, ALLES);
         assertEquals(0, erreichbar.gesamt());
     }
 
@@ -237,7 +237,7 @@ class BestandslisteTest {
         assertTrue(e.vollstaendig());
 
         assertEquals(4, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, false, null,
-                null, null, null), null, false, 1, 50, ALLES).gesamt());
+                null, null, null, null), null, false, 1, 50, ALLES).gesamt());
 
         bv.massenAktivSetzen(ids, true, ALLES);
     }

@@ -232,7 +232,7 @@ class BestandsverwaltungTest {
                     null, null, false, false, ALLES);
             assertTrue(e.geklappt(), () -> String.valueOf(e.fehler()));
         }
-        var alle = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+        var alle = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null, null),
                 null, false, 1, 5, ALLES);
         assertEquals(12, alle.gesamt());
         assertEquals(5, alle.eintraege().size(), "eine Seite liefert nur ihre eigenen Treffer");
@@ -240,23 +240,23 @@ class BestandsverwaltungTest {
         assertTrue(alle.hatNaechste());
         assertFalse(alle.hatVorherige());
 
-        var letzte = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+        var letzte = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null, null),
                 null, false, 3, 5, ALLES);
         assertEquals(2, letzte.eintraege().size());
         assertFalse(letzte.hatNaechste());
 
-        var gesucht = bv.terminals(new Bestandsverwaltung.Filter("empfang", null, null, null, null, null, null),
+        var gesucht = bv.terminals(new Bestandsverwaltung.Filter("empfang", null, null, null, null, null, null, null),
                 null, false, 1, 25, ALLES);
         assertEquals(1, gesucht.gesamt(), "Suche über die Bezeichnung");
         assertEquals("KT-TEST-01", gesucht.eintraege().get(0).terminalId());
 
-        assertEquals(11, bv.terminals(new Bestandsverwaltung.Filter("Flur B", null, null, null, null, null, null),
+        assertEquals(11, bv.terminals(new Bestandsverwaltung.Filter("Flur B", null, null, null, null, null, null, null),
                 null, false, 1, 25, ALLES).gesamt(),
                 "Suche über den Standort");
-        assertEquals(1, bv.terminals(new Bestandsverwaltung.Filter("KT-TEST-07", null, null, null, null, null, null),
+        assertEquals(1, bv.terminals(new Bestandsverwaltung.Filter("KT-TEST-07", null, null, null, null, null, null, null),
                 null, false, 1, 25, ALLES).gesamt(),
                 "Suche über die Kennung");
-        assertEquals(0, bv.terminals(new Bestandsverwaltung.Filter("gibtesnicht", null, null, null, null, null, null),
+        assertEquals(0, bv.terminals(new Bestandsverwaltung.Filter("gibtesnicht", null, null, null, null, null, null, null),
                 null, false, 1, 25, ALLES).gesamt());
     }
 
@@ -276,7 +276,7 @@ class BestandsverwaltungTest {
         assertTrue(e.fehler().contains("…"),
                 "bei mehr Geräten als aufgezählt muss das erkennbar sein: " + e.fehler());
 
-        assertEquals(12, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+        assertEquals(12, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null, null),
                 null, false, 1, 50, ALLES).gesamt(),
                 "nichts darf gelöscht worden sein");
     }
@@ -284,11 +284,11 @@ class BestandsverwaltungTest {
     @Test @Order(21)
     @DisplayName("Nach dem Entfernen aller Terminals lässt sich der Konnektor löschen")
     void loeschenNachAufraeumen() {
-        for (var t : bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+        for (var t : bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null, null),
                 null, false, 1, 100, ALLES).eintraege()) {
             assertTrue(bv.terminalLoeschen(t.id(), ALLES).geklappt());
         }
-        assertEquals(0, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+        assertEquals(0, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null, null),
                 null, false, 1, 50, ALLES).gesamt());
         assertTrue(bv.konnektorLoeschen(konnektorId, ALLES).geklappt());
         assertTrue(bv.konnektor(konnektorId, ALLES).isEmpty());

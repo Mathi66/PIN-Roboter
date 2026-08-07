@@ -21,10 +21,13 @@ final class Organisationsseiten {
     private Organisationsseiten() { }
 
     static String seite(List<Organisationsverwaltung.Einheit> baum, boolean darfVerwalten,
-                        String meldung, boolean istFehler, Long ausgewaehlt) {
+                        String meldung, boolean istFehler) {
         StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Organisation",
                 "Verbünde, Standorte und Einrichtungen — die Struktur, der Geräte und "
-                + "Konten zugeordnet sind.", null));
+                + "Konten zugeordnet sind.",
+                darfVerwalten && !baum.isEmpty()
+                        ? "<a class=\"knopf haupt\" href=\"/organisation/neu\">Einheit hinzufügen</a>"
+                        : null));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
         }
@@ -38,13 +41,12 @@ final class Organisationsseiten {
                       damit niemand seinen eigenen Zuständigkeitsbereich erweitern kann.</div>""");
         }
 
-        s.append(baumTafel(baum, darfVerwalten, ausgewaehlt));
-        if (darfVerwalten && !baum.isEmpty()) s.append(anlegeformular(baum));
+        s.append(baumTafel(baum, darfVerwalten));
         return s.toString();
     }
 
     private static String baumTafel(List<Organisationsverwaltung.Einheit> baum,
-                                    boolean darfVerwalten, Long ausgewaehlt) {
+                                    boolean darfVerwalten) {
         if (baum.isEmpty()) {
             return """
                     <div class="tafel"><h3>Struktur</h3>
@@ -57,15 +59,14 @@ final class Organisationsseiten {
          .append("<caption class=\"nurLeser\">Organisationseinheiten, eingerückt nach Ebene</caption>")
          .append("<thead><tr><th scope=\"col\">Einheit</th><th scope=\"col\">Art</th>")
          .append("<th scope=\"col\">Enthält</th>")
-         .append(darfVerwalten ? "<th scope=\"col\">Aktion</th>" : "")
+         .append("<th scope=\"col\"><span class=\"nurLeser\">Aktion</span></th>")
          .append("</tr></thead><tbody>");
 
         for (var e : baum) {
             // Die Einrueckung ist rein visuell; fuer Screenreader steht die
             // Ebene im Text, sonst geht die Struktur dort verloren.
             String einzug = "&nbsp;&nbsp;".repeat(Math.min(e.tiefe(), 8) * 2);
-            s.append("<tr").append(ausgewaehlt != null && ausgewaehlt == e.id()
-                    ? " class=\"hervor\"" : "").append(">");
+            s.append("<tr>");
             s.append("<td>").append(einzug)
              .append(e.tiefe() > 0 ? "<span aria-hidden=\"true\">└ </span>" : "")
              .append("<strong>").append(esc(e.bezeichnung())).append("</strong>")
@@ -76,26 +77,105 @@ final class Organisationsseiten {
             s.append("<td class=\"klein\">").append(e.leer()
                     ? "<span class=\"marke\">leer</span>" : esc(e.hindernis())).append("</td>");
 
-            if (darfVerwalten) {
-                s.append("<td class=\"aktionen\">");
-                s.append("<a class=\"knopf klein\" href=\"/organisation?bearbeiten=")
-                 .append(e.id()).append("#bearbeiten\">Bearbeiten</a>");
-                s.append("</td>");
-            }
+            // Ein Klick oeffnet die Einheit als EIGENE Seite (UX-Konzept,
+            // Stufe 4/5). Vorher klappte hier eine Zeile auf und schob drei
+            // Formulare in die Tabelle — die Liste wuchs, und die eigentliche
+            // Frage „was haengt an dieser Einheit?" blieb unbeantwortet.
+            s.append("<td class=\"aktionen\">");
+            s.append("<a class=\"knopf klein\" href=\"/organisation/").append(e.id())
+             .append("\">Öffnen</a>");
+            s.append("</td>");
             s.append("</tr>");
-
-            if (darfVerwalten && ausgewaehlt != null && ausgewaehlt == e.id()) {
-                s.append(bearbeitungszeile(e, baum));
-            }
         }
         return s.append("</tbody></table></div></div>").toString();
     }
 
-    /** Umbenennen, Umhängen und Löschen — direkt an der Zeile, ohne Seitenwechsel. */
-    private static String bearbeitungszeile(Organisationsverwaltung.Einheit e,
-                                            List<Organisationsverwaltung.Einheit> baum) {
+    /**
+     * Die Detailseite einer Einheit (UX-Konzept, Stufe 5).
+     *
+     * <p>Sie beantwortet zuerst die Frage, die jemand tatsächlich hat: <b>Was
+     * gehört zu dieser Praxis?</b> Erst danach kommen die Änderungsmasken. Die
+     * Kacheln sind Absprungpunkte — jede Zahl führt gefiltert dorthin, wo die
+     * gezählten Dinge stehen.
+     */
+    static String detailseite(Organisationsverwaltung.Einheit e,
+                              List<Organisationsverwaltung.Einheit> pfad,
+                              Organisationsverwaltung.Beziehungen b,
+                              List<Organisationsverwaltung.Einheit> baum,
+                              boolean darfVerwalten, String meldung, boolean istFehler) {
         StringBuilder s = new StringBuilder();
-        s.append("<tr id=\"bearbeiten\"><td colspan=\"4\"><div class=\"maske\">");
+
+        // Der Weg von oben: Bei einem Verbund mit drei Ebenen ist sonst nicht
+        // erkennbar, wo man gerade steht.
+        String weg = pfad.stream().limit(Math.max(0, pfad.size() - 1))
+                .map(x -> esc(x.bezeichnung())).reduce((x, y) -> x + " › " + y).orElse(null);
+
+        s.append(Zentrale.detailkopf("/organisation", "Organisation", e.bezeichnung(),
+                esc(e.artAnzeige()) + (weg == null ? "" : " · " + weg),
+                darfVerwalten && e.leer() && e.elternId() != null
+                        ? loeschknopf(e) : null));
+
+        if (meldung != null) s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
+
+        s.append(beziehungstafel(e, b));
+        if (darfVerwalten) s.append(aenderungstafel(e, baum));
+        else s.append("""
+                <div class="hinweis">Sie sehen diese Einheit, können sie aber nicht ändern.
+                  Das Umbenennen und Umhängen ist ab der Standortebene möglich — damit niemand
+                  seinen eigenen Zuständigkeitsbereich erweitern kann.</div>""");
+        return s.toString();
+    }
+
+    private static String loeschknopf(Organisationsverwaltung.Einheit e) {
+        return """
+                <form method="post" action="/organisation/%d/loeschen"
+                      onsubmit="return confirm('Einheit „%s“ wirklich löschen?')">
+                  <button class="knopf warnend" type="submit">Löschen</button>
+                </form>""".formatted(e.id(), esc(e.bezeichnung()));
+    }
+
+    /** Alles, was an der Einheit hängt — als Absprungpunkte. */
+    private static String beziehungstafel(Organisationsverwaltung.Einheit e,
+                                          Organisationsverwaltung.Beziehungen b) {
+        if (b == null) return "";
+        StringBuilder s = new StringBuilder("""
+                <div class="tafel"><h3>Was zu dieser Einheit gehört</h3>
+                <div class="karte-leib" style="padding:1.1rem 1.2rem"><div class="beziehungen">""");
+
+        s.append(kachel(b.terminals(), "Kartenterminals",
+                "/bestand?einrichtung=" + e.id(), "Geräte ansehen"));
+        s.append(kachel(b.smcb(), "SMC-B-Karten",
+                "/bestand?einrichtung=" + e.id() + "&amp;smcb=ja",
+                b.smcbVerifiziert() + " mit hinterlegter PIN"));
+        s.append(kachel(b.konnektoren(), "Konnektoren",
+                "/bestand?einrichtung=" + e.id(), "Anbindung ansehen"));
+        s.append(kachel(b.konten(), "Konten",
+                "/benutzer?organisation=" + e.id(),
+                b.administratoren() + " Administrator(en)"));
+        s.append(kachel(b.gruppen(), "Gerätegruppen", "/gruppen", "Prüfintervalle"));
+        s.append(kachel(b.alarme(), "offene Alarme", "/", "Zur Lage"));
+        s.append(kachel(b.protokoll(), "Protokolleinträge",
+                "/protokoll?einrichtung=" + e.id(), "letzte 30 Tage"));
+        if (b.einheiten() > 1) {
+            s.append(kachel(b.einheiten() - 1, "untergeordnete Einheiten",
+                    "/organisation", "Struktur ansehen"));
+        }
+        return s.append("</div></div></div>").toString();
+    }
+
+    private static String kachel(int zahl, String was, String ziel, String hin) {
+        return """
+                <a class="beziehung" href="%s">
+                  <span class="zahl">%d</span><span class="was">%s</span>
+                  <span class="hin">%s →</span>
+                </a>""".formatted(ziel, zahl, esc(was), esc(hin));
+    }
+
+    /** Umbenennen, Umhängen und Löschen — auf der Detailseite, nicht in der Liste. */
+    private static String aenderungstafel(Organisationsverwaltung.Einheit e,
+                                          List<Organisationsverwaltung.Einheit> baum) {
+        StringBuilder s = new StringBuilder(
+                "<div class=\"tafel\"><h3>Einheit ändern</h3><div class=\"maske\">");
 
         s.append("""
                 <form method="post" action="/organisation/%d/umbenennen" class="feldreihe">
@@ -133,21 +213,18 @@ final class Organisationsseiten {
                     .formatted(e.id(), ziele));
         }
 
-        if (e.elternId() != null) {
-            if (e.leer()) {
-                s.append("""
-                        <form method="post" action="/organisation/%d/loeschen"
-                              onsubmit="return confirm('Einheit „%s“ wirklich löschen?')">
-                          <button class="knopf warnend" type="submit">Löschen</button>
-                        </form>""".formatted(e.id(), esc(e.bezeichnung())));
-            } else {
-                s.append("<p class=\"hilfe\">Löschen nicht möglich: Daran hängen noch ")
-                 .append(esc(e.hindernis())).append(". Bitte zuerst verschieben oder entfernen.</p>");
-            }
+        if (e.elternId() != null && !e.leer()) {
+            s.append("<p class=\"hilfe\">Löschen nicht möglich: Daran hängen noch ")
+             .append(esc(e.hindernis())).append(". Bitte zuerst verschieben oder entfernen.</p>");
         }
+        return s.append("</div></div>").toString();
+    }
 
-        s.append("<p><a href=\"/organisation\">Bearbeitung schließen</a></p>");
-        return s.append("</div></td></tr>").toString();
+    /** Die Anlegemaske als eigene Seite (UX-Konzept, Stufe 4). */
+    static String anlegeseite(List<Organisationsverwaltung.Einheit> baum) {
+        return Zentrale.detailkopf("/organisation", "Organisation", "Einheit hinzufügen",
+                "Eine neue Einheit liegt immer unterhalb einer bestehenden.", null)
+              + anlegeformular(baum);
     }
 
     private static String anlegeformular(List<Organisationsverwaltung.Einheit> baum) {
@@ -160,13 +237,12 @@ final class Organisationsseiten {
         }
         if (eltern.length() == 0) {
             return """
-                    <div class="tafel"><h3>Einheit hinzufügen</h3>
+                    <div class="tafel">
                     <p class="leer">In Ihrem Bereich gibt es keine Einheit, unterhalb derer sich
                        etwas anlegen ließe. Unterhalb einer Einrichtung ist Schluss — sie ist die
                        unterste Ebene.</p></div>""";
         }
         return """
-                <details class="ausklapp"><summary>Einheit hinzufügen</summary>
                 <div class="tafel"><form method="post" action="/organisation" class="maske">
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="n-bez">Bezeichnung</label>
@@ -184,7 +260,7 @@ final class Organisationsseiten {
                      zulässig, eine Einrichtung unterhalb von beidem. Unterhalb einer Einrichtung
                      lässt sich nichts mehr anlegen.</p>
                   <button class="knopf haupt" type="submit" style="width:auto">Einheit anlegen</button>
-                </form></div></details>""".formatted(eltern);
+                </form></div>""".formatted(eltern);
     }
 
     private static boolean zulaessigesZiel(String elternArt, String kindArt) {

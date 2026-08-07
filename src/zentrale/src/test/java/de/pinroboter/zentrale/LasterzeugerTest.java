@@ -118,9 +118,9 @@ class LasterzeugerTest {
         record Fall(String name, Bestandsverwaltung.Filter f, Bestandsverwaltung.Sortierung s) {}
         var faelle = java.util.List.of(
                 new Fall("Suche", new Bestandsverwaltung.Filter("Raum 12", null, null, null,
-                        null, null, null), null),
+                        null, null, null, null), null),
                 new Fall("Filter Modell", new Bestandsverwaltung.Filter(null, null, null, null,
-                        "CHERRY ST-1506", null, null), null),
+                        "CHERRY ST-1506", null, null, null), null),
                 new Fall("Sortierung Firmware", Bestandsverwaltung.Filter.leer(),
                         Bestandsverwaltung.Sortierung.FIRMWARE));
 

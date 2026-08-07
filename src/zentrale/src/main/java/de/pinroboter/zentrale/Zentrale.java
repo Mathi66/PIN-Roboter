@@ -510,6 +510,19 @@ public class Zentrale {
                     angemeldeter(c)));
         });
 
+        app.get("/bestand/konnektor/neu", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            c.html(seite("bestand", Bestandsseiten.konnektorMaske(
+                    bestand.organisationen(bereich(c)), ermittlung.aufrufkontextAuswahl()),
+                    angemeldeter(c)));
+        });
+
+        app.get("/bestand/terminal/neu", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            c.html(seite("bestand", Bestandsseiten.terminalNeuMaske(
+                    bestand.konnektoren(bereich(c))), angemeldeter(c)));
+        });
+
         app.get("/bestand/konnektor/{id}", c -> {
             var k = bestand.konnektor(Long.parseLong(c.pathParam("id")), bereich(c));
             if (k.isEmpty()) { c.status(404).html(seite("bestand",
@@ -745,13 +758,27 @@ public class Zentrale {
         // FA-ORG-020. Wer den Baum aendert, aendert Geltungsbereiche - deshalb
         // ist jede Aenderung protokollpflichtig und auf Standortebene begrenzt.
 
-        app.get("/organisation", c -> {
-            Long gewaehlt = null;
-            try {
-                String b = c.queryParam("bearbeiten");
-                if (b != null && !b.isBlank()) gewaehlt = Long.parseLong(b);
-            } catch (NumberFormatException ignored) { }
-            c.html(seite("organisation", organisationsSeite(c, null, false, gewaehlt),
+        app.get("/organisation", c -> c.html(seite("organisation",
+                organisationsSeite(c, null, false), angemeldeter(c))));
+
+        /**
+         * Detailseite einer Einheit (UX-Konzept, Stufe 5).
+         *
+         * <p>Eigene Adresse statt aufklappender Tabellenzeile: Die Seite ist
+         * als Lesezeichen speicherbar, verlinkbar, und der Zurück-Knopf des
+         * Browsers tut, was man erwartet.
+         */
+        app.get("/organisation/neu", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Anlegen von Organisationseinheiten")) return;
+            c.html(seite("organisation",
+                    Organisationsseiten.anlegeseite(organisationen.baum(bereich(c))),
+                    angemeldeter(c)));
+        });
+
+        app.get("/organisation/{id}", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            c.html(seite("organisation", organisationsDetail(c, id, null, false),
                     angemeldeter(c)));
         });
 
@@ -768,7 +795,7 @@ public class Zentrale {
                         "Konten und Geräte lassen sich dieser Einheit ab sofort zuordnen.");
             }
             c.html(seite("organisation", organisationsSeite(c,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(), null),
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
                     angemeldeter(c)));
         });
 
@@ -782,9 +809,9 @@ public class Zentrale {
                         Ereignisart.ORGANISATION_UMBENANNT, true, angemeldeter(c).anzeigename(),
                         null, e.meldung(), null);
             }
-            c.html(seite("organisation", organisationsSeite(c,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(),
-                    e.geklappt() ? null : id), angemeldeter(c)));
+            c.html(seite("organisation", organisationsDetail(c, id,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
         });
 
         app.post("/organisation/{id}/umhaengen", c -> {
@@ -801,9 +828,9 @@ public class Zentrale {
                         "Mit der Einheit wechseln auch die Zuständigkeiten für ihre Geräte "
                         + "und Konten.");
             }
-            c.html(seite("organisation", organisationsSeite(c,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(),
-                    e.geklappt() ? null : id), angemeldeter(c)));
+            c.html(seite("organisation", organisationsDetail(c, id,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
         });
 
         app.post("/organisation/{id}/loeschen", c -> {
@@ -816,9 +843,11 @@ public class Zentrale {
                         Ereignisart.ORGANISATION_GELOESCHT, true, angemeldeter(c).anzeigename(),
                         null, e.meldung(), null);
             }
-            c.html(seite("organisation", organisationsSeite(c,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(),
-                    e.geklappt() ? null : id), angemeldeter(c)));
+            // Nach dem Loeschen zurueck zur Struktur — die Einheit, deren
+            // Detailseite das war, gibt es nicht mehr.
+            c.html(seite("organisation", e.geklappt()
+                    ? organisationsSeite(c, e.meldung(), false)
+                    : organisationsDetail(c, id, e.fehler(), true), angemeldeter(c)));
         });
 
         // ----------------------------------------------------------- Benutzer
@@ -1450,9 +1479,26 @@ public class Zentrale {
     }
 
     private String organisationsSeite(io.javalin.http.Context c, String meldung,
-                                      boolean istFehler, Long gewaehlt) {
+                                      boolean istFehler) {
         return Organisationsseiten.seite(organisationen.baum(bereich(c)),
-                rechte(c).darfOrganisationVerwalten(), meldung, istFehler, gewaehlt);
+                rechte(c).darfOrganisationVerwalten(), meldung, istFehler);
+    }
+
+    private String organisationsDetail(io.javalin.http.Context c, long id,
+                                       String meldung, boolean istFehler) {
+        var e = organisationen.einheit(id, bereich(c));
+        if (e.isEmpty()) {
+            // Absichtlich dieselbe Antwort wie fuer eine Einheit ausserhalb des
+            // Bereichs: Ob es sie gibt, geht einen Fremden nichts an.
+            c.status(404);
+            return organisationsSeite(c, "Diese Organisationseinheit steht Ihnen nicht "
+                    + "zur Verfügung.", true);
+        }
+        return Organisationsseiten.detailseite(e.get(),
+                organisationen.pfad(id, bereich(c)),
+                organisationen.beziehungen(id, bereich(c)),
+                organisationen.baum(bereich(c)),
+                rechte(c).darfOrganisationVerwalten(), meldung, istFehler);
     }
 
     /** Zahl aus einem Formularfeld, oder {@code null}. Ein Tippfehler darf nicht abstürzen. */
@@ -1499,8 +1545,11 @@ public class Zentrale {
             case "nein" -> Boolean.FALSE;
             default     -> null;
         };
+        // Absprung von der Organisations-Detailseite: ?einrichtung=<id>
+        Long einrichtung = zahlOderNull(c.queryParam("einrichtung"));
+        Boolean smcb = "ja".equals(c.queryParam("smcb")) ? Boolean.TRUE : null;
         var filter = new Bestandsverwaltung.Filter(c.queryParam("suche"), konnektor, aktiv,
-                erreichbar, c.queryParam("modell"), c.queryParam("firmware"), null);
+                erreichbar, c.queryParam("modell"), c.queryParam("firmware"), smcb, einrichtung);
         var sortierung = Bestandsverwaltung.Sortierung.aus(c.queryParam("sortierung"));
         boolean absteigend = "ab".equals(c.queryParam("richtung"));
 
@@ -1551,7 +1600,19 @@ public class Zentrale {
         var ansicht = new Benutzerseiten.Ansicht(c.queryParam("suche"), c.queryParam("rolle"),
                 c.queryParam("status"), Math.max(1, zahl(c.queryParam("seite"), 1)));
 
+        // Absprung von der Organisations-Detailseite: ?organisation=<id>.
+        // Eingeschraenkt wird auf den Teilbaum, nicht nur die Einheit selbst —
+        // sonst zeigte ein Standort keine Konten, weil sie an den
+        // Einrichtungen darunter haengen.
+        Long orgFilter = zahlOderNull(c.queryParam("organisation"));
+        java.util.Set<Long> imTeilbaum = orgFilter == null ? null
+                : organisationen.baum(Geltungsbereich.fuerBenutzer(db, orgFilter, false))
+                        .stream().map(Organisationsverwaltung.Einheit::id)
+                        .collect(java.util.stream.Collectors.toSet());
+
         var alle = benutzer.alle(bereich(c)).stream()
+                .filter(b -> imTeilbaum == null
+                        || (b.organisationId() != null && imTeilbaum.contains(b.organisationId())))
                 .filter(b -> passt(b, ansicht))
                 .sorted(java.util.Comparator.comparing(
                         x -> x.benutzername().toLowerCase()))

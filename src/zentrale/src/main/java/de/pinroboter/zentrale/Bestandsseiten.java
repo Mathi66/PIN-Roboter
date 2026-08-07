@@ -40,7 +40,10 @@ final class Bestandsseiten {
                         List<Organisationsauswahl> organisationen, Ansicht ansicht,
                         boolean zugangsdatenMoeglich, String meldung, boolean meldungIstFehler) {
         StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Bestand",
-                "Konnektoren und Kartenterminals erfassen und pflegen.", null));
+                "Konnektoren und Kartenterminals erfassen und pflegen.",
+                """
+                <a class="knopf" href="/bestand/konnektor/neu">Konnektor hinzufügen</a>
+                <a class="knopf haupt" href="/bestand/terminal/neu">Kartenterminal hinzufügen</a>"""));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, meldungIstFehler ? "warnend" : "gut"));
         }
@@ -116,53 +119,6 @@ final class Bestandsseiten {
             }
             s.append("</tbody></table></div>");
         }
-
-        s.append("""
-                <details class="ausklapp"><summary>Konnektor hinzufügen</summary>
-                <form method="post" action="/bestand/konnektor" class="maske">
-                  <div class="feldgruppe">
-                    <label for="k-org">Einrichtung</label>
-                    <select id="k-org" name="organisationId" required>%s</select>
-                  </div>
-                  <div class="feldgruppe">
-                    <label for="k-bez">Bezeichnung</label>
-                    <input id="k-bez" name="bezeichnung" required maxlength="120"
-                           placeholder="z. B. Konnektor Praxis Nord">
-                  </div>
-                  <div class="feldgruppe">
-                    <label for="k-adr">Adresse</label>
-                    <input id="k-adr" name="adresse" required maxlength="200"
-                           placeholder="192.168.1.10:443"
-                           aria-describedby="k-adr-hilfe">
-                    <p id="k-adr-hilfe" class="hilfe">Rechnername oder IP-Adresse, wahlweise mit Port.
-                       Die Erreichbarkeit wird beim Speichern geprüft; ein noch nicht
-                       angeschlossener Konnektor lässt sich trotzdem erfassen.</p>
-                  </div>
-                  <div class="feldgruppe">
-                    <label for="k-mod">Modell <span class="optional">(optional)</span></label>
-                    <input id="k-mod" name="modell" maxlength="120" placeholder="z. B. KoCo Konnektor">
-                  </div>
-                  %s
-                  <fieldset>
-                    <legend>Zugang <span class="optional">(optional)</span></legend>
-                    <p class="hilfe">Nach dem Speichern ist das Kennwort nicht mehr anzeigbar —
-                       weder hier noch über eine Schnittstelle.</p>
-                    <div class="feldreihe">
-                      <div class="feldgruppe"><label for="k-ben">Benutzername</label>
-                        <input id="k-ben" name="benutzerName" maxlength="80" autocomplete="off"></div>
-                      <div class="feldgruppe"><label for="k-pw">Kennwort</label>
-                        <input id="k-pw" name="passwort" type="password" maxlength="200"
-                               autocomplete="new-password"></div>
-                      <div class="feldgruppe"><label for="k-web">Webadmin-Adresse</label>
-                        <input id="k-web" name="webadminAdresse" maxlength="200"
-                               aria-describedby="k-web-hilfe"></div>
-                    </div>
-                    <p id="k-web-hilfe" class="hilfe">Herstellerspezifisch und immer optional.
-                       Ohne sie bleibt alles von Hand erfassbar.</p>
-                  </fieldset>
-                  <button class="knopf haupt" type="submit" style="width:auto">Konnektor speichern</button>
-                </form></details>""".formatted(organisationsOptionen(organisationen, null),
-                        aufrufkontextFelder(kontext, "k", null, null, null)));
 
         return s.append("</div>").toString();
     }
@@ -314,66 +270,6 @@ final class Bestandsseiten {
             s.append(blaetterleiste(seite, a));
         }
         s.append("</div>");   // Ende terminalliste
-
-        s.append("""
-                <details class="ausklapp"><summary>Kartenterminal hinzufügen</summary>
-                <form method="post" action="/bestand/terminal" class="maske">
-                  <div class="feldreihe">
-                    <div class="feldgruppe">
-                      <label for="t-konnektor">Konnektor</label>
-                      <select id="t-konnektor" name="konnektorId" required>%s</select>
-                    </div>
-                    <div class="feldgruppe">
-                      <label for="t-id">Kennung</label>
-                      <input id="t-id" name="terminalId" required maxlength="80"
-                             placeholder="KT-EMPFANG-01" aria-describedby="t-id-hilfe">
-                    </div>
-                  </div>
-                  <p id="t-id-hilfe" class="hilfe">Die Kennung, unter der der Konnektor das Gerät
-                     führt. Sie muss eindeutig sein.</p>
-                  <div class="feldreihe">
-                    <div class="feldgruppe"><label for="t-bez">Bezeichnung</label>
-                      <input id="t-bez" name="bezeichnung" required maxlength="120"
-                             placeholder="z. B. Empfang links"></div>
-                    <div class="feldgruppe"><label for="t-std">Standort <span class="optional">(optional)</span></label>
-                      <input id="t-std" name="standort" maxlength="160"></div>
-                  </div>
-                  <div class="feldreihe">
-                    <div class="feldgruppe"><label for="t-adr">Adresse</label>
-                      <input id="t-adr" name="adresse" required maxlength="200" placeholder="192.168.1.51:443"></div>
-                    <div class="feldgruppe"><label for="t-mod">Modell <span class="optional">(optional)</span></label>
-                      <input id="t-mod" name="modell" maxlength="120" placeholder="z. B. CHERRY ST-1506"></div>
-                    <div class="feldgruppe"><label for="t-ser">Seriennummer <span class="optional">(optional)</span></label>
-                      <input id="t-ser" name="seriennummer" maxlength="120"></div>
-                  </div>
-                  <fieldset>
-                    <legend>Administrationszugang <span class="optional">(optional)</span></legend>
-                    <p class="hilfe">Über diesen Zugang übergibt der Roboter die PIN an die
-                       Managementschnittstelle. Nach dem Speichern ist das Kennwort nicht mehr anzeigbar.</p>
-                    <div class="feldreihe">
-                      <div class="feldgruppe"><label for="t-aben">Benutzername</label>
-                        <input id="t-aben" name="adminBenutzer" maxlength="80" autocomplete="off"></div>
-                      <div class="feldgruppe"><label for="t-apw">Kennwort</label>
-                        <input id="t-apw" name="adminPasswort" type="password" maxlength="200"
-                               autocomplete="new-password"></div>
-                    </div>
-                  </fieldset>
-                  <fieldset>
-                    <legend>Karte und Automatik</legend>
-                    <div class="ankreuz">
-                      <input id="t-smcb" name="hatSmcb" type="checkbox" value="ja">
-                      <label for="t-smcb">In diesem Terminal steckt eine SMC-B</label>
-                    </div>
-                    <div class="ankreuz">
-                      <input id="t-pevim" name="pevimAktiv" type="checkbox" value="ja">
-                      <label for="t-pevim">PIN-Automatik nutzen (Managementschnittstelle freigeschaltet)</label>
-                    </div>
-                    <p class="hilfe">Die PIN-Automatik ist ausschließlich für SMC-B zulässig
-                       (gematik A_24080). Für Terminals ohne SMC-B bleibt sie abgewählt —
-                       diese Geräte werden erfasst und überwacht, aber nie verifiziert.</p>
-                  </fieldset>
-                  <button class="knopf haupt" type="submit" style="width:auto">Kartenterminal speichern</button>
-                </form></details>""".formatted(konnektorOptionen(konnektoren, null)));
 
         return s.append("</div>").toString();
     }
@@ -1233,4 +1129,128 @@ final class Bestandsseiten {
     }
 
     private static String nz(String s) { return s == null ? "" : s; }
+
+    // ----------------------------------------------- Anlegemasken als Seiten
+    //
+    // Bis zum 07.08.2026 klappten diese Formulare unter der Liste auf. Die
+    // Seite wurde dadurch immer laenger, und die Maske hatte keine eigene
+    // Adresse — nicht verlinkbar, nicht als Lesezeichen speicherbar, und der
+    // Zurueck-Knopf des Browsers fuehrte aus der Liste heraus statt aus der
+    // Maske (UX-Konzept, Stufe 4).
+
+    static String konnektorMaske(List<Organisationsauswahl> organisationen,
+                                 Ermittlung.Auswahl kontext) {
+        return Zentrale.detailkopf("/bestand", "Bestand", "Konnektor hinzufügen",
+                "Ein Konnektor bündelt die Kartenterminals einer Einrichtung.", null)
+              + """
+                <div class="tafel">
+                <form method="post" action="/bestand/konnektor" class="maske">
+                  <div class="feldgruppe">
+                    <label for="k-org">Einrichtung</label>
+                    <select id="k-org" name="organisationId" required>%s</select>
+                  </div>
+                  <div class="feldgruppe">
+                    <label for="k-bez">Bezeichnung</label>
+                    <input id="k-bez" name="bezeichnung" required maxlength="120"
+                           placeholder="z. B. Konnektor Praxis Nord">
+                  </div>
+                  <div class="feldgruppe">
+                    <label for="k-adr">Adresse</label>
+                    <input id="k-adr" name="adresse" required maxlength="200"
+                           placeholder="192.168.1.10:443"
+                           aria-describedby="k-adr-hilfe">
+                    <p id="k-adr-hilfe" class="hilfe">Rechnername oder IP-Adresse, wahlweise mit Port.
+                       Die Erreichbarkeit wird beim Speichern geprüft; ein noch nicht
+                       angeschlossener Konnektor lässt sich trotzdem erfassen.</p>
+                  </div>
+                  <div class="feldgruppe">
+                    <label for="k-mod">Modell <span class="optional">(optional)</span></label>
+                    <input id="k-mod" name="modell" maxlength="120" placeholder="z. B. KoCo Konnektor">
+                  </div>
+                  %s
+                  <fieldset>
+                    <legend>Zugang <span class="optional">(optional)</span></legend>
+                    <p class="hilfe">Nach dem Speichern ist das Kennwort nicht mehr anzeigbar —
+                       weder hier noch über eine Schnittstelle.</p>
+                    <div class="feldreihe">
+                      <div class="feldgruppe"><label for="k-ben">Benutzername</label>
+                        <input id="k-ben" name="benutzerName" maxlength="80" autocomplete="off"></div>
+                      <div class="feldgruppe"><label for="k-pw">Kennwort</label>
+                        <input id="k-pw" name="passwort" type="password" maxlength="200"
+                               autocomplete="new-password"></div>
+                      <div class="feldgruppe"><label for="k-web">Webadmin-Adresse</label>
+                        <input id="k-web" name="webadminAdresse" maxlength="200"
+                               aria-describedby="k-web-hilfe"></div>
+                    </div>
+                    <p id="k-web-hilfe" class="hilfe">Herstellerspezifisch und immer optional.
+                       Ohne sie bleibt alles von Hand erfassbar.</p>
+                  </fieldset>
+                  <button class="knopf haupt" type="submit" style="width:auto">Konnektor speichern</button>
+                </form></div>""".formatted(organisationsOptionen(organisationen, null),
+                        aufrufkontextFelder(kontext, "k", null, null, null));
+    }
+
+    static String terminalNeuMaske(List<Bestandsverwaltung.Konnektor> konnektoren) {
+        return Zentrale.detailkopf("/bestand", "Bestand", "Kartenterminal hinzufügen",
+                "Das Gerät wird einem Konnektor zugeordnet.", null)
+              + """
+                <div class="tafel">
+                <form method="post" action="/bestand/terminal" class="maske">
+                  <div class="feldreihe">
+                    <div class="feldgruppe">
+                      <label for="t-konnektor">Konnektor</label>
+                      <select id="t-konnektor" name="konnektorId" required>%s</select>
+                    </div>
+                    <div class="feldgruppe">
+                      <label for="t-id">Kennung</label>
+                      <input id="t-id" name="terminalId" required maxlength="80"
+                             placeholder="KT-EMPFANG-01" aria-describedby="t-id-hilfe">
+                    </div>
+                  </div>
+                  <p id="t-id-hilfe" class="hilfe">Die Kennung, unter der der Konnektor das Gerät
+                     führt. Sie muss eindeutig sein.</p>
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="t-bez">Bezeichnung</label>
+                      <input id="t-bez" name="bezeichnung" required maxlength="120"
+                             placeholder="z. B. Empfang links"></div>
+                    <div class="feldgruppe"><label for="t-std">Standort <span class="optional">(optional)</span></label>
+                      <input id="t-std" name="standort" maxlength="160"></div>
+                  </div>
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="t-adr">Adresse</label>
+                      <input id="t-adr" name="adresse" required maxlength="200" placeholder="192.168.1.51:443"></div>
+                    <div class="feldgruppe"><label for="t-mod">Modell <span class="optional">(optional)</span></label>
+                      <input id="t-mod" name="modell" maxlength="120" placeholder="z. B. CHERRY ST-1506"></div>
+                    <div class="feldgruppe"><label for="t-ser">Seriennummer <span class="optional">(optional)</span></label>
+                      <input id="t-ser" name="seriennummer" maxlength="120"></div>
+                  </div>
+                  <fieldset>
+                    <legend>Administrationszugang <span class="optional">(optional)</span></legend>
+                    <p class="hilfe">Über diesen Zugang übergibt der Roboter die PIN an die
+                       Managementschnittstelle. Nach dem Speichern ist das Kennwort nicht mehr anzeigbar.</p>
+                    <div class="feldreihe">
+                      <div class="feldgruppe"><label for="t-aben">Benutzername</label>
+                        <input id="t-aben" name="adminBenutzer" maxlength="80" autocomplete="off"></div>
+                      <div class="feldgruppe"><label for="t-apw">Kennwort</label>
+                        <input id="t-apw" name="adminPasswort" type="password" maxlength="200"
+                               autocomplete="new-password"></div>
+                    </div>
+                  </fieldset>
+                  <fieldset>
+                    <legend>Karte und Automatik</legend>
+                    <div class="ankreuz">
+                      <input id="t-smcb" name="hatSmcb" type="checkbox" value="ja">
+                      <label for="t-smcb">In diesem Terminal steckt eine SMC-B</label>
+                    </div>
+                    <div class="ankreuz">
+                      <input id="t-pevim" name="pevimAktiv" type="checkbox" value="ja">
+                      <label for="t-pevim">PIN-Automatik nutzen (Managementschnittstelle freigeschaltet)</label>
+                    </div>
+                    <p class="hilfe">Die PIN-Automatik ist ausschließlich für SMC-B zulässig
+                       (gematik A_24080). Für Terminals ohne SMC-B bleibt sie abgewählt —
+                       diese Geräte werden erfasst und überwacht, aber nie verifiziert.</p>
+                  </fieldset>
+                  <button class="knopf haupt" type="submit" style="width:auto">Kartenterminal speichern</button>
+                </form></div>""".formatted(konnektorOptionen(konnektoren, null));
+    }
 }

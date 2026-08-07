@@ -97,7 +97,7 @@ public class Bestandsverwaltung {
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) liste.add(konnektorLesen(rs));
             }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
         return liste;
     }
 
@@ -307,12 +307,15 @@ public class Bestandsverwaltung {
 
     /** Filter der Geräteliste. Alle Felder dürfen {@code null} sein — dann wird nicht gefiltert. */
     public record Filter(String suche, Long konnektorId, Boolean aktiv, Boolean erreichbar,
-                         String modell, String firmware, Boolean hatSmcb) {
-        public static Filter leer() { return new Filter(null, null, null, null, null, null, null); }
+                         String modell, String firmware, Boolean hatSmcb, Long einrichtungId) {
+        public static Filter leer() {
+            return new Filter(null, null, null, null, null, null, null, null);
+        }
         public boolean istGesetzt() {
             return (suche != null && !suche.isBlank()) || konnektorId != null || aktiv != null
                     || erreichbar != null || (modell != null && !modell.isBlank())
-                    || (firmware != null && !firmware.isBlank()) || hatSmcb != null;
+                    || (firmware != null && !firmware.isBlank()) || hatSmcb != null
+                    || einrichtungId != null;
         }
     }
 
@@ -341,6 +344,19 @@ public class Bestandsverwaltung {
             werte.add(m); werte.add(m); werte.add(m);
         }
         if (filter.konnektorId() != null) { wo.append(" AND t.konnektor_id = ?"); werte.add(filter.konnektorId()); }
+        if (filter.einrichtungId() != null) {
+            // Teilbaum, nicht nur die Einheit selbst: Bei einem Standort haengen
+            // die Geraete an den Einrichtungen darunter.
+            // Das fuehrende Leerzeichen ist Pflicht: Ein Java-Textblock
+            // entfernt die gemeinsame Einrueckung, und ohne Trenner entsteht
+            // "WHERE 1=1AND ...".
+            wo.append(" AND t.organisation_id IN (").append("""
+                    WITH RECURSIVE u AS (
+                        SELECT id FROM organisation WHERE id = ?
+                        UNION ALL SELECT o.id FROM organisation o JOIN u ON o.eltern_id = u.id
+                    ) SELECT id FROM u)""");
+            werte.add(filter.einrichtungId());
+        }
         if (filter.aktiv() != null)       { wo.append(" AND t.aktiv = ?");        werte.add(filter.aktiv()); }
         if (filter.hatSmcb() != null)     { wo.append(" AND t.hat_smcb = ?");     werte.add(filter.hatSmcb()); }
         if (filter.erreichbar() != null) {
@@ -361,7 +377,7 @@ public class Bestandsverwaltung {
                 "SELECT count(*) FROM kartenterminal t JOIN konnektor k ON k.id = t.konnektor_id" + wo)) {
             fuellen(p, werte);
             try (ResultSet rs = p.executeQuery()) { if (rs.next()) gesamt = rs.getInt(1); }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
 
         Sortierung s = sortierung == null ? Sortierung.BEZEICHNUNG : sortierung;
         // Zweites Sortierfeld ist Pflicht: Ohne eindeutige Reihenfolge wandern
@@ -383,7 +399,7 @@ public class Bestandsverwaltung {
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) liste.add(terminalLesen(rs));
             }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
         return new Seite<>(liste, nr, gr, gesamt);
     }
 
@@ -404,7 +420,7 @@ public class Bestandsverwaltung {
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) werte.add(rs.getString(1));
             }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
         return werte;
     }
 
@@ -603,7 +619,7 @@ public class Bestandsverwaltung {
             p.setArray(1, kennungsArray(ids));
             p.setString(2, einrichtung);
             try (ResultSet rs = p.executeQuery()) { while (rs.next()) fremde.add(rs.getString(1)); }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
 
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 UPDATE kartenterminal t SET gruppe_id = ?
@@ -704,7 +720,7 @@ public class Bestandsverwaltung {
                         rs.getLong("id"), rs.getString("bezeichnung"), rs.getString("art")));
             }
             }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
         return liste;
     }
 
@@ -784,7 +800,7 @@ public class Bestandsverwaltung {
             p.setString(2, e.hinweis());
             p.setLong(3, id);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        } catch (SQLException fehler) { System.err.println("Bestandsabfrage fehlgeschlagen: " + fehler.getMessage()); }
     }
 
     // ----------------------------------------------------------------- Ergebnis
@@ -841,7 +857,7 @@ public class Bestandsverwaltung {
             p.setLong(1, konnektorId);
             p.setInt(2, hoechstens);
             try (ResultSet rs = p.executeQuery()) { while (rs.next()) namen.add(rs.getString(1)); }
-        } catch (SQLException ignored) { }
+        } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
         return namen;
     }
 

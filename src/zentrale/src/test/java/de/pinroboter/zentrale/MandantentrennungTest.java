@@ -284,16 +284,16 @@ class MandantentrennungTest {
         // Eine Suche ist der naheliegendste Weg, an fremde Daten zu kommen -
         // sie fasst schliesslich den ganzen Bestand an.
         var treffer = bv.terminals(new Bestandsverwaltung.Filter("Terminal", null, null, null,
-                null, null, null), null, false, 1, 100, bereichA);
+                null, null, null, null), null, false, 1, 100, bereichA);
         assertEquals(1, treffer.gesamt(), "die Suche findet nur das eigene Gerät");
 
         var nachFremdemModell = bv.terminals(new Bestandsverwaltung.Filter(null, null, null, null,
-                "Ingenico ORGA 6141", null, null), null, false, 1, 100, bereichA);
+                "Ingenico ORGA 6141", null, null, null), null, false, 1, 100, bereichA);
         assertEquals(0, nachFremdemModell.gesamt(),
                 "auch ein Filter auf ein fremdes Modell liefert nichts");
 
         var ueberFremdenKonnektor = bv.terminals(new Bestandsverwaltung.Filter(null, konnB, null,
-                null, null, null, null), null, false, 1, 100, bereichA);
+                null, null, null, null, null), null, false, 1, 100, bereichA);
         assertEquals(0, ueberFremdenKonnektor.gesamt(),
                 "auch nicht über die Kennung eines fremden Konnektors");
     }

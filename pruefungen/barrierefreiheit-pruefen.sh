@@ -61,10 +61,15 @@ done
 TID_A=$(curl -s -b "$KEKSE" http://localhost:8090/bestand \
         | grep -oE '/bestand/terminal/[0-9]+' | head -1)
 [ -n "$TID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$TID_A" > "$SEITEN/terminalmaske.html"
+# Die Detailseite einer Organisationseinheit und die Anlegemasken sind eigene
+# Seiten (UX-Konzept Stufe 4/5) und muessen einzeln geprueft werden.
 OID_A=$(curl -s -b "$KEKSE" http://localhost:8090/organisation \
-        | grep -oE 'bearbeiten=[0-9]+' | head -1)
-[ -n "$OID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090/organisation?$OID_A" \
-        > "$SEITEN/organisation-bearbeiten.html"
+        | grep -oE '/organisation/[0-9]+' | head -1)
+[ -n "$OID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$OID_A" \
+        > "$SEITEN/organisation-detail.html"
+curl -s -b "$KEKSE" http://localhost:8090/organisation/neu      > "$SEITEN/organisation-neu.html"
+curl -s -b "$KEKSE" http://localhost:8090/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
+curl -s -b "$KEKSE" http://localhost:8090/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 
 ANZ=$(ls "$SEITEN" | wc -l | tr -d ' ')
 

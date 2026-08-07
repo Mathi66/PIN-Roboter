@@ -195,7 +195,7 @@ class ErmittlungTest {
         // Die Kernzusage von FA-GER-030 und FA-GER-035. Wuerde der Bestand
         // nachgezogen, koennte ein zurueckgesetzter Konnektor Zugangsdaten,
         // Gruppenzuordnungen und Standortangaben vernichten.
-        var t = bv.terminals(new Bestandsverwaltung.Filter("KT-A", null, null, null, null, null, null),
+        var t = bv.terminals(new Bestandsverwaltung.Filter("KT-A", null, null, null, null, null, null, null),
                 null, false, 1, 10, ALLES).eintraege().get(0);
         assertTrue(t.pevimAktiv(), "der erfasste Wert muss unverändert bleiben");
         assertTrue(t.hatSmcb());
@@ -214,7 +214,7 @@ class ErmittlungTest {
         assertTrue(weg.isPresent(), "das Gerät muss sichtbar bleiben");
         assertEquals(Ermittlung.Lage.VERSCHWUNDEN, weg.get().lage());
 
-        assertEquals(1, bv.terminals(new Bestandsverwaltung.Filter("KT-A", null, null, null, null, null, null),
+        assertEquals(1, bv.terminals(new Bestandsverwaltung.Filter("KT-A", null, null, null, null, null, null, null),
                 null, false, 1, 10, ALLES).gesamt(),
                 "im Bestand darf es NICHT verschwunden sein");
     }

@@ -896,7 +896,9 @@ REST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-
 ergebnis "Lasttestbestand rueckstandsfrei entfernt (Rest: $REST)" "$LX"
 
 hinweis "FA-GER-035 — Aufrufkontext aus dem Informationsmodell zur Auswahl"
-curl -s -b "$KEKSE" http://localhost:8090/bestand > /tmp/pr-kontext.html
+# Die Konnektor-Anlegemaske ist seit dem UX-Umbau eine eigene Seite
+# (ADR-0010, Stufe 4) — dort steht der Aufrufkontext.
+curl -s -b "$KEKSE" http://localhost:8090/bestand/konnektor/neu > /tmp/pr-kontext.html
 # Ohne Modell muessen Freitextfelder erscheinen (NFA-QS-035), mit Modell
 # Vorschlagslisten. Der Agent hat das Modell in diesem Lauf schon gemeldet.
 LISTEN=$(grep -c '<datalist' /tmp/pr-kontext.html)
@@ -1612,6 +1614,76 @@ else
   ergebnis "ein quittierter Alarm bietet keinen zweiten Quittierknopf ($QK)" "$AK"
   rm -f /tmp/pr-alarme.html
 fi
+
+# ------------------------------------------------- UX-Stufe 4 und 5 (ADR-0010)
+hinweis "UX-Stufe 4/5 — Detailseiten statt Aufklapper, Beziehungen zum Durchklicken"
+
+# Kein "details"-Aufklapper mehr in Bestand und Organisation: Die Seite soll
+# nicht laenger werden, sondern eine neue aufgehen.
+curl -s -b "$KEKSE" http://localhost:8090/bestand      -o /tmp/pr-ux-bestand.html
+curl -s -b "$KEKSE" http://localhost:8090/organisation -o /tmp/pr-ux-org.html
+AUF=$(( $(grep -c 'class="ausklapp"' /tmp/pr-ux-bestand.html || true) \
+      + $(grep -c 'class="ausklapp"' /tmp/pr-ux-org.html || true) ))
+[ "$AUF" = "0" ] && UA=ja || UA=nein
+ergebnis "keine Aufklapper mehr in Bestand und Organisation ($AUF)" "$UA"
+
+for paar in "/bestand/konnektor/neu:Konnektor hinzufügen" \
+            "/bestand/terminal/neu:Kartenterminal hinzufügen" \
+            "/organisation/neu:Einheit hinzufügen"; do
+  PFAD=${paar%%:*}; TITEL=${paar#*:}
+  CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-ux-neu.html -w '%{http_code}' "http://localhost:8090$PFAD")
+  UN=nein
+  if [ "$CODE" = "200" ] && [ "$(enthaelt /tmp/pr-ux-neu.html "$TITEL")" = "ja" ] \
+     && [ "$(enthaelt /tmp/pr-ux-neu.html 'class="zurueck"')" = "ja" ]; then UN=ja; fi
+  ergebnis "$PFAD ist eine eigene Seite mit Rückweg (HTTP $CODE)" "$UN"
+done
+rm -f /tmp/pr-ux-neu.html
+
+# Die Detailseite einer Einheit zeigt ihre Beziehungen und stimmt mit der
+# Datenbank ueberein — eine Zahl, die nicht stimmt, ist schlimmer als keine.
+ORG_D=$(sql "SELECT o.id FROM organisation o
+             WHERE EXISTS (SELECT 1 FROM kartenterminal t WHERE t.organisation_id = o.id)
+             ORDER BY o.id LIMIT 1")
+if [ -z "$ORG_D" ]; then
+  echo "  uebersprungen: keine Einrichtung mit Geraeten"
+  FEHLER=$((FEHLER+1))
+else
+  CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-ux-detail.html -w '%{http_code}' \
+         "http://localhost:8090/organisation/$ORG_D")
+  [ "$CODE" = "200" ] && UD=ja || UD=nein
+  ergebnis "die Organisationseinheit hat eine eigene Adresse (HTTP $CODE)" "$UD"
+
+  SOLL_KT=$(sql "SELECT count(*) FROM kartenterminal t WHERE t.organisation_id IN (
+                   WITH RECURSIVE u AS (SELECT id FROM organisation WHERE id=$ORG_D
+                     UNION ALL SELECT x.id FROM organisation x JOIN u ON x.eltern_id=u.id)
+                   SELECT id FROM u)")
+  IST_KT=$(grep -oE '<span class="zahl">[0-9]+</span><span class="was">Kartenterminals' \
+           /tmp/pr-ux-detail.html | grep -oE '[0-9]+' | head -1)
+  [ "${IST_KT:-x}" = "$SOLL_KT" ] && UZ=ja || UZ=nein
+  ergebnis "die Zahl der Kartenterminals stimmt mit der Datenbank ($IST_KT von $SOLL_KT)" "$UZ"
+
+  # Der Absprung muss wirklich filtern - eine Kachel, die auf eine ungefilterte
+  # Liste fuehrt, ist eine Luege.
+  curl -s -b "$KEKSE" "http://localhost:8090/bestand?einrichtung=$ORG_D" -o /tmp/pr-ux-abs.html
+  IST_ABS=$(grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' /tmp/pr-ux-abs.html \
+            | grep -oE '[0-9]+$')
+  ALLE_KT=$(sql "SELECT count(*) FROM kartenterminal")
+  UF=nein
+  [ "${IST_ABS:-x}" = "$SOLL_KT" ] && [ "$SOLL_KT" != "$ALLE_KT" ] && UF=ja
+  ergebnis "der Absprung filtert wirklich ($IST_ABS von insgesamt $ALLE_KT)" "$UF"
+
+  # Und er darf die Mandantengrenze nicht aufweichen: Ein Praxisbenutzer, der
+  # eine fremde Kennung anhaengt, bekommt trotzdem nur das Seine.
+  FREMD_ORG=$(sql "SELECT id FROM organisation WHERE id <> $ORG_D AND art='EINRICHTUNG'
+                   ORDER BY id LIMIT 1")
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+         "http://localhost:8090/organisation/$FREMD_ORG")
+  [ "$CODE" = "302" ] && UM=ja || UM=nein
+  ergebnis "die Detailseite ist ohne Anmeldung nicht erreichbar (HTTP $CODE)" "$UM"
+
+  rm -f /tmp/pr-ux-detail.html /tmp/pr-ux-abs.html
+fi
+rm -f /tmp/pr-ux-bestand.html /tmp/pr-ux-org.html
 
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.

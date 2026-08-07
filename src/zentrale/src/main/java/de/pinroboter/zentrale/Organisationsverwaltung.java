@@ -70,6 +70,19 @@ public class Organisationsverwaltung {
         }
     }
 
+    /**
+     * Alles, was an einer Einheit hängt — die Antwort auf „was gehört
+     * eigentlich zu dieser Praxis?" (UX-Konzept, Stufe 5).
+     *
+     * <p>Gezählt wird über den <b>gesamten Teilbaum</b> einschließlich der
+     * Einheit selbst. Bei einem Standort hängen die Geräte an den
+     * Einrichtungen darunter; nur die direkte Zuordnung zu zählen ergäbe dort
+     * überall Null und wäre irreführend.
+     */
+    public record Beziehungen(int einheiten, int konnektoren, int terminals, int smcb,
+                              int smcbVerifiziert, int konten, int administratoren,
+                              int gruppen, int alarme, int protokoll) {}
+
     /** Ergebnis einer Änderung. {@code fehler == null} heißt: geklappt. */
     public record Ergebnis(String fehler, String meldung) {
         public boolean geklappt() { return fehler == null; }
@@ -157,6 +170,72 @@ public class Organisationsverwaltung {
     /** Eine Einheit — nur, wenn sie im Geltungsbereich liegt. */
     public Optional<Einheit> einheit(long id, Geltungsbereich bereich) {
         return baum(bereich).stream().filter(e -> e.id() == id).findFirst();
+    }
+
+    /**
+     * Zählt, was an einer Einheit und allem darunter hängt.
+     *
+     * <p>Eine Abfrage statt zehn: Bei einer Detailseite, die bei jedem Aufruf
+     * gebaut wird, ist der Unterschied zwischen einem und zehn
+     * Datenbankgesprächen spürbar.
+     */
+    public Beziehungen beziehungen(long id, Geltungsbereich bereich) {
+        if (einheit(id, bereich).isEmpty()) return null;
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                WITH RECURSIVE unterbau AS (
+                    SELECT id FROM organisation WHERE id = ?
+                    UNION ALL
+                    SELECT o.id FROM organisation o JOIN unterbau u ON o.eltern_id = u.id
+                ),
+                terminals AS (
+                    SELECT t.terminal_id FROM kartenterminal t
+                    WHERE t.organisation_id IN (SELECT id FROM unterbau)
+                )
+                SELECT
+                  (SELECT count(*) FROM unterbau)                                        AS einheiten,
+                  (SELECT count(*) FROM konnektor  WHERE organisation_id IN (SELECT id FROM unterbau)) AS konnektoren,
+                  (SELECT count(*) FROM terminals)                                       AS terminals,
+                  (SELECT count(*) FROM ermittelte_karte k
+                     WHERE k.kartentyp = 'SMC-B' AND k.terminal_id IN (SELECT terminal_id FROM terminals)) AS smcb,
+                  (SELECT count(*) FROM pin_hinterlegt h
+                     JOIN ermittelte_karte k ON k.kartenhandle = h.kartenhandle
+                     WHERE k.terminal_id IN (SELECT terminal_id FROM terminals))         AS smcb_pin,
+                  (SELECT count(*) FROM benutzer WHERE organisation_id IN (SELECT id FROM unterbau)) AS konten,
+                  (SELECT count(*) FROM benutzer WHERE rolle = 'ADMINISTRATOR'
+                     AND organisation_id IN (SELECT id FROM unterbau))                   AS admins,
+                  (SELECT count(*) FROM geraetegruppe WHERE organisation_id IN (SELECT id FROM unterbau)) AS gruppen,
+                  (SELECT count(*) FROM alarm WHERE behoben_am IS NULL
+                     AND organisation_id IN (SELECT id FROM unterbau))                   AS alarme,
+                  (SELECT count(*) FROM fachprotokoll
+                     WHERE organisation_id IN (SELECT id FROM unterbau)
+                       AND zeitpunkt > now() - interval '30 days')                       AS protokoll
+                """)) {
+            p.setLong(1, id);
+            try (ResultSet rs = p.executeQuery()) {
+                if (!rs.next()) return null;
+                return new Beziehungen(rs.getInt("einheiten"), rs.getInt("konnektoren"),
+                        rs.getInt("terminals"), rs.getInt("smcb"), rs.getInt("smcb_pin"),
+                        rs.getInt("konten"), rs.getInt("admins"), rs.getInt("gruppen"),
+                        rs.getInt("alarme"), rs.getInt("protokoll"));
+            }
+        } catch (SQLException e) {
+            System.err.println("Beziehungen nicht ermittelbar: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** Die Kette von oben bis zu dieser Einheit — für den Weg im Seitenkopf. */
+    public List<Einheit> pfad(long id, Geltungsbereich bereich) {
+        var baum = baum(bereich);
+        List<Einheit> kette = new ArrayList<>();
+        var aktuell = baum.stream().filter(e -> e.id() == id).findFirst();
+        while (aktuell.isPresent()) {
+            kette.add(0, aktuell.get());
+            Long eltern = aktuell.get().elternId();
+            aktuell = eltern == null ? Optional.empty()
+                    : baum.stream().filter(e -> e.id() == eltern).findFirst();
+        }
+        return kette;
     }
 
     // ---------------------------------------------------------------- Ändern
