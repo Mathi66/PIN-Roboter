@@ -30,10 +30,10 @@
 | Mandantentrennung | im Datenmodell, **in der Oberfläche noch nicht nutzbar** |
 | Update-Manager | **nicht umgesetzt** |
 | Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
-| Protokollansicht | zeigt die 200 jüngsten Einträge; **Blättern in älteren fehlt** — der Excel-Export reicht weiter zurück |
+| Protokollansicht | serverseitige Paginierung, 50 Zeilen je Seite, Blättern in älteren Einträgen (ADR-0005) |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-rund 9.000 Zeilen, **110 Modultests, 77 Systemnachweise**.
+rund 9.300 Zeilen, **117 Modultests, 83 Systemnachweise** — im letzten Vollauf alle grün.
 
 > **Unverändert offen und weiterhin der wichtigste Punkt:** Alle Nachweise
 > laufen gegen den selbstgebauten Simulator. Die in

@@ -81,3 +81,59 @@ Format gegen die eigene Umsetzung zu prüfen wäre zirkulär.
 - **FA-PRO-040:** Große Exporte laufen noch nicht im Hintergrund, und die
   Warnung vor der Excel-Zeilengrenze fehlt.
 - **FA-PRO-080:** Aufbewahrungsdauer ist noch nicht konfigurierbar.
+
+
+---
+
+## Blättern in der Protokollansicht (nachgetragen 07.08.2026)
+
+Bis zu diesem Tag zeigte die Ansicht die **200 jüngsten Einträge** und konnte
+nicht zurückblättern. Solange wenig geschah, fiel das nicht auf. Mit den
+Ereignissen aus Bestandspflege und -ermittlung rutschten ältere Einträge
+schneller aus dem Blick — aufgefallen ist es, als zwei Nachweise anfingen zu
+flattern, die einen Eintrag von wenigen Minuten zuvor suchten.
+
+**Für ADR-0005 war das eine echte Lücke.** Der Roboter handelt selbsttätig;
+*jede* seiner Handlungen muss im Nachhinein auffindbar sein, nicht nur die der
+letzten Stunde. Der Excel-Export reichte weiter zurück, die Ansicht nicht — wer
+einen Vorgang von gestern nachvollziehen wollte, musste exportieren. Das ist
+keine gute Antwort.
+
+### Umsetzung
+
+Serverseitige Paginierung wie in der Bestandsliste, **50 Zeilen je Seite**:
+
+- Zählabfrage und Datenabfrage getrennt, beide mit denselben Filtern. Eine
+  Anfrage mehr, aber die Alternative — alles laden und im Speicher zählen — ist
+  genau das, was bei 200.000 Einträgen nicht mehr funktioniert.
+- Sortiert nach `(zeitpunkt DESC, id DESC)`. Die `id` ist nicht schmückendes
+  Beiwerk: Ohne eindeutige Sortierung wandern Zeilen zwischen Seiten, sobald
+  zwei Einträge denselben Zeitstempel tragen — bei einem Roboter, der mehrere
+  Geräte gleichzeitig bearbeitet, ist das der Normalfall.
+- Obergrenze von 500 Zeilen je Anfrage, damit eine manipulierte URL nicht das
+  gesamte Protokoll zieht.
+- Wer hinter das Ende blättert — etwa weil ein Filter enger wurde —, landet auf
+  der letzten vorhandenen Seite statt auf einer leeren.
+
+### Die Seitennummer und die Auffrischung
+
+Die Ansicht frischt sich alle fünf Sekunden auf. Ohne Gegenmaßnahme würde das
+jeden, der zurückblättert, nach fünf Sekunden auf Seite 1 zurückwerfen.
+
+Gelöst über ein verstecktes Feld `f-seite` in der Filterleiste: Es wird bei
+jeder Abfrage mitgesendet, und die Blätterknöpfe setzen es, bevor sie die
+Abfrage auslösen. Die Seite bleibt damit stehen.
+
+Was bleibt: Auf Seite 2 und weiter **wandern Einträge langsam nach hinten**,
+weil oben neue dazukommen. Das ist bei einer Live-Ansicht unvermeidbar. Die
+Blätterleiste sagt es deshalb ausdrücklich — *„neue Einträge erscheinen auf
+Seite 1"* —, statt den Benutzer rätseln zu lassen.
+
+### Ein Test, der unterwegs etwas anderes bewiesen hat
+
+Der erste Anlauf des Paginierungstests räumte am Ende seine Testeinträge weg —
+und scheiterte. **Zu Recht:** Das Fachprotokoll ist unveränderlich (FA-PRO-010),
+ein `DELETE` wird abgewiesen; nur die Rotation darf löschen.
+
+Der Test befüllt jetzt nur, wenn noch nichts da ist, und der gescheiterte
+Löschversuch ist als eigener Nachweis stehengeblieben.

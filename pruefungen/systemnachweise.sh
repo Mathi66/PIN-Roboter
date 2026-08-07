@@ -404,6 +404,41 @@ if [ "$PA" = "nein" ]; then
   echo "    Bekannte Luecke: Die Protokollansicht kann nicht zurueckblaettern."
 fi
 ergebnis "der Export erscheint in der Protokollansicht" "$PA"
+
+# ADR-0005: Blaettern in der Protokollansicht. Bis zum 07.08.2026 zeigte sie
+# nur die 200 juengsten Eintraege und konnte nicht zurueck - wer einen Vorgang
+# von gestern nachvollziehen wollte, musste exportieren.
+GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+      "SELECT count(*) FROM fachprotokoll" | tr -d ' \n')
+S1=$(curl -s -b "$KEKSE" "http://localhost:8090/teil/protokoll?seite=1")
+echo "$S1" | grep -q "Seite 1 von" && BL=ja || BL=nein
+ergebnis "die Protokollansicht zeigt eine Blaetterleiste ($GES Eintraege)" "$BL"
+
+Z1=$(echo "$S1" | grep -c "<tr>")
+[ "${Z1:-0}" -le 50 ] && BG=ja || BG=nein
+ergebnis "eine Seite zeigt hoechstens 50 Zeilen (gezaehlt: $Z1)" "$BG"
+
+if [ "${GES:-0}" -gt 50 ]; then
+  S2=$(curl -s -b "$KEKSE" "http://localhost:8090/teil/protokoll?seite=2")
+  echo "$S2" | grep -q "Seite 2 von" && B2=ja || B2=nein
+  ergebnis "die zweite Seite laesst sich abrufen" "$B2"
+
+  # Ohne eindeutige Sortierung wandern Zeilen zwischen den Seiten. Geprueft
+  # wird an den Vorgangsnummern: keine darf auf beiden Seiten stehen.
+  echo "$S1" | grep -oE '<code>[^<]+</code>' | sort -u > /tmp/pr-s1.txt
+  echo "$S2" | grep -oE '<code>[^<]+</code>' | sort -u > /tmp/pr-s2.txt
+  DOPPELT=$(comm -12 /tmp/pr-s1.txt /tmp/pr-s2.txt | grep -v '>—<' | wc -l | tr -d ' ')
+  [ "${DOPPELT:-1}" = "0" ] && BU=ja || BU=nein
+  ergebnis "keine Ueberschneidung zwischen Seite 1 und 2 (doppelt: $DOPPELT)" "$BU"
+  rm -f /tmp/pr-s1.txt /tmp/pr-s2.txt
+else
+  echo "  uebersprungen: nur $GES Eintraege, zu wenig fuer eine zweite Seite"
+fi
+
+# Hinter das Ende geblaettert: Statt einer leeren Seite die letzte vorhandene.
+curl -s -b "$KEKSE" "http://localhost:8090/teil/protokoll?seite=9999" \
+  | grep -q "Seite [0-9]* von" && BE=ja || BE=nein
+ergebnis "eine Seitennummer hinter dem Ende fuehrt nicht ins Leere" "$BE"
 rm -f "$XLSX"
 
 # ---------------------------------------------------------------- Agent-Zugang

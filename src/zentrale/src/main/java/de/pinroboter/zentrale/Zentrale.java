@@ -1249,14 +1249,35 @@ public class Zentrale {
                       <option value="fehler">fehlgeschlagen</option></select>
                     <button class="knopf" hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter">Aktualisieren</button>
                     <a class="knopf" href="/protokoll/export" download>Als Excel herunterladen</a>
+                    <!-- Traegt die Seitennummer durch jede Abfrage. Ohne sie
+                         wuerde die Auffrischung alle 5 s auf Seite 1
+                         zurueckspringen, sobald jemand zurueckblaettert. -->
+                    <input type="hidden" id="f-seite" name="seite" value="1">
                   </div>
                   <div id="protokoll" hx-get="/teil/protokoll" hx-trigger="every 5s" hx-include=".filter" hx-swap="innerHTML">%s</div>
                 </div>""".formatted(arten, protokollTabelle(c));
     }
 
+    /** Wie viele Protokollzeilen eine Seite zeigt (ADR-0005, Blättern). */
+    static final int PROTOKOLL_SEITENGROESSE = 50;
+
     private String protokollTabelle(Context c) {
-        var liste = protokoll.filtern(c.queryParam("geraet"), c.queryParam("art"),
-                c.queryParam("ergebnis"), 200);
+        int nr = 1;
+        try {
+            String s = c.queryParam("seite");
+            if (s != null && !s.isBlank()) nr = Integer.parseInt(s);
+        } catch (NumberFormatException ignored) { }
+
+        var seite = protokoll.seite(c.queryParam("geraet"), c.queryParam("art"),
+                c.queryParam("ergebnis"), nr, PROTOKOLL_SEITENGROESSE);
+
+        // Hinter das Ende geblaettert - etwa weil ein Filter enger wurde.
+        // Statt einer leeren Seite die letzte vorhandene zeigen.
+        if (seite.eintraege().isEmpty() && seite.gesamt() > 0 && nr > seite.seitenZahl()) {
+            seite = protokoll.seite(c.queryParam("geraet"), c.queryParam("art"),
+                    c.queryParam("ergebnis"), seite.seitenZahl(), PROTOKOLL_SEITENGROESSE);
+        }
+        var liste = seite.eintraege();
         if (liste.isEmpty()) return "<p class=\"leer\">Keine Einträge für diese Auswahl.</p>";
         StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>"
                 + "<th>Zeitpunkt</th><th>Gerät</th><th>Ereignis</th><th>Ergebnis</th>"
@@ -1273,7 +1294,45 @@ public class Zentrale {
                             e.handlung() == null ? "" : "<div class=\"handlung\">" + esc(e.handlung()) + "</div>",
                             esc(e.vorgang() == null ? "—" : e.vorgang())));
         }
-        return s.append("</tbody></table></div>").toString();
+        s.append("</tbody></table></div>");
+        return s.append(protokollBlaetterleiste(seite)).toString();
+    }
+
+    /**
+     * Blätterleiste des Protokolls.
+     *
+     * <p>Die Knöpfe setzen das versteckte Feld {@code f-seite} und lösen dann
+     * die Abfrage aus — dadurch bleibt die Seitennummer auch bei der
+     * automatischen Auffrischung erhalten.
+     *
+     * <p>Auf Seite 2 und weiter steht ein Hinweis: Das Protokoll wächst
+     * weiter, und neue Einträge erscheinen oben. Wer zurückblättert, sieht
+     * deshalb Einträge langsam nach hinten wandern. Das ist unvermeidbar bei
+     * einer Live-Ansicht — aber es soll niemanden überraschen.
+     */
+    private String protokollBlaetterleiste(Fachprotokoll.Seite seite) {
+        String knopf = """
+                <button class="knopf %s" %s
+                  hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter"
+                  onclick="document.getElementById('f-seite').value=%d">%s</button>""";
+        return """
+                <nav class="blaettern" aria-label="Seiten des Protokolls">
+                  %s
+                  <span aria-live="polite">Eintrag %d bis %d von %d · Seite %d von %d%s</span>
+                  %s
+                </nav>"""
+                .formatted(
+                        seite.hatVorherige()
+                                ? knopf.formatted("", "", seite.seitenNummer() - 1, "Neuere")
+                                : knopf.formatted("gesperrt", "disabled", 1, "Neuere"),
+                        seite.von(), seite.bis(), seite.gesamt(),
+                        seite.seitenNummer(), seite.seitenZahl(),
+                        seite.seitenNummer() > 1
+                                ? " · neue Einträge erscheinen auf Seite 1" : "",
+                        seite.hatNaechste()
+                                ? knopf.formatted("", "", seite.seitenNummer() + 1, "Ältere")
+                                : knopf.formatted("gesperrt", "disabled",
+                                                  seite.seitenNummer(), "Ältere"));
     }
 
     // ---------------------------------------------------------------- Rahmen

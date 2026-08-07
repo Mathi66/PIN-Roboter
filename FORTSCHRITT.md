@@ -784,3 +784,47 @@ behauptet — und die Lücke ist sichtbar statt zufällig rot.
 Im letzten Vollauf waren 76 von 77 grün; der eine Fehlschlag war der oben
 beschriebene Export-Nachweis, der inzwischen getrennt ist. **Diese Trennung ist
 noch nicht in einem Vollauf bestätigt** — sie geht in den nächsten Lauf.
+
+
+---
+
+# Iteration 14 — Blättern im Protokoll (ADR-0005)
+
+Die im letzten Durchgang benannte Lücke ist geschlossen: Die Protokollansicht
+zeigte nur die 200 jüngsten Einträge und konnte nicht zurück. Wer einen Vorgang
+von gestern nachvollziehen wollte, musste exportieren.
+
+**Warum das mehr als Komfort ist:** Der Roboter handelt selbsttätig. *Jede*
+seiner Handlungen muss im Nachhinein auffindbar sein — nicht nur die der letzten
+Stunde. Genau das verspricht ADR-0005.
+
+## Umgesetzt
+
+Serverseitige Paginierung wie in der Bestandsliste, 50 Zeilen je Seite, mit
+Zählung („Eintrag 51 bis 100 von 137") und Blätterknöpfen.
+
+Zwei Details, an denen so etwas sonst scheitert:
+
+- **Sortiert nach Zeitpunkt *und* laufender Nummer.** Ohne die Nummer wandern
+  Zeilen zwischen Seiten, sobald zwei Einträge denselben Zeitstempel tragen —
+  bei einem Roboter, der mehrere Geräte gleichzeitig bearbeitet, ist das der
+  Normalfall. Ein eigener Nachweis prüft, dass keine Zeile auf zwei Seiten steht.
+- **Die Seitennummer überlebt die Auffrischung.** Die Ansicht aktualisiert sich
+  alle fünf Sekunden; ohne Gegenmaßnahme wäre man nach fünf Sekunden zurück auf
+  Seite 1.
+
+Was bleibt: Auf Seite 2 und weiter wandern Einträge langsam nach hinten, weil
+oben neue dazukommen. Das ist bei einer Live-Ansicht unvermeidbar — die
+Blätterleiste sagt es deshalb ausdrücklich, statt den Benutzer rätseln zu lassen.
+
+## Ein Test, der unterwegs etwas anderes bewiesen hat
+
+Der erste Anlauf räumte am Ende seine Testeinträge weg — und scheiterte. **Zu
+Recht:** Das Fachprotokoll ist unveränderlich (FA-PRO-010), nur die Rotation darf
+löschen. Der gescheiterte Löschversuch ist als eigener Nachweis stehengeblieben.
+
+## Stand: 117 Modultests, 83 Systemnachweise — **alle grün**
+
+Damit ist auch der zuvor offene Punkt bestätigt: Die getrennten
+Protokollnachweise (Not-Aus, Registrierung, Export) sind im Vollauf grün. Das
+Flattern ist weg, weil jeder Nachweis jetzt genau eine Sache misst.
