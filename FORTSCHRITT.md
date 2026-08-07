@@ -505,3 +505,52 @@ Erst der Systemnachweis mit `HTTP 404` hat es aufgedeckt. Ein Knopf, der nichts
 tut, ist im Compiler unsichtbar.
 
 ## Stand: 59 Modultests, 28 Systemnachweise — alle grün
+
+---
+
+# Iteration 10 — Speicherbudget und Rotation
+
+Deine Sorge von gestern Abend: „Ich habe Angst, dass uns der Speicher platzt."
+
+## Umgesetzt (FA-PRO-070)
+
+- **Gemessen wird die tatsächliche Größe**, nicht die Zeilenzahl. Eine Zeile mit
+  langer Fehlerbeschreibung belegt ein Vielfaches einer knappen Statusmeldung.
+- Schwellen: **80 % Rotation, 90 % Alarm, 95 % verschärfte Rotation**
+- **Gestaffelt nach Wichtigkeit** — technische Diagnose zuerst,
+  sicherheitsrelevante Ereignisse zuletzt
+- Der Füllstand wird **im Minutentakt** geprüft, nicht nur beim Schreiben. Ein
+  Protokoll, das nachts vollläuft, muss auch nachts rotieren.
+- Konfiguration als lesbare Angabe: `PROTOKOLL_BUDGET=2GB`
+
+## Am laufenden System nachgewiesen
+
+Die Zentrale wird mit **400 KB Budget** gestartet (normal 2 GB), dann wird die
+Karte wiederholt entzogen:
+
+| | |
+|---|---|
+| Kernfunktion arbeitet weiter | **6 Verifikationen** trotz vollem Protokoll |
+| Füllstand bleibt begrenzt | 152 KB |
+| Sicherheitsrelevante Einträge überleben | 13 vorhanden |
+
+## Zwei echte Fehler, die die Tests gefunden haben
+
+**1. Rotation ohne Wirkung.** `pg_total_relation_size` schrumpft nicht durch
+`DELETE` allein — der Platz bleibt bis zum `VACUUM` belegt. Die Schleife sah
+keinen Fortschritt und löschte weiter, bis eine Stufe leer war. Die Staffelung
+wäre damit wirkungslos gewesen: Erst wenn alle Routineereignisse weg sind, hätte
+sie aufgehört — und dann wären die Nachweise dran gewesen.
+
+**2. Ein zu kleines Budget hätte das ganze Protokoll vernichtet.** Eine leere
+Tabelle ist nicht 0 Byte groß; allein die fünf Indizes belegen Platz. Ist das
+Budget kleiner, ist das Rotationsziel **nie** erreichbar. Jetzt gilt: Ein
+Rotationslauf entfernt höchstens die Hälfte der Einträge, und der Zustand wird
+als „Budget zu klein" gemeldet. Eine Fehlkonfiguration darf Daten kosten, aber
+nicht alle.
+
+**Und ein Testfehler:** Zwei Tests hingen daran, wie viel ohnehin schon in der
+Datenbank lag — je nach Ausführungsreihenfolge grün oder rot. Sie bemessen das
+Budget jetzt nach dem Befüllen.
+
+## Stand: 65 Modultests, 34 Systemnachweise — alle grün

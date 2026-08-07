@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="de.pinroboter.gemeinsam.PasswortTest" time="0.375" tests="7" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="de.pinroboter.gemeinsam.PasswortTest" time="0.378" tests="7" errors="0" skipped="0" failures="0">
   <properties>
     <property name="java.specification.version" value="21"/>
     <property name="sun.jnu.encoding" value="UTF-8"/>
@@ -12,7 +12,7 @@
     <property name="sun.java.launcher" value="SUN_STANDARD"/>
     <property name="user.country" value="US"/>
     <property name="sun.boot.library.path" value="/opt/java/openjdk/lib"/>
-    <property name="sun.java.command" value="/p/src/gemeinsam/target/surefire/surefirebooter-20260807072402839_3.jar /p/src/gemeinsam/target/surefire 2026-08-07T07-24-02_803-jvmRun1 surefire-20260807072402839_1tmp surefire_0-20260807072402839_2tmp"/>
+    <property name="sun.java.command" value="/p/src/gemeinsam/target/surefire/surefirebooter-20260807081624220_3.jar /p/src/gemeinsam/target/surefire 2026-08-07T08-16-24_182-jvmRun1 surefire-20260807081624220_1tmp surefire_0-20260807081624220_2tmp"/>
     <property name="jdk.debug" value="release"/>
     <property name="surefire.test.class.path" value="/p/src/gemeinsam/target/test-classes:/p/src/gemeinsam/target/classes:/root/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.20.0/jackson-databind-2.20.0.jar:/root/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.20/jackson-annotations-2.20.jar:/root/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.20.0/jackson-core-2.20.0.jar:/root/.m2/repository/org/bouncycastle/bcprov-jdk18on/1.83/bcprov-jdk18on-1.83.jar:/root/.m2/repository/org/junit/jupiter/junit-jupiter/5.14.0/junit-jupiter-5.14.0.jar:/root/.m2/repository/org/junit/jupiter/junit-jupiter-api/5.14.0/junit-jupiter-api-5.14.0.jar:/root/.m2/repository/org/opentest4j/opentest4j/1.3.0/opentest4j-1.3.0.jar:/root/.m2/repository/org/junit/platform/junit-platform-commons/1.14.0/junit-platform-commons-1.14.0.jar:/root/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/root/.m2/repository/org/junit/jupiter/junit-jupiter-params/5.14.0/junit-jupiter-params-5.14.0.jar:/root/.m2/repository/org/junit/jupiter/junit-jupiter-engine/5.14.0/junit-jupiter-engine-5.14.0.jar:/root/.m2/repository/org/junit/platform/junit-platform-engine/1.14.0/junit-platform-engine-1.14.0.jar:"/>
     <property name="sun.cpu.endian" value="little"/>
@@ -27,7 +27,7 @@
     <property name="line.separator" value="&#10;"/>
     <property name="java.specification.name" value="Java Platform API Specification"/>
     <property name="java.vm.specification.vendor" value="Oracle Corporation"/>
-    <property name="surefire.real.class.path" value="/p/src/gemeinsam/target/surefire/surefirebooter-20260807072402839_3.jar"/>
+    <property name="surefire.real.class.path" value="/p/src/gemeinsam/target/surefire/surefirebooter-20260807081624220_3.jar"/>
     <property name="sun.management.compiler" value="HotSpot 64-Bit Tiered Compilers"/>
     <property name="java.runtime.version" value="21.0.11+10-LTS"/>
     <property name="user.name" value="root"/>
@@ -54,10 +54,10 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="java.class.version" value="65.0"/>
   </properties>
-  <testcase name="formatIstSelbstbeschreibend" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.152"/>
-  <testcase name="unsinnWirdAbgewiesen" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.036"/>
-  <testcase name="hashenUndPruefen" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.099"/>
-  <testcase name="meldungIstHandlungsanweisung" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.001"/>
+  <testcase name="formatIstSelbstbeschreibend" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.147"/>
+  <testcase name="unsinnWirdAbgewiesen" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.035"/>
+  <testcase name="hashenUndPruefen" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.107"/>
+  <testcase name="meldungIstHandlungsanweisung" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.002"/>
   <testcase name="staerkepruefung" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.003"/>
   <testcase name="salzWirktZufaellig" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.048"/>
   <testcase name="hashEnthaeltKeinKlartext" classname="de.pinroboter.gemeinsam.PasswortTest" time="0.023"/>

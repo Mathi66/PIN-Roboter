@@ -263,6 +263,49 @@ A3=$(alarmzahl)
 [ "$A3" -lt "$A1" ] && BE=ja || BE=nein
 ergebnis "behobener Zustand schließt den Alarm selbsttätig ($A1 -> $A3)" "$BE"
 
+# ---------------------------------------------------------------- Speicherbudget
+hinweis "FA-PRO-070 — volles Protokoll haelt die Kernfunktion nicht an"
+echo "  Zentrale mit 400 KB Protokollbudget neu starten (normal: 2 GB)"
+docker rm -f pr-zen >/dev/null 2>&1
+docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
+  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
+  -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
+  -e DB_USER=pinroboter -e DB_PASSWORD=test -e PROTOKOLL_BUDGET=400KB \
+  $JRE java -jar /app.jar >/dev/null
+for _ in $(seq 40); do curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1; done
+anmelden
+
+V=$(verifikationen)
+# Karte wiederholt entziehen: erzeugt Verifikationen UND Protokolleintraege
+for i in 1 2 3 4 5 6; do
+  curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+  sleep 11
+done
+N=$(verifikationen)
+[ $((N-V)) -ge 3 ] && KF=ja || KF=nein
+ergebnis "Kernfunktion arbeitet bei knappem Speicher weiter ($((N-V)) Verifikationen)" "$KF"
+
+# Rotation muss gelaufen sein oder der Fuellstand unter Kontrolle sein
+sleep 65   # der Waechter prueft im Minutentakt
+BELEGT=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+         "SELECT pg_total_relation_size('fachprotokoll')")
+[ "$BELEGT" -lt 2000000 ] && RO=ja || RO=nein
+ergebnis "Fuellstand bleibt begrenzt ($((BELEGT/1024)) KB)" "$RO"
+
+SICHER=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+         "SELECT count(*) FROM fachprotokoll WHERE stufe='SICHERHEIT'")
+[ "$SICHER" -gt 0 ] && ST=ja || ST=nein
+ergebnis "sicherheitsrelevante Eintraege ueberleben die Rotation ($SICHER vorhanden)" "$ST"
+
+# Zentrale wieder mit normalem Budget
+docker rm -f pr-zen >/dev/null 2>&1
+docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
+  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
+  -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
+  -e DB_USER=pinroboter -e DB_PASSWORD=test $JRE java -jar /app.jar >/dev/null
+for _ in $(seq 40); do curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1; done
+anmelden
+
 # ---------------------------------------------------------------- Excel-Export
 hinweis "FA-PRO-040 — Excel-Export"
 XLSX=/tmp/pr-export.xlsx

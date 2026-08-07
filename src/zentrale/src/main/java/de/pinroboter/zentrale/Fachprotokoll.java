@@ -20,11 +20,11 @@ import java.util.List;
 public class Fachprotokoll {
 
     private final Datenbank db;
-    private final long hoechstzahl;
+    private final Speicherwaechter waechter;
 
-    public Fachprotokoll(Datenbank db, long hoechstzahl) {
+    public Fachprotokoll(Datenbank db, Speicherwaechter waechter) {
         this.db = db;
-        this.hoechstzahl = hoechstzahl;
+        this.waechter = waechter;
     }
 
     public Ereignis anfuegen(String einrichtung, String geraet, Ereignisart art,
@@ -47,7 +47,6 @@ public class Fachprotokoll {
             p.setString(9, handlung);
             try (ResultSet rs = p.executeQuery()) {
                 rs.next();
-                rotierenFallsNoetig();
                 return new Ereignis(rs.getLong("id"),
                         rs.getTimestamp("zeitpunkt").toInstant(),
                         einrichtung, geraet, art, erfolg, ausloeser, vorgang, text, handlung);
@@ -58,39 +57,6 @@ public class Fachprotokoll {
             System.err.println("Fachprotokoll nicht schreibbar: " + e.getMessage());
             return new Ereignis(-1, Instant.now(), einrichtung, geraet, art,
                     erfolg, ausloeser, vorgang, text, handlung);
-        }
-    }
-
-    /**
-     * Gestaffelte Rotation nach Wichtigkeit (FA-PRO-070): technische Diagnose
-     * zuerst, fachliche Routineereignisse danach, sicherheitsrelevante zuletzt.
-     *
-     * <p>Dies ist der <b>einzige</b> zulässige Löschweg. Der Datenbank-Trigger
-     * lässt Löschungen nur zu, wenn diese Kennung gesetzt ist — eine versehentlich
-     * hinzugefügte Löschanweisung an anderer Stelle scheitert.
-     */
-    private void rotierenFallsNoetig() throws SQLException {
-        long anzahl = anzahl();
-        if (anzahl <= hoechstzahl) return;
-        long zuViel = anzahl - hoechstzahl;
-
-        try (Statement s = db.verbindung().createStatement()) {
-            s.execute("SET pinroboter.rotation = 'an'");
-            try {
-                for (String stufe : new String[]{"TECHNISCH", "ROUTINE", "SICHERHEIT"}) {
-                    if (zuViel <= 0) break;
-                    try (PreparedStatement p = db.verbindung().prepareStatement("""
-                            DELETE FROM fachprotokoll WHERE id IN (
-                              SELECT id FROM fachprotokoll WHERE stufe = ?
-                              ORDER BY zeitpunkt ASC LIMIT ?)""")) {
-                        p.setString(1, stufe);
-                        p.setLong(2, zuViel);
-                        zuViel -= p.executeUpdate();
-                    }
-                }
-            } finally {
-                s.execute("SET pinroboter.rotation = 'aus'");
-            }
         }
     }
 

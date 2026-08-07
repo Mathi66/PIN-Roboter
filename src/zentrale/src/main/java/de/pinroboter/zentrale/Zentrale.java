@@ -30,6 +30,7 @@ public class Zentrale {
     private final Agentenverwaltung agenten;
     private final Gruppenverwaltung gruppen;
     private final Alarmverwaltung alarme;
+    private final Speicherwaechter speicher;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -51,15 +52,19 @@ public class Zentrale {
         }
         // Das Speicherbudget begrenzt den einzigen unbegrenzt wachsenden Anteil
         // (FA-PRO-070). 200.000 Eintraege entsprechen grob 100 MB.
-        long budget = Long.parseLong(env("PROTOKOLL_HOECHSTZAHL", "200000"));
+        // Budget in Bytes, nicht in Zeilen: Eine Zeile mit langer
+        // Fehlerbeschreibung belegt ein Vielfaches einer knappen Statusmeldung.
+        long budget = Speicherwaechter.budgetAusText(
+                env("PROTOKOLL_BUDGET", null), 2L * 1024 * 1024 * 1024);   // 2 GB
 
         Datenbank db = Datenbank.verbinden(url, nutz, kenn, 30);
         new Zentrale(db, budget).starten(port);
     }
 
-    Zentrale(Datenbank db, long protokollHoechstzahl) {
+    Zentrale(Datenbank db, long protokollBudgetBytes) {
         this.db = db;
-        this.protokoll = new Fachprotokoll(db, protokollHoechstzahl);
+        this.speicher = new Speicherwaechter(db, protokollBudgetBytes);
+        this.protokoll = new Fachprotokoll(db, speicher);
         this.benutzer = new Benutzerverwaltung(db);
         this.agenten = new Agentenverwaltung(db);
         this.gruppen = new Gruppenverwaltung(db);
@@ -349,9 +354,23 @@ public class Zentrale {
                 ────────────────────────────────────────────────────────────
                   PIN-Roboter · Zentrale
                   Oberfläche:  http://localhost:%d
-                  Protokoll:   %d Einträge in der Datenbank
+                  Protokoll:   %d Einträge, %s von %s belegt
                 ────────────────────────────────────────────────────────────
-                """.formatted(port, protokoll.anzahl()));
+                """.formatted(port, speicher.zustand().eintraege(),
+                        speicher.zustand().belegtLesbar(), speicher.zustand().budgetLesbar()));
+
+        // FA-PRO-070: Der Füllstand wird regelmäßig geprüft, nicht nur beim
+        // Schreiben. Ein Protokoll, das nachts vollläuft, muss auch nachts
+        // rotieren.
+        Thread.ofVirtual().start(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(60_000);
+                    speicherPruefen();
+                } catch (InterruptedException e) { return; }
+                  catch (Exception ignored) { }
+            }
+        });
     }
 
     @SuppressWarnings("unchecked")
@@ -482,6 +501,43 @@ public class Zentrale {
         }
     }
 
+    /**
+     * Prüft den Füllstand und rotiert bei Bedarf.
+     *
+     * <p><b>Die Kernfunktion wird dabei nie angehalten.</b> Eine Praxis darf
+     * nicht den TI-Zugang verlieren, weil eine Protokolldatei voll ist — der
+     * Zustand wird alarmiert, nicht durchgereicht (ADR-0005).
+     */
+    void speicherPruefen() {
+        var z = speicher.zustand();
+
+        if (z.alarmNoetig()) {
+            alarme.melden("Praxis", null, Alarmverwaltung.Art.SPEICHER_KNAPP,
+                    "Das Protokoll belegt %s von %s (%d %%)."
+                            .formatted(z.belegtLesbar(), z.budgetLesbar(), z.prozent()),
+                    "Ältere Einträge werden automatisch gelöscht. Wenn Sie sie behalten "
+                    + "möchten, exportieren Sie das Protokoll und erhöhen Sie das "
+                    + "Speicherbudget in der Konfiguration.");
+        } else if (z.anteil() < Speicherwaechter.SCHWELLE_ROTATION) {
+            alarme.beheben("Praxis", null, Alarmverwaltung.Art.SPEICHER_KNAPP);
+        }
+
+        if (z.rotationNoetig()) {
+            var e = speicher.rotieren();
+            if (e.rotiert() && e.geloescht() > 0) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.PROTOKOLL_ROTIERT, true,
+                        "Automatik", null,
+                        "%d Einträge gelöscht, Füllstand jetzt %d %%"
+                                .formatted(e.geloescht(), e.danach().prozent()),
+                        e.nachweiskettUnterbrochen()
+                            ? "Es wurden auch sicherheitsrelevante Einträge gelöscht. "
+                              + "Bitte das Speicherbudget erhöhen und künftig regelmäßig "
+                              + "exportieren, damit die Nachweiskette lückenlos bleibt."
+                            : null);
+            }
+        }
+    }
+
     private static String leerAls(String wert, String ersatz) {
         return wert == null || wert.isBlank() ? ersatz : wert;
     }
@@ -593,6 +649,15 @@ public class Zentrale {
                   <a class="kachel fehler" href="/geraete"><div class="zahl">%d</div><div class="bez">Handlungsbedarf</div></a>
                   <a class="kachel unbekannt" href="/geraete"><div class="zahl">%d</div><div class="bez">ohne Automatik (PEviM)</div></a>
                 </div>""".formatted(ok, warn, fehler, ohnePevim));
+
+        var sp = speicher.zustand();
+        if (sp.anteil() >= 0.5) {
+            s.append("""
+                    <div class="hinweis"><strong>Protokollspeicher: %d %% belegt</strong>
+                    %s von %s. Ab 80 %% werden die ältesten Einträge automatisch gelöscht —
+                    technische Diagnose zuerst, sicherheitsrelevante Ereignisse zuletzt.
+                    </div>""".formatted(sp.prozent(), sp.belegtLesbar(), sp.budgetLesbar()));
+        }
 
         var auffaellig = alle.stream()
                 .filter(g -> g.ampel() != Ampel.OK)

@@ -1,5 +1,6 @@
 de/pinroboter/zentrale/Benutzerverwaltung$Rolle.class
 de/pinroboter/zentrale/Gruppenverwaltung$Geraet.class
+de/pinroboter/zentrale/Speicherwaechter.class
 de/pinroboter/zentrale/Geraetezustand.class
 de/pinroboter/zentrale/Datenbank.class
 de/pinroboter/zentrale/Agentenverwaltung.class
@@ -14,6 +15,7 @@ de/pinroboter/zentrale/Zentrale.class
 de/pinroboter/zentrale/Alarmverwaltung.class
 de/pinroboter/zentrale/Fachprotokoll.class
 de/pinroboter/zentrale/Agentenverwaltung$Registrierung.class
+de/pinroboter/zentrale/Speicherwaechter$Ergebnis.class
 de/pinroboter/zentrale/Alarmverwaltung$Alarm.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$TotpEinrichten.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Abgelehnt.class
@@ -24,4 +26,5 @@ de/pinroboter/zentrale/Alarmverwaltung$Art.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Erfolg.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Gesperrt.class
 de/pinroboter/zentrale/Benutzerverwaltung$Benutzer.class
+de/pinroboter/zentrale/Speicherwaechter$Zustand.class
 de/pinroboter/zentrale/Anmeldeseiten.class
