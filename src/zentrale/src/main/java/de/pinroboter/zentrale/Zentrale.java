@@ -321,6 +321,44 @@ public class Zentrale {
                         bestand.konnektoren(), null, false),
                 angemeldeter(c))));
 
+        // FA-GER-030 erlaubt die Uebernahme "einzeln oder als Auswahl".
+        app.post("/bestand/ermittelt/uebernehmen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            var ids = kennungen(c, "fund");
+            long konnektorId;
+            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
+            catch (NumberFormatException e) { konnektorId = -1; }
+
+            int uebernommen = 0;
+            List<String> fehler = new ArrayList<>();
+            for (long id : ids) {
+                var fund = ermittlung.fund(id);
+                if (fund.isEmpty()) { fehler.add("Ein Fund ist nicht mehr vorhanden."); continue; }
+                var e = bestand.uebernehmen(fund.get(), konnektorId, null);
+                if (e.geklappt()) {
+                    ermittlung.alsUebernommenMarkieren(id);
+                    uebernommen++;
+                    var t2 = bestand.terminal(e.id()).orElseThrow();
+                    protokoll.anfuegen(t2.organisation(), t2.terminalId(),
+                            Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
+                            "Kartenterminal \u201e" + t2.bezeichnung() + "\u201c aus der Ermittlung "
+                                    + "\u00fcbernommen (Sammelauswahl)",
+                            "Die Adresse des Ger\u00e4ts ist noch nicht hinterlegt \u2014 ohne sie "
+                            + "ist keine Erreichbarkeitspr\u00fcfung m\u00f6glich.");
+                } else {
+                    fehler.add(e.fehler());
+                }
+            }
+
+            String meldung = ids.isEmpty()
+                    ? "Es war kein Ger\u00e4t ausgew\u00e4hlt."
+                    : "%d von %d Ger\u00e4t(en) \u00fcbernommen.%s".formatted(uebernommen, ids.size(),
+                            fehler.isEmpty() ? "" : " " + String.join(" ", fehler));
+            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
+                    ermittlung.juengstesModell(), bestand.konnektoren(), meldung,
+                    uebernommen < ids.size()), angemeldeter(c)));
+        });
+
         app.post("/bestand/ermittelt/{id}/uebernehmen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
             long id = Long.parseLong(c.pathParam("id"));
@@ -355,6 +393,52 @@ public class Zentrale {
             c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
                     ermittlung.juengstesModell(), bestand.konnektoren(), meldung, !e.geklappt()),
                     angemeldeter(c)));
+        });
+
+        // FA-GER-060: Massenaktionen auf mehrere Geraete.
+        app.post("/bestand/massenaktion", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            var ids = kennungen(c, "geraet");
+            String aktion = Anmeldeseiten.feld(c, "aktion");
+
+            Bestandsverwaltung.Massenergebnis e;
+            String was;
+            switch (aktion) {
+                case "aktivieren"   -> { e = bestand.massenAktivSetzen(ids, true);  was = "aktiviert"; }
+                case "deaktivieren" -> { e = bestand.massenAktivSetzen(ids, false); was = "deaktiviert"; }
+                case "gruppe"       -> {
+                    long gruppeId;
+                    try { gruppeId = Long.parseLong(Anmeldeseiten.feld(c, "gruppeId")); }
+                    catch (NumberFormatException ex) {
+                        c.html(seite("bestand", bestandsSeite(c,
+                                "Bitte eine Gerätegruppe auswählen.", true), angemeldeter(c)));
+                        return;
+                    }
+                    e = bestand.massenGruppeZuweisen(ids, gruppeId);
+                    was = "einer Gruppe zugeordnet";
+                }
+                default -> {
+                    c.html(seite("bestand", bestandsSeite(c,
+                            "Unbekannte Aktion. Bitte die Seite neu laden.", true), angemeldeter(c)));
+                    return;
+                }
+            }
+
+            // Auch eine Massenaktion ist Bestandspflege - sie entscheidet
+            // darueber, welche Geraete ueberwacht werden.
+            if (e.geaendert() > 0) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.TERMINAL_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "%d Kartenterminal(s) %s".formatted(e.geaendert(), was),
+                        e.vollstaendig() ? null : String.join(" ", e.hinweise()));
+            }
+
+            String meldung = e.geaendert() == 0
+                    ? (e.hinweise().isEmpty() ? "Es wurde nichts geändert."
+                                              : String.join(" ", e.hinweise()))
+                    : "%d Kartenterminal(s) %s.%s".formatted(e.geaendert(), was,
+                            e.hinweise().isEmpty() ? "" : " " + String.join(" ", e.hinweise()));
+            c.html(seite("bestand", bestandsSeite(c, meldung, !e.vollstaendig()), angemeldeter(c)));
         });
 
         app.post("/bestand/konnektor", c -> {
@@ -930,26 +1014,64 @@ public class Zentrale {
      * Position in einer langen Geräteliste verloren.
      */
     private String bestandsSeite(Context c, String meldung, boolean istFehler) {
-        String suche = c.queryParam("suche");
-        Long konnektorFilter = null;
-        try {
-            String k = c.queryParam("konnektor");
-            if (k != null && !k.isBlank()) konnektorFilter = Long.parseLong(k);
-        } catch (NumberFormatException ignored) { }
-        int seitenNummer = 1;
-        try {
-            String s = c.queryParam("seite");
-            if (s != null && !s.isBlank()) seitenNummer = Integer.parseInt(s);
-        } catch (NumberFormatException ignored) { }
+        var ansicht = ansichtAus(c);
+        int seitenNummer = zahl(c.queryParam("seite"), 1);
 
         return "<div id=\"bestandsmeldung\" aria-live=\"polite\"></div>"
                 + Bestandsseiten.seite(
                         bestand.konnektoren(),
-                        bestand.terminals(suche, konnektorFilter, false,
-                                seitenNummer, Bestandsseiten.SEITENGROESSE),
-                        bestand.organisationen(),
-                        suche, konnektorFilter, bestand.zugangsdatenMoeglich(),
-                        meldung, istFehler);
+                        bestand.terminals(ansicht.filter(), ansicht.sortierung(),
+                                ansicht.absteigend(), seitenNummer, Bestandsseiten.SEITENGROESSE),
+                        bestand.organisationen(), ansicht,
+                        bestand.zugangsdatenMoeglich(), meldung, istFehler);
+    }
+
+    /**
+     * Liest Filter und Sortierung aus der Anfrage.
+     *
+     * <p>Alle Werte werden geprüft und auf feste Aufzählungen abgebildet — ein
+     * unbekannter Wert führt zur Vorgabe, nicht zu einem Fehler. Der Benutzer
+     * soll eine kaputte Verknüpfung nicht als Absturz erleben.
+     */
+    private Bestandsseiten.Ansicht ansichtAus(Context c) {
+        Long konnektor = null;
+        try {
+            String k = c.queryParam("konnektor");
+            if (k != null && !k.isBlank()) konnektor = Long.parseLong(k);
+        } catch (NumberFormatException ignored) { }
+
+        Boolean aktiv = switch (String.valueOf(c.queryParam("status"))) {
+            case "aktiv"   -> Boolean.TRUE;
+            case "inaktiv" -> Boolean.FALSE;
+            default        -> null;
+        };
+        Boolean erreichbar = switch (String.valueOf(c.queryParam("erreichbar"))) {
+            case "ja"   -> Boolean.TRUE;
+            case "nein" -> Boolean.FALSE;
+            default     -> null;
+        };
+        var filter = new Bestandsverwaltung.Filter(c.queryParam("suche"), konnektor, aktiv,
+                erreichbar, c.queryParam("modell"), c.queryParam("firmware"), null);
+        var sortierung = Bestandsverwaltung.Sortierung.aus(c.queryParam("sortierung"));
+        boolean absteigend = "ab".equals(c.queryParam("richtung"));
+
+        return new Bestandsseiten.Ansicht(filter, sortierung, absteigend,
+                bestand.vorhandeneWerte("modell"), bestand.vorhandeneWerte("firmware"),
+                gruppen.alle("Praxis"));
+    }
+
+    private static int zahl(String s, int vorgabe) {
+        try { return s == null || s.isBlank() ? vorgabe : Integer.parseInt(s); }
+        catch (NumberFormatException e) { return vorgabe; }
+    }
+
+    /** Alle Werte eines Formularfelds als Kennungen — für Mehrfachauswahl. */
+    private static List<Long> kennungen(Context c, String feld) {
+        List<Long> ids = new ArrayList<>();
+        for (String w : c.formParams(feld)) {
+            try { ids.add(Long.parseLong(w.trim())); } catch (NumberFormatException ignored) { }
+        }
+        return ids;
     }
 
     /** Ein nicht angekreuztes Kästchen wird vom Browser gar nicht gesendet. */

@@ -242,3 +242,23 @@ pre.modell {
   white-space:pre-wrap; word-break:break-word;
 }
 .marke.warnung { background:var(--warnung-hg); color:var(--warnung); }
+
+/* Mehrfachauswahl und Massenaktionen (FA-GER-060) */
+th.wahl, td.wahl { width:2.6rem; text-align:center; }
+td.wahl input, th.wahl input { width:1.15rem; height:1.15rem; margin:0; }
+a.sortlink { color:inherit; text-decoration:none; display:inline-block; white-space:nowrap; }
+a.sortlink:hover { color:var(--akzent); text-decoration:underline; }
+th[aria-sort="ascending"] a.sortlink, th[aria-sort="descending"] a.sortlink {
+  color:var(--akzent); font-weight:700;
+}
+.massenleiste {
+  display:flex; gap:.9rem; align-items:flex-end; flex-wrap:wrap;
+  padding:.9rem 1.2rem; border-top:1px solid var(--rand); background:var(--unbekannt-hg);
+}
+.massenleiste .hilfe { flex:1 1 100%; margin:0; }
+.massenleiste .feldgruppe { flex:0 1 18rem; }
+.massenleiste select {
+  padding:.42rem .7rem; border:1px solid var(--rand); border-radius:7px;
+  background:var(--karte); color:var(--text); font:inherit; font-size:.9rem; width:100%;
+}
+.massenleiste output { font-weight:700; color:var(--akzent); }

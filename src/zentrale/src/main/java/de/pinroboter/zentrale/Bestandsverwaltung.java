@@ -242,30 +242,93 @@ public class Bestandsverwaltung {
      * @param konnektorId  Einschränkung auf einen Konnektor; {@code null} = alle
      * @param nurAktive  nur aktive Geräte
      */
-    public Seite<Terminal> terminals(String suche, Long konnektorId, boolean nurAktive,
+    /**
+     * Wonach die Geräteliste sortiert werden darf (FA-GER-060).
+     *
+     * <p><b>Weißliste, kein Durchreichen.</b> Ein Sortierfeld aus der URL geht
+     * unmittelbar in die Abfrage ein und lässt sich nicht als Parameter binden —
+     * ohne feste Liste wäre das eine SQL-Einschleusung. Deshalb kommt hier
+     * niemals ein Wert aus der Anfrage in die Abfrage, sondern immer nur ein
+     * Ausdruck aus dieser Aufzählung.
+     */
+    public enum Sortierung {
+        BEZEICHNUNG("Bezeichnung",   "lower(t.bezeichnung)"),
+        KENNUNG("Kennung",           "lower(t.terminal_id)"),
+        KONNEKTOR("Konnektor",       "lower(k.bezeichnung)"),
+        STANDORT("Standort",         "lower(coalesce(t.standortangabe,''))"),
+        MODELL("Modell",             "lower(coalesce(t.modell,''))"),
+        FIRMWARE("Firmware",         "coalesce(t.firmware,'')"),
+        ERREICHBARKEIT("Erreichbarkeit", "t.zuletzt_erreichbar NULLS LAST"),
+        SMCB("SMC-B",                "t.hat_smcb DESC");
+
+        public final String anzeige;
+        private final String ausdruck;
+        Sortierung(String a, String s) { anzeige = a; ausdruck = s; }
+
+        static Sortierung aus(String name) {
+            if (name == null) return BEZEICHNUNG;
+            try { return valueOf(name.toUpperCase()); }
+            catch (IllegalArgumentException e) { return BEZEICHNUNG; }
+        }
+    }
+
+    /** Filter der Geräteliste. Alle Felder dürfen {@code null} sein — dann wird nicht gefiltert. */
+    public record Filter(String suche, Long konnektorId, Boolean aktiv, Boolean erreichbar,
+                         String modell, String firmware, Boolean hatSmcb) {
+        public static Filter leer() { return new Filter(null, null, null, null, null, null, null); }
+        public boolean istGesetzt() {
+            return (suche != null && !suche.isBlank()) || konnektorId != null || aktiv != null
+                    || erreichbar != null || (modell != null && !modell.isBlank())
+                    || (firmware != null && !firmware.isBlank()) || hatSmcb != null;
+        }
+    }
+
+    /**
+     * Geräteliste mit Filter, Sortierung und Seitenblättern (FA-GER-060).
+     *
+     * <p>Alles serverseitig. Bei 5.000 Geräten ist jede Variante, die erst lädt
+     * und dann im Browser sortiert, unbrauchbar.
+     */
+    public Seite<Terminal> terminals(Filter filter, Sortierung sortierung, boolean absteigend,
                                      int seitenNummer, int seitengroesse) {
         int nr = Math.max(1, seitenNummer);
-        // Nach oben begrenzt, damit eine manipulierte Anfrage nicht 5.000
-        // Datensaetze auf einmal zieht. Nach unten nur gegen 0 und negative
-        // Werte - die Seitengroesse gibt die Oberflaeche vor, nicht der Aufrufer.
         int gr = Math.min(200, Math.max(1, seitengroesse));
         StringBuilder wo = new StringBuilder(" WHERE 1=1");
         List<Object> werte = new ArrayList<>();
-        if (suche != null && !suche.isBlank()) {
+
+        if (filter.suche() != null && !filter.suche().isBlank()) {
             wo.append(" AND (lower(t.bezeichnung) LIKE ? OR lower(t.terminal_id) LIKE ?"
                     + " OR lower(coalesce(t.standortangabe,'')) LIKE ?)");
-            String m = "%" + suche.trim().toLowerCase() + "%";
+            String m = "%" + filter.suche().trim().toLowerCase() + "%";
             werte.add(m); werte.add(m); werte.add(m);
         }
-        if (konnektorId != null) { wo.append(" AND t.konnektor_id = ?"); werte.add(konnektorId); }
-        if (nurAktive) wo.append(" AND t.aktiv");
+        if (filter.konnektorId() != null) { wo.append(" AND t.konnektor_id = ?"); werte.add(filter.konnektorId()); }
+        if (filter.aktiv() != null)       { wo.append(" AND t.aktiv = ?");        werte.add(filter.aktiv()); }
+        if (filter.hatSmcb() != null)     { wo.append(" AND t.hat_smcb = ?");     werte.add(filter.hatSmcb()); }
+        if (filter.erreichbar() != null) {
+            // Ein nie geprueftes Geraet ist nicht "nicht erreichbar" - es ist
+            // unbekannt. Der Filter "nicht erreichbar" darf es nicht einsammeln,
+            // sonst sucht der Betreiber Fehler, wo keine sind.
+            wo.append(" AND t.zuletzt_erreichbar = ?"); werte.add(filter.erreichbar());
+        }
+        if (filter.modell() != null && !filter.modell().isBlank()) {
+            wo.append(" AND t.modell = ?"); werte.add(filter.modell().trim());
+        }
+        if (filter.firmware() != null && !filter.firmware().isBlank()) {
+            wo.append(" AND t.firmware = ?"); werte.add(filter.firmware().trim());
+        }
 
         int gesamt = 0;
         try (PreparedStatement p = db.verbindung().prepareStatement(
-                "SELECT count(*) FROM kartenterminal t" + wo)) {
+                "SELECT count(*) FROM kartenterminal t JOIN konnektor k ON k.id = t.konnektor_id" + wo)) {
             fuellen(p, werte);
             try (ResultSet rs = p.executeQuery()) { if (rs.next()) gesamt = rs.getInt(1); }
         } catch (SQLException ignored) { }
+
+        Sortierung s = sortierung == null ? Sortierung.BEZEICHNUNG : sortierung;
+        // Zweites Sortierfeld ist Pflicht: Ohne eindeutige Reihenfolge wandern
+        // Zeilen zwischen den Seiten, sobald zwei Geraete denselben Wert haben.
+        String ordnung = s.ausdruck + (absteigend ? " DESC" : " ASC") + ", t.id ASC";
 
         List<Terminal> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
@@ -275,7 +338,7 @@ public class Bestandsverwaltung {
                 JOIN konnektor k    ON k.id = t.konnektor_id
                 JOIN organisation o ON o.id = t.organisation_id
                 LEFT JOIN geraetegruppe g ON g.id = t.gruppe_id
-                """ + wo + " ORDER BY lower(o.bezeichnung), lower(t.bezeichnung) LIMIT ? OFFSET ?")) {
+                """ + wo + " ORDER BY " + ordnung + " LIMIT ? OFFSET ?")) {
             int i = fuellen(p, werte);
             p.setInt(i++, gr);
             p.setInt(i, (nr - 1) * gr);
@@ -284,6 +347,32 @@ public class Bestandsverwaltung {
             }
         } catch (SQLException ignored) { }
         return new Seite<>(liste, nr, gr, gesamt);
+    }
+
+    /** Werte, die als Filterauswahl angeboten werden — nur was tatsächlich vorkommt. */
+    public List<String> vorhandeneWerte(String spalte) {
+        // Auch hier eine Weissliste: Der Spaltenname geht direkt in die Abfrage.
+        String sicher = switch (spalte) {
+            case "modell", "firmware" -> spalte;
+            default -> null;
+        };
+        if (sicher == null) return List.of();
+        List<String> werte = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT DISTINCT " + sicher + " FROM kartenterminal WHERE " + sicher
+                + " IS NOT NULL AND " + sicher + " <> '' ORDER BY 1");
+             ResultSet rs = p.executeQuery()) {
+            while (rs.next()) werte.add(rs.getString(1));
+        } catch (SQLException ignored) { }
+        return werte;
+    }
+
+    /** Alte Aufrufform, solange nicht alle Stellen umgestellt sind. */
+    public Seite<Terminal> terminals(String suche, Long konnektorId, boolean nurAktive,
+                                     int seitenNummer, int seitengroesse) {
+        return terminals(new Filter(suche, konnektorId, nurAktive ? Boolean.TRUE : null,
+                        null, null, null, null),
+                Sortierung.BEZEICHNUNG, false, seitenNummer, seitengroesse);
     }
 
     public Optional<Terminal> terminal(long id) {
@@ -402,6 +491,100 @@ public class Bestandsverwaltung {
             p.executeUpdate();
             return Ergebnis.erfolg(id);
         } catch (SQLException e) { return Ergebnis.fehler(klartext(e)); }
+    }
+
+    // ----------------------------------------------------------- Massenaktionen
+
+    /**
+     * Ergebnis einer Massenaktion.
+     *
+     * <p>Getrennt gezählt, weil ein Betreiber wissen muss, ob wirklich alles
+     * durchgelaufen ist. „Aktion ausgeführt" bei 40 von 50 Geräten wäre eine
+     * Falschmeldung — und bei 5.000 Geräten fällt so etwas niemandem auf,
+     * wenn man es nicht ausdrücklich sagt.
+     */
+    public record Massenergebnis(int geaendert, int uebersprungen, List<String> hinweise) {
+        public boolean vollstaendig() { return uebersprungen == 0; }
+    }
+
+    /** Aktiviert oder deaktiviert mehrere Geräte auf einmal (FA-GER-060). */
+    public Massenergebnis massenAktivSetzen(List<Long> ids, boolean aktiv) {
+        if (ids == null || ids.isEmpty()) {
+            return new Massenergebnis(0, 0, List.of("Es war kein Gerät ausgewählt."));
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE kartenterminal SET aktiv = ? WHERE id = ANY (?)")) {
+            p.setBoolean(1, aktiv);
+            p.setArray(2, kennungsArray(ids));
+            int n = p.executeUpdate();
+            return new Massenergebnis(n, ids.size() - n, n == ids.size() ? List.of()
+                    : List.of("%d von %d Geräten gibt es nicht mehr. Bitte die Liste neu laden."
+                            .formatted(ids.size() - n, ids.size())));
+        } catch (SQLException e) {
+            return new Massenergebnis(0, ids.size(), List.of("Die Änderung ist fehlgeschlagen: "
+                    + klartext(e)));
+        }
+    }
+
+    /**
+     * Ordnet mehrere Geräte einer Gerätegruppe zu (FA-GER-060, FA-GER-050).
+     *
+     * <p>Eine Gruppe liegt innerhalb genau einer Einrichtung (FA-GER-050).
+     * Geräte einer anderen Einrichtung werden deshalb <b>übersprungen und
+     * benannt</b>, nicht stillschweigend verschoben — sonst wäre die
+     * Mandantentrennung über eine Massenaktion aushebelbar.
+     */
+    public Massenergebnis massenGruppeZuweisen(List<Long> ids, long gruppeId) {
+        if (ids == null || ids.isEmpty()) {
+            return new Massenergebnis(0, 0, List.of("Es war kein Gerät ausgewählt."));
+        }
+        String einrichtung;
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT einrichtung FROM geraetegruppe WHERE id = ?")) {
+            p.setLong(1, gruppeId);
+            try (ResultSet rs = p.executeQuery()) {
+                if (!rs.next()) {
+                    return new Massenergebnis(0, ids.size(),
+                            List.of("Diese Gerätegruppe gibt es nicht mehr."));
+                }
+                einrichtung = rs.getString(1);
+            }
+        } catch (SQLException e) {
+            return new Massenergebnis(0, ids.size(), List.of(klartext(e)));
+        }
+
+        List<String> fremde = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT t.bezeichnung FROM kartenterminal t
+                JOIN organisation o ON o.id = t.organisation_id
+                WHERE t.id = ANY (?) AND o.bezeichnung <> ?""")) {
+            p.setArray(1, kennungsArray(ids));
+            p.setString(2, einrichtung);
+            try (ResultSet rs = p.executeQuery()) { while (rs.next()) fremde.add(rs.getString(1)); }
+        } catch (SQLException ignored) { }
+
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                UPDATE kartenterminal t SET gruppe_id = ?
+                FROM organisation o
+                WHERE o.id = t.organisation_id AND t.id = ANY (?) AND o.bezeichnung = ?""")) {
+            p.setLong(1, gruppeId);
+            p.setArray(2, kennungsArray(ids));
+            p.setString(3, einrichtung);
+            int n = p.executeUpdate();
+
+            List<String> hinweise = new ArrayList<>();
+            if (!fremde.isEmpty()) {
+                hinweise.add(("%d Gerät(e) gehören zu einer anderen Einrichtung als die Gruppe "
+                        + "und wurden übersprungen: %s. Eine Gruppe liegt innerhalb genau einer "
+                        + "Einrichtung.").formatted(fremde.size(),
+                        String.join(", ", fremde.subList(0, Math.min(5, fremde.size()))))
+                        + (fremde.size() > 5 ? " …" : ""));
+            }
+            return new Massenergebnis(n, ids.size() - n, hinweise);
+        } catch (SQLException e) {
+            return new Massenergebnis(0, ids.size(), List.of("Die Zuordnung ist fehlgeschlagen: "
+                    + klartext(e)));
+        }
     }
 
     /** Einziger Weg zum Klartextpasswort eines Terminal-Administrationszugangs. */
@@ -655,12 +838,35 @@ public class Bestandsverwaltung {
                 .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
     }
 
+    /**
+     * Setzt die Filterwerte typrichtig.
+     *
+     * <p>Die frühere Fassung machte aus allem außer {@code Long} eine
+     * Zeichenkette. Ein {@code Boolean} wurde damit zu {@code "true"} und
+     * verglich sich gegen eine {@code boolean}-Spalte ins Leere — der Filter
+     * lieferte lautlos null Treffer statt eines Fehlers. Solche Fehler sind die
+     * unangenehmsten: Die Oberfläche sagt „keine Geräte", und niemand merkt,
+     * dass die Frage falsch gestellt war.
+     */
     private static int fuellen(PreparedStatement p, List<Object> werte) throws SQLException {
         int i = 1;
         for (Object w : werte) {
-            if (w instanceof Long l) p.setLong(i++, l); else p.setString(i++, String.valueOf(w));
+            if (w instanceof Long l)          p.setLong(i++, l);
+            else if (w instanceof Integer n)  p.setInt(i++, n);
+            else if (w instanceof Boolean b)  p.setBoolean(i++, b);
+            else                              p.setString(i++, String.valueOf(w));
         }
         return i;
+    }
+
+    /**
+     * Baut ein Datenbank-Array aus Kennungen.
+     *
+     * <p>{@code List.toArray()} liefert {@code Object[]}; der PostgreSQL-Treiber
+     * braucht den passenden Typ, sonst scheitert die Umsetzung zur Laufzeit.
+     */
+    private java.sql.Array kennungsArray(List<Long> ids) throws SQLException {
+        return db.verbindung().createArrayOf("bigint", ids.toArray(new Long[0]));
     }
 
     private static long ms(long startNanos) { return (System.nanoTime() - startNanos) / 1_000_000; }

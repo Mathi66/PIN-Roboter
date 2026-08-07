@@ -26,10 +26,18 @@ final class Bestandsseiten {
 
     // ------------------------------------------------------------- Gesamtseite
 
+    /**
+     * Zustand der Geräteliste — Filter, Sortierung und Auswahllisten in einem
+     * Bündel, damit jede Verknüpfung ihn vollständig weiterreichen kann. Ohne
+     * das verliert ein Seitenwechsel den Filter, und der Benutzer wundert sich.
+     */
+    record Ansicht(Bestandsverwaltung.Filter filter, Bestandsverwaltung.Sortierung sortierung,
+                   boolean absteigend, List<String> modelle, List<String> firmwareStaende,
+                   List<Gruppenverwaltung.Gruppe> gruppen) {}
+
     static String seite(List<Bestandsverwaltung.Konnektor> konnektoren,
                         Bestandsverwaltung.Seite<Bestandsverwaltung.Terminal> terminals,
-                        List<Organisationsauswahl> organisationen,
-                        String suche, Long filterKonnektor,
+                        List<Organisationsauswahl> organisationen, Ansicht ansicht,
                         boolean zugangsdatenMoeglich, String meldung, boolean meldungIstFehler) {
         StringBuilder s = new StringBuilder("""
                 <h2>Bestand</h2>
@@ -50,7 +58,7 @@ final class Bestandsseiten {
                   <a class="knopf" href="/bestand/ermittelt">Ermittelte Geräte des Konnektors ansehen</a>
                 </p>""");
         s.append(konnektorTafel(konnektoren, organisationen));
-        s.append(terminalTafel(terminals, konnektoren, suche, filterKonnektor));
+        s.append(terminalTafel(terminals, konnektoren, ansicht));
         return s.toString();
     }
 
@@ -176,7 +184,10 @@ final class Bestandsseiten {
 
     private static String terminalTafel(Bestandsverwaltung.Seite<Bestandsverwaltung.Terminal> seite,
                                         List<Bestandsverwaltung.Konnektor> konnektoren,
-                                        String suche, Long filterKonnektor) {
+                                        Ansicht a) {
+        var f = a.filter();
+        String suche = f.suche();
+        Long filterKonnektor = f.konnektorId();
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\" id=\"terminals\"><h3>Kartenterminals <span class=\"zaehler\">")
          .append(seite.gesamt()).append("</span></h3>");
@@ -196,11 +207,49 @@ final class Bestandsseiten {
                       <option value="">alle Konnektoren</option>%s
                     </select>
                   </div>
-                  <button class="knopf" type="submit">Suchen</button>
+                  <div class="feldgruppe">
+                    <label for="t-status">Status</label>
+                    <select id="t-status" name="status">
+                      <option value="">alle</option>
+                      <option value="aktiv"%s>aktiv</option>
+                      <option value="inaktiv"%s>deaktiviert</option>
+                    </select>
+                  </div>
+                  <div class="feldgruppe">
+                    <label for="t-err">Erreichbarkeit</label>
+                    <select id="t-err" name="erreichbar">
+                      <option value="">alle</option>
+                      <option value="ja"%s>erreichbar</option>
+                      <option value="nein"%s>nicht erreichbar</option>
+                    </select>
+                  </div>
+                  <div class="feldgruppe">
+                    <label for="t-modell">Modell</label>
+                    <select id="t-modell" name="modell">
+                      <option value="">alle Modelle</option>%s
+                    </select>
+                  </div>
+                  <div class="feldgruppe">
+                    <label for="t-fw">Firmware</label>
+                    <select id="t-fw" name="firmware">
+                      <option value="">alle Stände</option>%s
+                    </select>
+                  </div>
+                  <input type="hidden" name="sortierung" value="%s">
+                  <input type="hidden" name="richtung" value="%s">
+                  <button class="knopf" type="submit">Filtern</button>
                   <a class="knopf" href="/bestand">Zurücksetzen</a>
                 </form>"""
                 .formatted(esc(suche == null ? "" : suche),
-                        konnektorOptionen(konnektoren, filterKonnektor)));
+                        konnektorOptionen(konnektoren, filterKonnektor),
+                        Boolean.TRUE.equals(f.aktiv()) ? " selected" : "",
+                        Boolean.FALSE.equals(f.aktiv()) ? " selected" : "",
+                        Boolean.TRUE.equals(f.erreichbar()) ? " selected" : "",
+                        Boolean.FALSE.equals(f.erreichbar()) ? " selected" : "",
+                        werteOptionen(a.modelle(), f.modell()),
+                        werteOptionen(a.firmwareStaende(), f.firmware()),
+                        a.sortierung().name().toLowerCase(),
+                        a.absteigend() ? "ab" : "auf"));
 
         if (seite.eintraege().isEmpty()) {
             s.append("<p class=\"leer\">")
@@ -210,18 +259,30 @@ final class Bestandsseiten {
              .append("</p>");
         } else {
             s.append("""
+                    <form method="post" action="/bestand/massenaktion" id="massenform"
+                          onsubmit="return massenPruefung(this)">
                     <div class="rollbar"><table>
                     <caption class="nurLeser">Erfasste Kartenterminals</caption>
                     <thead><tr>
-                      <th scope="col">Bezeichnung</th><th scope="col">Kennung</th>
-                      <th scope="col">Konnektor</th><th scope="col">Standort</th>
-                      <th scope="col">Modell / Firmware</th><th scope="col">SMC-B</th>
-                      <th scope="col">Zugang</th><th scope="col">Erreichbarkeit</th>
+                      <th scope="col" class="wahl"><span class="nurLeser">Auswahl</span></th>
+                      %s%s%s%s%s
+                      <th scope="col">SMC-B</th>
+                      <th scope="col">Zugang</th>
+                      %s
                       <th scope="col">Aktionen</th>
-                    </tr></thead><tbody>""");
+                    </tr></thead><tbody>"""
+                    .formatted(
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.BEZEICHNUNG),
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.KENNUNG),
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.KONNEKTOR),
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.STANDORT),
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.MODELL),
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.ERREICHBARKEIT)));
             for (var t : seite.eintraege()) {
                 s.append("""
                         <tr%s>
+                          <td class="wahl"><input type="checkbox" name="geraet" value="%d"
+                            form="massenform" aria-label="%s auswählen"></td>
                           <td><a href="/bestand/terminal/%d">%s</a>%s</td>
                           <td><code>%s</code></td>
                           <td>%s</td>
@@ -241,6 +302,7 @@ final class Bestandsseiten {
                         </tr>"""
                         .formatted(t.aktiv() ? "" : " class=\"stillgelegt\"",
                                 t.id(), esc(t.bezeichnung()),
+                                t.id(), esc(t.bezeichnung()),
                                 t.aktiv() ? "" : " <span class=\"marke\">deaktiviert</span>",
                                 esc(t.terminalId()), esc(t.konnektor()), esc(nz(t.standortangabe())),
                                 esc(nz(t.modell())),
@@ -251,7 +313,9 @@ final class Bestandsseiten {
                                 t.id(), t.id(), esc(t.bezeichnung())));
             }
             s.append("</tbody></table></div>");
-            s.append(blaetterleiste(seite, suche, filterKonnektor));
+            s.append(massenleiste(a));
+            s.append("</form>");
+            s.append(blaetterleiste(seite, a));
         }
 
         s.append("""
@@ -364,6 +428,7 @@ final class Bestandsseiten {
                 <div class="rollbar"><table>
                 <caption class="nurLeser">Beim Konnektor ermittelte Kartenterminals</caption>
                 <thead><tr>
+                  <th scope="col" class="wahl"><span class="nurLeser">Auswahl</span></th>
                   <th scope="col">Kennung</th><th scope="col">Name</th>
                   <th scope="col">Modell / Firmware</th><th scope="col">SMC-B</th>
                   <th scope="col">PEviM</th><th scope="col">Lage</th>
@@ -373,6 +438,7 @@ final class Bestandsseiten {
         for (var f : funde) {
             s.append("""
                     <tr>
+                      <td class="wahl">%s</td>
                       <td><code>%s</code></td><td>%s</td>
                       <td class="klein">%s%s</td>
                       <td>%s</td><td>%s</td>
@@ -380,7 +446,13 @@ final class Bestandsseiten {
                       <td class="klein">%s</td>
                       <td class="aktionen">%s</td>
                     </tr>"""
-                    .formatted(esc(f.terminalId()), esc(nz(f.name())),
+                    .formatted(
+                            f.lage() == Ermittlung.Lage.NEU
+                                    ? ("<input type=\"checkbox\" name=\"fund\" value=\"" + f.id()
+                                       + "\" form=\"sammelform\" aria-label=\"" + esc(f.terminalId())
+                                       + " auswählen\">")
+                                    : "",
+                            esc(f.terminalId()), esc(nz(f.name())),
                             esc(nz(f.modell())),
                             f.firmware() == null ? "" : " / " + esc(f.firmware()),
                             f.hatSmcb() ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>vorhanden</span>"
@@ -388,7 +460,53 @@ final class Bestandsseiten {
                             pevimMarke(f), lageMarke(f), abweichungsliste(f),
                             esc(nz(f.gesehen())), uebernahmeKnopf(f, konnektoren)));
         }
-        s.append("</tbody></table></div></div>");
+        s.append("</tbody></table></div>");
+        if (neu > 0 && !konnektoren.isEmpty()) {
+            // Sammeluebernahme: FA-GER-030 erlaubt "einzeln oder als Auswahl".
+            // Auch hier gilt die Grundregel - erst bestaetigen, dann uebernehmen.
+            StringBuilder kOpt = new StringBuilder();
+            for (var k : konnektoren) {
+                kOpt.append("<option value=\"").append(k.id()).append("\">")
+                    .append(esc(k.bezeichnung())).append(" — ").append(esc(k.organisation()))
+                    .append("</option>");
+            }
+            s.append("""
+                    <form method="post" action="/bestand/ermittelt/uebernehmen" id="sammelform"
+                          class="massenleiste"
+                          onsubmit="return sammelPruefung()">
+                      <p class="hilfe">Ausgewählte Geräte:
+                         <output id="s-zahl" for="sammelform">0</output> von %d neu erkannten.</p>
+                      <div class="feldgruppe">
+                        <label for="s-konnektor">Konnektor für alle</label>
+                        <select id="s-konnektor" name="konnektorId">%s</select>
+                      </div>
+                      <button class="knopf haupt" type="submit">Auswahl übernehmen</button>
+                      <p class="hilfe">Die Adressen der Geräte bleiben dabei leer und sind
+                         danach je Gerät nachzutragen — der Konnektor liefert sie nicht mit.</p>
+                    </form>
+                    <script>
+                      (function () {
+                        function zaehlen() {
+                          var n = document.querySelectorAll('input[name=fund]:checked').length;
+                          var o = document.getElementById('s-zahl');
+                          if (o) o.textContent = n;
+                        }
+                        document.addEventListener('change', function (e) {
+                          if (e.target && e.target.name === 'fund') zaehlen();
+                        });
+                        zaehlen();
+                      })();
+                      function sammelPruefung() {
+                        var n = document.querySelectorAll('input[name=fund]:checked').length;
+                        if (n === 0) {
+                          alert('Bitte zuerst mindestens ein Gerät auswählen.');
+                          return false;
+                        }
+                        return confirm(n + ' Gerät(e) in den Bestand übernehmen?');
+                      }
+                    </script>""".formatted(neu, kOpt));
+        }
+        s.append("</div>");
         return s.append(modellTafel(modell)).toString();
     }
 
@@ -628,10 +746,116 @@ final class Bestandsseiten {
                 e.erreichbar() ? "gut" : "warnend");
     }
 
-    private static String blaetterleiste(Bestandsverwaltung.Seite<?> seite, String suche, Long konnektor) {
+    /**
+     * Baut die Abfragezeichenfolge aus dem gesamten Ansichtszustand.
+     *
+     * <p>Jeder Link muss Filter <b>und</b> Sortierung mitführen. Fehlt auch nur
+     * eines, springt die Liste beim Blättern auf die Vorgabe zurück — bei 5.000
+     * Geräten der sichere Weg, jemanden zu verlieren.
+     */
+    private static String zustand(Ansicht a) {
+        var f = a.filter();
+        StringBuilder q = new StringBuilder();
+        if (f.suche() != null && !f.suche().isBlank()) q.append("suche=").append(url(f.suche())).append('&');
+        if (f.konnektorId() != null) q.append("konnektor=").append(f.konnektorId()).append('&');
+        if (f.aktiv() != null)       q.append("status=").append(f.aktiv() ? "aktiv" : "inaktiv").append('&');
+        if (f.erreichbar() != null)  q.append("erreichbar=").append(f.erreichbar() ? "ja" : "nein").append('&');
+        if (f.modell() != null && !f.modell().isBlank())     q.append("modell=").append(url(f.modell())).append('&');
+        if (f.firmware() != null && !f.firmware().isBlank()) q.append("firmware=").append(url(f.firmware())).append('&');
+        q.append("sortierung=").append(a.sortierung().name().toLowerCase()).append('&');
+        q.append("richtung=").append(a.absteigend() ? "ab" : "auf").append('&');
+        return q.toString();
+    }
+
+    /** Spaltenkopf, der beim Anklicken die Sortierung umschaltet. */
+    private static String spaltenkopf(Ansicht a, Bestandsverwaltung.Sortierung nach) {
+        boolean aktiv = a.sortierung() == nach;
+        // Ein erneuter Klick auf dieselbe Spalte dreht die Richtung um.
+        boolean neuAbsteigend = aktiv && !a.absteigend();
+        var b = new Ansicht(a.filter(), nach, neuAbsteigend, a.modelle(), a.firmwareStaende(), a.gruppen());
+        String pfeil = !aktiv ? "" : (a.absteigend() ? " ▾" : " ▴");
+        // aria-sort teilt Screenreadern mit, wonach gerade sortiert ist (WCAG).
+        String ariaSort = !aktiv ? "none" : (a.absteigend() ? "descending" : "ascending");
+        return """
+                <th scope="col" aria-sort="%s"><a class="sortlink" href="/bestand?%s#terminals"
+                   >%s%s</a></th>"""
+                .formatted(ariaSort, zustand(b), esc(nach.anzeige), pfeil);
+    }
+
+    /**
+     * Massenaktionen unter der Liste (FA-GER-060).
+     *
+     * <p>Bewusst <b>unter</b> der Tabelle: Erst auswählen, dann handeln. Eine
+     * Aktionsleiste über einer 25-zeiligen Liste verleitet zum Klicken, bevor
+     * die Auswahl steht.
+     */
+    private static String massenleiste(Ansicht a) {
+        StringBuilder gruppen = new StringBuilder();
+        for (var g : a.gruppen()) {
+            gruppen.append("<option value=\"").append(g.id()).append("\">")
+                   .append(esc(g.bezeichnung())).append(" (").append(esc(g.einrichtung()))
+                   .append(")</option>");
+        }
+        String gruppenBlock = a.gruppen().isEmpty() ? "" : """
+                  <div class="feldgruppe">
+                    <label for="m-gruppe">Gerätegruppe</label>
+                    <select id="m-gruppe" name="gruppeId">%s</select>
+                  </div>
+                  <button class="knopf" type="submit" name="aktion" value="gruppe">Gruppe zuweisen</button>
+                """.formatted(gruppen);
+
+        return """
+                <div class="massenleiste">
+                  <p class="hilfe" id="m-hinweis">Ausgewählte Geräte:
+                     <output id="m-zahl" for="massenform">0</output>.
+                     Aktionen wirken auf alle ausgewählten Geräte dieser Seite.</p>
+                  %s
+                  <button class="knopf" type="submit" name="aktion" value="aktivieren">Aktivieren</button>
+                  <button class="knopf warnend" type="submit" name="aktion" value="deaktivieren"
+                          >Deaktivieren</button>
+                  <input type="hidden" name="zurueck" value="%s">
+                </div>
+                <script>
+                  // Zaehlt die Auswahl mit und verhindert eine Aktion ohne Auswahl.
+                  // Ohne diese Rueckmeldung klickt man auf "Deaktivieren" und
+                  // weiss nicht, ob gerade 3 oder 30 Geraete gemeint sind.
+                  (function () {
+                    var f = document.getElementById('massenform');
+                    if (!f) return;
+                    function zaehlen() {
+                      var n = document.querySelectorAll('input[name=geraet]:checked').length;
+                      var o = document.getElementById('m-zahl');
+                      if (o) o.textContent = n;
+                    }
+                    document.addEventListener('change', function (e) {
+                      if (e.target && e.target.name === 'geraet') zaehlen();
+                    });
+                    zaehlen();
+                  })();
+                  function massenPruefung(f) {
+                    var n = document.querySelectorAll('input[name=geraet]:checked').length;
+                    if (n === 0) {
+                      alert('Bitte zuerst mindestens ein Kartenterminal auswählen.');
+                      return false;
+                    }
+                    return confirm('Aktion auf ' + n + ' ausgewählte(s) Kartenterminal(s) anwenden?');
+                  }
+                </script>""".formatted(gruppenBlock, esc(zustand(a)));
+    }
+
+    private static String werteOptionen(List<String> werte, String gewaehlt) {
+        StringBuilder s = new StringBuilder();
+        for (String w : werte) {
+            s.append("<option value=\"").append(esc(w)).append('"')
+             .append(w.equals(gewaehlt) ? " selected" : "").append('>')
+             .append(esc(w)).append("</option>");
+        }
+        return s.toString();
+    }
+
+    private static String blaetterleiste(Bestandsverwaltung.Seite<?> seite, Ansicht a) {
         if (seite.seitenZahl() <= 1) return "";
-        String basis = "/bestand?" + (suche == null || suche.isBlank() ? "" : "suche=" + url(suche) + "&")
-                + (konnektor == null ? "" : "konnektor=" + konnektor + "&");
+        String basis = "/bestand?" + zustand(a);
         return """
                 <nav class="blaettern" aria-label="Seiten der Geräteliste">
                   %s

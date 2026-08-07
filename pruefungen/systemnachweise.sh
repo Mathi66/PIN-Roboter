@@ -486,7 +486,12 @@ ergebnis "abgelehnte Registrierungen erscheinen in der Protokollansicht" "$PA"
 hinweis "Demodatensatz — MVZ-Verbund (Block C)"
 # Der Demodatensatz ist Werkzeug, nicht Beiwerk: An ihm wird die Oberflaeche
 # bei realistischen Stueckzahlen geprueft, bevor echte Bestandsdaten da sind.
+# Fuer Zahlen und Kennungen: entfernt alle Leerzeichen.
 sql() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d ' \n'; }
+# Fuer Textwerte: entfernt NUR den Zeilenumbruch. Ein Modellname wie
+# "CHERRY ST-1506" verliert sonst sein Leerzeichen - genau daran ist der
+# Modellfilter-Nachweis einmal gescheitert, ohne dass am Produkt etwas fehlte.
+sqltext() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d '\r\n'; }
 
 curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' -X POST \
   http://localhost:8090/verwaltung/demodaten/anlegen | grep -qE '^(200|302)$' && DA=ja || DA=nein
@@ -715,6 +720,81 @@ ergebnis "Ermittlung und Uebernahme sind protokolliert ($IST Eintraege)" "$EP"
 
 curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/pevim/true >/dev/null
 rm -f /tmp/pr-erm.html /tmp/pr-erm2.html
+
+hinweis "FA-GER-060 — Sortierung, Filter und Massenaktionen"
+curl -s -b "$KEKSE" "http://localhost:8090/bestand" > /tmp/pr-best.html
+[ "$(grep -c 'class="sortlink"' /tmp/pr-best.html)" -ge 5 ] && SO=ja || SO=nein
+ergebnis "die Geraeteliste hat sortierbare Spalten" "$SO"
+
+curl -s -b "$KEKSE" "http://localhost:8090/bestand?sortierung=modell&richtung=ab" \
+  | grep -q 'aria-sort="descending"' && SR=ja || SR=nein
+ergebnis "die Sortierrichtung ist in der Kopfzeile ausgezeichnet (Screenreader)" "$SR"
+
+# Der Sortierwert kommt aus der URL und geht in die Abfrage ein. Ohne
+# Weissliste waere das eine SQL-Einschleusung.
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' \
+       "http://localhost:8090/bestand?sortierung=bezeichnung%3B+DROP+TABLE+kartenterminal")
+BEST=$(sql "SELECT count(*) FROM kartenterminal")
+[ "$CODE" = "200" ] && [ "${BEST:-0}" -gt 0 ] && SI=ja || SI=nein
+ergebnis "ein manipuliertes Sortierfeld richtet nichts an (HTTP $CODE, $BEST Geraete)" "$SI"
+
+zaehler() { curl -s -b "$KEKSE" "http://localhost:8090/bestand$1" \
+  | grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' | grep -oE '[0-9]+$'; }
+OHNE=$(zaehler "")
+AKTIV=$(zaehler "?status=aktiv")
+[ "$OHNE" = "$AKTIV" ] && [ "${OHNE:-0}" -gt 0 ] && FS=ja || FS=nein
+ergebnis "Statusfilter greift ($OHNE gesamt, $AKTIV aktiv)" "$FS"
+
+MODELL=$(sqltext "SELECT modell FROM kartenterminal WHERE modell IS NOT NULL LIMIT 1")
+TREFFER=$(zaehler "?modell=$(printf %s "$MODELL" | sed 's/ /+/g')")
+[ "${TREFFER:-0}" -gt 0 ] && FM=ja || FM=nein
+ergebnis "Modellfilter greift (Modell \"$MODELL\": $TREFFER Treffer)" "$FM"
+
+# Massenaktion: Auswahl, Rueckmeldung, und ehrliche Zaehlung
+IDS=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+      "SELECT id FROM kartenterminal ORDER BY id LIMIT 3" | tr -d ' \r')
+MARGS=()
+for i in $IDS; do MARGS+=(--data-urlencode "geraet=$i"); done
+curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+  "${MARGS[@]}" --data-urlencode "aktion=deaktivieren" | grep -q "3 Kartenterminal(s) deaktiviert" && MA=ja || MA=nein
+ergebnis "drei Geraete lassen sich auf einmal deaktivieren" "$MA"
+[ "$(zaehler "?status=inaktiv")" = "3" ] && MI=ja || MI=nein
+ergebnis "der Statusfilter zeigt die deaktivierten Geraete" "$MI"
+
+# Ein nicht mehr vorhandenes Geraet darf nicht stillschweigend uebergangen
+# werden - "Aktion ausgefuehrt" bei 3 von 4 waere eine Falschmeldung.
+curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+  "${MARGS[@]}" --data-urlencode "geraet=999999999" --data-urlencode "aktion=aktivieren" \
+  | grep -q "1 von 4" && MU=ja || MU=nein
+ergebnis "uebersprungene Geraete werden gezaehlt, nicht verschwiegen" "$MU"
+
+curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+  --data-urlencode "aktion=deaktivieren" | grep -q "kein Gerät" && ML=ja || ML=nein
+ergebnis "eine leere Auswahl aendert nichts und sagt das" "$ML"
+
+IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE text LIKE '%Kartenterminal(s)%'")
+[ "${IST:-0}" -ge 2 ] && MP=ja || MP=nein
+ergebnis "Massenaktionen sind protokolliert ($IST Eintraege)" "$MP"
+
+# FA-GER-030: Uebernahme "einzeln oder als Auswahl"
+curl -s -b "$KEKSE" http://localhost:8090/bestand/ermittelt > /tmp/pr-erm3.html
+grep -q 'name="fund"' /tmp/pr-erm3.html && SA=ja || SA=nein
+ergebnis "die Ermittlungsliste erlaubt Mehrfachauswahl" "$SA"
+
+FUNDE=$(grep -oE 'name="fund" value="[0-9]+"' /tmp/pr-erm3.html | grep -oE '[0-9]+' | head -2)
+if [ -n "$FUNDE" ]; then
+  KID3=$(sql "SELECT id FROM konnektor ORDER BY id LIMIT 1")
+  SARGS=()
+  for i in $FUNDE; do SARGS+=(--data-urlencode "fund=$i"); done
+  ANZ=$(echo "$FUNDE" | wc -w | tr -d ' ')
+  curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/ermittelt/uebernehmen \
+    "${SARGS[@]}" --data-urlencode "konnektorId=$KID3" \
+    | grep -q "von $ANZ" && SU=ja || SU=nein
+  ergebnis "mehrere Geraete lassen sich in einem Schritt uebernehmen ($ANZ)" "$SU"
+else
+  echo "  uebersprungen: keine neu erkannten Geraete vorhanden"
+fi
+rm -f /tmp/pr-best.html /tmp/pr-erm3.html
 
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1

@@ -96,9 +96,7 @@ Anlegen **und** beim Ändern abgelehnt, mit Nennung der Anforderungs-ID.
 
 ## Bedienbarkeit bei großen Stückzahlen
 
-`FA-GER-060` verlangt Bedienbarkeit bei 5.000 Terminals. Vollständig umgesetzt
-ist die Anforderung noch nicht (Massenaktionen und Sortierung fehlen), die
-Grundlage steht aber:
+`FA-GER-060` verlangt Bedienbarkeit bei 5.000 Terminals. Die Grundlage:
 
 - **serverseitige Paginierung** — 25 Treffer je Seite, `LIMIT`/`OFFSET` in der
   Abfrage, nicht im Browser
@@ -108,6 +106,9 @@ Grundlage steht aber:
   Geräten entscheidet er darüber, ob die Liste unter einer Sekunde steht
 - **obere Grenze von 200** Datensätzen je Anfrage, damit eine manipulierte URL
   nicht den gesamten Bestand zieht
+
+Sortierung, weitere Filter und Massenaktionen kamen im Nachtrag weiter unten
+dazu. Offen bleibt allein die **Leistungsmessung** bei 5.000 Geräten.
 
 Die Zählabfrage läuft getrennt von der Datenabfrage. Das ist eine Abfrage mehr,
 aber die Alternative — alles laden und im Speicher zählen — ist genau das, was
@@ -178,3 +179,65 @@ jüngerer Einträge, HTTP-Status).
 Das reiht sich in eine Erfahrung ein, die dieses Projekt mehrfach gemacht hat:
 **Etwa die Hälfte der Fehler saß in den Prüfungen, nicht im Produkt.** Ein
 Nachweis, der nicht sagt, *was* er misst, ist kein Nachweis.
+
+---
+
+## Sortierung, Filter und Massenaktionen (nachgetragen 07.08.2026)
+
+Damit ist FA-GER-060 vollständig, bis auf die Leistungsmessung bei 5.000 Geräten.
+
+### Sortierung — eine Weißliste, kein Durchreichen
+
+Das Sortierfeld kommt aus der URL und geht **unmittelbar** in die Abfrage ein;
+als Parameter binden lässt es sich nicht. Ohne feste Liste wäre das eine
+SQL-Einschleusung. Deshalb bildet eine Aufzählung `Sortierung` jeden Wert auf
+einen festen Ausdruck ab — ein unbekannter Wert führt zur Vorgabe, nicht zu
+einem Fehler und erst recht nicht in die Abfrage.
+
+Jede Sortierung trägt **`t.id` als zweites Feld**. Ohne eindeutige Reihenfolge
+wandern Zeilen zwischen den Seiten, sobald zwei Geräte denselben Wert haben —
+bei „Firmware 4.2.1" ist das der Regelfall, nicht die Ausnahme.
+
+Die Kopfzeile setzt `aria-sort`, damit Screenreader die aktuelle Sortierung
+ansagen (WCAG 2.2 AA).
+
+### Filter
+
+Status, Erreichbarkeit, Modell, Firmware — die Auswahllisten für Modell und
+Firmware werden aus dem Bestand erzeugt und bieten nur an, was vorkommt.
+
+Ein Detail mit Wirkung: **Ein nie geprüftes Gerät ist nicht „nicht erreichbar",
+sondern unbekannt.** Der Filter „nicht erreichbar" sammelt es deshalb nicht ein —
+sonst suchte der Betreiber Fehler, wo keine sind.
+
+### Massenaktionen
+
+Aktivieren, Deaktivieren, Gruppe zuweisen. Zwei Regeln:
+
+**1. Nichts läuft stillschweigend halb durch.** Das Ergebnis zählt geänderte und
+übersprungene Geräte getrennt. „Aktion ausgeführt" bei 40 von 50 wäre eine
+Falschmeldung — und bei 5.000 Geräten fällt so etwas niemandem auf, wenn man es
+nicht ausdrücklich sagt.
+
+**2. Eine Gruppe nimmt nur Geräte ihrer eigenen Einrichtung auf** (FA-GER-050).
+Fremde werden übersprungen **und benannt**. Wäre das über eine Massenaktion
+aushebelbar, stünde die Mandantentrennung offen.
+
+Die Auswahl wird laufend mitgezählt und vor dem Ausführen bestätigt. Ohne diese
+Rückmeldung klickt man auf „Deaktivieren" und weiß nicht, ob 3 oder 30 Geräte
+gemeint sind.
+
+### Ein Fehler, den die Tests gefunden haben
+
+Die Hilfsmethode, die Filterwerte in die Abfrage setzt, machte aus allem außer
+`Long` eine Zeichenkette. Ein `Boolean` wurde damit zu `"true"` und verglich sich
+gegen eine `boolean`-Spalte **ins Leere**.
+
+Der Filter lieferte lautlos null Treffer statt eines Fehlers. Solche Fehler sind
+die unangenehmsten: Die Oberfläche sagt „keine Geräte", und niemand merkt, dass
+die Frage falsch gestellt war. Gefunden hat ihn ein Test, der nach SMC-B
+filterte und drei Treffer erwartete.
+
+Zweiter Befund derselben Klasse: `List.toArray()` liefert `Object[]`, der
+PostgreSQL-Treiber braucht `Long[]` — die Massenaktion scheiterte zur Laufzeit
+und meldete „0 geändert".

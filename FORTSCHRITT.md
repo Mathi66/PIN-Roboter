@@ -828,3 +828,65 @@ löschen. Der gescheiterte Löschversuch ist als eigener Nachweis stehengebliebe
 Damit ist auch der zuvor offene Punkt bestätigt: Die getrennten
 Protokollnachweise (Not-Aus, Registrierung, Export) sind im Vollauf grün. Das
 Flattern ist weg, weil jeder Nachweis jetzt genau eine Sache misst.
+
+---
+
+# Iteration 15 — Sortierung, Filter, Massenaktionen (FA-GER-060)
+
+Die Geräteliste ist jetzt bei großen Stückzahlen wirklich bedienbar: sortierbare
+Spalten, Filter nach Status, Erreichbarkeit, Modell und Firmware, dazu
+Mehrfachauswahl mit Massenaktionen. Alles serverseitig.
+
+## Drei Entscheidungen, die den Unterschied machen
+
+**Sortierung über eine feste Liste, nicht über die URL.** Ein Sortierfeld lässt
+sich nicht als Parameter binden — es geht direkt in die Abfrage. Ohne Weißliste
+wäre das eine Einfallstür. Ein unbekannter Wert führt jetzt zur Vorgabe.
+
+**Jede Sortierung hat ein zweites Feld.** Sonst wandern Zeilen zwischen den
+Seiten, sobald zwei Geräte denselben Wert haben — bei „Firmware 4.2.1" der
+Regelfall.
+
+**Massenaktionen zählen ehrlich.** Geändert und übersprungen werden getrennt
+gemeldet. „Aktion ausgeführt" bei 40 von 50 Geräten wäre eine Falschmeldung, und
+bei 5.000 Geräten merkt das niemand, wenn man es nicht sagt.
+
+Dazu: Eine Gerätegruppe nimmt nur Geräte ihrer eigenen Einrichtung auf. Fremde
+werden übersprungen und benannt — wäre das über eine Massenaktion aushebelbar,
+stünde die Mandantentrennung offen.
+
+## Auch die Übernahme geht jetzt als Auswahl
+
+FA-GER-030 erlaubt „einzeln oder als Auswahl". Bisher ging nur einzeln; jetzt
+lassen sich mehrere ermittelte Geräte in einem Schritt übernehmen — weiterhin nur
+nach ausdrücklicher Bestätigung.
+
+## Zwei echte Fehler, die die Tests gefunden haben
+
+**Der gefährlichere:** Die Hilfsmethode für Filterwerte machte aus jedem
+`Boolean` eine Zeichenkette. Der Vergleich gegen eine `boolean`-Spalte lief damit
+ins Leere — der Filter lieferte **lautlos null Treffer statt eines Fehlers**. Die
+Oberfläche hätte „keine Geräte" gesagt, und niemand hätte gemerkt, dass die Frage
+falsch gestellt war.
+
+**Der zweite:** Das ID-Array für Massenaktionen war untypisiert; der
+Datenbanktreiber braucht `Long[]`. Die Aktion scheiterte zur Laufzeit und meldete
+„0 geändert".
+
+Beide wären ohne Test bis in den Betrieb durchgerutscht — sie erzeugen keinen
+sichtbaren Fehler, sondern ein falsches, plausibel aussehendes Ergebnis.
+
+## Stand: 131 Modultests, 95 Systemnachweise
+
+Im Vollauf waren 94 von 95 grün. Der eine Fehlschlag lag **im Nachweis**, nicht
+im Produkt: Meine SQL-Hilfsfunktion entfernte alle Leerzeichen, aus
+`CHERRY ST-1506` wurde `CHERRYST-1506` — und danach fand der Filter
+erwartungsgemäß nichts. Der Modellfilter selbst ist durch einen Modultest und
+eine Messung am laufenden System belegt (36 von 36 Treffern).
+
+Behoben durch eine zweite Hilfsfunktion für Textwerte. **Diese Korrektur ist
+noch nicht in einem Vollauf bestätigt** — sie geht in den nächsten Lauf.
+
+Damit ist FA-GER-060 bis auf die Leistungsmessung erfüllt. Die steht als
+Nächstes an: erste Seite bei 5.000 Terminals unter einer Sekunde — gemessen,
+nicht geschätzt.
