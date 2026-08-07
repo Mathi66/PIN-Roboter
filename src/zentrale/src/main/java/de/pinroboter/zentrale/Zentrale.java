@@ -248,16 +248,16 @@ public class Zentrale {
             }
         });
 
-        app.get("/", c -> c.html(seite("uebersicht", uebersicht(), angemeldeter(c))));
+        app.get("/", c -> c.html(seite("uebersicht", uebersicht(c), angemeldeter(c))));
         app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(), angemeldeter(c))));
         app.get("/protokoll", c -> c.html(seite("protokoll", protokollSeite(c), angemeldeter(c))));
-        app.get("/teil/uebersicht", c -> c.html(uebersicht()));
+        app.get("/teil/uebersicht", c -> c.html(uebersicht(c)));
         app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
         app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
 
         // ---------------------------------------------------------- Gruppen
-        app.get("/gruppen",      c -> c.html(seite("gruppen", gruppenSeite(null), angemeldeter(c))));
-        app.get("/teil/gruppen", c -> c.html(gruppenTabelle()));
+        app.get("/gruppen",      c -> c.html(seite("gruppen", gruppenSeite(c, null), angemeldeter(c))));
+        app.get("/teil/gruppen", c -> c.html(gruppenTabelle(c)));
 
         app.post("/gruppen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
@@ -271,7 +271,7 @@ public class Zentrale {
                         angemeldeter(c).anzeigename(), null,
                         "Gerätegruppe \"" + bez + "\" angelegt, Prüfintervall " + intervall + " s", null);
             }
-            c.html(seite("gruppen", gruppenSeite(fehler), angemeldeter(c)));
+            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
         });
 
         app.post("/gruppen/{id}/intervall", c -> {
@@ -286,7 +286,7 @@ public class Zentrale {
                         angemeldeter(c).anzeigename(), null,
                         "Prüfintervall der Gruppe " + id + " auf " + sek + " s gesetzt", null);
             }
-            c.html(seite("gruppen", gruppenSeite(fehler), angemeldeter(c)));
+            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
         });
 
         app.post("/gruppen/{id}/loeschen", c -> {
@@ -298,7 +298,7 @@ public class Zentrale {
                         angemeldeter(c).anzeigename(), null,
                         "Gerätegruppe " + id + " gelöscht, Geräte in die Vorgabegruppe verschoben", null);
             }
-            c.html(seite("gruppen", gruppenSeite(fehler), angemeldeter(c)));
+            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
         });
 
         app.post("/geraete/{id}/gruppe", c -> {
@@ -310,7 +310,7 @@ public class Zentrale {
                         true, angemeldeter(c).anzeigename(), null,
                         "Gerät einer anderen Gruppe zugeordnet", null);
             }
-            c.html(gruppenTabelle());
+            c.html(gruppenTabelle(c));
         });
 
         // ------------------------------------------------------------ Bestand
@@ -721,7 +721,7 @@ public class Zentrale {
             String fArt = c.queryParam("art");
             String fErg = c.queryParam("ergebnis");
             String fGer = c.queryParam("geraet");
-            var eintraege = protokoll.filtern(fGer, fArt, fErg, Tabellenmappe.MAX_ZEILEN - 10);
+            var eintraege = protokoll.filtern(fGer, fArt, fErg, Tabellenmappe.MAX_ZEILEN - 10, bereich(c));
 
             var aus = new java.io.ByteArrayOutputStream();
             try (Tabellenmappe m = new Tabellenmappe(aus)) {
@@ -1102,7 +1102,7 @@ public class Zentrale {
 
         return new Bestandsseiten.Ansicht(filter, sortierung, absteigend,
                 bestand.vorhandeneWerte("modell", bereich(c)), bestand.vorhandeneWerte("firmware", bereich(c)),
-                gruppen.alle("Praxis"), ermittlung.aufrufkontextAuswahl());
+                gruppen.alle("Praxis", bereich(c)), ermittlung.aufrufkontextAuswahl());
     }
 
     private static int zahl(String s, int vorgabe) {
@@ -1251,7 +1251,7 @@ public class Zentrale {
         return b != null && b.rolle() == Benutzerverwaltung.Rolle.ADMINISTRATOR;
     }
 
-    private String gruppenSeite(String fehler) {
+    private String gruppenSeite(Context c, String fehler) {
         return """
                 <h2>Gerätegruppen</h2>
                 <p class="unterzeile">
@@ -1277,11 +1277,11 @@ public class Zentrale {
                   <div id="gruppen" hx-get="/teil/gruppen" hx-trigger="every 10s" hx-swap="innerHTML">%s</div>
                 </div>"""
                 .formatted(fehler == null ? "" : Anmeldeseiten.meldung(fehler, "warnend"),
-                           gruppenTabelle());
+                           gruppenTabelle(c));
     }
 
-    private String gruppenTabelle() {
-        var liste = gruppen.alle("Praxis");
+    private String gruppenTabelle(Context c) {
+        var liste = gruppen.alle("Praxis", bereich(c));
         StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>"
                 + "<th>Gruppe</th><th>Geräte</th><th>Prüfintervall</th><th></th>"
                 + "</tr></thead><tbody>");
@@ -1331,7 +1331,7 @@ public class Zentrale {
                 + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + (8 * 3600));
     }
 
-    private String uebersicht() {
+    private String uebersicht(Context c) {
         var alle = geraete.values();
         long ok = alle.stream().filter(g -> g.ampel() == Ampel.OK).count();
         long warn = alle.stream().filter(g -> g.ampel() == Ampel.WARNUNG).count();
@@ -1339,7 +1339,7 @@ public class Zentrale {
         long ohnePevim = alle.stream().filter(g -> !g.pevimAktiv).count();
 
         StringBuilder s = new StringBuilder();
-        s.append(alarmblock());
+        s.append(alarmblock(c));
         if (notAus) s.append("""
                 <div class="hinweis" style="border-left-color:var(--fehler);background:var(--fehler-hg)">
                   <strong>Not-Aus ist aktiv</strong>
@@ -1388,8 +1388,8 @@ public class Zentrale {
     }
 
     /** Offene Alarme ganz oben — sie sind das Erste, was jemand sehen muss. */
-    private String alarmblock() {
-        var offen = alarme.offene("Praxis");
+    private String alarmblock(Context c) {
+        var offen = alarme.offene("Praxis", bereich(c));
         if (offen.isEmpty()) return "";
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>Alarme <span class=\"zaehler\">"
@@ -1483,13 +1483,13 @@ public class Zentrale {
         } catch (NumberFormatException ignored) { }
 
         var seite = protokoll.seite(c.queryParam("geraet"), c.queryParam("art"),
-                c.queryParam("ergebnis"), nr, PROTOKOLL_SEITENGROESSE);
+                c.queryParam("ergebnis"), nr, PROTOKOLL_SEITENGROESSE, bereich(c));
 
         // Hinter das Ende geblaettert - etwa weil ein Filter enger wurde.
         // Statt einer leeren Seite die letzte vorhandene zeigen.
         if (seite.eintraege().isEmpty() && seite.gesamt() > 0 && nr > seite.seitenZahl()) {
             seite = protokoll.seite(c.queryParam("geraet"), c.queryParam("art"),
-                    c.queryParam("ergebnis"), seite.seitenZahl(), PROTOKOLL_SEITENGROESSE);
+                    c.queryParam("ergebnis"), seite.seitenZahl(), PROTOKOLL_SEITENGROESSE, bereich(c));
         }
         var liste = seite.eintraege();
         if (liste.isEmpty()) return "<p class=\"leer\">Keine Einträge für diese Auswahl.</p>";

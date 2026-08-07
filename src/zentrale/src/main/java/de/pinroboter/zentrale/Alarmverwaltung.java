@@ -74,15 +74,24 @@ public class Alarmverwaltung {
      *
      * @return true, wenn der Alarm NEU ist (nur dann ist eine Benachrichtigung fällig)
      */
+    /**
+     * Meldet einen Alarm. Die Einrichtung wird als Text und als Verweis
+     * abgelegt — der Verweis trägt die Mandantengrenze.
+     */
     public boolean melden(String einrichtung, String objekt, Art art,
                           String meldung, String handlung) {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
-                INSERT INTO alarm (einrichtung, objekt, art, schweregrad, meldung, handlung)
-                VALUES (?,?,?,?,?,?)
+                INSERT INTO alarm (einrichtung, objekt, art, schweregrad, meldung, handlung,
+                                   organisation_id)
+                VALUES (?,?,?,?,?,?,
+                        (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
+                         AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))
                 ON CONFLICT (einrichtung, coalesce(objekt, ''), art) WHERE behoben_am IS NULL
                 DO UPDATE SET zuletzt = now(), meldung = EXCLUDED.meldung,
                               handlung = EXCLUDED.handlung
                 RETURNING (xmax = 0) AS ist_neu""")) {
+            p.setString(7, einrichtung);
+            p.setString(8, einrichtung);
             p.setString(1, einrichtung);
             p.setString(2, objekt);
             p.setString(3, art.name());
@@ -125,16 +134,24 @@ public class Alarmverwaltung {
         } catch (SQLException e) { return false; }
     }
 
-    public List<Alarm> offene(String einrichtung) {
+    /**
+     * Offene Alarme im Geltungsbereich.
+     *
+     * <p>Ein Alarm nennt Gerät und Handlungsempfehlung — er verrät damit
+     * Bestand und Betriebszustand einer Einrichtung. Die Mandantengrenze gilt
+     * hier genauso wie beim Bestand selbst.
+     */
+    public List<Alarm> offene(String einrichtung, Geltungsbereich bereich) {
         List<Alarm> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT id, objekt, art, schweregrad, meldung, handlung, seit,
                        quittiert_von, quittiert_am
-                FROM alarm WHERE einrichtung = ? AND behoben_am IS NULL
-                ORDER BY CASE schweregrad WHEN 'KRITISCH' THEN 0 WHEN 'WARNUNG' THEN 1
-                                          ELSE 2 END,
-                         quittiert_von NULLS FIRST, seit""")) {
+                FROM alarm WHERE einrichtung = ? AND behoben_am IS NULL"""
+                + bereich.bedingung("organisation_id")
+                + " ORDER BY CASE schweregrad WHEN 'KRITISCH' THEN 0 WHEN 'WARNUNG' THEN 1"
+                + " ELSE 2 END, quittiert_von NULLS FIRST, seit")) {
             p.setString(1, einrichtung);
+            bereich.wertSetzen(db.verbindung(), p, 2);
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) {
                     Timestamp q = rs.getTimestamp("quittiert_am");
@@ -154,7 +171,7 @@ public class Alarmverwaltung {
     public Map<Schweregrad, Integer> zaehlen(String einrichtung) {
         Map<Schweregrad, Integer> m = new EnumMap<>(Schweregrad.class);
         for (Schweregrad s : Schweregrad.values()) m.put(s, 0);
-        for (Alarm a : offene(einrichtung)) {
+        for (Alarm a : offene(einrichtung, Geltungsbereich.alles())) {
             if (!a.quittiert()) m.merge(a.schweregrad(), 1, Integer::sum);
         }
         return m;

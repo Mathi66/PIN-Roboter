@@ -306,13 +306,30 @@ public class Benutzerverwaltung {
 
     // ------------------------------------------------------------- Verwaltung
 
+    /** Alle Benutzer — uneingeschränkt. Nur für Tests und den Instanzbetreiber. */
     public List<Benutzer> alle() {
+        return alle(Geltungsbereich.alles());
+    }
+
+    /**
+     * Benutzer im Geltungsbereich.
+     *
+     * <p>Eine Benutzerliste verrät die Personalstruktur einer Einrichtung —
+     * Namen, Rollen, wer wann angelegt wurde. Sie gehört genauso hinter die
+     * Mandantengrenze wie der Gerätebestand.
+     *
+     * <p>Benutzer ohne Zuordnung (Instanzbetreiber) erscheinen nur für einen
+     * uneingeschränkten Bereich.
+     */
+    public List<Benutzer> alle(Geltungsbereich bereich) {
         List<Benutzer> liste = new ArrayList<>();
-        try (Statement s = db.verbindung().createStatement();
-             ResultSet rs = s.executeQuery("""
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
                      SELECT id, benutzername, anzeigename, rolle, aktiv, totp_bestaetigt,
                             organisation_id
-                     FROM benutzer ORDER BY lower(benutzername)""")) {
+                     FROM benutzer WHERE 1=1""" + bereich.bedingung("organisation_id")
+                     + " ORDER BY lower(benutzername)")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
             while (rs.next()) {
                 long orgId = rs.getLong("organisation_id");
                 Long organisation = rs.wasNull() ? null : orgId;   // sofort auswerten
@@ -320,7 +337,10 @@ public class Benutzerverwaltung {
                         rs.getString("anzeigename"), Rolle.valueOf(rs.getString("rolle")),
                         rs.getBoolean("aktiv"), rs.getBoolean("totp_bestaetigt"), organisation));
             }
-        } catch (SQLException ignored) { }
+            }
+        } catch (SQLException e) {
+            System.err.println("Benutzerliste nicht lesbar: " + e.getMessage());
+        }
         return liste;
     }
 

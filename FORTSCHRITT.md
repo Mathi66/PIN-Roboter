@@ -1109,3 +1109,48 @@ sich still. Ohne den Vollauf wäre er erst beim Kunden aufgefallen, und dort
 hätte niemand die Ursache erraten.
 
 Ein eigener Test deckt die Falle jetzt ab.
+
+
+---
+
+# Iteration 19 — Mandantentrennung vollständig
+
+Die zweite Hälfte ist erledigt: **Fachprotokoll, Excel-Export, Alarme,
+Gerätegruppen und Benutzerliste** liegen jetzt ebenfalls hinter der
+Mandantengrenze.
+
+Alle vier führten die Einrichtung als **Textfeld**. Eine Grenze über einen
+Textvergleich wäre brüchig gewesen: Zwei Einrichtungen mit gleichem Namen in
+verschiedenen Verbünden fielen zusammen, und eine Umbenennung hätte die
+Zuordnung stillschweigend zerrissen. Migration 12 trägt eine `organisation_id`
+nach — mit Übernahme aus dem Textfeld, aber nur **wo der Name eindeutig ist**.
+Mehrdeutige bleiben ohne Zuordnung: lieber eine Lücke, die auffällt, als eine
+falsche Zuordnung, die niemand bemerkt.
+
+**Das Textfeld bleibt.** Es zu ersetzen wäre eine nachträgliche Änderung an
+Einträgen, die unveränderlich sind (FA-PRO-010). Nebeneffekt mit Wert: Der Name
+bleibt lesbar, auch wenn die Organisation längst entfernt wurde.
+
+## Ein Befund: Der Fremdschlüssel hätte das Löschen unmöglich gemacht
+
+Der erste Entwurf gab der Spalte einen Fremdschlüssel mit `ON DELETE SET NULL`.
+Das ist ein `UPDATE` — und das blockiert der Schutz des Protokolls, zu Recht.
+
+**Die Folge wäre gewesen: Eine Organisation, auf die ein Protokolleintrag
+verweist, ließe sich niemals mehr löschen.** Beim Kunden wäre das als
+„Einrichtung kann nicht entfernt werden" aufgefallen, ohne erkennbaren
+Zusammenhang. Das Fachprotokoll trägt die Spalte jetzt ohne Fremdschlüssel.
+
+## Am laufenden System belegt
+
+Ein Praxisbenutzer sieht **3 von 163 Protokolleinträgen**, sein Excel-Export ist
+**4.162 statt 11.673 Bytes**, ein Filter auf ein fremdes Gerät liefert nichts.
+Der Export war dabei der wichtigste Punkt: Er wäre sonst der bequemste Weg an
+fremde Daten gewesen.
+
+## Stand: 162 Modultests, 118 von 120 Systemnachweisen
+
+Die beiden Fehlschläge betreffen Nachweisdetails (erwartete Meldungstexte), nicht
+die geprüften Zusagen — beide sind durch Modultests und die jeweils benachbarten
+Nachweise belegt. **Sie sind noch nicht bereinigt** und gehen in die nächste
+Iteration.

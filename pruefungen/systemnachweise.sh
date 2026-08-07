@@ -969,6 +969,30 @@ if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
   AKTIV=$(sql "SELECT aktiv FROM kartenterminal WHERE id = $FREMD")
   [ "$AKTIV" = "t" ] && MM=ja || MM=nein
   ergebnis "eine Massenaktion greift nicht auf fremde Geraete durch" "$MM"
+  # Zweite Haelfte der Mandantentrennung: Protokoll, Alarme, Gruppen, Benutzer
+  PROT_ALLE=$(sql "SELECT count(*) FROM fachprotokoll")
+  PROT_SICHT=$(curl -s -b "$DEMO_KEKSE" "http://localhost:8090/teil/protokoll" \
+               | grep -oE 'von [0-9]+' | head -1 | grep -oE '[0-9]+')
+  [ -n "$PROT_SICHT" ] && [ "${PROT_SICHT:-0}" -lt "${PROT_ALLE:-0}" ] && MP=ja || MP=nein
+  ergebnis "der Praxisbenutzer sieht nur einen Teil des Protokolls ($PROT_SICHT von $PROT_ALLE)" "$MP"
+
+  # Der Export darf nicht mehr enthalten als die Ansicht.
+  curl -s -b "$DEMO_KEKSE" -o /tmp/pr-export-praxis.xlsx http://localhost:8090/protokoll/export
+  GROESSE_PRAXIS=$(wc -c < /tmp/pr-export-praxis.xlsx | tr -d ' ')
+  curl -s -b "$KEKSE" -o /tmp/pr-export-admin.xlsx http://localhost:8090/protokoll/export
+  GROESSE_ADMIN=$(wc -c < /tmp/pr-export-admin.xlsx | tr -d ' ')
+  [ "${GROESSE_PRAXIS:-0}" -lt "${GROESSE_ADMIN:-0}" ] && MX=ja || MX=nein
+  ergebnis "der Excel-Export des Praxisbenutzers ist kleiner als der des Betreibers ($GROESSE_PRAXIS < $GROESSE_ADMIN Bytes)" "$MX"
+  rm -f /tmp/pr-export-praxis.xlsx /tmp/pr-export-admin.xlsx
+
+  # Fremde Protokolleintraege duerfen auch ueber einen Geraetefilter nicht kommen.
+  FREMD_KT=$(sqltext "SELECT terminal_id FROM kartenterminal WHERE organisation_id <> $ORGID
+                      ORDER BY id LIMIT 1")
+  TREFFER=$(curl -s -b "$DEMO_KEKSE" "http://localhost:8090/teil/protokoll?geraet=$FREMD_KT" \
+            | grep -c "<tr>")
+  [ "${TREFFER:-1}" = "0" ] && MG=ja || MG=nein
+  ergebnis "ein Filter auf ein fremdes Geraet liefert keine Protokolleintraege ($TREFFER)" "$MG"
+
   rm -f "$DEMO_KEKSE"
 else
   echo "  uebersprungen: Demo-Zugangsdaten nicht ermittelbar"

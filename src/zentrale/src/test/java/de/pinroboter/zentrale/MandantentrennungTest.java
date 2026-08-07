@@ -98,6 +98,9 @@ class MandantentrennungTest {
         try (Statement s = db.verbindung().createStatement()) {
             s.executeUpdate("DELETE FROM kartenterminal WHERE terminal_id LIKE 'MT-KT-%'");
             s.executeUpdate("DELETE FROM konnektor WHERE bezeichnung LIKE 'MT Konnektor%'");
+            s.executeUpdate("DELETE FROM geraetegruppe WHERE bezeichnung LIKE 'MT Gruppe%'");
+            s.executeUpdate("DELETE FROM alarm WHERE einrichtung LIKE 'MT %'");
+            s.executeUpdate("DELETE FROM benutzer WHERE benutzername LIKE 'mt-nutzer-%'");
             s.executeUpdate("DELETE FROM organisation WHERE bezeichnung LIKE 'MT %'");
         }
     }
@@ -293,6 +296,125 @@ class MandantentrennungTest {
                 null, null, null, null), null, false, 1, 100, bereichA);
         assertEquals(0, ueberFremdenKonnektor.gesamt(),
                 "auch nicht über die Kennung eines fremden Konnektors");
+    }
+
+    // ------------------------------ Protokoll, Alarme, Gruppen, Benutzer
+
+    @Test @Order(30)
+    @DisplayName("Das Fachprotokoll ist auf den Geltungsbereich beschränkt")
+    void protokollBleibtImBereich() {
+        var prot = new Fachprotokoll(db, new Speicherwaechter(db, Long.MAX_VALUE));
+        prot.anfuegen("MT Praxis A", "MT-KT-A", de.pinroboter.gemeinsam.Ereignisart.GERAET_ERREICHBAR,
+                true, "Test", null, "Eintrag Praxis A", null);
+        prot.anfuegen("MT Praxis B", "MT-KT-B", de.pinroboter.gemeinsam.Ereignisart.GERAET_ERREICHBAR,
+                true, "Test", null, "Eintrag Praxis B", null);
+
+        var fuerA = prot.seite(null, null, null, 1, 200, bereichA).eintraege().stream()
+                .map(Ereignis::text).filter(x -> x != null && x.startsWith("Eintrag ")).toList();
+        assertEquals(List.of("Eintrag Praxis A"), fuerA,
+                "Praxis A darf den Eintrag von Praxis B nicht sehen");
+
+        var fuerWest = prot.seite(null, null, null, 1, 200, bereichWest).eintraege().stream()
+                .map(Ereignis::text).filter(x -> x != null && x.startsWith("Eintrag ")).sorted().toList();
+        assertEquals(List.of("Eintrag Praxis A", "Eintrag Praxis B"), fuerWest,
+                "der Standort sieht beide");
+    }
+
+    @Test @Order(31)
+    @DisplayName("Auch der Excel-Export bleibt im Geltungsbereich")
+    void exportBleibtImBereich() {
+        // Ein Export, der mehr enthaelt als die Ansicht, waere der bequemste
+        // Weg an fremde Daten.
+        var prot = new Fachprotokoll(db, new Speicherwaechter(db, Long.MAX_VALUE));
+        var fuerA = prot.filtern(null, null, null, 1000, bereichA).stream()
+                .map(Ereignis::text).filter(x -> x != null && x.startsWith("Eintrag ")).toList();
+        assertEquals(List.of("Eintrag Praxis A"), fuerA);
+    }
+
+    @Test @Order(32)
+    @DisplayName("Alarme bleiben im Geltungsbereich")
+    void alarmeBleibenImBereich() {
+        // Ein Alarm nennt Geraet und Handlungsempfehlung - er verraet Bestand
+        // und Betriebszustand einer Einrichtung.
+        var av = new Alarmverwaltung(db);
+        av.melden("MT Praxis A", "MT-KT-A", Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
+                "A weg", "prüfen");
+        av.melden("MT Praxis B", "MT-KT-B", Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
+                "B weg", "prüfen");
+
+        // Der erste Parameter ist die Einrichtung als Text - der Geltungsbereich
+        // tritt daneben und schraenkt zusaetzlich ein.
+        assertEquals(1, av.offene("MT Praxis A", bereichA).size());
+        assertEquals(0, av.offene("MT Praxis B", bereichA).size(),
+                "Praxis A darf die Alarme von Praxis B nicht sehen");
+        assertEquals(1, av.offene("MT Praxis B", bereichWest).size(),
+                "der Standort sieht beide Praxen");
+    }
+
+    @Test @Order(33)
+    @DisplayName("Gerätegruppen bleiben im Geltungsbereich")
+    void gruppenBleibenImBereich() {
+        var gv = new Gruppenverwaltung(db);
+        assertNull(gv.anlegen("MT Gruppe A", "MT Praxis A", 60));
+        assertNull(gv.anlegen("MT Gruppe B", "MT Praxis B", 60));
+
+        assertEquals(1, gv.alle("MT Praxis A", bereichA).size());
+        assertEquals(0, gv.alle("MT Praxis B", bereichA).size(),
+                "Praxis A darf die Gruppen von Praxis B nicht sehen");
+        assertEquals(1, gv.alle("MT Praxis B", bereichWest).size());
+    }
+
+    @Test @Order(34)
+    @DisplayName("Die Benutzerliste bleibt im Geltungsbereich")
+    void benutzerlisteBleibtImBereich() throws Exception {
+        // Eine Benutzerliste verraet die Personalstruktur einer Einrichtung.
+        var bvw = new Benutzerverwaltung(db);
+        for (var paar : List.of(new Object[]{"mt-nutzer-a", praxisA},
+                                new Object[]{"mt-nutzer-b", praxisB})) {
+            String name = (String) paar[0];
+            try (Statement s = db.verbindung().createStatement()) {
+                s.executeUpdate("DELETE FROM benutzer WHERE benutzername = '" + name + "'");
+            }
+            bvw.anlegen(name, "MT " + name, "EinSehrLangesPruefwortOhneHinweis".toCharArray(),
+                    Benutzerverwaltung.Rolle.BENUTZER);
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "UPDATE benutzer SET organisation_id = ? WHERE benutzername = ?")) {
+                p.setLong(1, (Long) paar[1]);
+                p.setString(2, name);
+                p.executeUpdate();
+            }
+        }
+
+        var namenA = bvw.alle(bereichA).stream().map(Benutzerverwaltung.Benutzer::benutzername)
+                .filter(n -> n.startsWith("mt-nutzer")).toList();
+        assertEquals(List.of("mt-nutzer-a"), namenA,
+                "Praxis A darf die Konten von Praxis B nicht sehen");
+
+        var namenWest = bvw.alle(bereichWest).stream().map(Benutzerverwaltung.Benutzer::benutzername)
+                .filter(n -> n.startsWith("mt-nutzer")).sorted().toList();
+        assertEquals(List.of("mt-nutzer-a", "mt-nutzer-b"), namenWest);
+
+        try (Statement s = db.verbindung().createStatement()) {
+            s.executeUpdate("DELETE FROM benutzer WHERE benutzername LIKE 'mt-nutzer-%'");
+        }
+    }
+
+    @Test @Order(35)
+    @DisplayName("Ein Eintrag ohne Organisationszuordnung bleibt eingeschränkten Benutzern verborgen")
+    void ohneZuordnungNurFuerBetreiber() {
+        // Anmeldungen, Rotation und Instanzverwaltung haben keinen
+        // Einrichtungsbezug. Sie gehen den Instanzbetreiber an, nicht eine
+        // einzelne Praxis - und dürfen deshalb nicht in deren Protokoll stehen.
+        var prot = new Fachprotokoll(db, new Speicherwaechter(db, Long.MAX_VALUE));
+        prot.anfuegen("Gibt Es Nicht", null, de.pinroboter.gemeinsam.Ereignisart.ANMELDUNG_ERFOLGREICH,
+                true, "Test", null, "Eintrag ohne Zuordnung", null);
+
+        assertTrue(prot.seite(null, null, null, 1, 200, bereichA).eintraege().stream()
+                        .noneMatch(e -> "Eintrag ohne Zuordnung".equals(e.text())),
+                "ohne Zuordnung nicht für eine einzelne Praxis sichtbar");
+        assertTrue(prot.seite(null, null, null, 1, 500, Geltungsbereich.alles()).eintraege().stream()
+                        .anyMatch(e -> "Eintrag ohne Zuordnung".equals(e.text())),
+                "für den Instanzbetreiber aber schon");
     }
 
     @Test @Order(185)

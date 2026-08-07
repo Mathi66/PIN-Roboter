@@ -417,6 +417,56 @@ public class Datenbank implements AutoCloseable {
               gesehen      TIMESTAMPTZ NOT NULL DEFAULT now()
             );
             """);
+
+        migration(12, """
+            -- Mandantentrennung, zweite Haelfte.
+            --
+            -- Fachprotokoll, Alarme und Geraetegruppen fuehrten die Einrichtung
+            -- bisher als TEXT. Eine Mandantengrenze ueber einen Textvergleich
+            -- waere bruechig: Zwei Einrichtungen mit gleichem Namen in
+            -- verschiedenen Verbuenden wuerden zusammenfallen, und eine
+            -- Umbenennung wuerde die Zuordnung stillschweigend zerreissen.
+            --
+            -- Das Textfeld BLEIBT erhalten. Es ist die Anzeige und der Inhalt
+            -- des unveraenderlichen Protokolls; es zu ueberschreiben waere eine
+            -- nachtraegliche Aenderung an Eintraegen, die per FA-PRO-010
+            -- unveraenderlich sind. Die neue Spalte tritt daneben.
+            -- BEWUSST OHNE Fremdschluessel. Ein ON DELETE SET NULL wuerde beim
+            -- Loeschen einer Organisation ein UPDATE auf dem Protokoll ausloesen
+            -- - und das ist unveraenderlich (FA-PRO-010). Die Organisation
+            -- liesse sich dann ueberhaupt nicht mehr loeschen.
+            --
+            -- Die Spalte traegt die Mandantengrenze; der Name steht daneben im
+            -- Textfeld und bleibt lesbar, auch wenn die Organisation laengst
+            -- entfernt wurde. Genau das ist bei einem Nachweis erwuenscht.
+            ALTER TABLE fachprotokoll  ADD COLUMN organisation_id BIGINT;
+            ALTER TABLE alarm          ADD COLUMN organisation_id BIGINT
+              REFERENCES organisation(id) ON DELETE SET NULL;
+            ALTER TABLE geraetegruppe  ADD COLUMN organisation_id BIGINT
+              REFERENCES organisation(id) ON DELETE SET NULL;
+
+            -- Datenuebernahme aus dem Textfeld, soweit eindeutig zuzuordnen.
+            -- Mehrdeutige Namen bleiben ohne Zuordnung - lieber eine Luecke,
+            -- die auffaellt, als eine falsche Zuordnung, die niemand bemerkt.
+            UPDATE fachprotokoll f SET organisation_id = o.id
+            FROM organisation o
+            WHERE f.organisation_id IS NULL AND o.bezeichnung = f.einrichtung
+              AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = f.einrichtung) = 1;
+
+            UPDATE alarm a SET organisation_id = o.id
+            FROM organisation o
+            WHERE a.organisation_id IS NULL AND o.bezeichnung = a.einrichtung
+              AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = a.einrichtung) = 1;
+
+            UPDATE geraetegruppe g SET organisation_id = o.id
+            FROM organisation o
+            WHERE g.organisation_id IS NULL AND o.bezeichnung = g.einrichtung
+              AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = g.einrichtung) = 1;
+
+            CREATE INDEX fachprotokoll_org_idx ON fachprotokoll (organisation_id, zeitpunkt DESC);
+            CREATE INDEX alarm_org_idx         ON alarm (organisation_id);
+            CREATE INDEX geraetegruppe_org_idx ON geraetegruppe (organisation_id);
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

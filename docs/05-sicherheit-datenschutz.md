@@ -103,7 +103,7 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 | **Zweiter Faktor** | TOTP nach RFC 6238, gegen die offiziellen Testvektoren geprüft | Modultests gegen RFC-Vektoren |
 | **Einmalkennwort gilt einmal** | verbrauchte Codes werden abgewiesen | Systemnachweis |
 | **Rollentrennung** | Administrator / Benutzer; schreibende Bestandsaktionen nur für Administratoren | Routenprüfung |
-| **Mandantentrennung (Bestand)** | `Geltungsbereich` als Pflichtparameter jeder mandantengebundenen Abfrage; keine Zuordnung heißt „sieht nichts" | 16 Tests inkl. Angriffe über manipulierte Kennungen; Systemnachweise mit echter Anmeldung |
+| **Mandantentrennung** | `Geltungsbereich` als Pflichtparameter jeder mandantengebundenen Abfrage — Bestand, Ermittlung, Protokoll, Export, Alarme, Gruppen, Benutzerliste. Keine Zuordnung heißt „sieht nichts" | 22 Tests inkl. Angriffe über manipulierte Kennungen; Systemnachweise mit echter Anmeldung |
 | **Agent-Authentisierung** | einmalig gültiges Registrierungsgeheimnis → dauerhaftes Token | Systemnachweise: erfundenes und wiederverwendetes Geheimnis werden abgewiesen |
 | **Transportverschlüsselung TI** | TLS 1.2 mit Brainpool (BouncyCastle), Cipher-Suites nach `[gemSpec_Krypt]` eingeschränkt | Durchstich über Brainpool-TLS |
 | **Zugangsdaten nicht auslesbar** | AES-256-GCM, kein Lesepfad gibt Klartext | Systemnachweise: kein Kennwort auf einer Oberflächenseite, keins im Protokoll |
@@ -129,11 +129,15 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
    Nachweis: `MandantentrennungTest` (16 Tests, darunter Angriffe über
    manipulierte Kennungen), dazu Systemnachweise über HTTP.
 
-   **Noch nicht eingeschränkt sind Fachprotokoll, Alarme, Gerätegruppen und die
-   Benutzerliste.** Alle vier führen die Einrichtung als Textfeld statt als
-   Verweis; sauber wird das erst mit einer Migration. **Bis dahin sieht jeder
-   angemeldete Benutzer das gesamte Protokoll und alle Alarme.** Das muss
-   **vor** dem ersten Mehrmandantenbetrieb erledigt sein.
+   **Seit dem 07.08.2026 gilt sie auch für Fachprotokoll, Alarme,
+   Gerätegruppen und die Benutzerliste** (Migration 12 trägt eine
+   `organisation_id` nach, mit Übernahme aus dem Textfeld). Der Excel-Export
+   ist mit eingeschränkt — er wäre sonst der bequemste Weg an fremde Daten.
+   Nachweis: 22 Tests, dazu Systemnachweise mit echter Anmeldung.
+
+   **Was bleibt:** Rollen und Rechte sind noch nicht nach Ebene verfeinert (was
+   darf Praxis, Standort, Verbund?), und neue Funde aus der Bestandsermittlung
+   haben noch keine Zuordnung — die Grenze greift dort bei der Übernahme.
 2. **Kein TLS auf der eigenen Oberfläche.** Die Zentrale spricht HTTP. Für den
    Zugriff über ein Netzsegment hinaus gehört ein TLS-Vermittler davor — nicht
    umgesetzt, nicht dokumentiert.

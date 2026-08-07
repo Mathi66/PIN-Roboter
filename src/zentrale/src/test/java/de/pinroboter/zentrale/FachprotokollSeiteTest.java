@@ -22,6 +22,9 @@ class FachprotokollSeiteTest {
     private static final String GERAET = "KT-BLAETTERTEST";
     private static final int ANZAHL = 137;   // absichtlich kein Vielfaches der Seitengröße
 
+    /** Diese Klasse prüft das Blättern; die Mandantentrennung hat eine eigene Testklasse. */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Fachprotokoll protokoll;
 
@@ -74,7 +77,7 @@ class FachprotokollSeiteTest {
     @Test @Order(1)
     @DisplayName("Die erste Seite zeigt die jüngsten Einträge und kennt die Gesamtzahl")
     void ersteSeite() {
-        var s = protokoll.seite(GERAET, null, null, 1, 50);
+        var s = protokoll.seite(GERAET, null, null, 1, 50, ALLES);
         assertEquals(50, s.eintraege().size());
         assertEquals(ANZAHL, s.gesamt());
         assertEquals(3, s.seitenZahl(), "137 Einträge zu 50 sind drei Seiten");
@@ -88,7 +91,7 @@ class FachprotokollSeiteTest {
     @Test @Order(2)
     @DisplayName("Die letzte Seite ist angebrochen und meldet kein Weiter")
     void letzteSeite() {
-        var s = protokoll.seite(GERAET, null, null, 3, 50);
+        var s = protokoll.seite(GERAET, null, null, 3, 50, ALLES);
         assertEquals(37, s.eintraege().size(), "137 − 100 = 37");
         assertTrue(s.hatVorherige());
         assertFalse(s.hatNaechste());
@@ -106,7 +109,7 @@ class FachprotokollSeiteTest {
         var alle = new java.util.HashSet<Long>();
         int gezaehlt = 0;
         for (int nr = 1; nr <= 3; nr++) {
-            for (var e : protokoll.seite(GERAET, null, null, nr, 50).eintraege()) {
+            for (var e : protokoll.seite(GERAET, null, null, nr, 50, ALLES).eintraege()) {
                 assertTrue(alle.add(e.id()), "Eintrag " + e.id() + " erscheint auf zwei Seiten");
                 gezaehlt++;
             }
@@ -117,35 +120,35 @@ class FachprotokollSeiteTest {
     @Test @Order(4)
     @DisplayName("Ein Filter wirkt auf Trefferzahl und Seiten gleichermaßen")
     void filterWirktAufBeides() {
-        var s = protokoll.seite(GERAET, null, "fehler", 1, 50);
+        var s = protokoll.seite(GERAET, null, "fehler", 1, 50, ALLES);
         assertEquals(45, s.gesamt(), "jeder dritte von 137 ist fehlgeschlagen");
         assertEquals(1, s.seitenZahl());
         assertTrue(s.eintraege().stream().noneMatch(Ereignis::erfolg),
                 "die Seite darf nur Fehlschläge enthalten");
 
-        var nachArt = protokoll.seite(GERAET, Ereignisart.GERAET_ERREICHBAR.name(), null, 1, 50);
+        var nachArt = protokoll.seite(GERAET, Ereignisart.GERAET_ERREICHBAR.name(), null, 1, 50, ALLES);
         assertEquals(92, nachArt.gesamt());
     }
 
     @Test @Order(5)
     @DisplayName("Unsinnige Seitenangaben führen nicht zu Fehlern")
     void unsinnigeAngaben() {
-        assertEquals(1, protokoll.seite(GERAET, null, null, 0, 50).seitenNummer(),
+        assertEquals(1, protokoll.seite(GERAET, null, null, 0, 50, ALLES).seitenNummer(),
                 "Seite 0 wird zu Seite 1");
-        assertEquals(1, protokoll.seite(GERAET, null, null, -5, 50).seitenNummer());
-        assertTrue(protokoll.seite(GERAET, null, null, 999, 50).eintraege().isEmpty(),
+        assertEquals(1, protokoll.seite(GERAET, null, null, -5, 50, ALLES).seitenNummer());
+        assertTrue(protokoll.seite(GERAET, null, null, 999, 50, ALLES).eintraege().isEmpty(),
                 "hinter dem Ende gibt es nichts — aber auch keinen Fehler");
 
         // Nach oben begrenzt, damit eine manipulierte Anfrage nicht das ganze
         // Protokoll zieht.
-        assertEquals(500, protokoll.seite(GERAET, null, null, 1, 100_000).seitengroesse());
-        assertEquals(1, protokoll.seite(GERAET, null, null, 1, 0).seitengroesse());
+        assertEquals(500, protokoll.seite(GERAET, null, null, 1, 100_000, ALLES).seitengroesse());
+        assertEquals(1, protokoll.seite(GERAET, null, null, 1, 0, ALLES).seitengroesse());
     }
 
     @Test @Order(6)
     @DisplayName("Ein leeres Ergebnis meldet null Treffer statt zu scheitern")
     void leeresErgebnis() {
-        var s = protokoll.seite("GIBTESNICHT", null, null, 1, 50);
+        var s = protokoll.seite("GIBTESNICHT", null, null, 1, 50, ALLES);
         assertTrue(s.eintraege().isEmpty());
         assertEquals(0, s.gesamt());
         assertEquals(1, s.seitenZahl(), "auch ohne Treffer gibt es eine Seite");

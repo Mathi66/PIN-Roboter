@@ -29,17 +29,19 @@ public class Gruppenverwaltung {
 
     // ---------------------------------------------------------------- Gruppen
 
-    public List<Gruppe> alle(String einrichtung) {
+    /** Gruppen im Geltungsbereich. Eine Gruppe trägt Prüfintervalle und später
+     *  Rollout-Pläne — wer sie sieht, sieht die Betriebsplanung einer Praxis. */
+    public List<Gruppe> alle(String einrichtung, Geltungsbereich bereich) {
         List<Gruppe> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT g.id, g.bezeichnung, g.einrichtung, g.pruefintervall_sekunden,
                        g.ist_vorgabe, count(t.terminal_id) AS anzahl
                 FROM geraetegruppe g
                 LEFT JOIN geraet t ON t.gruppe_id = g.id
-                WHERE g.einrichtung = ?
-                GROUP BY g.id
-                ORDER BY g.ist_vorgabe DESC, lower(g.bezeichnung)""")) {
+                WHERE g.einrichtung = ?""" + bereich.bedingung("g.organisation_id")
+                + " GROUP BY g.id ORDER BY g.ist_vorgabe DESC, lower(g.bezeichnung)")) {
             p.setString(1, einrichtung);
+            bereich.wertSetzen(db.verbindung(), p, 2);
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) liste.add(lesen(rs));
             }
@@ -69,11 +71,16 @@ public class Gruppenverwaltung {
                  + "Kürzere Abstände belasten Konnektor und Terminals unnötig.";
         }
         try (PreparedStatement p = db.verbindung().prepareStatement("""
-                INSERT INTO geraetegruppe (bezeichnung, einrichtung, pruefintervall_sekunden)
-                VALUES (?,?,?)""")) {
+                INSERT INTO geraetegruppe (bezeichnung, einrichtung, pruefintervall_sekunden,
+                                           organisation_id)
+                VALUES (?,?,?,
+                        (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
+                         AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))""")) {
             p.setString(1, bezeichnung.trim());
             p.setString(2, einrichtung);
             p.setInt(3, intervall);
+            p.setString(4, einrichtung);
+            p.setString(5, einrichtung);
             p.executeUpdate();
             return null;
         } catch (SQLException e) {

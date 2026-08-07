@@ -27,15 +27,32 @@ public class Fachprotokoll {
         this.waechter = waechter;
     }
 
+    /**
+     * Schreibt einen Eintrag.
+     *
+     * <p>Die Einrichtung wird als Text UND als Verweis abgelegt: Der Text ist
+     * der unveränderliche Inhalt des Protokolls, der Verweis trägt die
+     * Mandantengrenze. Ein Verweis allein genügt nicht — würde die Organisation
+     * umbenannt oder gelöscht, wäre der Eintrag nicht mehr lesbar, und das
+     * widerspräche der Unveränderlichkeit (FA-PRO-010).
+     */
     public Ereignis anfuegen(String einrichtung, String geraet, Ereignisart art,
                              boolean erfolg, String ausloeser, String vorgang,
                              String text, String handlung) {
         String sql = """
                 INSERT INTO fachprotokoll
-                  (einrichtung, geraet, art, stufe, erfolg, ausloeser, vorgang, text, handlung)
-                VALUES (?,?,?,?,?,?,?,?,?)
+                  (einrichtung, geraet, art, stufe, erfolg, ausloeser, vorgang, text, handlung,
+                   organisation_id)
+                VALUES (?,?,?,?,?,?,?,?,?,
+                        -- Verweis aus dem Namen, sofern eindeutig. Mehrdeutige
+                        -- Namen bleiben ohne Zuordnung: lieber eine Luecke, die
+                        -- auffaellt, als eine falsche Zuordnung.
+                        (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
+                         AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))
                 RETURNING id, zeitpunkt""";
         try (PreparedStatement p = db.verbindung().prepareStatement(sql)) {
+            p.setString(10, einrichtung);
+            p.setString(11, einrichtung);
             p.setString(1, einrichtung);
             p.setString(2, geraet);
             p.setString(3, art.name());
@@ -60,11 +77,20 @@ public class Fachprotokoll {
         }
     }
 
-    public List<Ereignis> filtern(String geraet, String art, String ergebnis, int grenze) {
+    /**
+     * Gefilterte Liste — speist den Excel-Export.
+     *
+     * <p>Auch hier gilt die Mandantengrenze. Ein Export, der mehr enthält als
+     * die Ansicht, wäre der bequemste Weg an fremde Daten.
+     */
+    public List<Ereignis> filtern(String geraet, String art, String ergebnis, int grenze,
+                                  Geltungsbereich bereich) {
         StringBuilder sql = new StringBuilder("""
                 SELECT id, zeitpunkt, einrichtung, geraet, art, erfolg, ausloeser, vorgang, text, handlung
                 FROM fachprotokoll WHERE 1=1""");
         List<Object> werte = new ArrayList<>();
+        sql.append(bereich.bedingung("organisation_id"));
+        if (!bereich.unbeschraenkt() && !bereich.leer()) werte.add(bereich);
         if (geraet != null && !geraet.isBlank())   { sql.append(" AND geraet = ?");  werte.add(geraet); }
         if (art != null && !art.isBlank())         { sql.append(" AND art = ?");     werte.add(art); }
         if (ergebnis != null && !ergebnis.isBlank()) {
@@ -75,7 +101,7 @@ public class Fachprotokoll {
 
         List<Ereignis> ergebnisse = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement(sql.toString())) {
-            for (int i = 0; i < werte.size(); i++) p.setObject(i + 1, werte.get(i));
+            fuellen(p, werte);
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) {
                     Ereignisart a;
@@ -108,7 +134,7 @@ public class Fachprotokoll {
      * @param seitenNummer 1-basiert
      */
     public Seite seite(String geraet, String art, String ergebnis,
-                       int seitenNummer, int seitengroesse) {
+                       int seitenNummer, int seitengroesse, Geltungsbereich bereich) {
         int nr = Math.max(1, seitenNummer);
         // Nach oben begrenzt, damit eine manipulierte Anfrage nicht das
         // gesamte Protokoll zieht - bei 200.000 Eintraegen waere das ein
@@ -117,6 +143,16 @@ public class Fachprotokoll {
 
         StringBuilder wo = new StringBuilder(" WHERE 1=1");
         List<Object> werte = new ArrayList<>();
+        // Mandantengrenze zuerst - sie steht in jeder Abfrage an derselben
+        // Stelle und faellt bei einer Durchsicht sofort auf.
+        //
+        // Eintraege OHNE Zuordnung (organisation_id IS NULL) bleiben fuer
+        // eingeschraenkte Benutzer unsichtbar. Das betrifft Vorgaenge ohne
+        // Einrichtungsbezug - Anmeldungen, Rotation, Instanzverwaltung. Sie
+        // gehen den Instanzbetreiber an, nicht eine einzelne Praxis.
+        wo.append(bereich.bedingung("organisation_id"));
+        if (!bereich.unbeschraenkt() && !bereich.leer()) werte.add(bereich);
+
         if (geraet != null && !geraet.isBlank())   { wo.append(" AND geraet = ?");  werte.add(geraet); }
         if (art != null && !art.isBlank())         { wo.append(" AND art = ?");     werte.add(art); }
         if (ergebnis != null && !ergebnis.isBlank()) {
@@ -126,7 +162,7 @@ public class Fachprotokoll {
         long gesamt = 0;
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "SELECT count(*) FROM fachprotokoll" + wo)) {
-            for (int i = 0; i < werte.size(); i++) p.setObject(i + 1, werte.get(i));
+            fuellen(p, werte);
             try (ResultSet rs = p.executeQuery()) { if (rs.next()) gesamt = rs.getLong(1); }
         } catch (SQLException e) {
             System.err.println("Fachprotokoll nicht zählbar: " + e.getMessage());
@@ -137,8 +173,7 @@ public class Fachprotokoll {
                 SELECT id, zeitpunkt, einrichtung, geraet, art, erfolg, ausloeser, vorgang, text, handlung
                 FROM fachprotokoll""" + wo
                 + " ORDER BY zeitpunkt DESC, id DESC LIMIT ? OFFSET ?")) {
-            int i = 1;
-            for (Object w : werte) p.setObject(i++, w);
+            int i = fuellen(p, werte);
             p.setInt(i++, gr);
             p.setLong(i, (long) (nr - 1) * gr);
             try (ResultSet rs = p.executeQuery()) {
@@ -158,6 +193,16 @@ public class Fachprotokoll {
             System.err.println("Fachprotokoll nicht lesbar: " + e.getMessage());
         }
         return new Seite(eintraege, nr, gr, gesamt);
+    }
+
+    /** Setzt Filterwerte typrichtig; ein {@link Geltungsbereich} bringt sein Array selbst mit. */
+    private static int fuellen(PreparedStatement p, List<Object> werte) throws SQLException {
+        int i = 1;
+        for (Object w : werte) {
+            if (w instanceof Geltungsbereich g) i = g.wertSetzen(p.getConnection(), p, i);
+            else p.setObject(i++, w);
+        }
+        return i;
     }
 
     /** Eine Seite der Protokollansicht mit den Angaben für die Blätterleiste. */

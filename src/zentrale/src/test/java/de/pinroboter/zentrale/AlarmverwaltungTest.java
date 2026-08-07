@@ -11,6 +11,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfEnvironmentVariable(named = "TEST_DB_URL", matches = ".+")
 class AlarmverwaltungTest {
 
+    /** Diese Klasse prüft Fachlogik; die Mandantentrennung hat eine eigene Testklasse. */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Alarmverwaltung av;
     private static final String E = "PruefEinrichtung";
@@ -41,7 +44,7 @@ class AlarmverwaltungTest {
                     "Antwortet nicht", "Netzwerk prüfen"),
                     "Wiederholung " + i + " darf nicht als neu gelten");
         }
-        assertEquals(1, av.offene(E).stream().filter(a -> o.equals(a.objekt())).count(),
+        assertEquals(1, av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).count(),
                 "Es darf genau ein offener Alarm existieren");
     }
 
@@ -50,10 +53,10 @@ class AlarmverwaltungTest {
     void behobenSchliesstAutomatisch() {
         String o = obj();
         av.melden(E, o, Alarmverwaltung.Art.KARTE_UNVERIFIZIERT, "Nicht verifiziert", "Warten");
-        assertEquals(1, av.offene(E).stream().filter(a -> o.equals(a.objekt())).count());
+        assertEquals(1, av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).count());
 
         assertTrue(av.beheben(E, o, Alarmverwaltung.Art.KARTE_UNVERIFIZIERT));
-        assertEquals(0, av.offene(E).stream().filter(a -> o.equals(a.objekt())).count(),
+        assertEquals(0, av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).count(),
                 "Nach dem Beheben darf kein offener Alarm mehr übrig sein");
 
         assertFalse(av.beheben(E, o, Alarmverwaltung.Art.KARTE_UNVERIFIZIERT),
@@ -76,7 +79,7 @@ class AlarmverwaltungTest {
         String o = obj();
         assertTrue(av.melden(E, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR, "a", "b"));
         assertTrue(av.melden(E, o, Alarmverwaltung.Art.PEVIM_NICHT_AKTIV, "c", "d"));
-        assertEquals(2, av.offene(E).stream().filter(a -> o.equals(a.objekt())).count());
+        assertEquals(2, av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).count());
     }
 
     @Test
@@ -84,13 +87,13 @@ class AlarmverwaltungTest {
     void quittieren() {
         String o = obj();
         av.melden(E, o, Alarmverwaltung.Art.AUTOMATIK_ANGEHALTEN, "angehalten", "PIN prüfen");
-        var alarm = av.offene(E).stream().filter(a -> o.equals(a.objekt())).findFirst().orElseThrow();
+        var alarm = av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).findFirst().orElseThrow();
         assertFalse(alarm.quittiert());
 
         assertTrue(av.quittieren(alarm.id(), "Anna Beispiel"));
         assertFalse(av.quittieren(alarm.id(), "Jemand anders"), "Zweimal quittieren geht nicht");
 
-        var danach = av.offene(E).stream().filter(a -> o.equals(a.objekt())).findFirst().orElseThrow();
+        var danach = av.offene(E, ALLES).stream().filter(a -> o.equals(a.objekt())).findFirst().orElseThrow();
         assertTrue(danach.quittiert());
         assertEquals("Anna Beispiel", danach.quittiertVon());
         assertNotNull(danach.quittiertAm(),
@@ -103,7 +106,7 @@ class AlarmverwaltungTest {
         String o = obj();
         av.melden(E, o, Alarmverwaltung.Art.KARTE_GESPERRT, "gesperrt", "PUK");
         int vorher = av.zaehlen(E).get(Alarmverwaltung.Schweregrad.KRITISCH);
-        var a = av.offene(E).stream().filter(x -> o.equals(x.objekt())).findFirst().orElseThrow();
+        var a = av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).findFirst().orElseThrow();
         av.quittieren(a.id(), "Prüfer");
         assertEquals(vorher - 1, av.zaehlen(E).get(Alarmverwaltung.Schweregrad.KRITISCH));
     }
@@ -115,7 +118,7 @@ class AlarmverwaltungTest {
         av.melden(E, o, Alarmverwaltung.Art.KARTE_GESPERRT,
                 "Die SMC-B ist gesperrt.",
                 "Die Karte lässt sich nur mit der PUK entsperren.");
-        var a = av.offene(E).stream().filter(x -> o.equals(x.objekt())).findFirst().orElseThrow();
+        var a = av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).findFirst().orElseThrow();
         assertNotNull(a.handlung());
         assertTrue(a.handlung().length() > 20, "Eine Handlungsempfehlung muss etwas sagen");
     }
@@ -126,7 +129,7 @@ class AlarmverwaltungTest {
         String o1 = obj(), o2 = obj();
         av.melden(E, o1, Alarmverwaltung.Art.PEVIM_NICHT_AKTIV, "Hinweis", "irgendwas");
         av.melden(E, o2, Alarmverwaltung.Art.KARTE_GESPERRT, "Kritisch", "PUK");
-        var liste = av.offene(E);
+        var liste = av.offene(E, ALLES);
         assertEquals(Alarmverwaltung.Schweregrad.KRITISCH, liste.get(0).schweregrad(),
                 "Was den Betrieb anhält, muss zuerst ins Auge fallen");
     }

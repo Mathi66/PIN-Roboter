@@ -141,19 +141,72 @@ Lauten weiß man wenigstens, dass etwas nicht stimmt.
 
 ---
 
+## Zweite Hälfte: Protokoll, Alarme, Gruppen, Benutzerliste
+
+Nachgetragen am 07.08.2026. Alle vier führten die Einrichtung als **Textfeld**.
+Eine Mandantengrenze über einen Textvergleich wäre brüchig: Zwei Einrichtungen
+mit gleichem Namen in verschiedenen Verbünden fielen zusammen, und eine
+Umbenennung zerriss die Zuordnung stillschweigend.
+
+**Migration 12** trägt eine Spalte `organisation_id` nach, mit Datenübernahme aus
+dem Textfeld — aber nur, **wo der Name eindeutig ist**. Mehrdeutige Namen bleiben
+ohne Zuordnung: lieber eine Lücke, die auffällt, als eine falsche Zuordnung, die
+niemand bemerkt.
+
+### Das Textfeld bleibt
+
+Es zu ersetzen wäre eine nachträgliche Änderung an Einträgen, die per
+`FA-PRO-010` **unveränderlich** sind. Der Text ist der Inhalt des Nachweises, die
+neue Spalte trägt die Grenze. Nebeneffekt mit Wert: Der Name bleibt lesbar, auch
+wenn die Organisation längst entfernt wurde — genau das ist bei einem Nachweis
+erwünscht.
+
+### Ein Befund: Der Fremdschlüssel hätte das Löschen unmöglich gemacht
+
+Der erste Entwurf gab der Spalte einen Fremdschlüssel mit
+`ON DELETE SET NULL`. Das schlug beim ersten Testlauf fehl:
+
+```
+ERROR: Das Fachprotokoll ist nur anfuegbar.
+       Aenderung oder Loeschung einzelner Eintraege ist unzulaessig.
+```
+
+Ein `SET NULL` ist ein `UPDATE` — und das blockiert der Schutz des Protokolls,
+zu Recht. **Die Folge wäre gewesen: Eine Organisation, auf die ein
+Protokolleintrag verweist, ließe sich niemals mehr löschen.** Beim Kunden wäre
+das als „Einrichtung kann nicht entfernt werden" aufgefallen, ohne erkennbaren
+Zusammenhang.
+
+Das Fachprotokoll trägt die Spalte deshalb **ohne Fremdschlüssel**. Bei Alarmen
+und Gruppen ist `SET NULL` unproblematisch — sie sind nicht unveränderlich.
+
+### Was jetzt zusätzlich geprüft ist
+
+| Angriff | Erwartung |
+|---|---|
+| Protokoll einer fremden Praxis lesen | nur eigene Einträge |
+| Excel-Export | enthält nicht mehr als die Ansicht |
+| Alarme einer fremden Praxis | leer |
+| Gerätegruppen einer fremden Praxis | leer |
+| Benutzerliste | nur Konten des eigenen Bereichs |
+| Protokollfilter auf ein fremdes Gerät | keine Treffer |
+
+Ein Eintrag **ohne** Organisationszuordnung — Anmeldungen, Rotation,
+Instanzverwaltung — bleibt eingeschränkten Benutzern verborgen und erscheint nur
+für den Instanzbetreiber. Diese Vorgänge haben keinen Einrichtungsbezug; sie
+gehen den Betreiber an, nicht eine einzelne Praxis.
+
+---
+
 ## Was noch offen ist
 
 Ehrlich benannt:
 
-1. **Fachprotokoll und Alarme sind noch nicht eingeschränkt.** Beide führen die
-   Einrichtung als **Textfeld**, nicht als Verweis auf `organisation`. Eine
-   Einschränkung über einen Textvergleich wäre brüchig; sauber wird es erst mit
-   einer Migration auf `organisation_id`. **Bis dahin sieht jeder angemeldete
-   Benutzer das gesamte Protokoll.** Das ist die verbleibende Lücke.
-2. **Gerätegruppen** hängen ebenfalls an einer Text-Einrichtung.
-3. **Neue Funde aus der Ermittlung** haben noch keine Organisationszuordnung —
+1. **Neue Funde aus der Ermittlung** haben noch keine Organisationszuordnung —
    sie gehören ja noch niemandem. Die Grenze greift bei der *Übernahme*, weil
    der gewählte Konnektor im Bereich liegen muss. Bei mehreren Agenten je
    Zentrale muss der Fund an die Einrichtung des meldenden Agenten gebunden
    werden.
-4. **Benutzerverwaltung**: Die Benutzerliste ist noch nicht eingeschränkt.
+2. **Rollen und Rechte je Ebene** sind noch nicht verfeinert: Was darf ein
+   Benutzer der Praxis, was der des Standorts, was der des Verbunds? Derzeit
+   entscheidet nur die Rolle (Administrator / Benutzer), nicht die Ebene.

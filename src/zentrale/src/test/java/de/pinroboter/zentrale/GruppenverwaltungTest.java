@@ -11,6 +11,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfEnvironmentVariable(named = "TEST_DB_URL", matches = ".+")
 class GruppenverwaltungTest {
 
+    /** Diese Klasse prüft Fachlogik; die Mandantentrennung hat eine eigene Testklasse. */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Gruppenverwaltung gv;
 
@@ -69,7 +72,7 @@ class GruppenverwaltungTest {
     void umgruppieren() {
         String name = neu();
         assertNull(gv.anlegen(name, "Praxis", 120));
-        long neueGruppe = gv.alle("Praxis").stream()
+        long neueGruppe = gv.alle("Praxis", ALLES).stream()
                 .filter(g -> g.bezeichnung().equals(name)).findFirst().orElseThrow().id();
 
         String id = "KT-" + UUID.randomUUID().toString().substring(0, 8);
@@ -85,7 +88,7 @@ class GruppenverwaltungTest {
     void loeschenVerschiebtGeraete() {
         String name = neu();
         assertNull(gv.anlegen(name, "Praxis", 90));
-        long id = gv.alle("Praxis").stream()
+        long id = gv.alle("Praxis", ALLES).stream()
                 .filter(g -> g.bezeichnung().equals(name)).findFirst().orElseThrow().id();
 
         String geraet = "KT-" + UUID.randomUUID().toString().substring(0, 8);
@@ -112,10 +115,10 @@ class GruppenverwaltungTest {
     void intervallAendern() {
         String name = neu();
         gv.anlegen(name, "Praxis", 60);
-        long id = gv.alle("Praxis").stream()
+        long id = gv.alle("Praxis", ALLES).stream()
                 .filter(g -> g.bezeichnung().equals(name)).findFirst().orElseThrow().id();
         assertNull(gv.intervallSetzen(id, 300));
-        assertEquals(300, gv.alle("Praxis").stream()
+        assertEquals(300, gv.alle("Praxis", ALLES).stream()
                 .filter(g -> g.id() == id).findFirst().orElseThrow().pruefintervallSekunden());
         assertNotNull(gv.intervallSetzen(id, 3));
     }

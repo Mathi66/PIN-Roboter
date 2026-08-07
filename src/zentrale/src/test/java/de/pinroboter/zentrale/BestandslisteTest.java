@@ -273,7 +273,7 @@ class BestandslisteTest {
         // Waere das ueber eine Massenaktion aushebelbar, waere die
         // Mandantentrennung offen.
         assertNull(gv.anlegen("Testgruppe Liste", "Testeinrichtung Liste", 60));
-        long gruppeId = gv.alle("Testeinrichtung Liste").get(0).id();
+        long gruppeId = gv.alle("Testeinrichtung Liste", ALLES).get(0).id();
 
         var ids = bv.terminals(nurUnsere(), null, false, 1, 50, ALLES).eintraege().stream()
                 .map(Bestandsverwaltung.Terminal::id).toList();
@@ -282,7 +282,7 @@ class BestandslisteTest {
         assertTrue(e.vollstaendig());
 
         assertNull(gv.anlegen("Testgruppe Fremd", "Ganz andere Einrichtung", 60));
-        long fremdeGruppe = gv.alle("Ganz andere Einrichtung").get(0).id();
+        long fremdeGruppe = gv.alle("Ganz andere Einrichtung", ALLES).get(0).id();
         var f = bv.massenGruppeZuweisen(ids, fremdeGruppe, ALLES);
         assertEquals(0, f.geaendert(), "kein Gerät darf in eine fremde Einrichtung wandern");
         assertFalse(f.hinweise().isEmpty());
