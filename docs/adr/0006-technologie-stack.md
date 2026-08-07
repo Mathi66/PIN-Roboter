@@ -1,11 +1,19 @@
 # ADR-0006: Technologie-Stack
 
-- **Status:** Vorschlag — Freigabe durch den Product Owner erbeten
+- **Status:** **Umgesetzt** (07.08.2026) — formale Freigabe des PO steht noch aus
 - **Datum:** 06.08.2026 (Neufassung nach Messung)
 - **Betrifft:** Umsetzung, Betrieb, Wartbarkeit
 - **Ersetzt:** die erste Fassung vom selben Tag (Vorschlag Go — durch Messung widerlegt)
 
 ---
+
+> **Nachtrag 07.08.2026:** Der Stack ist seit zehn Entwicklungsiterationen
+> umgesetzt und in Betrieb — 6.300 Zeilen Java, 65 Modultests, 37
+> Systemnachweise. Die hier beschriebenen Wahlen haben sich in der Praxis
+> gehalten; die Stolpersteine bei Brainpool sind in
+> [docs/03-umsetzung/02-brainpool-tls.md](../03-umsetzung/02-brainpool-tls.md)
+> festgehalten. Eine ausdrückliche Freigabe des POs liegt nicht vor — sie wurde
+> durch die Beauftragung der autonomen Umsetzung überholt und ist nachzuholen.
 
 ## Entscheidungsvorschlag
 

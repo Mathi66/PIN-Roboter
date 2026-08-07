@@ -1,10 +1,16 @@
 # ADR-0007: Simulierte Endpunkte und Teststrategie
 
-- **Status:** Vorschlag — Bestätigung des PO erbeten
+- **Status:** **Umgesetzt** (07.08.2026) — Simulator in Betrieb, Kalibrierung an echter Hardware steht aus
 - **Datum:** 06.08.2026
 - **Betrifft:** Vorgehen, Qualitätssicherung, Zeitplan
 
 ---
+
+> **Nachtrag 07.08.2026:** Der Simulator ist gebaut und trägt die gesamte
+> Prüfung: 37 Systemnachweise laufen gegen ihn. **Die in Regel 2 geforderte
+> Kalibrierung an echter Hardware steht weiterhin aus** — damit steht auch die
+> dort beschriebene Gefahr weiterhin im Raum, gegen eine Fiktion zu entwickeln.
+> Das ist der wichtigste offene Punkt des Projekts.
 
 ## Kontext
 

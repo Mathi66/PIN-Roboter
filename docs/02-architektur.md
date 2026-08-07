@@ -1,14 +1,33 @@
 # Architekturkonzept PIN-Roboter
 
-- **Stand:** 06.08.2026
-- **Status:** Entwurf zur Abnahme durch den Product Owner
-- **Grundlage:** [Anforderungskatalog](01-anforderungskatalog.md), ADR-0001 bis ADR-0005
+- **Stand:** 07.08.2026
+- **Status:** **In Umsetzung** — die Bausteinsicht entspricht dem gebauten Zustand
+- **Grundlage:** [Anforderungskatalog](01-anforderungskatalog.md), ADR-0001 bis ADR-0007
 
-> **Technologieneutral.** Dieses Dokument beschreibt Bausteine, Verantwortlichkeiten
-> und Abläufe — nicht Programmiersprachen, Rahmenwerke oder Datenbankprodukte.
-> Die Stack-Entscheidung folgt als **ADR-0006** und darf diese Architektur nicht
-> verändern, sondern nur ausfüllen. Wo eine Technologiewahl die Architektur
-> beeinflussen würde, ist das ausdrücklich vermerkt.
+> **Verhältnis zu den anderen Dokumenten.** Dieses Konzept beschreibt Bausteine,
+> Verantwortlichkeiten und Abläufe. **Wie** sie gebaut sind und warum so, steht in
+> [docs/03-umsetzung/](03-umsetzung/); wo beide auseinanderlaufen, gilt das
+> Umsetzungsverzeichnis, und dieses Dokument ist nachzuziehen.
+>
+> Der Entwurf entstand technologieneutral. Die Stack-Entscheidung (ADR-0006) hat
+> ihn **ausgefüllt, nicht verändert** — die Bausteine, die Vertrauensgrenze und
+> die Abläufe sind unverändert geblieben. Das ist ein gutes Zeichen für den
+> Schnitt.
+
+## Umsetzungsstand (07.08.2026)
+
+| Baustein | Stand |
+|---|---|
+| **Standort-Agent** | Überwachung, Sicherungslogik, PEviM-Ablauf, Registrierung — läuft |
+| **Zentrale** | Oberfläche, Anmeldung mit TOTP, Fachprotokoll, Alarme, Gruppen, Export — läuft |
+| **Simulator** | Konnektor und Terminals mit Brainpool-TLS — läuft, ersetzt echte Hardware **nicht** |
+| Herstellerkapselung | angelegt, bisher nur eine Umsetzung (CHERRY-artig) |
+| Mandantentrennung | im Datenmodell, **in der Oberfläche noch nicht nutzbar** |
+| Update-Manager | **nicht umgesetzt** |
+| Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
+
+Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
+6.300 Zeilen in 42 Dateien, 65 Modultests, 37 Systemnachweise.
 
 ---
 
