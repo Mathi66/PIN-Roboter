@@ -8,6 +8,8 @@ de/pinroboter/zentrale/Ereignis.class
 de/pinroboter/zentrale/Agentenverwaltung$Registrierung$Abgelehnt.class
 de/pinroboter/zentrale/Benutzerverwaltung.class
 de/pinroboter/zentrale/Gruppenverwaltung.class
+de/pinroboter/zentrale/Demodaten.class
+de/pinroboter/zentrale/Demodaten$Bestand.class
 de/pinroboter/zentrale/Agentenverwaltung$Registrierung$Erfolg.class
 de/pinroboter/zentrale/Tabellenmappe.class
 de/pinroboter/zentrale/Gruppenverwaltung$Gruppe.class
@@ -28,3 +30,4 @@ de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Gesperrt.class
 de/pinroboter/zentrale/Benutzerverwaltung$Benutzer.class
 de/pinroboter/zentrale/Speicherwaechter$Zustand.class
 de/pinroboter/zentrale/Anmeldeseiten.class
+de/pinroboter/zentrale/Demodaten$Konto.class

@@ -287,6 +287,23 @@ A3=$(alarmzahl)
 [ "$A3" -lt "$A1" ] && BE=ja || BE=nein
 ergebnis "behobener Zustand schließt den Alarm selbsttätig ($A1 -> $A3)" "$BE"
 
+# ---------------------------------------------------------------- Erreichbarkeit
+hinweis "Jeder Navigationslink fuehrt zu einer Seite"
+echo "  Diese Pruefung fehlte bis 07.08.2026. Zweimal wurde eine fertige Seite"
+echo "  gebaut, verlinkt - und die Route nie registriert. Der Compiler sieht das"
+echo "  nicht: Ein Link ist eine Zeichenkette, kein Aufruf."
+TOT=0
+# Links aus der Navigation der Startseite auslesen und alle aufrufen
+ZIELE=$(curl -s -b "$KEKSE" http://localhost:8090/ \
+        | grep -oE '<a href="/[a-z-]*"' | grep -oE '"/[a-z-]*"' | tr -d '"' | sort -u)
+for z in $ZIELE; do
+  C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" "http://localhost:8090$z")
+  if [ "$C" != "200" ]; then TOT=$((TOT+1)); echo "    $z -> HTTP $C"; fi
+done
+ANZ=$(echo "$ZIELE" | wc -w | tr -d ' ')
+[ $TOT -eq 0 ] && [ "$ANZ" -ge 4 ] && NV=ja || NV=nein
+ergebnis "alle $ANZ Navigationsziele liefern HTTP 200 (tot: $TOT)" "$NV"
+
 # ---------------------------------------------------------------- Speicherbudget
 hinweis "FA-PRO-070 — volles Protokoll haelt die Kernfunktion nicht an"
 echo "  Zentrale mit 400 KB Protokollbudget neu starten (normal: 2 GB)"

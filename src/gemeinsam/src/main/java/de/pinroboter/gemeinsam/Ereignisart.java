@@ -44,6 +44,8 @@ public enum Ereignisart {
     TOTP_ZURUECKGESETZT("Zweiter Faktor zurückgesetzt", Stufe.SICHERHEIT),
 
     PROTOKOLL_EXPORTIERT("Protokoll exportiert", Stufe.SICHERHEIT),
+    DEMODATEN_ANGELEGT("Demodatensatz angelegt", Stufe.SICHERHEIT),
+    DEMODATEN_GELOESCHT("Demodatensatz entfernt", Stufe.SICHERHEIT),
     PROTOKOLL_ROTIERT("Protokoll rotiert", Stufe.SICHERHEIT),
 
     ALARM_AUSGELOEST("Alarm ausgelöst", Stufe.ROUTINE),

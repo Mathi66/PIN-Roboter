@@ -223,6 +223,78 @@ public class Datenbank implements AutoCloseable {
 
             CREATE INDEX alarm_seit_idx ON alarm (seit DESC);
             """);
+
+        migration(8, """
+            -- Dreistufige Organisationsstruktur (ADR-0002, erweitert am 07.08.2026).
+            --
+            -- ADR-0002 sah zwei Ebenen vor: Serviceorganisation und Einrichtung.
+            -- Der MVZ-Verbund des POs hat drei: Verbund, Standort, Praxis - und
+            -- die Berechtigungsebenen haengen genau daran. Ohne die mittlere
+            -- Ebene gaebe es keinen Geltungsbereich fuer einen Benutzer, der
+            -- einen Standort betreut, aber nicht den ganzen Verbund.
+            CREATE TABLE organisation (
+              id            BIGSERIAL PRIMARY KEY,
+              bezeichnung   TEXT        NOT NULL,
+              art           TEXT        NOT NULL
+                              CHECK (art IN ('VERBUND','STANDORT','EINRICHTUNG')),
+              eltern_id     BIGINT      REFERENCES organisation(id) ON DELETE CASCADE,
+              -- Demo-Daten sind technisch markiert. Die Loeschfunktion fasst
+              -- ausschliesslich markierte Datensaetze an und kann echte Praxen
+              -- damit nicht einmal versehentlich erwischen.
+              ist_demo      BOOLEAN     NOT NULL DEFAULT FALSE,
+              angelegt      TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX organisation_eltern_idx ON organisation (eltern_id);
+            CREATE INDEX organisation_demo_idx   ON organisation (ist_demo);
+
+            -- Ein Verbund hat keine Eltern, alles andere schon.
+            ALTER TABLE organisation ADD CONSTRAINT organisation_hierarchie
+              CHECK ((art = 'VERBUND' AND eltern_id IS NULL)
+                  OR (art <> 'VERBUND' AND eltern_id IS NOT NULL));
+
+            CREATE TABLE konnektor (
+              id             BIGSERIAL PRIMARY KEY,
+              organisation_id BIGINT     NOT NULL REFERENCES organisation(id) ON DELETE CASCADE,
+              bezeichnung    TEXT        NOT NULL,
+              adresse        TEXT        NOT NULL,
+              modell         TEXT,
+              mandant_id     TEXT        NOT NULL,
+              clientsystem_id TEXT       NOT NULL,
+              arbeitsplatz_id TEXT       NOT NULL,
+              aktiv          BOOLEAN     NOT NULL DEFAULT TRUE,
+              ist_demo       BOOLEAN     NOT NULL DEFAULT FALSE,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX konnektor_org_idx ON konnektor (organisation_id);
+
+            CREATE TABLE kartenterminal (
+              id             BIGSERIAL PRIMARY KEY,
+              terminal_id    TEXT        NOT NULL UNIQUE,
+              konnektor_id   BIGINT      NOT NULL REFERENCES konnektor(id) ON DELETE CASCADE,
+              organisation_id BIGINT     NOT NULL REFERENCES organisation(id) ON DELETE CASCADE,
+              gruppe_id      BIGINT      REFERENCES geraetegruppe(id),
+              bezeichnung    TEXT        NOT NULL,
+              standortangabe TEXT,
+              modell         TEXT,
+              kartenhandle   TEXT,
+              iccsn          TEXT,
+              aktiv          BOOLEAN     NOT NULL DEFAULT TRUE,
+              ist_demo       BOOLEAN     NOT NULL DEFAULT FALSE,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX kartenterminal_konnektor_idx ON kartenterminal (konnektor_id);
+            CREATE INDEX kartenterminal_org_idx       ON kartenterminal (organisation_id);
+
+            -- Geltungsbereich eines Benutzers: die Organisationseinheit, fuer die
+            -- er zustaendig ist. Ebene 1 = Praxis, Ebene 2 = Standort,
+            -- Ebene 3 = Verbund. Die Ebene ergibt sich aus der Art der
+            -- verknuepften Organisation - sie wird nicht getrennt gespeichert,
+            -- weil zwei Quellen fuer dieselbe Wahrheit irgendwann auseinanderlaufen.
+            ALTER TABLE benutzer ADD COLUMN organisation_id BIGINT
+              REFERENCES organisation(id) ON DELETE SET NULL;
+            ALTER TABLE benutzer ADD COLUMN ist_demo BOOLEAN NOT NULL DEFAULT FALSE;
+            CREATE INDEX benutzer_org_idx ON benutzer (organisation_id);
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

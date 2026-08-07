@@ -31,6 +31,7 @@ public class Zentrale {
     private final Gruppenverwaltung gruppen;
     private final Alarmverwaltung alarme;
     private final Speicherwaechter speicher;
+    private final Demodaten demodaten;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -69,6 +70,7 @@ public class Zentrale {
         this.agenten = new Agentenverwaltung(db);
         this.gruppen = new Gruppenverwaltung(db);
         this.alarme = new Alarmverwaltung(db);
+        this.demodaten = new Demodaten(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -240,6 +242,95 @@ public class Zentrale {
         app.get("/teil/uebersicht", c -> c.html(uebersicht()));
         app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
         app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
+
+        // ---------------------------------------------------------- Gruppen
+        app.get("/gruppen",      c -> c.html(seite("gruppen", gruppenSeite(null), angemeldeter(c))));
+        app.get("/teil/gruppen", c -> c.html(gruppenTabelle()));
+
+        app.post("/gruppen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            int intervall;
+            try { intervall = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
+            catch (NumberFormatException e) { intervall = 60; }
+            String bez = Anmeldeseiten.feld(c, "bezeichnung");
+            String fehler = gruppen.anlegen(bez, "Praxis", intervall);
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe \"" + bez + "\" angelegt, Prüfintervall " + intervall + " s", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(fehler), angemeldeter(c)));
+        });
+
+        app.post("/gruppen/{id}/intervall", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            int sek;
+            try { sek = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
+            catch (NumberFormatException e) { sek = 60; }
+            String fehler = gruppen.intervallSetzen(id, sek);
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Prüfintervall der Gruppe " + id + " auf " + sek + " s gesetzt", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(fehler), angemeldeter(c)));
+        });
+
+        app.post("/gruppen/{id}/loeschen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            String fehler = gruppen.loeschen(id, "Praxis");
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GELOESCHT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe " + id + " gelöscht, Geräte in die Vorgabegruppe verschoben", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(fehler), angemeldeter(c)));
+        });
+
+        app.post("/geraete/{id}/gruppe", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            String fehler = gruppen.zuordnen(c.pathParam("id"),
+                    Long.parseLong(Anmeldeseiten.feld(c, "gruppe")));
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", c.pathParam("id"), Ereignisart.GERAET_ZUGEORDNET,
+                        true, angemeldeter(c).anzeigename(), null,
+                        "Gerät einer anderen Gruppe zugeordnet", null);
+            }
+            c.html(gruppenTabelle());
+        });
+
+        // ---------------------------------------------------------- Verwaltung
+        app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null),
+                angemeldeter(c))));
+
+        app.post("/verwaltung/demodaten/anlegen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            try {
+                var konten = demodaten.anlegen();
+                var b = demodaten.bestand();
+                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Demodatensatz angelegt: %d Organisationseinheiten, %d Konnektoren, %d Kartenterminals, %d Konten"
+                                .formatted(b.organisationen(), b.konnektoren(),
+                                           b.terminals(), b.benutzer()), null);
+                c.html(seite("verwaltung", verwaltungsSeite(null, konten), angemeldeter(c)));
+            } catch (IllegalStateException e) {
+                c.html(seite("verwaltung", verwaltungsSeite(e.getMessage(), null), angemeldeter(c)));
+            }
+        });
+
+        app.post("/verwaltung/demodaten/loeschen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            var weg = demodaten.loeschen();
+            protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Kartenterminals, %d Konten"
+                            .formatted(weg.organisationen(), weg.konnektoren(),
+                                       weg.terminals(), weg.benutzer()), null);
+            c.html(seite("verwaltung", verwaltungsSeite(null, null), angemeldeter(c)));
+        });
 
         // FA-PRO-040: Excel-Export der gefilterten Protokollansicht.
         // Exportiert wird genau das, was auf dem Bildschirm steht - alles andere
@@ -552,6 +643,76 @@ public class Zentrale {
         return wert == null || wert.isBlank() ? ersatz : wert;
     }
 
+    private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten) {
+        var b = demodaten.bestand();
+        StringBuilder s = new StringBuilder("""
+                <h2>Verwaltung</h2>
+                <p class="unterzeile">Werkzeuge für Administratoren.</p>
+                """);
+        if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
+
+        s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"anmeldeinhalt\">");
+        if (b.vorhanden()) {
+            s.append("""
+                    <p>Ein Demodatensatz ist eingerichtet:</p>
+                    <div class="lage">
+                      <div class="kachel"><div class="zahl">%d</div><div class="bez">Organisationseinheiten</div></div>
+                      <div class="kachel"><div class="zahl">%d</div><div class="bez">Konnektoren</div></div>
+                      <div class="kachel"><div class="zahl">%d</div><div class="bez">Kartenterminals</div></div>
+                      <div class="kachel"><div class="zahl">%d</div><div class="bez">Benutzerkonten</div></div>
+                    </div>
+                    <div class="hinweis">
+                      <strong>Beim Entfernen werden ausschließlich Demodaten gelöscht.</strong>
+                      Jeder erzeugte Datensatz ist technisch als Demo gekennzeichnet; echte
+                      Praxen, Geräte und Konten bleiben unberührt.
+                    </div>
+                    <form method="post" action="/verwaltung/demodaten/loeschen"
+                          onsubmit="return confirm('Demodatensatz entfernen?\\n\\n%d Organisationseinheiten, %d Konnektoren, %d Kartenterminals und %d Benutzerkonten werden gelöscht.\\n\\nEchte Daten sind nicht betroffen.')">
+                      <button class="knopf warnend" type="submit">Demodatensatz entfernen</button>
+                    </form>"""
+                    .formatted(b.organisationen(), b.konnektoren(), b.terminals(), b.benutzer(),
+                               b.organisationen(), b.konnektoren(), b.terminals(), b.benutzer()));
+        } else {
+            s.append("""
+                    <p class="unterzeile">
+                      Legt einen vollständigen MVZ-Verbund zum Ausprobieren an:
+                      3 Standorte mit je 2 Facharztpraxen und 1 Allgemeinpraxis,
+                      je Praxis ein Konnektor mit eigener SMC-B und 4 Kartenterminals.
+                      Dazu Benutzerkonten auf allen drei Berechtigungsebenen und
+                      3 Administratoren.
+                    </p>
+                    <form method="post" action="/verwaltung/demodaten/anlegen">
+                      <button class="knopf haupt" type="submit"
+                              style="width:auto">Demodatensatz anlegen</button>
+                    </form>""");
+        }
+        s.append("</div></div>");
+
+        if (neueKonten != null && !neueKonten.isEmpty()) {
+            s.append("""
+                    <div class="tafel"><h3>Angelegte Konten
+                      <span class="zaehler">werden nur jetzt angezeigt</span></h3>
+                    <div class="hinweis"><strong>Kennwort für alle Demo-Konten: <code>%s</code></strong>
+                    Die Einmalkennwort-Schlüssel erscheinen nur auf dieser Seite. Notieren Sie,
+                    was Sie brauchen — danach lassen sie sich nur über einen neuen
+                    Demodatensatz wieder erzeugen.</div>
+                    <div class="rollbar"><table><thead><tr>
+                    <th>Benutzername</th><th>Name</th><th>Rolle</th>
+                    <th>Zuständig für</th><th>TOTP-Schlüssel</th></tr></thead><tbody>"""
+                    .formatted(esc(Demodaten.DEMO_KENNWORT)));
+            for (var k : neueKonten) {
+                s.append("<tr><td class=\"geraet\">%s</td><td>%s</td><td>%s</td><td>%s</td>"
+                        .formatted(esc(k.benutzername()), esc(k.anzeigename()),
+                                esc(k.rolle().equals("ADMINISTRATOR") ? "Administrator" : "Benutzer"),
+                                esc(k.geltungsbereich()))
+                        + "<td><code style=\"font-size:.8em\">" + esc(k.totpGeheimnis())
+                        + "</code></td></tr>");
+            }
+            s.append("</tbody></table></div></div>");
+        }
+        return s.toString();
+    }
+
     private boolean istAdministrator(Context c) {
         var b = angemeldeter(c);
         return b != null && b.rolle() == Benutzerverwaltung.Rolle.ADMINISTRATOR;
@@ -820,6 +981,7 @@ public class Zentrale {
                     <a href="/" %s>Übersicht</a>
                     <a href="/geraete" %s>Kartenterminals</a>
                     <a href="/gruppen" %s>Gruppen</a>
+                    <a href="/verwaltung" %s>Verwaltung</a>
                     <a href="/protokoll" %s>Protokoll</a>
                     <button class="knopf %s" hx-post="/notaus"
                       title="Hält die Automatik sofort an">%s</button>
@@ -833,6 +995,7 @@ public class Zentrale {
                         aktiv.equals("uebersicht") ? "aria-current=\"page\"" : "",
                         aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
                         aktiv.equals("gruppen") ? "aria-current=\"page\"" : "",
+                        aktiv.equals("verwaltung") ? "aria-current=\"page\"" : "",
                         aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",
                         notAus ? "" : "warnend", notAus ? "Not-Aus aufheben" : "Not-Aus",
                         benutzerBlock,
