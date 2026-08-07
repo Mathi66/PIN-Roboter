@@ -1546,3 +1546,28 @@ eingetragenen Geheimnisse, und im gebauten Image gehört `/daten` dem
 Container-Benutzer 10001.
 
 ## Stand: 230 Modultests, 204 Systemnachweise, 6 Stack-Prüfungen — alle grün
+
+## UX-Stufe 4 und 5 — Detailseiten und Beziehungen
+
+Vier Aufklapper sind verschwunden. Anlegemasken und die Bearbeitung einer
+Organisationseinheit sind jetzt Seiten mit eigener Adresse; Lesezeichen,
+Verlinkung und der Zurück-Knopf funktionieren.
+
+`/organisation/{id}` beantwortet zuerst die Frage, die jemand wirklich hat:
+was gehört zu dieser Praxis? Sieben Kacheln als Absprungpunkte — Terminals,
+SMC-B, Konnektoren, Konten, Gruppen, Alarme, Protokoll. Gezählt über den
+gesamten Teilbaum, sonst zeigte ein Standort überall Null.
+
+### Ein Fehler, der als „keine Treffer" auftrat
+
+Der Absprung lieferte 0 statt 5 Geräten. Ursache war ein Java-Textblock ohne
+trennendes Leerzeichen: `WHERE 1=1AND t.organisation_id …`. Gefunden habe ich
+ihn erst, nachdem ich `catch (SQLException ignored) { }` durch eine Meldung
+ersetzt hatte — bis dahin sah der Datenbankfehler exakt aus wie ein leeres
+Ergebnis, und ich habe an der falschen Stelle gesucht. Acht solcher Blöcke in
+der Bestandsverwaltung melden jetzt.
+
+Dieselbe Kombination hat in diesem Projekt schon einmal Zeit gekostet. Der
+teurere Teil ist nicht der Tippfehler, sondern die verschluckte Ausnahme.
+
+## Stand: 230 Modultests, 212 Systemnachweise — alle grün

@@ -12,8 +12,8 @@
 | 1 | Gezielte Teilaktualisierung statt Komplettaustausch | ✔ |
 | 2 | Live-Suche in Bestand und Konten | ✔ |
 | 3 | Neues Farb- und Flächenkonzept, Seitenleiste statt Reiterband | ✔ |
-| 4 | Detailseiten statt Aufklapper | offen |
-| 5 | Organisations-Detailseite mit allen Beziehungen | offen |
+| 4 | Detailseiten statt Aufklapper | ✔ |
+| 5 | Organisations-Detailseite mit allen Beziehungen | ✔ |
 
 ## Stufe 1 — die Unruhe hatte eine Ursache
 
@@ -106,3 +106,72 @@ Behoben durch eine Hilfsfunktion `enthaelt`, die mit `grep -c` arbeitet:
 
 Nicht geprüft und weiterhin offen: Tastaturbedienung im Ablauf und
 Verständlichkeit mit einem Screenreader.
+
+---
+
+## Stufe 4 — keine Aufklapper mehr
+
+Vier `<details>`-Ausklapper sind verschwunden. An ihrer Stelle stehen Seiten
+mit eigener Adresse:
+
+| vorher | jetzt |
+|---|---|
+| Ausklapper „Konnektor hinzufügen" unter der Liste | `/bestand/konnektor/neu` |
+| Ausklapper „Kartenterminal hinzufügen" | `/bestand/terminal/neu` |
+| Ausklapper „Einheit hinzufügen" | `/organisation/neu` |
+| aufklappende Tabellenzeile zum Bearbeiten | `/organisation/{id}` |
+
+Jede trägt oben einen sichtbaren Rückweg. Lesezeichen, Verlinkung und der
+Zurück-Knopf des Browsers funktionieren jetzt — vorher führte er aus der Liste
+heraus statt aus der Maske.
+
+**Die Reihenfolge der Routen ist hier nicht egal:** Javalin prüft in
+Deklarationsreihenfolge. Stünde `/bestand/konnektor/{id}` vor
+`/bestand/konnektor/neu`, läse `{id}` den Wert `neu`, und `Long.parseLong`
+würde werfen. Die `/neu`-Routen stehen deshalb zuerst.
+
+## Stufe 5 — die Organisations-Detailseite
+
+`/organisation/{id}` beantwortet zuerst die Frage, die jemand tatsächlich hat:
+**Was gehört zu dieser Praxis?** Sieben Kacheln, jede ein Absprungpunkt —
+Kartenterminals, SMC-B-Karten, Konnektoren, Konten, Gerätegruppen, offene
+Alarme, Protokolleinträge. Erst darunter die Änderungsmasken.
+
+Gezählt wird über den **gesamten Teilbaum** einschließlich der Einheit selbst.
+Bei einem Standort hängen die Geräte an den Einrichtungen darunter; nur die
+direkte Zuordnung zu zählen ergäbe dort überall Null.
+
+Damit die Absprünge wirklich filtern, hat der Bestandsfilter einen neuen
+Parameter `einrichtungId` bekommen, und die Kontenliste versteht
+`?organisation=<id>`. Beide schränken auf den Teilbaum ein.
+
+## Zwei Fehler auf dem Weg
+
+**Der Absprung lieferte 0 Treffer.** Die neue Filterbedingung stand in einem
+Java-Textblock. Ein Textblock entfernt die gemeinsame Einrückung, und der
+Zeilenumbruch direkt nach den öffnenden Anführungszeichen gehört nicht zum
+Inhalt. Herausgekommen ist `WHERE 1=1AND t.organisation_id …`.
+
+Gefunden hat das nicht der Fehler selbst, sondern dass er **sichtbar** wurde:
+Die Abfrage lag in einem `catch (SQLException ignored) { }`. Ein verschluckter
+Datenbankfehler sieht aus wie „keine Treffer" — und genau danach hatte ich
+zuerst gesucht. Acht solcher Blöcke in `Bestandsverwaltung` melden jetzt.
+
+> Dieselbe Kombination — Textblock ohne Trenner plus verschluckte Ausnahme —
+> hat in diesem Projekt schon einmal Zeit gekostet. Der zweite Teil ist der
+> teurere: Ein Fehler, der als leeres Ergebnis erscheint, führt die Suche
+> zuverlässig in die falsche Richtung.
+
+**Der Nachweis für FA-GER-035 suchte am alten Ort.** Er prüft den Aufrufkontext
+in der Konnektor-Anlegemaske und holte dafür `/bestand`. Die Maske ist jetzt
+eine eigene Seite. Angepasst.
+
+## Nachgewiesen
+
+- **keine Aufklapper mehr** in Bestand und Organisation (gezählt)
+- **jede Anlegemaske** ist eine eigene Seite mit Rückweg (drei Nachweise)
+- **die Zahlen der Detailseite stimmen mit der Datenbank überein** — eine Zahl,
+  die nicht stimmt, ist schlimmer als keine
+- **der Absprung filtert wirklich** (5 von 37 statt 37 von 37)
+- **axe-core: 16 Seiten ohne Befund**, Kontraste 0 unter dem Grenzwert
+- **230 Modultests, 212 Systemnachweise** — alle grün
