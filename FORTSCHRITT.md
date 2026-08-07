@@ -963,3 +963,75 @@ Auch der Modellfilter-Nachweis, der zuletzt an einer Hilfsfunktion scheiterte,
 ist bestätigt. Die Zielwerte aus NFA-LEI-010 werden jetzt bei **jedem** Lauf
 nachgemessen (mit 1.000 Geräten, damit der Bauvorgang kurz bleibt) — nicht nur
 einmalig von Hand.
+
+
+---
+
+# Iteration 17 — Aufrufkontext zur Auswahl, Betrieb und Sicherheit
+
+## FA-GER-035 ist abgeschlossen
+
+Bisher wurde das Informationsmodell des Konnektors nur *angezeigt*. Jetzt stehen
+Mandant, Clientsystem und Arbeitsplatz **zur Auswahl** — das war der eigentliche
+Zweck der Anforderung.
+
+**Warum das mehr als Komfort ist:** Ein Tippfehler in einem dieser drei Werte
+zeigt sich später nur als unspezifischer Zugriffsfehler. Niemand sucht ihn an
+der richtigen Stelle, und die Inbetriebnahme steht.
+
+Umgesetzt als Eingabefeld mit Vorschlagsliste, nicht als Auswahlfeld. Damit
+bleibt ein Wert eintragbar, den der Konnektor nicht meldet (NFA-QS-035), es
+braucht kein JavaScript, und für Screenreader ist es ein normales Textfeld.
+
+Ohne Informationsmodell erscheinen Freitextfelder mit dem Hinweis, dass die
+Werte zur Auswahl stehen, sobald ein Agent das Modell gelesen hat.
+
+**Ein echter Fehler im Zerleger:** Er nahm das erste Vorkommen von
+`"clientsysteme"` — und das steht *innerhalb* des Mandanten und ist nur eine
+Kennungsliste ohne Namen. Jetzt werden alle Vorkommen geprüft und das erste
+genommen, das vollständige Einträge liefert.
+
+## docs/04-betrieb.md — mit durchgeführter Wiederherstellung
+
+Installation, Konfiguration, Sicherung, Aktualisierung. Der
+Wiederherstellungsweg wurde **tatsächlich durchgeführt**, nicht behauptet:
+Volume gelöscht, aus der Sicherung zurückgeholt.
+
+| | vorher | nachher |
+|---|---:|---:|
+| Kartenterminals | 36 | 36 |
+| Benutzerkonten | 17 | 17 |
+| Kennwort-Chiffrat | `v1:8zFuziQ6qha…` | identisch |
+
+Danach war die Zentrale bedienbar und das Kennwort weiter entschlüsselbar.
+
+**Ein Fehler beim ersten Versuch, der in die Doku gehört:** Die Sicherung wurde
+mit `-f /tmp/…` *im Container* abgelegt — und ging mit ihm verloren, genau in dem
+Moment, in dem sie gebraucht wurde. Die Anleitung sagt das jetzt ausdrücklich.
+
+**Der ganze Ablauf ist als Systemnachweis automatisiert.** Eine Anleitung, die
+niemand nachvollzieht, verrottet.
+
+Ehrlich zum Downgrade: Ohne Migration dazwischen unproblematisch, mit Migration
+nur über die Sicherung — die Migrationen haben absichtlich keinen Rückweg. Das
+ist **nicht** durch einen Test belegt; dafür bräuchte es zwei veröffentlichte
+Abbildversionen.
+
+## docs/05-sicherheit-datenschutz.md
+
+Schutzbedarf, personenbezogene Daten, TOMs mit Nachweis, Datenflüsse.
+
+Zwei Lücken, die ich ausdrücklich benenne statt sie zu glätten:
+
+**Die Mandantentrennung ist im Datenmodell, aber nicht durchgesetzt.** Solange
+eine Instanz eine Einrichtung betreut, ohne Wirkung — bei einer
+Serviceorganisation mit mehreren Mandanten wäre es die schwerste Lücke des
+Produkts. Das muss **vor** dem ersten Mehrmandantenbetrieb erledigt sein.
+
+**Das unveränderliche Protokoll kollidiert mit Art. 17 DSGVO.** Ein
+Löschbegehren lässt sich nicht erfüllen. Naheliegende Auflösung wäre eine Frist,
+nach der der Anzeigename durch eine Kennung ersetzt wird — Pseudonymisierung
+statt Löschung, damit die Nachvollziehbarkeit der Handlung bleibt. Nicht
+umgesetzt.
+
+## Stand: 140 Modultests, 111 Systemnachweise — alle grün

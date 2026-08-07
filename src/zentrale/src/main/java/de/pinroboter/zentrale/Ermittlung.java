@@ -145,6 +145,95 @@ public class Ermittlung {
         } catch (SQLException e) { return Optional.empty(); }
     }
 
+    // ------------------------------------------------- Aufrufkontext zur Auswahl
+
+    /**
+     * Die Werte des Aufrufkontexts, wie der Konnektor sie meldet (FA-GER-035).
+     *
+     * <p>Leere Listen bedeuten: kein Modell verfügbar. Die Oberfläche bietet
+     * dann Freitextfelder an — die Webadmin-Schnittstelle ist herstellerspezifisch
+     * und immer optional (NFA-QS-035).
+     */
+    public record Auswahl(List<Eintrag> mandanten, List<Eintrag> clientsysteme,
+                          List<Eintrag> arbeitsplaetze) {
+        public boolean vorhanden() {
+            return !mandanten.isEmpty() || !clientsysteme.isEmpty() || !arbeitsplaetze.isEmpty();
+        }
+        public static Auswahl leer() { return new Auswahl(List.of(), List.of(), List.of()); }
+    }
+
+    /** Eine Kennung mit lesbarem Namen — die Kennung geht in den Aufrufkontext. */
+    public record Eintrag(String id, String name) {
+        public String anzeige() { return name == null || name.isBlank() ? id : name + " (" + id + ")"; }
+    }
+
+    /**
+     * Zerlegt das gemeldete Informationsmodell in Auswahllisten.
+     *
+     * <p><b>Warum ein eigener, enger Zerleger und keine JSON-Bibliothek:</b> Das
+     * Modell hat drei flache Listen mit je zwei Feldern. Eine Abhängigkeit dafür
+     * wäre nach CLAUDE.md 3.2 nicht zu rechtfertigen. Der Zerleger liest
+     * ausschließlich Zeichenketten und wirft nie — ein unerwartetes Format führt
+     * zu leeren Listen, und die Oberfläche fällt auf Freitext zurück.
+     */
+    public Auswahl aufrufkontextAuswahl() {
+        var m = juengstesModell();
+        if (m.isEmpty() || !m.get().verfuegbar() || m.get().inhalt() == null) return Auswahl.leer();
+        String json = m.get().inhalt();
+        return new Auswahl(
+                eintraege(json, "mandanten"),
+                eintraege(json, "clientsysteme"),
+                eintraege(json, "arbeitsplaetze"));
+    }
+
+    /**
+     * Liest {@code "feld":[{"id":"…","name":"…"}, …]} aus dem Modell.
+     *
+     * <p>Der Feldname kann mehrfach vorkommen: Ein Mandant führt selbst eine
+     * Liste {@code "clientsysteme":["CS-1","CS-2"]} — nur Kennungen, keine
+     * Objekte. Gesucht ist die Liste mit den vollständigen Einträgen, deshalb
+     * werden alle Vorkommen geprüft und das erste genommen, das etwas liefert.
+     * Der erste Treffer wäre hier der falsche.
+     */
+    private static List<Eintrag> eintraege(String json, String feld) {
+        String marke = "\"" + feld + "\"";
+        int ab = 0;
+        while (true) {
+            int start = json.indexOf(marke, ab);
+            if (start < 0) return List.of();
+            var treffer = eintraegeAb(json, start);
+            if (!treffer.isEmpty()) return treffer;
+            ab = start + marke.length();
+        }
+    }
+
+    private static List<Eintrag> eintraegeAb(String json, int start) {
+        List<Eintrag> liste = new ArrayList<>();
+        int klammerAuf = json.indexOf('[', start);
+        if (klammerAuf < 0) return liste;
+
+        // Bis zur passenden schliessenden Klammer, verschachtelte Listen
+        // mitzaehlen - Arbeitsplaetze tragen eine eigene Terminalliste.
+        int tiefe = 0;
+        int klammerZu = -1;
+        for (int i = klammerAuf; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == '[') tiefe++;
+            else if (c == ']') { tiefe--; if (tiefe == 0) { klammerZu = i; break; } }
+        }
+        if (klammerZu < 0) return liste;
+
+        var m = java.util.regex.Pattern
+                .compile("\\{[^{}\\[\\]]*?\"id\"\\s*:\\s*\"([^\"]*)\"(?:[^{}\\[\\]]*?\"name\"\\s*:\\s*\"([^\"]*)\")?[^{}]*?\\}",
+                        java.util.regex.Pattern.DOTALL)
+                .matcher(json.substring(klammerAuf, klammerZu + 1));
+        while (m.find()) {
+            String id = m.group(1);
+            if (id != null && !id.isBlank()) liste.add(new Eintrag(id, m.group(2)));
+        }
+        return liste;
+    }
+
     // ----------------------------------------------------------------- Abgleich
 
     /**

@@ -26,14 +26,16 @@
 | Geräte-Zugangsdaten | verschlüsselt in der Zentrale (AES-GCM), Abgrenzung zur PIN in ADR-0008 |
 | Bedienbarkeit bei 5.000 Geräten | vollständig; **gemessen** bei 5.000 Terminals und 5 Mio Protokolleinträgen ([Messbericht](00-referenzen/messung-leistung-mengengeruest.md)) — erste Seite 14 ms, Zielwert 1 s |
 | Automatische Terminal-Ermittlung | Agent ermittelt, Zentrale gleicht ab, Übernahme einzeln oder als Auswahl — nur nach Bestätigung (FA-GER-030, FA-GER-035) |
-| Informationsmodell des Konnektors | wird gelesen und angezeigt; herstellerspezifisch und immer optional (NFA-QS-035) |
+| Informationsmodell des Konnektors | wird gelesen; Aufrufkontext steht **zur Auswahl** statt abgetippt (FA-GER-035), Freitext bleibt möglich |
 | Mandantentrennung | im Datenmodell, **in der Oberfläche noch nicht nutzbar** |
+| Betriebsdokumentation | [docs/04-betrieb.md](04-betrieb.md) — Wiederherstellung durchgeführt und als Nachweis automatisiert |
+| Sicherheit und Datenschutz | [docs/05-sicherheit-datenschutz.md](05-sicherheit-datenschutz.md) — TOMs belegt, Lücken benannt |
 | Update-Manager | **nicht umgesetzt** |
 | Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
 | Protokollansicht | Paginierung, 50 Zeilen je Seite; bei 5 Mio Einträgen 110 ms. **Grenze:** sehr tiefes Blättern (ab ~Seite 75.000) überschreitet 1 s |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-rund 10.400 Zeilen, **138 Modultests, 102 Systemnachweise**.
+rund 11.000 Zeilen, **140 Modultests, 111 Systemnachweise** — im letzten Vollauf alle grün.
 
 > **Unverändert offen und weiterhin der wichtigste Punkt:** Alle Nachweise
 > laufen gegen den selbstgebauten Simulator. Die in

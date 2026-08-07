@@ -33,7 +33,7 @@ final class Bestandsseiten {
      */
     record Ansicht(Bestandsverwaltung.Filter filter, Bestandsverwaltung.Sortierung sortierung,
                    boolean absteigend, List<String> modelle, List<String> firmwareStaende,
-                   List<Gruppenverwaltung.Gruppe> gruppen) {}
+                   List<Gruppenverwaltung.Gruppe> gruppen, Ermittlung.Auswahl aufrufkontext) {}
 
     static String seite(List<Bestandsverwaltung.Konnektor> konnektoren,
                         Bestandsverwaltung.Seite<Bestandsverwaltung.Terminal> terminals,
@@ -57,7 +57,7 @@ final class Bestandsseiten {
                 <p class="unterzeile">
                   <a class="knopf" href="/bestand/ermittelt">Ermittelte Geräte des Konnektors ansehen</a>
                 </p>""");
-        s.append(konnektorTafel(konnektoren, organisationen));
+        s.append(konnektorTafel(konnektoren, organisationen, ansicht.aufrufkontext()));
         s.append(terminalTafel(terminals, konnektoren, ansicht));
         return s.toString();
     }
@@ -68,7 +68,8 @@ final class Bestandsseiten {
     // ------------------------------------------------------------ Konnektoren
 
     private static String konnektorTafel(List<Bestandsverwaltung.Konnektor> liste,
-                                         List<Organisationsauswahl> organisationen) {
+                                         List<Organisationsauswahl> organisationen,
+                                         Ermittlung.Auswahl kontext) {
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\"><h3>Konnektoren und Highspeed-Konnektoren <span class=\"zaehler\">")
          .append(liste.size()).append("</span></h3>");
@@ -143,20 +144,7 @@ final class Bestandsseiten {
                     <label for="k-mod">Modell <span class="optional">(optional)</span></label>
                     <input id="k-mod" name="modell" maxlength="120" placeholder="z. B. KoCo Konnektor">
                   </div>
-                  <fieldset>
-                    <legend>Aufrufkontext</legend>
-                    <p class="hilfe">Diese drei Werte stehen in der Konfiguration des Konnektors
-                       und begleiten jeden Aufruf. Ein Tippfehler zeigt sich später nur als
-                       unspezifischer Zugriffsfehler — deshalb sorgfältig übertragen.</p>
-                    <div class="feldreihe">
-                      <div class="feldgruppe"><label for="k-man">Mandanten-ID</label>
-                        <input id="k-man" name="mandantId" required maxlength="80"></div>
-                      <div class="feldgruppe"><label for="k-cli">Clientsystem-ID</label>
-                        <input id="k-cli" name="clientsystemId" required maxlength="80"></div>
-                      <div class="feldgruppe"><label for="k-arb">Arbeitsplatz-ID</label>
-                        <input id="k-arb" name="arbeitsplatzId" required maxlength="80"></div>
-                    </div>
-                  </fieldset>
+                  %s
                   <fieldset>
                     <legend>Zugang <span class="optional">(optional)</span></legend>
                     <p class="hilfe">Nach dem Speichern ist das Kennwort nicht mehr anzeigbar —
@@ -175,7 +163,8 @@ final class Bestandsseiten {
                        Ohne sie bleibt alles von Hand erfassbar.</p>
                   </fieldset>
                   <button class="knopf haupt" type="submit" style="width:auto">Konnektor speichern</button>
-                </form></details>""".formatted(organisationsOptionen(organisationen, null)));
+                </form></details>""".formatted(organisationsOptionen(organisationen, null),
+                        aufrufkontextFelder(kontext, "k", null, null, null)));
 
         return s.append("</div>").toString();
     }
@@ -602,7 +591,8 @@ final class Bestandsseiten {
 
     // ------------------------------------------------------- Einzelbearbeitung
 
-    static String konnektorMaske(Bestandsverwaltung.Konnektor k, String fehler) {
+    static String konnektorMaske(Bestandsverwaltung.Konnektor k, Ermittlung.Auswahl kontext,
+                                 String fehler) {
         StringBuilder s = new StringBuilder();
         s.append("<h2>Konnektor: ").append(esc(k.bezeichnung())).append("</h2>");
         s.append("<p class=\"unterzeile\"><a href=\"/bestand\">&larr; Zurück zum Bestand</a></p>");
@@ -618,16 +608,7 @@ final class Bestandsseiten {
                     <div class="feldgruppe"><label for="b-mod">Modell</label>
                       <input id="b-mod" name="modell" maxlength="120" value="%s"></div>
                   </div>
-                  <fieldset><legend>Aufrufkontext</legend>
-                    <div class="feldreihe">
-                      <div class="feldgruppe"><label for="b-man">Mandanten-ID</label>
-                        <input id="b-man" name="mandantId" required maxlength="80" value="%s"></div>
-                      <div class="feldgruppe"><label for="b-cli">Clientsystem-ID</label>
-                        <input id="b-cli" name="clientsystemId" required maxlength="80" value="%s"></div>
-                      <div class="feldgruppe"><label for="b-arb">Arbeitsplatz-ID</label>
-                        <input id="b-arb" name="arbeitsplatzId" required maxlength="80" value="%s"></div>
-                    </div>
-                  </fieldset>
+                  %s
                   <fieldset><legend>Zugang</legend>
                     <div class="feldreihe">
                       <div class="feldgruppe"><label for="b-ben">Benutzername</label>
@@ -648,7 +629,8 @@ final class Bestandsseiten {
                   <button class="knopf haupt" type="submit" style="width:auto">Änderungen speichern</button>
                 </form></div>"""
                 .formatted(k.id(), esc(k.bezeichnung()), esc(k.adresse()), esc(nz(k.modell())),
-                        esc(k.mandantId()), esc(k.clientsystemId()), esc(k.arbeitsplatzId()),
+                        aufrufkontextFelder(kontext, "b", k.mandantId(), k.clientsystemId(),
+                                k.arbeitsplatzId()),
                         esc(nz(k.benutzerName())), esc(nz(k.webadminAdresse())),
                         k.passwortHinterlegt()
                                 ? "Ein Kennwort ist hinterlegt und lässt sich nicht anzeigen."
@@ -772,7 +754,8 @@ final class Bestandsseiten {
         boolean aktiv = a.sortierung() == nach;
         // Ein erneuter Klick auf dieselbe Spalte dreht die Richtung um.
         boolean neuAbsteigend = aktiv && !a.absteigend();
-        var b = new Ansicht(a.filter(), nach, neuAbsteigend, a.modelle(), a.firmwareStaende(), a.gruppen());
+        var b = new Ansicht(a.filter(), nach, neuAbsteigend, a.modelle(), a.firmwareStaende(),
+                a.gruppen(), a.aufrufkontext());
         String pfeil = !aktiv ? "" : (a.absteigend() ? " ▾" : " ▴");
         // aria-sort teilt Screenreadern mit, wonach gerade sortiert ist (WCAG).
         String ariaSort = !aktiv ? "none" : (a.absteigend() ? "descending" : "ascending");
@@ -841,6 +824,87 @@ final class Bestandsseiten {
                     return confirm('Aktion auf ' + n + ' ausgewählte(s) Kartenterminal(s) anwenden?');
                   }
                 </script>""".formatted(gruppenBlock, esc(zustand(a)));
+    }
+
+    /**
+     * Felder für den Aufrufkontext (FA-GER-035).
+     *
+     * <p>Liegt ein Informationsmodell vor, werden die Werte <b>zur Auswahl
+     * angeboten</b> statt abgetippt. Das ist der eigentliche Zweck der
+     * Anforderung: Ein Tippfehler in Mandanten-, Clientsystem- oder
+     * Arbeitsplatz-ID zeigt sich später nur als unspezifischer Zugriffsfehler,
+     * und niemand sucht ihn an der richtigen Stelle.
+     *
+     * <p>Fehlt das Modell — die Webadmin-Schnittstelle ist herstellerspezifisch
+     * und immer optional (NFA-QS-035) —, erscheinen Freitextfelder. Und auch bei
+     * vorhandenem Modell bleibt ein Freitextfeld erreichbar: Der Konnektor kann
+     * Werte kennen, die er nicht meldet, und dann darf die Oberfläche nicht im
+     * Weg stehen.
+     */
+    private static String aufrufkontextFelder(Ermittlung.Auswahl kontext, String praefix,
+                                              String mandant, String clientsystem,
+                                              String arbeitsplatz) {
+        boolean ausModell = kontext != null && kontext.vorhanden();
+        String einleitung = ausModell
+                ? """
+                  <p class="hilfe">Diese Werte stammen aus dem Informationsmodell des Konnektors
+                     und begleiten jeden Aufruf. <strong>Auswählen statt abtippen</strong> —
+                     ein Tippfehler zeigt sich später nur als unspezifischer Zugriffsfehler.
+                     Über „anderer Wert“ lässt sich jederzeit ein nicht gemeldeter Wert
+                     eintragen.</p>"""
+                : """
+                  <p class="hilfe">Diese drei Werte stehen in der Konfiguration des Konnektors
+                     und begleiten jeden Aufruf. Ein Tippfehler zeigt sich später nur als
+                     unspezifischer Zugriffsfehler — deshalb sorgfältig übertragen.
+                     <em>Sobald ein Standort-Agent das Informationsmodell gelesen hat, stehen
+                     sie hier zur Auswahl.</em></p>""";
+
+        return """
+                <fieldset><legend>Aufrufkontext</legend>
+                  %s
+                  <div class="feldreihe">%s%s%s</div>
+                </fieldset>"""
+                .formatted(einleitung,
+                        kontextFeld(praefix + "-man", "mandantId", "Mandanten-ID",
+                                ausModell ? kontext.mandanten() : List.of(), mandant),
+                        kontextFeld(praefix + "-cli", "clientsystemId", "Clientsystem-ID",
+                                ausModell ? kontext.clientsysteme() : List.of(), clientsystem),
+                        kontextFeld(praefix + "-arb", "arbeitsplatzId", "Arbeitsplatz-ID",
+                                ausModell ? kontext.arbeitsplaetze() : List.of(), arbeitsplatz));
+    }
+
+    /**
+     * Ein Feld des Aufrufkontexts: Auswahlliste mit Freitext-Ausweg, oder reines
+     * Freitextfeld.
+     *
+     * <p>Der Freitext-Ausweg ist als {@code <datalist>} umgesetzt — ein
+     * gewöhnliches Eingabefeld mit Vorschlägen. Das ist einer Auswahlliste plus
+     * „anderer Wert"-Umschaltung vorzuziehen: Es braucht kein JavaScript, ist
+     * mit der Tastatur vollständig bedienbar und für Screenreader ein normales
+     * Textfeld (WCAG 2.2 AA).
+     */
+    private static String kontextFeld(String id, String name, String beschriftung,
+                                      List<Ermittlung.Eintrag> werte, String wert) {
+        if (werte.isEmpty()) {
+            return """
+                    <div class="feldgruppe"><label for="%s">%s</label>
+                      <input id="%s" name="%s" required maxlength="80" value="%s"></div>"""
+                    .formatted(id, beschriftung, id, name, esc(nz(wert)));
+        }
+        StringBuilder opt = new StringBuilder();
+        for (var e : werte) {
+            opt.append("<option value=\"").append(esc(e.id())).append("\">")
+               .append(esc(e.anzeige())).append("</option>");
+        }
+        return """
+                <div class="feldgruppe"><label for="%s">%s</label>
+                  <input id="%s" name="%s" list="%s-liste" required maxlength="80" value="%s"
+                         autocomplete="off" aria-describedby="%s-hilfe">
+                  <datalist id="%s-liste">%s</datalist>
+                  <p id="%s-hilfe" class="hilfe">%d Wert(e) aus dem Konnektor · anderer Wert möglich</p>
+                </div>"""
+                .formatted(id, beschriftung, id, name, id, esc(nz(wert)), id, id, opt, id,
+                        werte.size());
     }
 
     private static String werteOptionen(List<String> werte, String gewaehlt) {

@@ -482,7 +482,7 @@ public class Zentrale {
             var k = bestand.konnektor(Long.parseLong(c.pathParam("id")));
             if (k.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Diesen Konnektor gibt es nicht mehr.", true), angemeldeter(c))); return; }
-            c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), null), angemeldeter(c)));
+            c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), null), angemeldeter(c)));
         });
 
         app.post("/bestand/konnektor/{id}", c -> {
@@ -497,7 +497,7 @@ public class Zentrale {
             if (!e.geklappt()) {
                 var k = bestand.konnektor(id);
                 c.html(seite("bestand", k.isPresent()
-                        ? Bestandsseiten.konnektorMaske(k.get(), e.fehler())
+                        ? Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), e.fehler())
                         : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
@@ -1101,7 +1101,7 @@ public class Zentrale {
 
         return new Bestandsseiten.Ansicht(filter, sortierung, absteigend,
                 bestand.vorhandeneWerte("modell"), bestand.vorhandeneWerte("firmware"),
-                gruppen.alle("Praxis"));
+                gruppen.alle("Praxis"), ermittlung.aufrufkontextAuswahl());
     }
 
     private static int zahl(String s, int vorgabe) {

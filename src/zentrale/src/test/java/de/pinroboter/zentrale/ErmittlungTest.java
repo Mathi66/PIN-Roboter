@@ -260,6 +260,59 @@ class ErmittlungTest {
         }
     }
 
+    @Test @Order(14)
+    @DisplayName("Der Aufrufkontext wird aus dem Informationsmodell zur Auswahl aufbereitet")
+    void aufrufkontextAusModell() {
+        // Genau die Struktur, die der Simulator liefert - einschliesslich der
+        // verschachtelten Terminalliste je Arbeitsplatz, an der ein naiver
+        // Zerleger scheitern wuerde.
+        String json = """
+                {"mandanten":[{"id":"Mandant-1","name":"Praxis Hauptstandort",\
+                "clientsysteme":["CS-PVS","CS-ROBOTER"],"arbeitsplaetze":["AP-EMPFANG"]}],\
+                "clientsysteme":[{"id":"CS-PVS","name":"Praxisverwaltungssystem"},\
+                {"id":"CS-ROBOTER","name":"PIN-Roboter"}],\
+                "arbeitsplaetze":[{"id":"AP-EMPFANG","name":"Empfang","terminals":["KT-A","KT-B"]},\
+                {"id":"AP-LABOR","name":"Labor","terminals":[]},\
+                {"id":"AP-VERWALTUNG","name":"Verwaltung","terminals":[]}]}""";
+        erm.modellAblegen(agentId, true, json);
+
+        var a = erm.aufrufkontextAuswahl();
+        assertTrue(a.vorhanden());
+        assertEquals(1, a.mandanten().size());
+        assertEquals("Mandant-1", a.mandanten().get(0).id());
+        assertEquals("Praxis Hauptstandort (Mandant-1)", a.mandanten().get(0).anzeige());
+
+        assertEquals(2, a.clientsysteme().size());
+        assertEquals(List.of("CS-PVS", "CS-ROBOTER"),
+                a.clientsysteme().stream().map(Ermittlung.Eintrag::id).toList());
+
+        assertEquals(3, a.arbeitsplaetze().size(),
+                "die verschachtelte Terminalliste darf den Zerleger nicht verwirren");
+        assertEquals(List.of("AP-EMPFANG", "AP-LABOR", "AP-VERWALTUNG"),
+                a.arbeitsplaetze().stream().map(Ermittlung.Eintrag::id).toList());
+    }
+
+    @Test @Order(15)
+    @DisplayName("Ohne Modell gibt es leere Listen — nie einen Fehler")
+    void aufrufkontextOhneModell() {
+        // NFA-QS-035: Faellt die herstellerspezifische Schnittstelle aus, muss
+        // alles weiter von Hand erfassbar bleiben. Ein Fehler hier wuerde die
+        // Konnektormaske unbenutzbar machen.
+        erm.modellAblegen(agentId, false, null);
+        assertFalse(erm.aufrufkontextAuswahl().vorhanden());
+
+        erm.modellAblegen(agentId, true, "das ist kein JSON");
+        assertFalse(erm.aufrufkontextAuswahl().vorhanden(), "unlesbares Modell = keine Auswahl");
+
+        erm.modellAblegen(agentId, true, "{\"mandanten\":[]}");
+        assertFalse(erm.aufrufkontextAuswahl().vorhanden());
+
+        erm.modellAblegen(agentId, true, "{\"mandanten\":[{\"id\":\"M1\"}]}");
+        var a = erm.aufrufkontextAuswahl();
+        assertTrue(a.vorhanden());
+        assertEquals("M1", a.mandanten().get(0).anzeige(), "ohne Namen zeigt die Kennung allein");
+    }
+
     @Test @Order(11)
     @DisplayName("Fehlt die Webadmin-Schnittstelle, wird das vermerkt statt verschwiegen")
     void informationsmodellNichtVerfuegbar() {

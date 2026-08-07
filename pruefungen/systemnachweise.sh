@@ -836,6 +836,75 @@ REST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-
 [ "${REST:-1}" = "0" ] && LX=ja || LX=nein
 ergebnis "Lasttestbestand rueckstandsfrei entfernt (Rest: $REST)" "$LX"
 
+hinweis "FA-GER-035 — Aufrufkontext aus dem Informationsmodell zur Auswahl"
+curl -s -b "$KEKSE" http://localhost:8090/bestand > /tmp/pr-kontext.html
+# Ohne Modell muessen Freitextfelder erscheinen (NFA-QS-035), mit Modell
+# Vorschlagslisten. Der Agent hat das Modell in diesem Lauf schon gemeldet.
+LISTEN=$(grep -c '<datalist' /tmp/pr-kontext.html)
+[ "${LISTEN:-0}" = "3" ] && KA=ja || KA=nein
+ergebnis "alle drei Aufrufkontext-Felder bieten Vorschlaege ($LISTEN von 3)" "$KA"
+
+FEHLT=0
+for w in Mandant-1 CS-PVS CS-ROBOTER AP-EMPFANG AP-LABOR AP-VERWALTUNG; do
+  grep -q "value=\"$w\"" /tmp/pr-kontext.html || FEHLT=$((FEHLT+1))
+done
+[ $FEHLT -eq 0 ] && KW=ja || KW=nein
+ergebnis "die Werte des Konnektors stehen zur Auswahl (fehlend: $FEHLT von 6)" "$KW"
+
+# Entscheidend fuer NFA-QS-035: Das Feld bleibt ein Eingabefeld, kein
+# Auswahlfeld. Ein Wert, den der Konnektor nicht meldet, muss eintragbar sein.
+grep -q '<input id="k-man"[^>]*list="k-man-liste"' /tmp/pr-kontext.html && KF=ja || KF=nein
+ergebnis "der Aufrufkontext bleibt frei beschreibbar (Eingabefeld mit Vorschlagsliste)" "$KF"
+rm -f /tmp/pr-kontext.html
+
+hinweis "NFA-BET-020 — Sicherung und Wiederherstellung"
+# Die Betriebsdoku behauptet einen funktionierenden Wiederherstellungsweg.
+# Diese Behauptung wird hier bei jedem Lauf geprueft - eine Anleitung, die
+# niemand nachvollzieht, verrottet.
+VT=$(sql "SELECT count(*) FROM kartenterminal")
+VB=$(sql "SELECT count(*) FROM benutzer")
+VC=$(sqltext "SELECT coalesce(substring(passwort_chiffrat,1,24),'-') FROM konnektor
+              WHERE passwort_chiffrat IS NOT NULL LIMIT 1")
+docker exec pr-db pg_dump -U pinroboter -d pinroboter -Fc > /tmp/pr-sicherung.dump
+SIZE=$(wc -c < /tmp/pr-sicherung.dump | tr -d ' ')
+[ "${SIZE:-0}" -gt 1000 ] && SI=ja || SI=nein
+ergebnis "Sicherung laesst sich auf den Host ziehen ($SIZE Bytes)" "$SI"
+
+# Vollstaendiger Datenverlust: Volume weg.
+docker rm -f pr-db >/dev/null 2>&1
+docker volume rm pr-testdaten >/dev/null 2>&1
+docker run -d --name pr-db --network $NETZ --network-alias datenbank \
+  -e POSTGRES_DB=pinroboter -e POSTGRES_USER=pinroboter -e POSTGRES_PASSWORD=test \
+  -v pr-testdaten:/var/lib/postgresql/data postgres:17-alpine >/dev/null
+sleep 10
+LEER=$(sql "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
+[ "${LEER:-1}" = "0" ] && SL=ja || SL=nein
+ergebnis "Datenverlust nachgestellt (Tabellen: $LEER)" "$SL"
+
+docker cp /tmp/pr-sicherung.dump pr-db:/tmp/s.dump >/dev/null
+docker exec pr-db pg_restore -U pinroboter -d pinroboter --clean --if-exists /tmp/s.dump >/dev/null 2>&1
+NT=$(sql "SELECT count(*) FROM kartenterminal")
+NB=$(sql "SELECT count(*) FROM benutzer")
+NC=$(sqltext "SELECT coalesce(substring(passwort_chiffrat,1,24),'-') FROM konnektor
+              WHERE passwort_chiffrat IS NOT NULL LIMIT 1")
+[ "$VT" = "$NT" ] && [ "${VT:-0}" -gt 0 ] && WT=ja || WT=nein
+ergebnis "Kartenterminals vollstaendig wiederhergestellt ($VT -> $NT)" "$WT"
+[ "$VB" = "$NB" ] && [ "${VB:-0}" -gt 0 ] && WB=ja || WB=nein
+ergebnis "Benutzerkonten vollstaendig wiederhergestellt ($VB -> $NB)" "$WB"
+[ "$VC" = "$NC" ] && [ "$VC" != "-" ] && WC=ja || WC=nein
+ergebnis "verschluesselte Zugangsdaten unveraendert wiederhergestellt" "$WC"
+
+# Und laesst sich die Zentrale danach benutzen? Ein Restore, nach dem die
+# Anwendung nicht mehr startet, ist kein Restore.
+docker restart pr-zen >/dev/null 2>&1
+for _ in $(seq 40); do
+  curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1
+done
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/bestand)
+[ "$CODE" = "200" ] && WZ=ja || WZ=nein
+ergebnis "die Zentrale ist nach der Wiederherstellung bedienbar (HTTP $CODE)" "$WZ"
+rm -f /tmp/pr-sicherung.dump
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"
