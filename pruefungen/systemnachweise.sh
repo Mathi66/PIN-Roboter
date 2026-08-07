@@ -1196,6 +1196,11 @@ IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='PROTOKOLL_PSEUDONYMISIE
 [ "${IST:-0}" -ge 1 ] && PP=ja || PP=nein
 ergebnis "die Pseudonymisierung ist selbst protokolliert" "$PP"
 
+# NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
+# belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
+if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi
+ergebnis "Barrierefreiheitspruefung ohne Befund (WCAG 2.2 AA, maschinell pruefbarer Teil)" "$A11Y"
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"

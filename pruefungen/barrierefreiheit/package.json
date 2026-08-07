@@ -1,0 +1,10 @@
+{
+  "name": "pinroboter-barrierefreiheit",
+  "private": true,
+  "type": "module",
+  "description": "Barrierefreiheitspruefung der Oberflaeche (NFA-USA-030, WCAG 2.2 AA)",
+  "dependencies": {
+    "axe-core": "4.13.0",
+    "jsdom": "26.1.0"
+  }
+}

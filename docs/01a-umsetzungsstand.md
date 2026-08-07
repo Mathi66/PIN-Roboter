@@ -147,7 +147,7 @@ mit 84 Anforderungen
 | – | NFA-VER-010/020/030 | Verfügbarkeit über längere Zeiträume | nicht gemessen |
 | ✓ | NFA-USA-010 | Deutsche Oberfläche, Fachsprache | durchgehend |
 | ✓ | NFA-USA-020 | Fehlermeldungen sagen, was zu tun ist | durchgehend, an vielen Stellen nachgewiesen |
-| ◐ | NFA-USA-030 | WCAG 2.2 AA | Tastaturbedienung, Fokus, `aria-sort`, Beschriftungen, Kontraste. **Offen: kein Nachweis mit einem Prüfwerkzeug oder Screenreader** |
+| ◐ | NFA-USA-030 | WCAG 2.2 AA | **Maschinell geprüft** (axe-core, 10 Seiten, 0 Befunde; Kontraste rechnerisch in beiden Farbschemata) und als Systemnachweis verankert. **Offen:** Tastaturbedienung im Ablauf und Screenreader-Prüfung — beides braucht Browser bzw. Menschen |
 | ○ | NFA-USA-040 | Responsiv | Desktop und Tablet, nicht systematisch geprüft |
 | ✓ | NFA-BET-010 | Konfiguration nur über Umgebung | fehlende Pflichtangabe bricht mit erklärender Meldung ab |
 | ✓ | NFA-BET-020 | Persistenz, Sicherung, Wiederherstellung | Restore durchgeführt und als Nachweis automatisiert |
@@ -177,6 +177,7 @@ mit 84 Anforderungen
    die Geräte, nicht gegen die Geräte. Der Testaufbau steht laut PO bereit.
 2. **Ressourcenbedarf auf der Referenzhardware** (NFA-LEI-030). Gemessen wurde
    auf einem M2 Pro; die Zielplattform ist ein Raspberry Pi 5 oder i.MX8.
-3. **WCAG 2.2 AA ohne Prüfwerkzeug.** Die Vorgaben wurden beim Bauen beachtet,
-   aber nie mit einem Werkzeug oder Screenreader gegengeprüft. Damit ist die
-   Anforderung nicht belegt, sondern behauptet.
+3. **Barrierefreiheit nur maschinell geprüft.** Struktur und Kontraste sind
+   belegt (0 Befunde auf 10 Seiten). Ein Werkzeug findet aber nur einen Teil der
+   Barrieren — Tastaturbedienung im Ablauf und Screenreader-Verständlichkeit
+   sind weiterhin ungeprüft.

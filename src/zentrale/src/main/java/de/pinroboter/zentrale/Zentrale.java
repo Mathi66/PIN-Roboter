@@ -1558,13 +1558,16 @@ public class Zentrale {
                     <tr><td class="geraet">%s%s</td><td>%d</td>
                     <td><form method="post" action="/gruppen/%d/intervall"
                               style="display:flex;gap:.4rem;align-items:center">
-                          <input name="intervall" type="text" inputmode="numeric" size="5" value="%d">
-                          <span class="feldhinweis">s</span>
+                          <label class="nurLeser" for="iv-%d">Prüfintervall für %s in Sekunden</label>
+                          <input id="iv-%d" name="intervall" type="text" inputmode="numeric"
+                                 size="5" value="%d">
+                          <span class="feldhinweis" aria-hidden="true">s</span>
                           <button class="knopf" type="submit">Speichern</button></form></td>
                     <td>%s</td></tr>"""
                     .formatted(esc(g.bezeichnung()),
                             g.istVorgabe() ? " <span class=\"marke unbekannt\">Vorgabe</span>" : "",
-                            g.geraetezahl(), g.id(), g.pruefintervallSekunden(),
+                            g.geraetezahl(), g.id(),
+                            g.id(), esc(g.bezeichnung()), g.id(), g.pruefintervallSekunden(),
                             g.istVorgabe() ? "" :
                               ("<form method=\"post\" action=\"/gruppen/" + g.id() + "/loeschen\">"
                                + "<button class=\"knopf warnend\" type=\"submit\">Löschen</button></form>")));

@@ -1318,3 +1318,50 @@ Zentrale), die offene Frage zum Firmware-Bezugsweg — und der wichtigste Punkt:
 die Kalibrierung am Testaufbau, die wenig kostet und viel klärt.
 
 ## Stand: 197 Modultests, 146 Systemnachweise — alle grün
+
+
+---
+
+# Iteration 24 — Barrierefreiheit: belegt statt behauptet
+
+WCAG 2.2 AA stand im Umsetzungsstand als eine der drei Hauptlücken: *„nicht
+belegt, sondern behauptet"*. Die Vorgaben wurden beim Bauen beachtet — geprüft
+wurde nie.
+
+## Zwei Werkzeuge, weil eines nicht reicht
+
+**axe-core** gegen zehn ausgelieferte Seiten: ARIA, Beschriftungen,
+Überschriften, Tabellenköpfe, Formularzuordnungen.
+
+**Kontraste rechnerisch**, weil jsdom nicht rendert. Zwölf Farbpaare in beiden
+Farbschemata. Das misst den Wert statt des Eindrucks und ist damit belastbarer
+als ein Screenshot-Vergleich.
+
+## Zwei echte Befunde — beide durch Hinsehen nicht zu finden
+
+**Der Rand von Bedienelementen hatte 1,29:1.** WCAG 1.4.11 verlangt 3:1 für
+alles, was zur Erkennung eines Bedienelements nötig ist. Der vorhandene Rand war
+für dekorative Trennlinien gedacht und dafür richtig — als Umrandung eines
+Eingabefelds zu blass. Jetzt eine eigene Variable mit 5,33:1 (hell) und 5,86:1
+(dunkel).
+
+**Ein Eingabefeld ohne Beschriftung** in der Gruppenansicht. Daneben stand ein
+`s` als Einheit — für einen Screenreader ist das ein namenloses Textfeld: Man
+hört „Eingabefeld", nicht wofür. Jetzt mit verstecktem Label je Zeile, und das
+`s` ist `aria-hidden`, damit es nicht doppelt vorgelesen wird.
+
+Beide waren visuell unauffällig. 1,29:1 sieht auf einem guten Bildschirm noch
+erkennbar aus, und die Einheit neben dem Feld erzeugt den Eindruck einer
+Beschriftung.
+
+## Ehrlich zur Reichweite
+
+Ein Werkzeug findet nur einen Teil der Barrieren. **Offen bleiben:**
+Tastaturbedienung im Ablauf (braucht einen Browser) und
+Screenreader-Verständlichkeit (braucht einen Menschen). Das steht so im Skript,
+in der Umsetzungsbeschreibung und im Umsetzungsstand.
+
+Ist das Werkzeug nicht beschaffbar, überspringt die Prüfung und sagt das —
+statt „bestanden" zu melden. Eine übersprungene Prüfung ist keine bestandene.
+
+## Stand: 197 Modultests, 149 Systemnachweise — alle grün
