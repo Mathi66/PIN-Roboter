@@ -62,12 +62,19 @@ public class Agent {
         Agent agent = new Agent(new KonnektorClient(http, URI.create(konnektorUrl), kontext),
                 http, URI.create(terminalUrl), URI.create(zentraleUrl));
 
-        // Test-PINs des Simulators. Im Produkt hinterlegt sie ein Benutzer über
-        // die Oberfläche, und sie werden verschlüsselt beim Agenten abgelegt.
-        agent.pinHinterlegen("card-smcb-001", "123456".toCharArray());
-        agent.pinHinterlegen("card-smcb-002", "654321".toCharArray());
-        agent.pinHinterlegen("card-smcb-003", "111222".toCharArray());
-        agent.pinHinterlegen("card-smcb-004", "333444".toCharArray());
+        // NFA-BET-010: Konfiguration ausschliesslich ueber Umgebungsvariablen.
+        // Format: PIN_<kartenhandle mit - als _>=<wert>, z. B.
+        //   PIN_card_smcb_001=123456
+        // Im Produkt hinterlegt ein Benutzer die PIN ueber die Oberflaeche; sie
+        // wird verschluesselt beim Agenten abgelegt und ist nie wieder auslesbar.
+        int gefunden = 0;
+        for (var e : System.getenv().entrySet()) {
+            if (!e.getKey().startsWith("PIN_")) continue;
+            String handle = e.getKey().substring(4).replace('_', '-');
+            agent.pinHinterlegen(handle, e.getValue().toCharArray());
+            gefunden++;
+        }
+        System.out.println("  Hinterlegte PINs: " + gefunden + "   (Werte werden nie ausgegeben)");
 
         agent.ueberwachen(intervall);
     }

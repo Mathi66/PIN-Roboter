@@ -154,3 +154,27 @@ Der Durchstich ist **nicht fertig**, aber deutlich näher: Von „beide Seiten
 scheitern, Ursache unklar" auf „Server nachweislich in Ordnung, Client-Problem
 auf eine Frage eingegrenzt". Der behobene KeyStore-Fehler war zudem ein echter
 Fund, der sonst später im Produkt aufgetreten wäre.
+
+---
+
+# 07.08.2026 — Durchstich erbracht, Abarbeitung läuft
+
+## Erledigt
+
+| Anforderung | Nachweis |
+|---|---|
+| **Durchstich PEviM** | Agent schaltet SMC-B selbsttätig frei, über Brainpool-TLS. Null Handshake-Fehler. |
+| **FA-PIN-030** | **Am laufenden System nachgewiesen:** falsche PIN → genau 1 Versuch bei 9 Gelegenheiten, `LeftTries` 3→2, Automatik angehalten, Meldung in Klartext. |
+| **NFA-BET-010** | PINs kommen über Umgebungsvariablen (`PIN_<kartenhandle>`), nicht mehr aus dem Code. Werte werden nie ausgegeben. |
+| 10 Modultests | grün |
+
+## Der Befund, der Tage gekostet hat
+
+`new BouncyCastleJsseProvider()` **ohne Argument** nutzt den JDK-Standardprovider
+als Krypto-Unterbau — und der kennt Brainpool nicht. Die Folge ist die Meldung
+`'jdk.tls.namedGroups' contains disabled NamedGroup: brainpoolP256r1`, obwohl die
+Sicherheitsrichtlinie die Kurven längst freigegeben hat. Richtig ist
+`new BouncyCastleJsseProvider(bcProvider)`.
+
+Die Fehlermeldung weist in die völlig falsche Richtung. Das gehört in die
+Umsetzungsbeschreibung, sonst kostet es jeden, der das nachbaut, dieselbe Zeit.
