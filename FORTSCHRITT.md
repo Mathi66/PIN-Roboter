@@ -1035,3 +1035,77 @@ statt Löschung, damit die Nachvollziehbarkeit der Handlung bleibt. Nicht
 umgesetzt.
 
 ## Stand: 140 Modultests, 111 Systemnachweise — alle grün
+
+---
+
+# Iteration 18 — Mandantentrennung (Block A)
+
+Die in der Sicherheitsdokumentation benannte **schwerste Lücke** ist geschlossen
+— jedenfalls für Geräte, Konnektoren und die Ermittlung.
+
+## Der Kern: Der Übersetzer erzwingt sie
+
+Jede Methode, die mandantengebundene Daten liest oder ändert, verlangt einen
+`Geltungsbereich` als **Pflichtparameter**. Wer ihn weglässt, bekommt keinen
+ungefilterten Zugriff, sondern einen Übersetzungsfehler.
+
+Beim Umbau war das unmittelbar sichtbar: Nach der Änderung der Signaturen
+meldete der Übersetzer **44 Stellen**, an denen die Grenze fehlte. Jede einzelne
+wäre bei einer Umsetzung „von Hand in jeder Abfrage" ein Kandidat gewesen,
+vergessen zu werden. Genau davor warnt CLAUDE.md.
+
+## Vier Entscheidungen, die den Ausschlag geben
+
+**Keine Zuordnung heißt „sieht nichts", nicht „sieht alles".** Ein Fehler in der
+Zuordnung, ein Datenbankausfall, ein unbekannter Wert — alles führt zu leerem
+Zugriff. Die umgekehrte Richtung wäre eine offene Tür.
+
+**Ein fremder Datensatz „existiert nicht".** Dieselbe Meldung wie bei einem
+gelöschten. Ein „Zugriff verweigert" würde verraten, dass es ihn gibt — und bei
+durchnummerierten Kennungen ließe sich ein fremder Bestand abzählen.
+
+**Auch Schreibpfade prüfen.** Die Einrichtung kommt aus einem Formularfeld. Eine
+Grenze, die nur in der Auswahlliste besteht, ist keine.
+
+**Auch Filterwerte sind Daten.** Eine Modell-Auswahlliste verrät den
+Gerätebestand anderer Mandanten, ohne einen einzigen Datensatz preiszugeben.
+
+## Geprüft wird der Angriff, nicht die Anzeige
+
+15 Tests gegen zwei Standorte und drei Praxen: fremde Kennung aufrufen, ändern,
+löschen, Konnektor in fremder Einrichtung anlegen, Massenaktion mit fremder
+Kennung, Suche über den ganzen Bestand, Filter auf fremdes Modell. Dazu
+Systemnachweise über HTTP mit echter Anmeldung eines Praxisbenutzers.
+
+## Ein Fehler, den das stille `catch` verborgen hat
+
+Beim Umbau entstand ein SQL-Syntaxfehler — `WHERE 1=1ORDER BY`, zwei Textblöcke
+ohne Trennzeichen. `catch (SQLException ignored) { }` schluckte ihn, und das
+Ergebnis war eine **leere Liste statt einer Fehlermeldung**.
+
+Gefunden haben es die Tests. Das `ignored` ist jetzt eine Meldung.
+**Ein verschluckter Fehler ist schlimmer als ein lauter.**
+
+## Was noch offen ist — und warum
+
+**Fachprotokoll und Alarme sind noch nicht eingeschränkt.** Beide führen die
+Einrichtung als **Textfeld**, nicht als Verweis. Eine Einschränkung über
+Textvergleich wäre brüchig; sauber wird es erst mit einer Migration. **Bis dahin
+sieht jeder angemeldete Benutzer das gesamte Protokoll** — das ist die
+verbleibende Lücke, und sie steht so auch in der Sicherheitsdokumentation.
+
+## Ein Fehler, den erst der Vollauf zeigte — und der still war
+
+Nach dem Umbau sah der Administrator **gar nichts mehr**. 25 Nachweise fielen um,
+alle mit „0 Geräte".
+
+Ursache: `rs.wasNull()` gilt für die **zuletzt gelesene Spalte**. Meine Prüfung
+stand hinter weiteren `getXxx`-Aufrufen und bezog sich damit auf die falsche.
+Ein Administrator ohne Organisation bekam die Kennung **0 statt null**, galt
+deshalb nicht als Instanzbetreiber — und sah nichts.
+
+Das ist die unangenehme Sorte Fehler: Die Anwendung stürzt nicht ab, sie leert
+sich still. Ohne den Vollauf wäre er erst beim Kunden aufgefallen, und dort
+hätte niemand die Ursache erraten.
+
+Ein eigener Test deckt die Falle jetzt ab.

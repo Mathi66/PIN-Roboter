@@ -103,6 +103,7 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 | **Zweiter Faktor** | TOTP nach RFC 6238, gegen die offiziellen Testvektoren geprüft | Modultests gegen RFC-Vektoren |
 | **Einmalkennwort gilt einmal** | verbrauchte Codes werden abgewiesen | Systemnachweis |
 | **Rollentrennung** | Administrator / Benutzer; schreibende Bestandsaktionen nur für Administratoren | Routenprüfung |
+| **Mandantentrennung (Bestand)** | `Geltungsbereich` als Pflichtparameter jeder mandantengebundenen Abfrage; keine Zuordnung heißt „sieht nichts" | 16 Tests inkl. Angriffe über manipulierte Kennungen; Systemnachweise mit echter Anmeldung |
 | **Agent-Authentisierung** | einmalig gültiges Registrierungsgeheimnis → dauerhaftes Token | Systemnachweise: erfundenes und wiederverwendetes Geheimnis werden abgewiesen |
 | **Transportverschlüsselung TI** | TLS 1.2 mit Brainpool (BouncyCastle), Cipher-Suites nach `[gemSpec_Krypt]` eingeschränkt | Durchstich über Brainpool-TLS |
 | **Zugangsdaten nicht auslesbar** | AES-256-GCM, kein Lesepfad gibt Klartext | Systemnachweise: kein Kennwort auf einer Oberflächenseite, keins im Protokoll |
@@ -117,13 +118,22 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 
 ### Offen — ehrlich benannt
 
-1. **Mandantentrennung ist im Datenmodell, aber nicht durchgesetzt.** Die
-   dreistufige Struktur (Verbund → Standort → Einrichtung) existiert, und
-   Benutzer tragen einen Geltungsbereich. **Die Abfragen schränken darauf noch
-   nicht ein.** Solange eine Instanz eine Einrichtung betreut, ist das ohne
-   Wirkung; bei einer Serviceorganisation mit mehreren Mandanten wäre es die
-   schwerste Lücke des Produkts. Das ist Block A und muss **vor** dem ersten
-   Mehrmandantenbetrieb erledigt sein.
+1. **Mandantentrennung: umgesetzt für Bestand und Ermittlung, offen für
+   Protokoll und Alarme.**
+
+   Seit dem 07.08.2026 erzwingt ein `Geltungsbereich` die Trennung bei
+   Konnektoren, Kartenterminals, Organisationsauswahl, Filterwerten,
+   Massenaktionen und der Bestandsermittlung — **zentral, nicht in jeder
+   Abfrage von Hand**: Die Methoden verlangen ihn als Pflichtparameter, wer ihn
+   weglässt bekommt einen Übersetzungsfehler.
+   Nachweis: `MandantentrennungTest` (16 Tests, darunter Angriffe über
+   manipulierte Kennungen), dazu Systemnachweise über HTTP.
+
+   **Noch nicht eingeschränkt sind Fachprotokoll, Alarme, Gerätegruppen und die
+   Benutzerliste.** Alle vier führen die Einrichtung als Textfeld statt als
+   Verweis; sauber wird das erst mit einer Migration. **Bis dahin sieht jeder
+   angemeldete Benutzer das gesamte Protokoll und alle Alarme.** Das muss
+   **vor** dem ersten Mehrmandantenbetrieb erledigt sein.
 2. **Kein TLS auf der eigenen Oberfläche.** Die Zentrale spricht HTTP. Für den
    Zugriff über ein Netzsegment hinaus gehört ein TLS-Vermittler davor — nicht
    umgesetzt, nicht dokumentiert.

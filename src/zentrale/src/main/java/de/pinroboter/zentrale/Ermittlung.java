@@ -243,7 +243,7 @@ public class Ermittlung {
      * eindeutig und stammt beim erfassten wie beim ermittelten Gerät aus
      * derselben Quelle, dem Konnektor.
      */
-    public List<Fund> abgleich() {
+    public List<Fund> abgleich(Geltungsbereich bereich) {
         List<Fund> liste = new ArrayList<>();
         // Zwei Filter, die im Vollauf der Systemnachweise noetig wurden:
         //
@@ -262,8 +262,10 @@ public class Ermittlung {
                 FROM ermittelt_terminal e
                 JOIN agent a ON a.id = e.agent_id AND a.aktiv
                 LEFT JOIN kartenterminal t ON t.terminal_id = e.terminal_id
-                ORDER BY e.terminal_id, e.gesehen DESC""");
-             ResultSet rs = p.executeQuery()) {
+                WHERE 1=1""" + bereich.bedingung("coalesce(t.organisation_id, -1)")
+                + " ORDER BY e.terminal_id, e.gesehen DESC")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
             while (rs.next()) {
                 long bestandsId = rs.getLong("bestand_id");
                 // Ab hier unveraendert; sortiert wird nach dem Lesen, weil
@@ -298,13 +300,19 @@ public class Ermittlung {
                         zeitpunkt(rs.getTimestamp("gesehen")), lage, abweichungen,
                         erfasst ? bestandsId : null));
             }
-        } catch (SQLException ignored) { }
+            }
+        } catch (SQLException e) {
+            // Frueher stand hier "ignored". Ein Syntaxfehler in dieser Abfrage
+            // fuehrte damit zu einer leeren Liste statt zu einer Meldung - die
+            // Oberflaeche sagte "keine Geraete", und niemand erfuhr, warum.
+            System.err.println("Abgleich nicht moeglich: " + e.getMessage());
+        }
 
         // Noch nicht erfasste Geraete zuerst - das ist die einzige Zeile mit
         // Handlungsbedarf.
         liste.sort(Comparator.comparingInt((Fund f) -> f.lage().ordinal())
                 .thenComparing(f -> f.terminalId().toLowerCase()));
-        liste.addAll(verschwundene());
+        liste.addAll(verschwundene(bereich));
         return liste;
     }
 
@@ -315,7 +323,7 @@ public class Ermittlung {
      * abgemeldet sein; ein automatisches Entfernen aus dem Bestand würde
      * Zugangsdaten und Zuordnungen vernichten.
      */
-    private List<Fund> verschwundene() {
+    private List<Fund> verschwundene(Geltungsbereich bereich) {
         List<Fund> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT t.id, t.terminal_id, t.bezeichnung, t.modell
@@ -325,20 +333,38 @@ public class Ermittlung {
                               JOIN agent a ON a.id = e.agent_id AND a.aktiv)
                   AND NOT EXISTS (SELECT 1 FROM ermittelt_terminal e
                                   JOIN agent a ON a.id = e.agent_id AND a.aktiv
-                                  WHERE e.terminal_id = t.terminal_id)
-                ORDER BY lower(t.bezeichnung)""");
-             ResultSet rs = p.executeQuery()) {
+                                  WHERE e.terminal_id = t.terminal_id)"""
+                + bereich.bedingung("t.organisation_id")
+                + " ORDER BY lower(t.bezeichnung)")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
             while (rs.next()) {
                 liste.add(new Fund(0, rs.getString("terminal_id"), rs.getString("bezeichnung"),
                         rs.getString("modell"), null, false, false, false, false, null, null, null,
                         Lage.VERSCHWUNDEN, List.of(), rs.getLong("id")));
             }
+            }
         } catch (SQLException ignored) { }
         return liste;
     }
 
-    public Optional<Fund> fund(long id) {
-        return abgleich().stream().filter(f -> f.id() == id).findFirst();
+    /**
+     * Ein Fund — aber nur, wenn er im Geltungsbereich sichtbar ist.
+     *
+     * <p><b>Wichtige Einschränkung, ehrlich benannt:</b> Ein noch nicht
+     * erfasstes Gerät hat keine Organisationszuordnung — es gehört ja noch
+     * niemandem. Für neue Funde kann die Mandantengrenze deshalb nicht am
+     * Datensatz greifen; sie greift bei der <b>Übernahme</b>, weil der dort
+     * gewählte Konnektor im Bereich liegen muss
+     * ({@link Bestandsverwaltung#uebernehmen}).
+     *
+     * <p>Solange eine Zentrale einen Standort betreut, ist das ohne Wirkung.
+     * Bei mehreren Agenten je Zentrale muss der Fund an den meldenden Agenten
+     * und dessen Einrichtung gebunden werden — das gehört zum nächsten Schritt
+     * der Mandantentrennung.
+     */
+    public Optional<Fund> fund(long id, Geltungsbereich bereich) {
+        return abgleich(bereich).stream().filter(f -> f.id() == id).findFirst();
     }
 
     /** Vermerkt, dass ein Fund in den Bestand übernommen wurde. */

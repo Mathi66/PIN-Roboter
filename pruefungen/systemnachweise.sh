@@ -755,17 +755,23 @@ IDS=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
       "SELECT id FROM kartenterminal ORDER BY id LIMIT 3" | tr -d ' \r')
 MARGS=()
 for i in $IDS; do MARGS+=(--data-urlencode "geraet=$i"); done
-curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
-  "${MARGS[@]}" --data-urlencode "aktion=deaktivieren" | grep -q "3 Kartenterminal(s) deaktiviert" && MA=ja || MA=nein
-ergebnis "drei Geraete lassen sich auf einmal deaktivieren" "$MA"
-[ "$(zaehler "?status=inaktiv")" = "3" ] && MI=ja || MI=nein
+# Nicht auf eine feste Zahl pruefen: Vorherige Nachweise loeschen Geraete, und
+# die ersten drei Kennungen koennen dabei sein. Geprueft wird, dass so viele
+# geaendert wurden wie ausgewaehlt - das ist die eigentliche Zusage.
+ANZ_AUSGEWAEHLT=$(echo "$IDS" | wc -w | tr -d ' ')
+ANTWORT_MA=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+  "${MARGS[@]}" --data-urlencode "aktion=deaktivieren")
+GEAENDERT=$(echo "$ANTWORT_MA" | grep -oE '[0-9]+ Kartenterminal\(s\) deaktiviert' | grep -oE '^[0-9]+')
+[ "${GEAENDERT:-0}" = "$ANZ_AUSGEWAEHLT" ] && MA=ja || MA=nein
+ergebnis "alle ausgewaehlten Geraete auf einmal deaktiviert ($GEAENDERT von $ANZ_AUSGEWAEHLT)" "$MA"
+[ "$(zaehler "?status=inaktiv")" = "$ANZ_AUSGEWAEHLT" ] && MI=ja || MI=nein
 ergebnis "der Statusfilter zeigt die deaktivierten Geraete" "$MI"
 
 # Ein nicht mehr vorhandenes Geraet darf nicht stillschweigend uebergangen
 # werden - "Aktion ausgefuehrt" bei 3 von 4 waere eine Falschmeldung.
 curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
   "${MARGS[@]}" --data-urlencode "geraet=999999999" --data-urlencode "aktion=aktivieren" \
-  | grep -q "1 von 4" && MU=ja || MU=nein
+  | grep -q "1 von $((ANZ_AUSGEWAEHLT + 1))" && MU=ja || MU=nein
 ergebnis "uebersprungene Geraete werden gezaehlt, nicht verschwiegen" "$MU"
 
 curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
@@ -904,6 +910,69 @@ CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/
 [ "$CODE" = "200" ] && WZ=ja || WZ=nein
 ergebnis "die Zentrale ist nach der Wiederherstellung bedienbar (HTTP $CODE)" "$WZ"
 rm -f /tmp/pr-sicherung.dump
+
+hinweis "Mandantentrennung — Block A"
+# Der Pruefadmin ist Instanzbetreiber (keine Organisation zugeordnet) und sieht
+# alles. Ein Benutzer einer einzelnen Praxis darf nur deren Geraete sehen.
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/demodaten/anlegen
+ALLE=$(curl -s -b "$KEKSE" http://localhost:8090/bestand \
+       | grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' | grep -oE '[0-9]+$')
+[ "${ALLE:-0}" -ge 36 ] && MI=ja || MI=nein
+ergebnis "der Instanzbetreiber sieht den gesamten Bestand ($ALLE Geraete)" "$MI"
+
+# Ein Demo-Benutzer der Ebene 1 ist genau einer Praxis zugeordnet.
+PRAXIS=$(sqltext "SELECT b.benutzername FROM benutzer b
+                  JOIN organisation o ON o.id = b.organisation_id
+                  WHERE b.ist_demo AND o.art = 'EINRICHTUNG' ORDER BY b.id LIMIT 1")
+ORGID=$(sql "SELECT organisation_id FROM benutzer WHERE benutzername = '$PRAXIS'")
+SOLL=$(sql "SELECT count(*) FROM kartenterminal WHERE organisation_id = $ORGID")
+echo "  Demo-Benutzer $PRAXIS gehoert zu Einrichtung $ORGID mit $SOLL Geraeten"
+
+# Anmelden als dieser Benutzer. Das Kennwort ist bei Demokonten einheitlich.
+DEMO_KEKSE=/tmp/pr-demo-kekse.txt
+rm -f "$DEMO_KEKSE"
+DEMO_TOTP=$(sqltext "SELECT totp_geheimnis FROM benutzer WHERE benutzername = '$PRAXIS'")
+DEMO_PW=$(grep -oE 'DEMO_KENNWORT *= *"[^"]+"' src/zentrale/src/main/java/de/pinroboter/zentrale/Demodaten.java \
+          | head -1 | sed 's/.*"\(.*\)"/\1/')
+if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
+  for versuch in 1 2 3; do
+    curl -s -c "$DEMO_KEKSE" -o /dev/null -X POST http://localhost:8090/anmelden \
+      -d "benutzer=$PRAXIS&passwort=$DEMO_PW&code=$(python3 pruefungen/totp.py "$DEMO_TOTP")"
+    [ "$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/bestand)" = "200" ] && break
+    sleep 31
+  done
+  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/bestand)
+  [ "$CODE" = "200" ] && MA=ja || MA=nein
+  ergebnis "Anmeldung als Praxisbenutzer moeglich (HTTP $CODE)" "$MA"
+
+  SICHT=$(curl -s -b "$DEMO_KEKSE" http://localhost:8090/bestand \
+          | grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' | grep -oE '[0-9]+$')
+  [ "$SICHT" = "$SOLL" ] && MS=ja || MS=nein
+  ergebnis "der Praxisbenutzer sieht NUR seine eigenen Geraete ($SICHT von $ALLE)" "$MS"
+
+  # Der Angriff: eine fremde Geraetekennung direkt aufrufen.
+  FREMD=$(sql "SELECT id FROM kartenterminal WHERE organisation_id <> $ORGID ORDER BY id LIMIT 1")
+  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
+         "http://localhost:8090/bestand/terminal/$FREMD")
+  [ "$CODE" = "404" ] && MF=ja || MF=nein
+  ergebnis "ein fremdes Geraet ist ueber seine Kennung nicht erreichbar (HTTP $CODE)" "$MF"
+
+  # Und es laesst sich auch nicht loeschen.
+  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST "http://localhost:8090/bestand/terminal/$FREMD/loeschen"
+  NOCHDA=$(sql "SELECT count(*) FROM kartenterminal WHERE id = $FREMD")
+  [ "$NOCHDA" = "1" ] && ML=ja || ML=nein
+  ergebnis "ein fremdes Geraet laesst sich nicht loeschen" "$ML"
+
+  # Massenaktion mit einer fremden Kennung
+  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST http://localhost:8090/bestand/massenaktion \
+    --data-urlencode "geraet=$FREMD" --data-urlencode "aktion=deaktivieren"
+  AKTIV=$(sql "SELECT aktiv FROM kartenterminal WHERE id = $FREMD")
+  [ "$AKTIV" = "t" ] && MM=ja || MM=nein
+  ergebnis "eine Massenaktion greift nicht auf fremde Geraete durch" "$MM"
+  rm -f "$DEMO_KEKSE"
+else
+  echo "  uebersprungen: Demo-Zugangsdaten nicht ermittelbar"
+fi
 
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1

@@ -20,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ErmittlungTest {
 
+    /**
+     * Diese Testklassen prüfen Fachlogik, nicht Mandantentrennung — sie
+     * arbeiten deshalb uneingeschränkt. Die Trennung selbst hat eine eigene
+     * Testklasse: {@code MandantentrennungTest}.
+     */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Ermittlung erm;
     private static Bestandsverwaltung bv;
@@ -58,7 +65,7 @@ class ErmittlungTest {
             rs.next(); agentId = rs.getLong(1);
         }
         konnektorId = bv.konnektorAnlegen(orgId, "Konnektor Ermittlung", "192.0.2.10:443",
-                null, "M", "CS", "AP", null, null, null).id();
+                null, "M", "CS", "AP", null, null, null, ALLES).id();
     }
 
     @AfterAll
@@ -112,13 +119,13 @@ class ErmittlungTest {
     @DisplayName("Eine zweite Meldung legt nichts doppelt an")
     void zweiteMeldungIstIdempotent() {
         erm.aufnehmen(agentId, List.of(gemeldet("KT-A", "CHERRY ST-1506", true, true)));
-        assertEquals(3, erm.abgleich().size(), "keine Dubletten");
+        assertEquals(3, erm.abgleich(ALLES).size(), "keine Dubletten");
     }
 
     @Test @Order(3)
     @DisplayName("Ohne Erfassung ist jeder Fund „neu erkannt“")
     void alleNeu() {
-        var funde = erm.abgleich();
+        var funde = erm.abgleich(ALLES);
         assertEquals(3, funde.size());
         assertTrue(funde.stream().allMatch(f -> f.lage() == Ermittlung.Lage.NEU),
                 "alle Funde müssen als neu gelten");
@@ -128,12 +135,12 @@ class ErmittlungTest {
     @Test @Order(4)
     @DisplayName("Übernahme trägt die Angaben des Konnektors in den Bestand")
     void uebernehmen() {
-        var fund = erm.abgleich().stream().filter(f -> f.terminalId().equals("KT-A")).findFirst().orElseThrow();
-        var e = bv.uebernehmen(fund, konnektorId, "192.0.2.51:443");
+        var fund = erm.abgleich(ALLES).stream().filter(f -> f.terminalId().equals("KT-A")).findFirst().orElseThrow();
+        var e = bv.uebernehmen(fund, konnektorId, "192.0.2.51:443", ALLES);
         assertTrue(e.geklappt(), () -> String.valueOf(e.fehler()));
         erm.alsUebernommenMarkieren(fund.id());
 
-        var t = bv.terminal(e.id()).orElseThrow();
+        var t = bv.terminal(e.id(), ALLES).orElseThrow();
         assertEquals("KT-A", t.terminalId());
         assertEquals("CHERRY ST-1506", t.modell());
         assertEquals("4.2.1", t.firmware());
@@ -146,9 +153,9 @@ class ErmittlungTest {
     @Test @Order(5)
     @DisplayName("Dasselbe Gerät lässt sich nicht zweimal übernehmen")
     void keineDoppelteUebernahme() {
-        var fund = erm.abgleich().stream().filter(f -> f.terminalId().equals("KT-A")).findFirst().orElseThrow();
+        var fund = erm.abgleich(ALLES).stream().filter(f -> f.terminalId().equals("KT-A")).findFirst().orElseThrow();
         assertEquals(Ermittlung.Lage.BEKANNT, fund.lage(), "jetzt ist es erfasst");
-        var e = bv.uebernehmen(fund, konnektorId, null);
+        var e = bv.uebernehmen(fund, konnektorId, null, ALLES);
         assertFalse(e.geklappt());
         assertTrue(e.fehler().contains("bereits erfasst"), e.fehler());
     }
@@ -158,13 +165,13 @@ class ErmittlungTest {
     void pevimNurMitSmcb() {
         // Der Konnektor darf melden, was er will - die Regel setzen wir durch.
         erm.aufnehmen(agentId, List.of(gemeldet("KT-D", "CHERRY ST-1506", false, true)));
-        var fund = erm.abgleich().stream().filter(f -> f.terminalId().equals("KT-D")).findFirst().orElseThrow();
+        var fund = erm.abgleich(ALLES).stream().filter(f -> f.terminalId().equals("KT-D")).findFirst().orElseThrow();
         assertTrue(fund.pevimAktiv(), "der Konnektor meldet PEviM aktiv");
         assertFalse(fund.hatSmcb(), "aber ohne SMC-B");
 
-        var e = bv.uebernehmen(fund, konnektorId, null);
+        var e = bv.uebernehmen(fund, konnektorId, null, ALLES);
         assertTrue(e.geklappt());
-        var t = bv.terminal(e.id()).orElseThrow();
+        var t = bv.terminal(e.id(), ALLES).orElseThrow();
         assertFalse(t.pevimAktiv(), "im Bestand darf die Automatik nicht aktiv sein");
     }
 
@@ -173,7 +180,7 @@ class ErmittlungTest {
     void abweichungWirdErkannt() {
         // Am Geraet wurde PEviM abgeschaltet - der Bestand sagt noch "aktiv".
         erm.aufnehmen(agentId, List.of(gemeldet("KT-A", "CHERRY ST-1506", true, false)));
-        var fund = erm.abgleich().stream().filter(f -> f.terminalId().equals("KT-A")).findFirst().orElseThrow();
+        var fund = erm.abgleich(ALLES).stream().filter(f -> f.terminalId().equals("KT-A")).findFirst().orElseThrow();
 
         assertEquals(Ermittlung.Lage.ABWEICHEND, fund.lage());
         assertFalse(fund.abweichungen().isEmpty());
@@ -187,7 +194,8 @@ class ErmittlungTest {
         // Die Kernzusage von FA-GER-030 und FA-GER-035. Wuerde der Bestand
         // nachgezogen, koennte ein zurueckgesetzter Konnektor Zugangsdaten,
         // Gruppenzuordnungen und Standortangaben vernichten.
-        var t = bv.terminals("KT-A", null, false, 1, 10).eintraege().get(0);
+        var t = bv.terminals(new Bestandsverwaltung.Filter("KT-A", null, null, null, null, null, null),
+                null, false, 1, 10, ALLES).eintraege().get(0);
         assertTrue(t.pevimAktiv(), "der erfasste Wert muss unverändert bleiben");
         assertTrue(t.hatSmcb());
         assertEquals("192.0.2.51:443", t.adresse(), "auch die Adresse bleibt stehen");
@@ -200,12 +208,13 @@ class ErmittlungTest {
         try (Statement s = db.verbindung().createStatement()) {
             s.executeUpdate("DELETE FROM ermittelt_terminal WHERE terminal_id = 'KT-A'");
         }
-        var funde = erm.abgleich();
+        var funde = erm.abgleich(ALLES);
         var weg = funde.stream().filter(f -> "KT-A".equals(f.terminalId())).findFirst();
         assertTrue(weg.isPresent(), "das Gerät muss sichtbar bleiben");
         assertEquals(Ermittlung.Lage.VERSCHWUNDEN, weg.get().lage());
 
-        assertEquals(1, bv.terminals("KT-A", null, false, 1, 10).gesamt(),
+        assertEquals(1, bv.terminals(new Bestandsverwaltung.Filter("KT-A", null, null, null, null, null, null),
+                null, false, 1, 10, ALLES).gesamt(),
                 "im Bestand darf es NICHT verschwunden sein");
     }
 
@@ -235,22 +244,22 @@ class ErmittlungTest {
                      RETURNING id""")) {
             rs.next(); zweiterAgent = rs.getLong(1);
         }
-        int vorher = erm.abgleich().size();
+        int vorher = erm.abgleich(ALLES).size();
         erm.aufnehmen(zweiterAgent, List.of(gemeldet("KT-B", "CHERRY ST-1506", false, false)));
 
-        assertEquals(vorher, erm.abgleich().size(),
+        assertEquals(vorher, erm.abgleich(ALLES).size(),
                 "dasselbe Gerät darf nicht doppelt erscheinen, nur weil ein zweiter Agent es meldet");
     }
 
     @Test @Order(13)
     @DisplayName("Funde eines abgemeldeten Agenten verschwinden aus der Liste")
     void abgemeldeterAgentVerschwindet() throws Exception {
-        int vorher = erm.abgleich().size();
+        int vorher = erm.abgleich(ALLES).size();
         assertTrue(vorher > 0);
         try (Statement s = db.verbindung().createStatement()) {
             s.executeUpdate("UPDATE agent SET aktiv = FALSE WHERE bezeichnung = 'Testagent Ermittlung'");
         }
-        assertEquals(0, erm.abgleich().size(),
+        assertEquals(0, erm.abgleich(ALLES).size(),
                 "ohne aktiven Agenten gibt es keinen aktuellen Befund");
         assertEquals(0, erm.neueAnzahl());
         assertTrue(erm.juengstesModell().isEmpty(),

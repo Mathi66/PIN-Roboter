@@ -319,8 +319,8 @@ public class Zentrale {
 
         // FA-GER-030 / FA-GER-035: Vorschlagsliste aus der Ermittlung.
         app.get("/bestand/ermittelt", c -> c.html(seite("bestand",
-                Bestandsseiten.ermitteltSeite(ermittlung.abgleich(), ermittlung.juengstesModell(),
-                        bestand.konnektoren(), null, false),
+                Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)), ermittlung.juengstesModell(),
+                        bestand.konnektoren(bereich(c)), null, false),
                 angemeldeter(c))));
 
         // FA-GER-030 erlaubt die Uebernahme "einzeln oder als Auswahl".
@@ -334,13 +334,13 @@ public class Zentrale {
             int uebernommen = 0;
             List<String> fehler = new ArrayList<>();
             for (long id : ids) {
-                var fund = ermittlung.fund(id);
+                var fund = ermittlung.fund(id, bereich(c));
                 if (fund.isEmpty()) { fehler.add("Ein Fund ist nicht mehr vorhanden."); continue; }
-                var e = bestand.uebernehmen(fund.get(), konnektorId, null);
+                var e = bestand.uebernehmen(fund.get(), konnektorId, null, bereich(c));
                 if (e.geklappt()) {
                     ermittlung.alsUebernommenMarkieren(id);
                     uebernommen++;
-                    var t2 = bestand.terminal(e.id()).orElseThrow();
+                    var t2 = bestand.terminal(e.id(), bereich(c)).orElseThrow();
                     protokoll.anfuegen(t2.organisation(), t2.terminalId(),
                             Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
                             "Kartenterminal \u201e" + t2.bezeichnung() + "\u201c aus der Ermittlung "
@@ -356,18 +356,18 @@ public class Zentrale {
                     ? "Es war kein Ger\u00e4t ausgew\u00e4hlt."
                     : "%d von %d Ger\u00e4t(en) \u00fcbernommen.%s".formatted(uebernommen, ids.size(),
                             fehler.isEmpty() ? "" : " " + String.join(" ", fehler));
-            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
-                    ermittlung.juengstesModell(), bestand.konnektoren(), meldung,
+            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
+                    ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)), meldung,
                     uebernommen < ids.size()), angemeldeter(c)));
         });
 
         app.post("/bestand/ermittelt/{id}/uebernehmen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
             long id = Long.parseLong(c.pathParam("id"));
-            var fund = ermittlung.fund(id);
+            var fund = ermittlung.fund(id, bereich(c));
             if (fund.isEmpty()) {
-                c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
-                        ermittlung.juengstesModell(), bestand.konnektoren(),
+                c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
+                        ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)),
                         "Dieser Fund ist nicht mehr vorhanden. Bitte die Seite neu laden.", true),
                         angemeldeter(c)));
                 return;
@@ -376,11 +376,11 @@ public class Zentrale {
             try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
             catch (NumberFormatException e) { konnektorId = -1; }
 
-            var e = bestand.uebernehmen(fund.get(), konnektorId, Anmeldeseiten.feld(c, "adresse"));
+            var e = bestand.uebernehmen(fund.get(), konnektorId, Anmeldeseiten.feld(c, "adresse"), bereich(c));
             String meldung;
             if (e.geklappt()) {
                 ermittlung.alsUebernommenMarkieren(id);
-                var t = bestand.terminal(e.id()).orElseThrow();
+                var t = bestand.terminal(e.id(), bereich(c)).orElseThrow();
                 protokoll.anfuegen(t.organisation(), t.terminalId(),
                         Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
                         "Kartenterminal \u201e" + t.bezeichnung() + "\u201c aus der Ermittlung "
@@ -392,8 +392,8 @@ public class Zentrale {
             } else {
                 meldung = e.fehler();
             }
-            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
-                    ermittlung.juengstesModell(), bestand.konnektoren(), meldung, !e.geklappt()),
+            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
+                    ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)), meldung, !e.geklappt()),
                     angemeldeter(c)));
         });
 
@@ -406,8 +406,8 @@ public class Zentrale {
             Bestandsverwaltung.Massenergebnis e;
             String was;
             switch (aktion) {
-                case "aktivieren"   -> { e = bestand.massenAktivSetzen(ids, true);  was = "aktiviert"; }
-                case "deaktivieren" -> { e = bestand.massenAktivSetzen(ids, false); was = "deaktiviert"; }
+                case "aktivieren"   -> { e = bestand.massenAktivSetzen(ids, true, bereich(c));  was = "aktiviert"; }
+                case "deaktivieren" -> { e = bestand.massenAktivSetzen(ids, false, bereich(c)); was = "deaktiviert"; }
                 case "gruppe"       -> {
                     long gruppeId;
                     try { gruppeId = Long.parseLong(Anmeldeseiten.feld(c, "gruppeId")); }
@@ -416,7 +416,7 @@ public class Zentrale {
                                 "Bitte eine Gerätegruppe auswählen.", true), angemeldeter(c)));
                         return;
                     }
-                    e = bestand.massenGruppeZuweisen(ids, gruppeId);
+                    e = bestand.massenGruppeZuweisen(ids, gruppeId, bereich(c));
                     was = "einer Gruppe zugeordnet";
                 }
                 default -> {
@@ -457,15 +457,15 @@ public class Zentrale {
                     Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
                     Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
                     Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
-                    Anmeldeseiten.feld(c, "webadminAdresse"));
+                    Anmeldeseiten.feld(c, "webadminAdresse"), bereich(c));
             if (!e.geklappt()) {
                 c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
             // Die Erreichbarkeit wird direkt geprueft und gemeldet - aber sie
             // entscheidet nicht ueber das Speichern (FA-GER-010).
-            var erreichbar = bestand.konnektorPruefen(e.id());
-            var k = bestand.konnektor(e.id()).orElseThrow();
+            var erreichbar = bestand.konnektorPruefen(e.id(), bereich(c));
+            var k = bestand.konnektor(e.id(), bereich(c)).orElseThrow();
             protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_ANGELEGT, true,
                     angemeldeter(c).anzeigename(), null,
                     "Konnektor „" + k.bezeichnung() + "“ erfasst ("
@@ -479,7 +479,7 @@ public class Zentrale {
         });
 
         app.get("/bestand/konnektor/{id}", c -> {
-            var k = bestand.konnektor(Long.parseLong(c.pathParam("id")));
+            var k = bestand.konnektor(Long.parseLong(c.pathParam("id")), bereich(c));
             if (k.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Diesen Konnektor gibt es nicht mehr.", true), angemeldeter(c))); return; }
             c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), null), angemeldeter(c)));
@@ -493,15 +493,15 @@ public class Zentrale {
                     Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
                     Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
                     Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
-                    Anmeldeseiten.feld(c, "webadminAdresse"), angekreuzt(c, "aktiv"));
+                    Anmeldeseiten.feld(c, "webadminAdresse"), angekreuzt(c, "aktiv"), bereich(c));
             if (!e.geklappt()) {
-                var k = bestand.konnektor(id);
+                var k = bestand.konnektor(id, bereich(c));
                 c.html(seite("bestand", k.isPresent()
                         ? Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), e.fehler())
                         : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
-            var k = bestand.konnektor(id).orElseThrow();
+            var k = bestand.konnektor(id, bereich(c)).orElseThrow();
             protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT, true,
                     angemeldeter(c).anzeigename(), null,
                     "Konnektor „" + k.bezeichnung() + "“ geändert"
@@ -512,8 +512,8 @@ public class Zentrale {
         app.post("/bestand/konnektor/{id}/kennwort-entfernen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
             long id = Long.parseLong(c.pathParam("id"));
-            var vorher = bestand.konnektor(id);
-            var e = bestand.konnektorPasswortEntfernen(id);
+            var vorher = bestand.konnektor(id, bereich(c));
+            var e = bestand.konnektorPasswortEntfernen(id, bereich(c));
             if (e.geklappt() && vorher.isPresent()) {
                 protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT,
                         true, angemeldeter(c).anzeigename(), null,
@@ -529,8 +529,8 @@ public class Zentrale {
         app.post("/bestand/konnektor/{id}/loeschen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
             long id = Long.parseLong(c.pathParam("id"));
-            var vorher = bestand.konnektor(id);
-            var e = bestand.konnektorLoeschen(id);
+            var vorher = bestand.konnektor(id, bereich(c));
+            var e = bestand.konnektorLoeschen(id, bereich(c));
             if (e.geklappt() && vorher.isPresent()) {
                 protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GELOESCHT,
                         true, angemeldeter(c).anzeigename(), null,
@@ -542,8 +542,8 @@ public class Zentrale {
 
         app.post("/bestand/konnektor/{id}/pruefen", c -> {
             long id = Long.parseLong(c.pathParam("id"));
-            var k = bestand.konnektor(id);
-            var e = bestand.konnektorPruefen(id);
+            var k = bestand.konnektor(id, bereich(c));
+            var e = bestand.konnektorPruefen(id, bereich(c));
             c.html(Bestandsseiten.pruefmeldung(k.map(Bestandsverwaltung.Konnektor::bezeichnung)
                     .orElse("Konnektor"), e));
         });
@@ -563,13 +563,13 @@ public class Zentrale {
                     Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
                     Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
                     Anmeldeseiten.feld(c, "adminPasswort"),
-                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"));
+                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), bereich(c));
             if (!e.geklappt()) {
                 c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
-            var erreichbar = bestand.terminalPruefen(e.id());
-            var t = bestand.terminal(e.id()).orElseThrow();
+            var erreichbar = bestand.terminalPruefen(e.id(), bereich(c));
+            var t = bestand.terminal(e.id(), bereich(c)).orElseThrow();
             protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_ANGELEGT, true,
                     angemeldeter(c).anzeigename(), null,
                     "Kartenterminal „" + t.bezeichnung() + "“ erfasst (" + t.adresse()
@@ -583,7 +583,7 @@ public class Zentrale {
         });
 
         app.get("/bestand/terminal/{id}", c -> {
-            var t = bestand.terminal(Long.parseLong(c.pathParam("id")));
+            var t = bestand.terminal(Long.parseLong(c.pathParam("id")), bereich(c));
             if (t.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
                     angemeldeter(c))); return; }
@@ -598,15 +598,15 @@ public class Zentrale {
                     Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
                     Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
                     Anmeldeseiten.feld(c, "adminPasswort"),
-                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), angekreuzt(c, "aktiv"));
+                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), angekreuzt(c, "aktiv"), bereich(c));
             if (!e.geklappt()) {
-                var t = bestand.terminal(id);
+                var t = bestand.terminal(id, bereich(c));
                 c.html(seite("bestand", t.isPresent()
                         ? Bestandsseiten.terminalMaske(t.get(), e.fehler())
                         : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
-            var t = bestand.terminal(id).orElseThrow();
+            var t = bestand.terminal(id, bereich(c)).orElseThrow();
             protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_GEAENDERT, true,
                     angemeldeter(c).anzeigename(), null,
                     "Kartenterminal „" + t.bezeichnung() + "“ geändert"
@@ -617,8 +617,8 @@ public class Zentrale {
         app.post("/bestand/terminal/{id}/loeschen", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
             long id = Long.parseLong(c.pathParam("id"));
-            var vorher = bestand.terminal(id);
-            var e = bestand.terminalLoeschen(id);
+            var vorher = bestand.terminal(id, bereich(c));
+            var e = bestand.terminalLoeschen(id, bereich(c));
             if (e.geklappt() && vorher.isPresent()) {
                 protokoll.anfuegen(vorher.get().organisation(), vorher.get().terminalId(),
                         Ereignisart.TERMINAL_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
@@ -632,8 +632,8 @@ public class Zentrale {
 
         app.post("/bestand/terminal/{id}/pruefen", c -> {
             long id = Long.parseLong(c.pathParam("id"));
-            var t = bestand.terminal(id);
-            var e = bestand.terminalPruefen(id);
+            var t = bestand.terminal(id, bereich(c));
+            var e = bestand.terminalPruefen(id, bereich(c));
             c.html(Bestandsseiten.pruefmeldung(t.map(Bestandsverwaltung.Terminal::bezeichnung)
                     .orElse("Kartenterminal"), e));
         });
@@ -1063,10 +1063,11 @@ public class Zentrale {
 
         return "<div id=\"bestandsmeldung\" aria-live=\"polite\"></div>"
                 + Bestandsseiten.seite(
-                        bestand.konnektoren(),
+                        bestand.konnektoren(bereich(c)),
                         bestand.terminals(ansicht.filter(), ansicht.sortierung(),
-                                ansicht.absteigend(), seitenNummer, Bestandsseiten.SEITENGROESSE),
-                        bestand.organisationen(), ansicht,
+                                ansicht.absteigend(), seitenNummer, Bestandsseiten.SEITENGROESSE,
+                                bereich(c)),
+                        bestand.organisationen(bereich(c)), ansicht,
                         bestand.zugangsdatenMoeglich(), meldung, istFehler);
     }
 
@@ -1100,7 +1101,7 @@ public class Zentrale {
         boolean absteigend = "ab".equals(c.queryParam("richtung"));
 
         return new Bestandsseiten.Ansicht(filter, sortierung, absteigend,
-                bestand.vorhandeneWerte("modell"), bestand.vorhandeneWerte("firmware"),
+                bestand.vorhandeneWerte("modell", bereich(c)), bestand.vorhandeneWerte("firmware", bereich(c)),
                 gruppen.alle("Praxis"), ermittlung.aufrufkontextAuswahl());
     }
 
@@ -1116,6 +1117,22 @@ public class Zentrale {
             try { ids.add(Long.parseLong(w.trim())); } catch (NumberFormatException ignored) { }
         }
         return ids;
+    }
+
+    /**
+     * Der Geltungsbereich des angemeldeten Benutzers.
+     *
+     * <p>Einzige Stelle, an der er entsteht. Jede mandantengebundene Abfrage
+     * bekommt ihn von hier — und verlangt ihn als Pflichtparameter, damit er
+     * nicht vergessen werden kann ({@link Geltungsbereich}).
+     *
+     * <p>Ohne angemeldeten Benutzer: {@link Geltungsbereich#keiner()}. Nicht
+     * „alles". Diese Richtung ist die ganze Sicherheit dieser Methode.
+     */
+    private Geltungsbereich bereich(Context c) {
+        var b = angemeldeter(c);
+        if (b == null) return Geltungsbereich.keiner();
+        return Geltungsbereich.fuerBenutzer(db, b.organisationId(), b.istInstanzbetreiber());
     }
 
     /** Ein nicht angekreuztes Kästchen wird vom Browser gar nicht gesendet. */

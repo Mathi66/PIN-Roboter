@@ -20,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class BestandslisteTest {
 
+    /**
+     * Diese Testklassen prüfen Fachlogik, nicht Mandantentrennung — sie
+     * arbeiten deshalb uneingeschränkt. Die Trennung selbst hat eine eigene
+     * Testklasse: {@code MandantentrennungTest}.
+     */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Bestandsverwaltung bv;
     private static Gruppenverwaltung gv;
@@ -50,7 +57,7 @@ class BestandslisteTest {
             try (ResultSet rs = p.executeQuery()) { rs.next(); orgId = rs.getLong(1); }
         }
         konnektorId = bv.konnektorAnlegen(orgId, "Konnektor Liste", "192.0.2.10:443",
-                null, "M", "CS", "AP", null, null, null).id();
+                null, "M", "CS", "AP", null, null, null, ALLES).id();
 
         // Absichtlich gemischt: verschiedene Modelle, Firmware-Staende und
         // Bezeichnungen, die alphabetisch anders liegen als die Kennungen.
@@ -62,7 +69,7 @@ class BestandslisteTest {
 
     private static void anlegen(String id, String bez, String modell, String firmware, boolean smcb) {
         var e = bv.terminalAnlegen(id, konnektorId, bez, "Flur", "192.0.2.50", modell,
-                null, null, null, smcb, false);
+                null, null, null, smcb, false, ALLES);
         assertTrue(e.geklappt(), () -> String.valueOf(e.fehler()));
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "UPDATE kartenterminal SET firmware = ? WHERE id = ?")) {
@@ -97,7 +104,7 @@ class BestandslisteTest {
     }
 
     private List<String> bezeichnungen(Bestandsverwaltung.Sortierung s, boolean ab) {
-        return bv.terminals(nurUnsere(), s, ab, 1, 50).eintraege().stream()
+        return bv.terminals(nurUnsere(), s, ab, 1, 50, ALLES).eintraege().stream()
                 .map(Bestandsverwaltung.Terminal::bezeichnung).toList();
     }
 
@@ -115,7 +122,7 @@ class BestandslisteTest {
     @Test @Order(2)
     @DisplayName("Sortierung nach Kennung ist unabhängig von der Bezeichnung")
     void sortierungKennung() {
-        var ids = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.KENNUNG, false, 1, 50)
+        var ids = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.KENNUNG, false, 1, 50, ALLES)
                 .eintraege().stream().map(Bestandsverwaltung.Terminal::terminalId).toList();
         assertEquals(List.of("KT-L-01", "KT-L-02", "KT-L-03", "KT-L-04"), ids);
     }
@@ -123,12 +130,12 @@ class BestandslisteTest {
     @Test @Order(3)
     @DisplayName("Sortierung nach Modell und Firmware")
     void sortierungModellUndFirmware() {
-        var modelle = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.MODELL, false, 1, 50)
+        var modelle = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.MODELL, false, 1, 50, ALLES)
                 .eintraege().stream().map(Bestandsverwaltung.Terminal::modell).toList();
         assertEquals("CHERRY ST-1506", modelle.get(0));
         assertEquals("Ingenico ORGA 6141", modelle.get(3));
 
-        var fw = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.FIRMWARE, false, 1, 50)
+        var fw = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.FIRMWARE, false, 1, 50, ALLES)
                 .eintraege().stream().map(Bestandsverwaltung.Terminal::firmware).toList();
         assertEquals("3.7.4", fw.get(0));
         assertEquals("4.3.0", fw.get(3));
@@ -155,8 +162,8 @@ class BestandslisteTest {
         // Zwei Geraete haben dieselbe Firmware. Ohne zweites Sortierfeld waere
         // ihre Reihenfolge zufaellig - und sie koennten zwischen den Seiten
         // wandern.
-        var seite1 = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.FIRMWARE, false, 1, 2);
-        var seite2 = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.FIRMWARE, false, 2, 2);
+        var seite1 = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.FIRMWARE, false, 1, 2, ALLES);
+        var seite2 = bv.terminals(nurUnsere(), Bestandsverwaltung.Sortierung.FIRMWARE, false, 2, 2, ALLES);
         var ids1 = seite1.eintraege().stream().map(Bestandsverwaltung.Terminal::id).toList();
         var ids2 = seite2.eintraege().stream().map(Bestandsverwaltung.Terminal::id).toList();
         assertEquals(2, ids1.size());
@@ -171,15 +178,15 @@ class BestandslisteTest {
     @DisplayName("Filter nach Modell und Firmware")
     void filterModellFirmware() {
         var nachModell = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                "Ingenico ORGA 6141", null, null), null, false, 1, 50);
+                "Ingenico ORGA 6141", null, null), null, false, 1, 50, ALLES);
         assertEquals(2, nachModell.gesamt());
 
         var nachFirmware = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                null, "3.7.4", null), null, false, 1, 50);
+                null, "3.7.4", null), null, false, 1, 50, ALLES);
         assertEquals(2, nachFirmware.gesamt());
 
         var beides = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                "CHERRY ST-1506", "3.7.4", null), null, false, 1, 50);
+                "CHERRY ST-1506", "3.7.4", null), null, false, 1, 50, ALLES);
         assertEquals(0, beides.gesamt(), "Filter wirken zusammen, nicht alternativ");
     }
 
@@ -187,11 +194,11 @@ class BestandslisteTest {
     @DisplayName("Filter nach SMC-B und Status")
     void filterSmcbUndStatus() {
         var mitSmcb = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null,
-                null, null, true), null, false, 1, 50);
+                null, null, true), null, false, 1, 50, ALLES);
         assertEquals(3, mitSmcb.gesamt());
 
         assertEquals(4, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, true, null,
-                null, null, null), null, false, 1, 50).gesamt(), "alle sind zunächst aktiv");
+                null, null, null), null, false, 1, 50, ALLES).gesamt(), "alle sind zunächst aktiv");
     }
 
     @Test @Order(12)
@@ -200,22 +207,22 @@ class BestandslisteTest {
         // Ein nie geprueftes Geraet ist unbekannt, nicht ausgefallen. Wuerde der
         // Filter es einsammeln, suchte der Betreiber Fehler, wo keine sind.
         var unerreichbar = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null,
-                false, null, null, null), null, false, 1, 50);
+                false, null, null, null), null, false, 1, 50, ALLES);
         assertEquals(0, unerreichbar.gesamt(), "noch wurde nichts geprüft");
 
         var erreichbar = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null,
-                true, null, null, null), null, false, 1, 50);
+                true, null, null, null), null, false, 1, 50, ALLES);
         assertEquals(0, erreichbar.gesamt());
     }
 
     @Test @Order(13)
     @DisplayName("Die Filterauswahl bietet nur Werte an, die tatsächlich vorkommen")
     void vorhandeneWerte() {
-        assertTrue(bv.vorhandeneWerte("modell").contains("CHERRY ST-1506"));
-        assertTrue(bv.vorhandeneWerte("firmware").contains("4.3.0"));
+        assertTrue(bv.vorhandeneWerte("modell", ALLES).contains("CHERRY ST-1506"));
+        assertTrue(bv.vorhandeneWerte("firmware", ALLES).contains("4.3.0"));
         // Auch hier eine Weissliste - der Spaltenname geht in die Abfrage ein.
-        assertTrue(bv.vorhandeneWerte("bezeichnung; DROP TABLE kartenterminal").isEmpty());
-        assertTrue(bv.vorhandeneWerte("adresse").isEmpty(), "nicht freigegebene Spalte");
+        assertTrue(bv.vorhandeneWerte("bezeichnung; DROP TABLE kartenterminal", ALLES).isEmpty());
+        assertTrue(bv.vorhandeneWerte("adresse", ALLES).isEmpty(), "nicht freigegebene Spalte");
     }
 
     // ---------------------------------------------------------- Massenaktionen
@@ -223,22 +230,22 @@ class BestandslisteTest {
     @Test @Order(20)
     @DisplayName("Mehrere Geräte lassen sich auf einmal deaktivieren")
     void massenDeaktivieren() {
-        var ids = bv.terminals(nurUnsere(), null, false, 1, 50).eintraege().stream()
+        var ids = bv.terminals(nurUnsere(), null, false, 1, 50, ALLES).eintraege().stream()
                 .map(Bestandsverwaltung.Terminal::id).toList();
-        var e = bv.massenAktivSetzen(ids, false);
+        var e = bv.massenAktivSetzen(ids, false, ALLES);
         assertEquals(4, e.geaendert());
         assertTrue(e.vollstaendig());
 
         assertEquals(4, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, false, null,
-                null, null, null), null, false, 1, 50).gesamt());
+                null, null, null), null, false, 1, 50, ALLES).gesamt());
 
-        bv.massenAktivSetzen(ids, true);
+        bv.massenAktivSetzen(ids, true, ALLES);
     }
 
     @Test @Order(21)
     @DisplayName("Eine leere Auswahl ändert nichts und sagt das auch")
     void leereAuswahl() {
-        var e = bv.massenAktivSetzen(List.of(), false);
+        var e = bv.massenAktivSetzen(List.of(), false, ALLES);
         assertEquals(0, e.geaendert());
         assertFalse(e.hinweise().isEmpty(), "der Benutzer muss erfahren, warum nichts geschah");
         assertTrue(e.hinweise().get(0).contains("kein Gerät"));
@@ -247,12 +254,12 @@ class BestandslisteTest {
     @Test @Order(22)
     @DisplayName("Verschwundene Geräte werden gezählt, nicht verschwiegen")
     void verschwundeneWerdenGezaehlt() {
-        var ids = bv.terminals(nurUnsere(), null, false, 1, 50).eintraege().stream()
+        var ids = bv.terminals(nurUnsere(), null, false, 1, 50, ALLES).eintraege().stream()
                 .map(Bestandsverwaltung.Terminal::id).toList();
         var mitGeist = new java.util.ArrayList<>(ids);
         mitGeist.add(999_999_999L);
 
-        var e = bv.massenAktivSetzen(mitGeist, true);
+        var e = bv.massenAktivSetzen(mitGeist, true, ALLES);
         assertEquals(4, e.geaendert());
         assertEquals(1, e.uebersprungen());
         assertFalse(e.vollstaendig(), "„4 von 5“ darf nicht als voller Erfolg gemeldet werden");
@@ -268,15 +275,15 @@ class BestandslisteTest {
         assertNull(gv.anlegen("Testgruppe Liste", "Testeinrichtung Liste", 60));
         long gruppeId = gv.alle("Testeinrichtung Liste").get(0).id();
 
-        var ids = bv.terminals(nurUnsere(), null, false, 1, 50).eintraege().stream()
+        var ids = bv.terminals(nurUnsere(), null, false, 1, 50, ALLES).eintraege().stream()
                 .map(Bestandsverwaltung.Terminal::id).toList();
-        var e = bv.massenGruppeZuweisen(ids, gruppeId);
+        var e = bv.massenGruppeZuweisen(ids, gruppeId, ALLES);
         assertEquals(4, e.geaendert(), () -> "Hinweise: " + e.hinweise());
         assertTrue(e.vollstaendig());
 
         assertNull(gv.anlegen("Testgruppe Fremd", "Ganz andere Einrichtung", 60));
         long fremdeGruppe = gv.alle("Ganz andere Einrichtung").get(0).id();
-        var f = bv.massenGruppeZuweisen(ids, fremdeGruppe);
+        var f = bv.massenGruppeZuweisen(ids, fremdeGruppe, ALLES);
         assertEquals(0, f.geaendert(), "kein Gerät darf in eine fremde Einrichtung wandern");
         assertFalse(f.hinweise().isEmpty());
         assertTrue(f.hinweise().get(0).contains("anderen Einrichtung"), f.hinweise().toString());
@@ -285,7 +292,7 @@ class BestandslisteTest {
     @Test @Order(24)
     @DisplayName("Eine gelöschte Gruppe wird gemeldet, nicht ignoriert")
     void geloeschteGruppe() {
-        var e = bv.massenGruppeZuweisen(List.of(1L), 999_999_999L);
+        var e = bv.massenGruppeZuweisen(List.of(1L), 999_999_999L, ALLES);
         assertEquals(0, e.geaendert());
         assertTrue(e.hinweise().get(0).contains("gibt es nicht mehr"), e.hinweise().toString());
     }

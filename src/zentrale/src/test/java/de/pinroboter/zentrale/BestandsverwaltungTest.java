@@ -20,6 +20,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class BestandsverwaltungTest {
 
+    /**
+     * Diese Testklassen prüfen Fachlogik, nicht Mandantentrennung — sie
+     * arbeiten deshalb uneingeschränkt. Die Trennung selbst hat eine eigene
+     * Testklasse: {@code MandantentrennungTest}.
+     */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Bestandsverwaltung bv;
     private static long orgId;
@@ -78,11 +85,11 @@ class BestandsverwaltungTest {
     @DisplayName("Ein Konnektor lässt sich mit vollem Aufrufkontext anlegen")
     void konnektorAnlegen() {
         var e = bv.konnektorAnlegen(orgId, "Prüfkonnektor", "192.0.2.10:443", "KoCo Konnektor",
-                "Mandant-1", "CS-1", "AP-1", "admin", "streng-geheim", null);
+                "Mandant-1", "CS-1", "AP-1", "admin", "streng-geheim", null, ALLES);
         assertTrue(e.geklappt(), () -> "unerwarteter Fehler: " + e.fehler());
         konnektorId = e.id();
 
-        var k = bv.konnektor(konnektorId).orElseThrow();
+        var k = bv.konnektor(konnektorId, ALLES).orElseThrow();
         assertEquals("Prüfkonnektor", k.bezeichnung());
         assertEquals("Mandant-1", k.mandantId());
         assertTrue(k.aktiv());
@@ -92,7 +99,7 @@ class BestandsverwaltungTest {
     @Test @Order(2)
     @DisplayName("Das Kennwort ist über keinen Lesepfad auslesbar")
     void kennwortNichtAuslesbar() throws Exception {
-        var k = bv.konnektor(konnektorId).orElseThrow();
+        var k = bv.konnektor(konnektorId, ALLES).orElseThrow();
         assertTrue(k.passwortHinterlegt(), "es muss sichtbar sein, DASS eines hinterlegt ist");
 
         // Der Record darf den Wert nirgends tragen - auch nicht in einem Feld,
@@ -119,10 +126,10 @@ class BestandsverwaltungTest {
     @DisplayName("Eine Änderung ohne Kennwortfeld lässt das Kennwort stehen")
     void aenderungLoeschtKennwortNicht() {
         var e = bv.konnektorAendern(konnektorId, "Prüfkonnektor neu", "192.0.2.11:443", null,
-                "Mandant-1", "CS-1", "AP-1", "admin", "", null, true);
+                "Mandant-1", "CS-1", "AP-1", "admin", "", null, true, ALLES);
         assertTrue(e.geklappt(), () -> String.valueOf(e.fehler()));
 
-        var k = bv.konnektor(konnektorId).orElseThrow();
+        var k = bv.konnektor(konnektorId, ALLES).orElseThrow();
         assertEquals("Prüfkonnektor neu", k.bezeichnung());
         assertEquals("192.0.2.11:443", k.adresse());
         assertTrue(k.passwortHinterlegt(), "das Kennwort darf durch eine Umbenennung nicht verschwinden");
@@ -136,15 +143,15 @@ class BestandsverwaltungTest {
         // (TUC_KON_000) - und zwar mit einer Meldung, die den Zusammenhang
         // nicht erkennen laesst. Deshalb hier hart pruefen.
         var ohneMandant = bv.konnektorAnlegen(orgId, "X", "192.0.2.20", null,
-                "", "CS", "AP", null, null, null);
+                "", "CS", "AP", null, null, null, ALLES);
         assertFalse(ohneMandant.geklappt());
         assertTrue(ohneMandant.fehler().contains("Mandanten-ID"), ohneMandant.fehler());
 
-        var ohneAdresse = bv.konnektorAnlegen(orgId, "X", "  ", null, "M", "CS", "AP", null, null, null);
+        var ohneAdresse = bv.konnektorAnlegen(orgId, "X", "  ", null, "M", "CS", "AP", null, null, null, ALLES);
         assertFalse(ohneAdresse.geklappt());
         assertTrue(ohneAdresse.fehler().contains("Adresse"), ohneAdresse.fehler());
 
-        var ohneBezeichnung = bv.konnektorAnlegen(orgId, "", "192.0.2.20", null, "M", "CS", "AP", null, null, null);
+        var ohneBezeichnung = bv.konnektorAnlegen(orgId, "", "192.0.2.20", null, "M", "CS", "AP", null, null, null, ALLES);
         assertFalse(ohneBezeichnung.geklappt());
         assertTrue(ohneBezeichnung.fehler().contains("Bezeichnung"), ohneBezeichnung.fehler());
     }
@@ -156,16 +163,16 @@ class BestandsverwaltungTest {
         assertFalse(ohne.zugangsdatenMoeglich());
 
         var mitKennwort = ohne.konnektorAnlegen(orgId, "Ohne Tresor", "192.0.2.30", null,
-                "M", "CS", "AP", "admin", "geheim", null);
+                "M", "CS", "AP", "admin", "geheim", null, ALLES);
         assertFalse(mitKennwort.geklappt(), "mit Kennwort muss es scheitern");
         assertTrue(mitKennwort.fehler().contains("GEHEIMNIS_SCHLUESSEL"),
                 "die Meldung muss den Namen der Variablen nennen: " + mitKennwort.fehler());
 
         var ohneKennwort = ohne.konnektorAnlegen(orgId, "Ohne Tresor", "192.0.2.30", null,
-                "M", "CS", "AP", "admin", null, null);
+                "M", "CS", "AP", "admin", null, null, ALLES);
         assertTrue(ohneKennwort.geklappt(),
                 () -> "ohne Kennwort muss es gehen: " + ohneKennwort.fehler());
-        ohne.konnektorLoeschen(ohneKennwort.id());
+        ohne.konnektorLoeschen(ohneKennwort.id(), ALLES);
     }
 
     // -------------------------------------------------------------- Terminals
@@ -175,11 +182,11 @@ class BestandsverwaltungTest {
     void terminalAnlegen() {
         var e = bv.terminalAnlegen("KT-TEST-01", konnektorId, "Empfang links", "Foyer",
                 "192.0.2.51:443", "CHERRY ST-1506", "SN-0815", "admin", "term-geheim",
-                true, true);
+                true, true, ALLES);
         assertTrue(e.geklappt(), () -> String.valueOf(e.fehler()));
         terminalId = e.id();
 
-        var t = bv.terminal(terminalId).orElseThrow();
+        var t = bv.terminal(terminalId, ALLES).orElseThrow();
         assertEquals(orgId, t.organisationId(), "die Einrichtung kommt vom Konnektor");
         assertEquals(konnektorId, t.konnektorId());
         assertTrue(t.hatSmcb());
@@ -196,12 +203,12 @@ class BestandsverwaltungTest {
         // andere Karte waere nicht nur wirkungslos, sondern koennte deren
         // Fehlversuchszaehler belasten.
         var e = bv.terminalAnlegen("KT-TEST-02", konnektorId, "Behandlung 1", null,
-                "192.0.2.52", null, null, null, null, false, true);
+                "192.0.2.52", null, null, null, null, false, true, ALLES);
         assertFalse(e.geklappt());
         assertTrue(e.fehler().contains("A_24080"), e.fehler());
 
         var aendern = bv.terminalAendern(terminalId, "Empfang links", "Foyer", "192.0.2.51:443",
-                null, null, null, null, false, true, true);
+                null, null, null, null, false, true, true, ALLES);
         assertFalse(aendern.geklappt(), "auch beim Ändern muss die Regel greifen");
     }
 
@@ -209,7 +216,7 @@ class BestandsverwaltungTest {
     @DisplayName("Eine doppelte Kennung wird mit verständlicher Meldung abgelehnt")
     void kennungIstEindeutig() {
         var e = bv.terminalAnlegen("KT-TEST-01", konnektorId, "Zweites Gerät", null,
-                "192.0.2.53", null, null, null, null, false, false);
+                "192.0.2.53", null, null, null, null, false, false, ALLES);
         assertFalse(e.geklappt());
         assertTrue(e.fehler().contains("bereits"), e.fehler());
         assertFalse(e.fehler().contains("duplicate key"),
@@ -222,29 +229,35 @@ class BestandsverwaltungTest {
         for (int i = 2; i <= 12; i++) {
             var e = bv.terminalAnlegen("KT-TEST-%02d".formatted(i), konnektorId,
                     "Behandlung " + i, "Flur B", "192.0.2." + (60 + i), null, null,
-                    null, null, false, false);
+                    null, null, false, false, ALLES);
             assertTrue(e.geklappt(), () -> String.valueOf(e.fehler()));
         }
-        var alle = bv.terminals(null, konnektorId, false, 1, 5);
+        var alle = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+                null, false, 1, 5, ALLES);
         assertEquals(12, alle.gesamt());
         assertEquals(5, alle.eintraege().size(), "eine Seite liefert nur ihre eigenen Treffer");
         assertEquals(3, alle.seitenZahl());
         assertTrue(alle.hatNaechste());
         assertFalse(alle.hatVorherige());
 
-        var letzte = bv.terminals(null, konnektorId, false, 3, 5);
+        var letzte = bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+                null, false, 3, 5, ALLES);
         assertEquals(2, letzte.eintraege().size());
         assertFalse(letzte.hatNaechste());
 
-        var gesucht = bv.terminals("empfang", null, false, 1, 25);
+        var gesucht = bv.terminals(new Bestandsverwaltung.Filter("empfang", null, null, null, null, null, null),
+                null, false, 1, 25, ALLES);
         assertEquals(1, gesucht.gesamt(), "Suche über die Bezeichnung");
         assertEquals("KT-TEST-01", gesucht.eintraege().get(0).terminalId());
 
-        assertEquals(11, bv.terminals("Flur B", null, false, 1, 25).gesamt(),
+        assertEquals(11, bv.terminals(new Bestandsverwaltung.Filter("Flur B", null, null, null, null, null, null),
+                null, false, 1, 25, ALLES).gesamt(),
                 "Suche über den Standort");
-        assertEquals(1, bv.terminals("KT-TEST-07", null, false, 1, 25).gesamt(),
+        assertEquals(1, bv.terminals(new Bestandsverwaltung.Filter("KT-TEST-07", null, null, null, null, null, null),
+                null, false, 1, 25, ALLES).gesamt(),
                 "Suche über die Kennung");
-        assertEquals(0, bv.terminals("gibtesnicht", null, false, 1, 25).gesamt());
+        assertEquals(0, bv.terminals(new Bestandsverwaltung.Filter("gibtesnicht", null, null, null, null, null, null),
+                null, false, 1, 25, ALLES).gesamt());
     }
 
     // ---------------------------------------------------------------- Löschen
@@ -255,7 +268,7 @@ class BestandsverwaltungTest {
         // Das Schema wuerde per ON DELETE CASCADE alle Terminals mitnehmen.
         // Ein Fehlgriff wuerde damit einen halben Standort aus der Ueberwachung
         // entfernen - lautlos.
-        var e = bv.konnektorLoeschen(konnektorId);
+        var e = bv.konnektorLoeschen(konnektorId, ALLES);
         assertFalse(e.geklappt());
         assertTrue(e.fehler().contains("12"), "die Anzahl muss genannt werden: " + e.fehler());
         assertTrue(e.fehler().contains("Behandlung"),
@@ -263,29 +276,32 @@ class BestandsverwaltungTest {
         assertTrue(e.fehler().contains("…"),
                 "bei mehr Geräten als aufgezählt muss das erkennbar sein: " + e.fehler());
 
-        assertEquals(12, bv.terminals(null, konnektorId, false, 1, 50).gesamt(),
+        assertEquals(12, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+                null, false, 1, 50, ALLES).gesamt(),
                 "nichts darf gelöscht worden sein");
     }
 
     @Test @Order(21)
     @DisplayName("Nach dem Entfernen aller Terminals lässt sich der Konnektor löschen")
     void loeschenNachAufraeumen() {
-        for (var t : bv.terminals(null, konnektorId, false, 1, 100).eintraege()) {
-            assertTrue(bv.terminalLoeschen(t.id()).geklappt());
+        for (var t : bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+                null, false, 1, 100, ALLES).eintraege()) {
+            assertTrue(bv.terminalLoeschen(t.id(), ALLES).geklappt());
         }
-        assertEquals(0, bv.terminals(null, konnektorId, false, 1, 50).gesamt());
-        assertTrue(bv.konnektorLoeschen(konnektorId).geklappt());
-        assertTrue(bv.konnektor(konnektorId).isEmpty());
+        assertEquals(0, bv.terminals(new Bestandsverwaltung.Filter(null, konnektorId, null, null, null, null, null),
+                null, false, 1, 50, ALLES).gesamt());
+        assertTrue(bv.konnektorLoeschen(konnektorId, ALLES).geklappt());
+        assertTrue(bv.konnektor(konnektorId, ALLES).isEmpty());
     }
 
     @Test @Order(22)
     @DisplayName("Operationen auf gelöschten Datensätzen melden das, statt zu scheitern")
     void verschwundeneDatensaetze() {
-        assertFalse(bv.konnektorLoeschen(konnektorId).geklappt());
+        assertFalse(bv.konnektorLoeschen(konnektorId, ALLES).geklappt());
         assertFalse(bv.konnektorAendern(konnektorId, "X", "1.2.3.4", null, "M", "C", "A",
-                null, null, null, true).geklappt());
-        assertFalse(bv.terminalLoeschen(terminalId).geklappt());
-        assertTrue(bv.terminal(terminalId).isEmpty());
+                null, null, null, true, ALLES).geklappt());
+        assertFalse(bv.terminalLoeschen(terminalId, ALLES).geklappt());
+        assertTrue(bv.terminal(terminalId, ALLES).isEmpty());
     }
 
     // ------------------------------------------------ Erreichbarkeitsprüfung

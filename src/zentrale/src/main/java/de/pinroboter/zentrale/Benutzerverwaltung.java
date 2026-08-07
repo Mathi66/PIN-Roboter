@@ -33,8 +33,30 @@ public class Benutzerverwaltung {
         public String beschreibung() { return beschreibung; }
     }
 
+    /**
+     * Ein Benutzerkonto.
+     *
+     * @param organisationId Organisationseinheit, für die der Benutzer zuständig
+     *        ist — die Wurzel seines Geltungsbereichs. {@code null} bedeutet
+     *        <b>Instanzbetreiber</b>: der erste Administrator, der die Instanz
+     *        einrichtet, bevor es überhaupt Organisationen gibt.
+     */
     public record Benutzer(long id, String benutzername, String anzeigename,
-                           Rolle rolle, boolean aktiv, boolean totpBestaetigt) {}
+                           Rolle rolle, boolean aktiv, boolean totpBestaetigt,
+                           Long organisationId) {
+
+        /**
+         * Ob dieses Konto die Instanz als Ganzes verwaltet.
+         *
+         * <p>Nur ein Administrator ohne Organisationszuordnung. Ein Benutzer
+         * ohne Zuordnung ist <b>kein</b> Instanzbetreiber — er sieht nichts.
+         * Diese Richtung ist entscheidend: Eine fehlende Zuordnung darf nie zu
+         * uneingeschränktem Zugriff führen.
+         */
+        public boolean istInstanzbetreiber() {
+            return organisationId == null && rolle == Rolle.ADMINISTRATOR;
+        }
+    }
 
     /** Ergebnis einer Anmeldung. Meldungen sagen, was zu tun ist (NFA-USA-020). */
     public sealed interface Anmeldung {
@@ -126,7 +148,7 @@ public class Benutzerverwaltung {
             String sql = """
                     SELECT id, benutzername, anzeigename, passwort_hash, totp_geheimnis,
                            totp_bestaetigt, rolle, aktiv, fehlversuche, gesperrt_bis,
-                           letztes_totp_fenster
+                           letztes_totp_fenster, organisation_id
                     FROM benutzer WHERE lower(benutzername) = lower(?)""";
             try (PreparedStatement p = db.verbindung().prepareStatement(sql)) {
                 p.setString(1, benutzername == null ? "" : benutzername.trim());
@@ -177,9 +199,11 @@ public class Benutzerverwaltung {
                     if (!passtPasswort || !passtTotp) { fehlversuch(id); return abgelehnt(); }
 
                     erfolgVermerken(id, fenster);
+                    long orgId = rs.getLong("organisation_id");
+                    Long organisation = rs.wasNull() ? null : orgId;   // sofort auswerten
                     return new Anmeldung.Erfolg(sitzungAnlegen(id), new Benutzer(
                             id, rs.getString("benutzername"), rs.getString("anzeigename"),
-                            Rolle.valueOf(rs.getString("rolle")), true, true));
+                            Rolle.valueOf(rs.getString("rolle")), true, true, organisation));
                 }
             }
         } catch (Exception e) {
@@ -236,7 +260,7 @@ public class Benutzerverwaltung {
         if (kennung == null || kennung.isBlank()) return Optional.empty();
         String sql = """
                 SELECT b.id, b.benutzername, b.anzeigename, b.rolle, b.aktiv, b.totp_bestaetigt,
-                       s.letzte_tat
+                       b.organisation_id, s.letzte_tat
                 FROM sitzung s JOIN benutzer b ON b.id = s.benutzer_id
                 WHERE s.kennung = ?""";
         try (PreparedStatement p = db.verbindung().prepareStatement(sql)) {
@@ -249,9 +273,17 @@ public class Benutzerverwaltung {
                     return Optional.empty();
                 }
                 beruehren(kennung);
+                // rs.wasNull() gilt fuer die ZULETZT gelesene Spalte - deshalb
+                // unmittelbar nach getLong auswerten und merken. Stand die
+                // Pruefung hinter weiteren getXxx-Aufrufen, bezog sie sich auf
+                // die falsche Spalte: Ein Administrator ohne Organisation bekam
+                // die Kennung 0 statt null, galt damit nicht als
+                // Instanzbetreiber und sah gar nichts mehr.
+                long orgId = rs.getLong("organisation_id");
+                Long organisation = rs.wasNull() ? null : orgId;
                 return Optional.of(new Benutzer(rs.getLong("id"), rs.getString("benutzername"),
                         rs.getString("anzeigename"), Rolle.valueOf(rs.getString("rolle")),
-                        true, rs.getBoolean("totp_bestaetigt")));
+                        true, rs.getBoolean("totp_bestaetigt"), organisation));
             }
         } catch (SQLException e) { return Optional.empty(); }
     }
@@ -278,12 +310,15 @@ public class Benutzerverwaltung {
         List<Benutzer> liste = new ArrayList<>();
         try (Statement s = db.verbindung().createStatement();
              ResultSet rs = s.executeQuery("""
-                     SELECT id, benutzername, anzeigename, rolle, aktiv, totp_bestaetigt
+                     SELECT id, benutzername, anzeigename, rolle, aktiv, totp_bestaetigt,
+                            organisation_id
                      FROM benutzer ORDER BY lower(benutzername)""")) {
             while (rs.next()) {
+                long orgId = rs.getLong("organisation_id");
+                Long organisation = rs.wasNull() ? null : orgId;   // sofort auswerten
                 liste.add(new Benutzer(rs.getLong("id"), rs.getString("benutzername"),
                         rs.getString("anzeigename"), Rolle.valueOf(rs.getString("rolle")),
-                        rs.getBoolean("aktiv"), rs.getBoolean("totp_bestaetigt")));
+                        rs.getBoolean("aktiv"), rs.getBoolean("totp_bestaetigt"), organisation));
             }
         } catch (SQLException ignored) { }
         return liste;

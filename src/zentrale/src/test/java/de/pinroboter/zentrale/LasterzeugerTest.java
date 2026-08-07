@@ -22,6 +22,13 @@ class LasterzeugerTest {
 
     private static final int ANZAHL = 1000;
 
+    /**
+     * Diese Testklassen prüfen Fachlogik, nicht Mandantentrennung — sie
+     * arbeiten deshalb uneingeschränkt. Die Trennung selbst hat eine eigene
+     * Testklasse: {@code MandantentrennungTest}.
+     */
+    private static final Geltungsbereich ALLES = Geltungsbereich.alles();
+
     private static Datenbank db;
     private static Lasterzeuger last;
     private static Bestandsverwaltung bv;
@@ -94,10 +101,10 @@ class LasterzeugerTest {
     void ersteSeiteIstSchnell() {
         var filter = Bestandsverwaltung.Filter.leer();
         // Einmal warmlaufen, damit nicht der erste Verbindungsaufbau gemessen wird.
-        bv.terminals(filter, null, false, 1, 25);
+        bv.terminals(filter, null, false, 1, 25, ALLES);
 
         long start = System.nanoTime();
-        var seite = bv.terminals(filter, Bestandsverwaltung.Sortierung.BEZEICHNUNG, false, 1, 25);
+        var seite = bv.terminals(filter, Bestandsverwaltung.Sortierung.BEZEICHNUNG, false, 1, 25, ALLES);
         long ms = (System.nanoTime() - start) / 1_000_000;
 
         assertEquals(25, seite.eintraege().size());
@@ -118,9 +125,9 @@ class LasterzeugerTest {
                         Bestandsverwaltung.Sortierung.FIRMWARE));
 
         for (var fall : faelle) {
-            bv.terminals(fall.f(), fall.s(), false, 1, 25);   // warmlaufen
+            bv.terminals(fall.f(), fall.s(), false, 1, 25, ALLES);   // warmlaufen
             long start = System.nanoTime();
-            bv.terminals(fall.f(), fall.s(), true, 1, 25);
+            bv.terminals(fall.f(), fall.s(), true, 1, 25, ALLES);
             long ms = (System.nanoTime() - start) / 1_000_000;
             assertTrue(ms < 1000, fall.name() + " brauchte " + ms + " ms (Ziel < 1000)");
         }

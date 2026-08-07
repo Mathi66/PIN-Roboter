@@ -76,28 +76,48 @@ public class Bestandsverwaltung {
 
     // ------------------------------------------------------------- Konnektoren
 
-    public List<Konnektor> konnektoren() {
+    /**
+     * Konnektoren im Geltungsbereich.
+     *
+     * <p>Der Geltungsbereich ist <b>Pflichtparameter</b>. Wer ihn weglässt,
+     * bekommt keinen ungefilterten Zugriff, sondern einen Übersetzungsfehler —
+     * so wird Mandantentrennung zentral erzwungen statt vergessen
+     * ({@link Geltungsbereich}).
+     */
+    public List<Konnektor> konnektoren(Geltungsbereich bereich) {
         List<Konnektor> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT k.*, o.bezeichnung AS org_bez,
                        (SELECT count(*) FROM kartenterminal t WHERE t.konnektor_id = k.id) AS terminalzahl
                 FROM konnektor k
                 JOIN organisation o ON o.id = k.organisation_id
-                ORDER BY lower(o.bezeichnung), lower(k.bezeichnung)""");
-             ResultSet rs = p.executeQuery()) {
-            while (rs.next()) liste.add(konnektorLesen(rs));
+                WHERE 1=1""" + bereich.bedingung("k.organisation_id")
+                + " ORDER BY lower(o.bezeichnung), lower(k.bezeichnung)")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) liste.add(konnektorLesen(rs));
+            }
         } catch (SQLException ignored) { }
         return liste;
     }
 
-    public Optional<Konnektor> konnektor(long id) {
+    /**
+     * Ein Konnektor — aber nur, wenn er im Geltungsbereich liegt.
+     *
+     * <p>Liegt er außerhalb, ist das Ergebnis <b>leer</b>, nicht etwa ein
+     * Zugriffsfehler. Das ist Absicht: Ein „Zugriff verweigert" würde verraten,
+     * dass es diesen Datensatz gibt. Für einen fremden Mandanten existiert er
+     * schlicht nicht.
+     */
+    public Optional<Konnektor> konnektor(long id, Geltungsbereich bereich) {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT k.*, o.bezeichnung AS org_bez,
                        (SELECT count(*) FROM kartenterminal t WHERE t.konnektor_id = k.id) AS terminalzahl
                 FROM konnektor k
                 JOIN organisation o ON o.id = k.organisation_id
-                WHERE k.id = ?""")) {
+                WHERE k.id = ?""" + bereich.bedingung("k.organisation_id"))) {
             p.setLong(1, id);
+            bereich.wertSetzen(db.verbindung(), p, 2);
             try (ResultSet rs = p.executeQuery()) {
                 return rs.next() ? Optional.of(konnektorLesen(rs)) : Optional.empty();
             }
@@ -114,9 +134,17 @@ public class Bestandsverwaltung {
     public Ergebnis konnektorAnlegen(long organisationId, String bezeichnung, String adresse,
                                      String modell, String mandantId, String clientsystemId,
                                      String arbeitsplatzId, String benutzerName, String passwort,
-                                     String webadminAdresse) {
+                                     String webadminAdresse, Geltungsbereich bereich) {
         String fehler = konnektorPruefen(bezeichnung, adresse, mandantId, clientsystemId, arbeitsplatzId);
         if (fehler != null) return Ergebnis.fehler(fehler);
+        // Die Einrichtung kommt aus einem Formularfeld und ist damit
+        // manipulierbar. Ohne diese Pruefung koennte jemand einen Konnektor in
+        // einer fremden Einrichtung anlegen - eine Mandantengrenze, die nur in
+        // der Auswahlliste besteht, ist keine.
+        if (!bereich.umfasst(organisationId)) {
+            return Ergebnis.fehler("Die gewählte Einrichtung liegt außerhalb Ihres "
+                    + "Zuständigkeitsbereichs.");
+        }
         if (!organisationVorhanden(organisationId)) {
             return Ergebnis.fehler("Die gewählte Einrichtung gibt es nicht mehr. "
                     + "Bitte die Seite neu laden und erneut auswählen.");
@@ -159,10 +187,14 @@ public class Bestandsverwaltung {
     public Ergebnis konnektorAendern(long id, String bezeichnung, String adresse, String modell,
                                      String mandantId, String clientsystemId, String arbeitsplatzId,
                                      String benutzerName, String neuesPasswort,
-                                     String webadminAdresse, boolean aktiv) {
+                                     String webadminAdresse, boolean aktiv,
+                                     Geltungsbereich bereich) {
         String fehler = konnektorPruefen(bezeichnung, adresse, mandantId, clientsystemId, arbeitsplatzId);
         if (fehler != null) return Ergebnis.fehler(fehler);
-        if (konnektor(id).isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
+        // Fuer einen fremden Mandanten existiert der Datensatz nicht - dieselbe
+        // Meldung wie bei einem geloeschten. Ein "Zugriff verweigert" wuerde
+        // verraten, dass es ihn gibt.
+        if (konnektor(id, bereich).isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
 
         String chiffrat;
         try { chiffrat = chiffrieren(neuesPasswort); }
@@ -192,7 +224,8 @@ public class Bestandsverwaltung {
         }
     }
 
-    public Ergebnis konnektorPasswortEntfernen(long id) {
+    public Ergebnis konnektorPasswortEntfernen(long id, Geltungsbereich bereich) {
+        if (konnektor(id, bereich).isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "UPDATE konnektor SET passwort_chiffrat=NULL WHERE id=?")) {
             p.setLong(1, id);
@@ -209,8 +242,8 @@ public class Bestandsverwaltung {
      * verbietet das Akzeptanzkriterium, und aus gutem Grund: Ein Fehlgriff
      * würde einen halben Standort aus dem Bestand entfernen.
      */
-    public Ergebnis konnektorLoeschen(long id) {
-        var k = konnektor(id);
+    public Ergebnis konnektorLoeschen(long id, Geltungsbereich bereich) {
+        var k = konnektor(id, bereich);
         if (k.isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
         if (k.get().terminalzahl() > 0) {
             List<String> namen = terminalnamen(id, 5);
@@ -290,11 +323,16 @@ public class Bestandsverwaltung {
      * und dann im Browser sortiert, unbrauchbar.
      */
     public Seite<Terminal> terminals(Filter filter, Sortierung sortierung, boolean absteigend,
-                                     int seitenNummer, int seitengroesse) {
+                                     int seitenNummer, int seitengroesse, Geltungsbereich bereich) {
         int nr = Math.max(1, seitenNummer);
         int gr = Math.min(200, Math.max(1, seitengroesse));
         StringBuilder wo = new StringBuilder(" WHERE 1=1");
         List<Object> werte = new ArrayList<>();
+
+        // Mandantengrenze zuerst, damit sie in jeder Abfrage an derselben
+        // Stelle steht und bei einer Durchsicht sofort auffaellt.
+        wo.append(bereich.bedingung("t.organisation_id"));
+        if (!bereich.unbeschraenkt() && !bereich.leer()) werte.add(bereich);
 
         if (filter.suche() != null && !filter.suche().isBlank()) {
             wo.append(" AND (lower(t.bezeichnung) LIKE ? OR lower(t.terminal_id) LIKE ?"
@@ -350,7 +388,7 @@ public class Bestandsverwaltung {
     }
 
     /** Werte, die als Filterauswahl angeboten werden — nur was tatsächlich vorkommt. */
-    public List<String> vorhandeneWerte(String spalte) {
+    public List<String> vorhandeneWerte(String spalte, Geltungsbereich bereich) {
         // Auch hier eine Weissliste: Der Spaltenname geht direkt in die Abfrage.
         String sicher = switch (spalte) {
             case "modell", "firmware" -> spalte;
@@ -360,22 +398,17 @@ public class Bestandsverwaltung {
         List<String> werte = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "SELECT DISTINCT " + sicher + " FROM kartenterminal WHERE " + sicher
-                + " IS NOT NULL AND " + sicher + " <> '' ORDER BY 1");
-             ResultSet rs = p.executeQuery()) {
-            while (rs.next()) werte.add(rs.getString(1));
+                + " IS NOT NULL AND " + sicher + " <> ''"
+                + bereich.bedingung("organisation_id") + " ORDER BY 1")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) werte.add(rs.getString(1));
+            }
         } catch (SQLException ignored) { }
         return werte;
     }
 
-    /** Alte Aufrufform, solange nicht alle Stellen umgestellt sind. */
-    public Seite<Terminal> terminals(String suche, Long konnektorId, boolean nurAktive,
-                                     int seitenNummer, int seitengroesse) {
-        return terminals(new Filter(suche, konnektorId, nurAktive ? Boolean.TRUE : null,
-                        null, null, null, null),
-                Sortierung.BEZEICHNUNG, false, seitenNummer, seitengroesse);
-    }
-
-    public Optional<Terminal> terminal(long id) {
+    public Optional<Terminal> terminal(long id, Geltungsbereich bereich) {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT t.*, k.bezeichnung AS konn_bez, o.bezeichnung AS org_bez,
                        g.bezeichnung AS grp_bez
@@ -383,8 +416,9 @@ public class Bestandsverwaltung {
                 JOIN konnektor k    ON k.id = t.konnektor_id
                 JOIN organisation o ON o.id = t.organisation_id
                 LEFT JOIN geraetegruppe g ON g.id = t.gruppe_id
-                WHERE t.id = ?""")) {
+                WHERE t.id = ?""" + bereich.bedingung("t.organisation_id"))) {
             p.setLong(1, id);
+            bereich.wertSetzen(db.verbindung(), p, 2);
             try (ResultSet rs = p.executeQuery()) {
                 return rs.next() ? Optional.of(terminalLesen(rs)) : Optional.empty();
             }
@@ -394,11 +428,14 @@ public class Bestandsverwaltung {
     public Ergebnis terminalAnlegen(String terminalId, long konnektorId, String bezeichnung,
                                     String standort, String adresse, String modell,
                                     String seriennummer, String adminBenutzer, String adminPasswort,
-                                    boolean hatSmcb, boolean pevimAktiv) {
+                                    boolean hatSmcb, boolean pevimAktiv, Geltungsbereich bereich) {
         if (leer(terminalId))   return Ergebnis.fehler("Bitte die Kennung des Kartenterminals angeben (z. B. KT-EMPFANG-01).");
         if (leer(bezeichnung))  return Ergebnis.fehler("Bitte eine Bezeichnung angeben, unter der das Gerät wiedererkannt wird.");
         if (leer(adresse))      return Ergebnis.fehler("Bitte die Adresse des Kartenterminals angeben (Name oder IP-Adresse, optional mit Port).");
-        var k = konnektor(konnektorId);
+        // Die Einrichtung des Terminals kommt vom Konnektor. Liegt der
+        // ausserhalb des Bereichs, ist er fuer diesen Benutzer nicht vorhanden -
+        // damit auch kein Terminal daran.
+        var k = konnektor(konnektorId, bereich);
         if (k.isEmpty()) return Ergebnis.fehler("Bitte einen Konnektor auswählen, an dem das Terminal betrieben wird.");
 
         // A_24080: PEviM ist ausschliesslich fuer SMC-B zulaessig. Ein Terminal
@@ -446,10 +483,10 @@ public class Bestandsverwaltung {
     public Ergebnis terminalAendern(long id, String bezeichnung, String standort, String adresse,
                                     String modell, String seriennummer, String adminBenutzer,
                                     String neuesAdminPasswort, boolean hatSmcb, boolean pevimAktiv,
-                                    boolean aktiv) {
+                                    boolean aktiv, Geltungsbereich bereich) {
         if (leer(bezeichnung)) return Ergebnis.fehler("Bitte eine Bezeichnung angeben.");
         if (leer(adresse))     return Ergebnis.fehler("Bitte die Adresse des Kartenterminals angeben.");
-        if (terminal(id).isEmpty()) return Ergebnis.fehler("Dieses Kartenterminal gibt es nicht mehr.");
+        if (terminal(id, bereich).isEmpty()) return Ergebnis.fehler("Dieses Kartenterminal gibt es nicht mehr.");
         if (pevimAktiv && !hatSmcb) {
             return Ergebnis.fehler("Die PIN-Automatik ist nur für Terminals mit SMC-B zulässig "
                     + "(gematik A_24080).");
@@ -482,8 +519,8 @@ public class Bestandsverwaltung {
         }
     }
 
-    public Ergebnis terminalLoeschen(long id) {
-        var t = terminal(id);
+    public Ergebnis terminalLoeschen(long id, Geltungsbereich bereich) {
+        var t = terminal(id, bereich);
         if (t.isEmpty()) return Ergebnis.fehler("Dieses Kartenterminal gibt es nicht mehr.");
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "DELETE FROM kartenterminal WHERE id=?")) {
@@ -508,14 +545,19 @@ public class Bestandsverwaltung {
     }
 
     /** Aktiviert oder deaktiviert mehrere Geräte auf einmal (FA-GER-060). */
-    public Massenergebnis massenAktivSetzen(List<Long> ids, boolean aktiv) {
+    public Massenergebnis massenAktivSetzen(List<Long> ids, boolean aktiv, Geltungsbereich bereich) {
         if (ids == null || ids.isEmpty()) {
             return new Massenergebnis(0, 0, List.of("Es war kein Gerät ausgewählt."));
         }
+        // Auch hier: Die Kennungen kommen aus dem Formular. Ohne die
+        // Bereichsgrenze koennte eine praeparierte Anfrage fremde Geraete
+        // deaktivieren - lautlos, denn die Liste zeigt sie ja nicht.
         try (PreparedStatement p = db.verbindung().prepareStatement(
-                "UPDATE kartenterminal SET aktiv = ? WHERE id = ANY (?)")) {
+                "UPDATE kartenterminal SET aktiv = ? WHERE id = ANY (?)"
+                + bereich.bedingung("organisation_id"))) {
             p.setBoolean(1, aktiv);
             p.setArray(2, kennungsArray(ids));
+            bereich.wertSetzen(db.verbindung(), p, 3);
             int n = p.executeUpdate();
             return new Massenergebnis(n, ids.size() - n, n == ids.size() ? List.of()
                     : List.of("%d von %d Geräten gibt es nicht mehr. Bitte die Liste neu laden."
@@ -534,7 +576,7 @@ public class Bestandsverwaltung {
      * benannt</b>, nicht stillschweigend verschoben — sonst wäre die
      * Mandantentrennung über eine Massenaktion aushebelbar.
      */
-    public Massenergebnis massenGruppeZuweisen(List<Long> ids, long gruppeId) {
+    public Massenergebnis massenGruppeZuweisen(List<Long> ids, long gruppeId, Geltungsbereich bereich) {
         if (ids == null || ids.isEmpty()) {
             return new Massenergebnis(0, 0, List.of("Es war kein Gerät ausgewählt."));
         }
@@ -566,10 +608,12 @@ public class Bestandsverwaltung {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 UPDATE kartenterminal t SET gruppe_id = ?
                 FROM organisation o
-                WHERE o.id = t.organisation_id AND t.id = ANY (?) AND o.bezeichnung = ?""")) {
+                WHERE o.id = t.organisation_id AND t.id = ANY (?) AND o.bezeichnung = ?"""
+                + bereich.bedingung("t.organisation_id"))) {
             p.setLong(1, gruppeId);
             p.setArray(2, kennungsArray(ids));
             p.setString(3, einrichtung);
+            bereich.wertSetzen(db.verbindung(), p, 4);
             int n = p.executeUpdate();
 
             List<String> hinweise = new ArrayList<>();
@@ -602,12 +646,13 @@ public class Bestandsverwaltung {
      * Übernehmen vom Administrator ergänzt oder bleibt zunächst leer. Deshalb
      * ist {@code adresse} hier optional, anders als beim Anlegen von Hand.
      */
-    public Ergebnis uebernehmen(Ermittlung.Fund fund, long konnektorId, String adresse) {
+    public Ergebnis uebernehmen(Ermittlung.Fund fund, long konnektorId, String adresse,
+                                Geltungsbereich bereich) {
         if (fund.bestandsId() != null) {
             return Ergebnis.fehler("Das Kartenterminal „" + fund.terminalId()
                     + "“ ist bereits erfasst. Doppelte Übernahme ist nicht möglich.");
         }
-        var k = konnektor(konnektorId);
+        var k = konnektor(konnektorId, bereich);
         if (k.isEmpty()) {
             return Ergebnis.fehler("Bitte einen Konnektor auswählen, dem das Gerät zugeordnet wird.");
         }
@@ -645,16 +690,19 @@ public class Bestandsverwaltung {
     // --------------------------------------------------------- Organisationen
 
     /** Einrichtungen zur Auswahl, in hierarchischer Reihenfolge. */
-    public List<Bestandsseiten.Organisationsauswahl> organisationen() {
+    public List<Bestandsseiten.Organisationsauswahl> organisationen(Geltungsbereich bereich) {
         List<Bestandsseiten.Organisationsauswahl> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
-                SELECT id, bezeichnung, art FROM organisation
-                ORDER BY CASE art WHEN 'VERBUND' THEN 1 WHEN 'STANDORT' THEN 2 ELSE 3 END,
-                         lower(bezeichnung)""");
-             ResultSet rs = p.executeQuery()) {
+                SELECT id, bezeichnung, art FROM organisation WHERE 1=1"""
+                + bereich.bedingung("id")
+                + " ORDER BY CASE art WHEN 'VERBUND' THEN 1 WHEN 'STANDORT' THEN 2 ELSE 3 END,"
+                + " lower(bezeichnung)")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
             while (rs.next()) {
                 liste.add(new Bestandsseiten.Organisationsauswahl(
                         rs.getLong("id"), rs.getString("bezeichnung"), rs.getString("art")));
+            }
             }
         } catch (SQLException ignored) { }
         return liste;
@@ -713,16 +761,16 @@ public class Bestandsverwaltung {
     }
 
     /** Prüft und schreibt das Ergebnis in den Bestand, damit die Liste es zeigen kann. */
-    public Erreichbarkeit konnektorPruefen(long id) {
-        var k = konnektor(id);
+    public Erreichbarkeit konnektorPruefen(long id, Geltungsbereich bereich) {
+        var k = konnektor(id, bereich);
         if (k.isEmpty()) return new Erreichbarkeit(false, "Diesen Konnektor gibt es nicht mehr.", 0);
         var e = erreichbarkeitPruefen(k.get().adresse());
         ergebnisMerken("konnektor", id, e);
         return e;
     }
 
-    public Erreichbarkeit terminalPruefen(long id) {
-        var t = terminal(id);
+    public Erreichbarkeit terminalPruefen(long id, Geltungsbereich bereich) {
+        var t = terminal(id, bereich);
         if (t.isEmpty()) return new Erreichbarkeit(false, "Dieses Kartenterminal gibt es nicht mehr.", 0);
         var e = erreichbarkeitPruefen(t.get().adresse());
         ergebnisMerken("kartenterminal", id, e);
@@ -854,6 +902,7 @@ public class Bestandsverwaltung {
             if (w instanceof Long l)          p.setLong(i++, l);
             else if (w instanceof Integer n)  p.setInt(i++, n);
             else if (w instanceof Boolean b)  p.setBoolean(i++, b);
+            else if (w instanceof Geltungsbereich g) i = g.wertSetzen(p.getConnection(), p, i);
             else                              p.setString(i++, String.valueOf(w));
         }
         return i;
