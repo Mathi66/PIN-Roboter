@@ -1571,3 +1571,40 @@ Dieselbe Kombination hat in diesem Projekt schon einmal Zeit gekostet. Der
 teurere Teil ist nicht der Tippfehler, sondern die verschluckte Ausnahme.
 
 ## Stand: 230 Modultests, 212 Systemnachweise — alle grün
+
+## FA-ALA-020 — Benachrichtigung per E-Mail
+
+Der Kern der Anforderung ist nicht der Versand, sondern das **Sammelfenster**.
+Fällt ein Konnektor mit 5.000 Terminals aus, entstehen binnen Sekunden
+tausende Alarme. Eine Mail je Alarm hätte den Absender als Spam markiert, den
+Empfänger zum Filtern gebracht — und dann sähe er auch die eine wichtige Mail
+nicht mehr.
+
+Nachgewiesen gegen einen echten Auffangserver: **50 Alarme ergeben eine Mail**,
+und die fasst zusammen statt fünfzigmal dieselbe Zeile zu wiederholen.
+
+Zwei Feinheiten, die leicht falsch gemacht werden und deshalb je einen
+Modultest haben: Das Fenster zählt ab dem **ältesten** wartenden Alarm — sonst
+schöbe jeder neue Alarm den Versand weiter hinaus, und bei einem anhaltenden
+Ausfall ginge nie eine Mail hinaus. Und eingereiht wird nur bei *neuen*
+Alarmen, sonst entsteht die Flut über den Prüftakt statt über die Gerätezahl.
+
+SMTP ist von Hand geschrieben (RFC 5321) — dieselbe Überlegung wie beim
+SOAP-Client in ADR-0006. Drei der Fallstricke sind sicherheitsrelevant:
+Zertifikatsnamensprüfung, Abwehr eingeschleuster Kopfzeilen über Adressen, und
+dass die Antwort auf eine abgelehnte Anmeldung **nicht** durchgereicht wird —
+manche Server geben dort den Benutzernamen zurück.
+
+### Zwei Fehlgriffe bei den Nachweisen
+
+Als Auffangserver hatte ich zuerst MailHog gewählt. Der Lauf blieb beim Ziehen
+des Images stehen. Ein Prüflauf, der Internetzugang braucht, ist als Nachweis
+unbrauchbar — der Auffang sitzt jetzt im Simulator, der ohnehin die
+Fremdsysteme ersetzt.
+
+Und der Nachweis für die RFC-2047-Kodierung war zunächst wertlos: Er verlangte
+einen kodierten Betreff, erzeugte aber keinen mit Umlaut. Jetzt läuft die Regel
+auf eine Einrichtung mit Umlaut im Namen; ohne eine solche wird der Nachweis
+mit Begründung übersprungen statt scheinbar zu bestehen.
+
+## Stand: 249 Modultests, 224 Systemnachweise — alle grün

@@ -593,6 +593,65 @@ public class Datenbank implements AutoCloseable {
               PRIMARY KEY (agent_id, kartenhandle)
             );
             """);
+
+        migration(17, """
+            -- Benachrichtigung per E-Mail (FA-ALA-020).
+
+            -- Der Mailserver gilt instanzweit: In einer Praxis gibt es einen,
+            -- und ein Dienstleister betreibt ihn fuer alle betreuten
+            -- Einrichtungen. Nur eine Zeile, erzwungen ueber "nur_eine".
+            CREATE TABLE mail_server (
+              nur_eine      BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (nur_eine),
+              host          TEXT        NOT NULL,
+              port          INTEGER     NOT NULL DEFAULT 587,
+              -- Verschluesselung ist Vorgabe. Abschaltbar, weil ein Mailserver
+              -- im eigenen Praxisnetz sie manchmal nicht anbietet - dann sagt
+              -- die Oberflaeche, was das bedeutet.
+              tls_verlangt  BOOLEAN     NOT NULL DEFAULT TRUE,
+              benutzer      TEXT,
+              -- Wie bei den Geraete-Zugangsdaten (ADR-0008): AES-256-GCM,
+              -- Schluessel aus der Umgebung. Nie im Klartext, nie auslesbar.
+              kennwort_chiffrat TEXT,
+              absender      TEXT        NOT NULL,
+              geaendert     TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            -- Wer wird benachrichtigt, ab welchem Schweregrad, und wie lange
+            -- wird gesammelt. Je Organisationseinheit einstellbar.
+            CREATE TABLE mail_regel (
+              organisation_id BIGINT   PRIMARY KEY REFERENCES organisation(id) ON DELETE CASCADE,
+              empfaenger    TEXT        NOT NULL,
+              -- KRITISCH, WARNUNG oder HINWEIS. Alles darunter wird nicht gemeldet.
+              schwelle      TEXT        NOT NULL DEFAULT 'WARNUNG'
+                              CHECK (schwelle IN ('KRITISCH','WARNUNG','HINWEIS')),
+              -- Das Sammelfenster ist die wichtigste Einstellung dieser
+              -- Tabelle. Bei einem Konnektorausfall entstehen in Sekunden
+              -- hunderte Alarme; ohne Sammlung waeren das hunderte Mails, und
+              -- der Empfaenger richtet einen Filter ein. Dann sieht er auch die
+              -- eine wichtige Mail nicht mehr.
+              sammelfenster_sekunden INTEGER NOT NULL DEFAULT 300
+                              CHECK (sammelfenster_sekunden BETWEEN 0 AND 86400),
+              aktiv         BOOLEAN     NOT NULL DEFAULT TRUE,
+              geaendert     TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            -- Wartende Alarme. Ein Eintrag entsteht, wenn ein NEUER Alarm
+            -- gemeldet wird; verschickt wird, sobald das Sammelfenster der
+            -- Einrichtung abgelaufen ist.
+            CREATE TABLE mail_warteschlange (
+              id            BIGSERIAL   PRIMARY KEY,
+              organisation_id BIGINT    NOT NULL REFERENCES organisation(id) ON DELETE CASCADE,
+              alarm_id      BIGINT      REFERENCES alarm(id) ON DELETE CASCADE,
+              schweregrad   TEXT        NOT NULL,
+              objekt        TEXT,
+              meldung       TEXT        NOT NULL,
+              handlung      TEXT,
+              angelegt      TIMESTAMPTZ NOT NULL DEFAULT now(),
+              versendet     TIMESTAMPTZ
+            );
+            CREATE INDEX mail_warteschlange_offen_idx
+              ON mail_warteschlange (organisation_id, angelegt) WHERE versendet IS NULL;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

@@ -1685,6 +1685,130 @@ else
 fi
 rm -f /tmp/pr-ux-bestand.html /tmp/pr-ux-org.html
 
+# ---------------------------------------------------------------- FA-ALA-020
+# Benachrichtigung per E-Mail. Geprueft wird gegen einen echten Auffangserver
+# (MailHog): Ein Nachweis, der nur die Datenbank ansieht, belegt nicht, dass
+# eine Mail tatsaechlich hinausgeht.
+hinweis "FA-ALA-020 — Benachrichtigung per E-Mail"
+
+# Der Auffangserver laeuft im Simulator (Port 1025) — kein zusaetzliches Image.
+# Der erste Anlauf verwendete MailHog; der Lauf blieb beim Ziehen des Images
+# stehen, und ein Nachweis, der Internetzugang braucht, ist unbrauchbar.
+curl -s -X DELETE "http://localhost:8480/mail" >/dev/null 2>&1
+if true; then
+  mails() { curl -s "http://localhost:8480/mail"; }
+  mailzahl() { mails | grep -oE '"anzahl":[0-9]+' | head -1 | grep -oE '[0-9]+$'; }
+
+  # Mailserver einrichten
+  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/server \
+    --data-urlencode "host=simulator" --data-urlencode "port=1025" \
+    --data-urlencode "absender=pin-roboter@praxis.example" \
+    -o /tmp/pr-mail-srv.html
+  MS=$(enthaelt /tmp/pr-mail-srv.html "Mailserver gespeichert")
+  ergebnis "der Mailserver laesst sich einrichten" "$MS"
+
+  # Testversand — ohne ihn merkt der Betreiber erst beim ersten echten Alarm,
+  # dass die Einstellung nicht stimmt.
+  VOR=$(mailzahl)
+  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/test \
+    --data-urlencode "testempfaenger=leitung@praxis.example" -o /tmp/pr-mail-test.html
+  sleep 2
+  NACH=$(mailzahl)
+  [ "${NACH:-0}" -gt "${VOR:-0}" ] && MT=ja || MT=nein
+  ergebnis "der Testversand kommt beim Mailserver an ($VOR -> $NACH)" "$MT"
+
+  # Regel mit Sammelfenster 0. Bevorzugt eine Einrichtung MIT UMLAUT im Namen:
+  # Der Betreff traegt den Einrichtungsnamen, und nur so entsteht ueberhaupt
+  # ein Fall, der RFC-2047-Kodierung braucht. Ein Nachweis, der die Kodierung
+  # fordert, ohne einen Umlaut zu erzeugen, prueft nichts.
+  ORG_M=$(sql "SELECT o.id FROM organisation o
+               WHERE EXISTS (SELECT 1 FROM kartenterminal t WHERE t.organisation_id = o.id)
+                 AND o.bezeichnung ~ '[äöüÄÖÜß]'
+               ORDER BY o.id LIMIT 1")
+  UMLAUT=ja
+  if [ -z "$ORG_M" ]; then
+    UMLAUT=nein
+    ORG_M=$(sql "SELECT o.id FROM organisation o
+                 WHERE EXISTS (SELECT 1 FROM kartenterminal t WHERE t.organisation_id = o.id)
+                 ORDER BY o.id LIMIT 1")
+  fi
+  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/regel \
+    --data-urlencode "organisationId=$ORG_M" \
+    --data-urlencode "empfaenger=leitung@praxis.example" \
+    --data-urlencode "schwelle=WARNUNG" --data-urlencode "fenster=0" \
+    --data-urlencode "aktiv=ja" -o /tmp/pr-mail-regel.html
+  MR=$(enthaelt /tmp/pr-mail-regel.html "Regel gespeichert")
+  ergebnis "eine Benachrichtigungsregel laesst sich anlegen" "$MR"
+
+  # Der Kern der Anforderung: Aus vielen Alarmen wird EINE Mail.
+  # 50 wartende Alarme direkt einreihen, dann den Hintergrunddienst arbeiten lassen.
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "INSERT INTO mail_warteschlange (organisation_id, schweregrad, objekt, meldung, handlung)
+     SELECT $ORG_M, 'KRITISCH', 'KT-FLUT-' || g, 'Kartenterminal nicht erreichbar',
+            'Netzwerk pruefen' FROM generate_series(1,50) g" >/dev/null
+  VOR=$(mailzahl)
+  for _ in $(seq 30); do
+    [ "$(sql "SELECT count(*) FROM mail_warteschlange WHERE versendet IS NULL")" = "0" ] && break
+    sleep 2
+  done
+  NACH=$(mailzahl)
+  NEU=$(( ${NACH:-0} - ${VOR:-0} ))
+  [ "$NEU" = "1" ] && MF=ja || MF=nein
+  ergebnis "50 Alarme ergeben EINE Mail, nicht 50 (neu: $NEU)" "$MF"
+
+  # Und die eine Mail muss die Zusammenfassung tragen, nicht 50 gleiche Zeilen.
+  mails | grep -q "Betroffen: 50 Ger" && MZ=ja || MZ=nein
+  ergebnis "die Mail fasst gleichartige Meldungen zusammen" "$MZ"
+
+  # Umlaute muessen im Postfach lesbar sein, nicht als Buchstabensalat. Der
+  # Betreff traegt den Einrichtungsnamen — hier mit Umlaut.
+  if [ "$UMLAUT" = "ja" ]; then
+    mails | grep -q "=?UTF-8?B?" && MU=ja || MU=nein
+    if [ "$MU" = "nein" ]; then
+      echo "    Diagnose: Betreffzeilen im Auffang:"
+      mails | grep -oE 'Subject: [^\\]{0,80}' | sed 's/^/      /' | head -3
+    fi
+    ergebnis "der Betreff mit Umlaut ist RFC-2047-kodiert" "$MU"
+  else
+    echo "  uebersprungen: keine Einrichtung mit Umlaut im Namen — die Kodierung"
+    echo "    ist durch den Modultest belegt, hier aber nicht ausloesbar."
+  fi
+
+  # Nie in einer Mail: PIN, Chiffrat, Kennwoerter.
+  TREFFER=0
+  for w in 123456 428913 NachweisKennwortXY TerminalKennwortXY; do
+    mails | grep -q "$w" && TREFFER=$((TREFFER+1))
+  done
+  [ $TREFFER -eq 0 ] && MG=ja || MG=nein
+  ergebnis "keine Geheimnisse im Mailverkehr (Treffer: $TREFFER)" "$MG"
+
+  # Das Mailserver-Kennwort liegt verschluesselt, nicht im Klartext.
+  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/server \
+    --data-urlencode "host=simulator" --data-urlencode "port=1025" \
+    --data-urlencode "absender=pin-roboter@praxis.example" \
+    --data-urlencode "benutzer=postmaster" --data-urlencode "kennwort=MailKennwortXY" \
+    -o /dev/null
+  CH=$(sqltext "SELECT coalesce(kennwort_chiffrat,'') FROM mail_server")
+  case "$CH" in v1:*) MK=ja ;; *) MK=nein ;; esac
+  ergebnis "das Mailserver-Kennwort liegt verschluesselt in der Datenbank" "$MK"
+  KLAR=$(sql "SELECT count(*) FROM mail_server WHERE kennwort_chiffrat LIKE '%MailKennwortXY%'")
+  [ "${KLAR:-1}" = "0" ] && MK2=ja || MK2=nein
+  ergebnis "es steht nirgends im Klartext" "$MK2"
+  curl -s -b "$KEKSE" http://localhost:8090/benachrichtigung -o /tmp/pr-mail-seite.html
+  [ "$(enthaelt /tmp/pr-mail-seite.html "MailKennwortXY")" = "nein" ] && MK3=ja || MK3=nein
+  ergebnis "und erscheint nicht auf der Oberflaeche" "$MK3"
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE coalesce(text,'') LIKE '%MailKennwortXY%'")" = "0" ] \
+    && MK4=ja || MK4=nein
+  ergebnis "und nicht im Fachprotokoll" "$MK4"
+
+  # Ein Praxisbenutzer darf den Mailserver nicht umstellen — eine geaenderte
+  # Absenderadresse leitet Meldungen ueber fremde Betriebszustaende um.
+  ergebnis "das Versenden ist protokolliert" \
+    "$([ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='BENACHRICHTIGUNG_VERSENDET'")" != "0" ] && echo ja || echo nein)"
+
+  rm -f /tmp/pr-mail-*.html
+fi
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

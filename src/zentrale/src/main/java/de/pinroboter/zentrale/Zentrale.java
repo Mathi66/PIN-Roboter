@@ -41,6 +41,7 @@ public class Zentrale {
     private final Ermittlung ermittlung;
     private final Pinverwaltung pins;
     private final Organisationsverwaltung organisationen;
+    private final Benachrichtigung benachrichtigung;
     private final Lasterzeuger last;
     private final Einladungen einladungen;
     private final Anmeldebremse bremse = new Anmeldebremse();
@@ -84,11 +85,14 @@ public class Zentrale {
         this.gruppen = new Gruppenverwaltung(db);
         this.alarme = new Alarmverwaltung(db);
         this.demodaten = new Demodaten(db);
-        this.bestand = new Bestandsverwaltung(db,
-                de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
+        // Ein Tresor fuer beide: Geraete-Zugangsdaten (ADR-0008) und das
+        // Mailserver-Kennwort (FA-ALA-020) liegen unter demselben Schluessel.
+        var tresor = de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung();
+        this.bestand = new Bestandsverwaltung(db, tresor);
         this.ermittlung = new Ermittlung(db);
         this.pins = new Pinverwaltung(db);
         this.organisationen = new Organisationsverwaltung(db);
+        this.benachrichtigung = new Benachrichtigung(db, tresor);
         this.last = new Lasterzeuger(db);
         this.einladungen = new Einladungen(db, benutzer);
         this.pseudonym = new Pseudonymisierung(db, protokoll,
@@ -754,6 +758,101 @@ public class Zentrale {
             c.header("HX-Refresh", "true").result("");
         });
 
+        // ------------------------------------------------ Benachrichtigung
+        // FA-ALA-020. Der Mailserver gilt instanzweit, die Regeln je Einheit.
+
+        app.get("/benachrichtigung", c -> c.html(seite("benachrichtigung",
+                benachrichtigungsSeite(c, null, false, null), angemeldeter(c))));
+
+        app.post("/benachrichtigung/server", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Einrichten des Mailservers")) return;
+            String fehler = benachrichtigung.serverSpeichern(
+                    Anmeldeseiten.feld(c, "host"), Anmeldeseiten.feld(c, "port"),
+                    angekreuzt(c, "tls"), Anmeldeseiten.feld(c, "benutzer"),
+                    Anmeldeseiten.feld(c, "kennwort"), Anmeldeseiten.feld(c, "absender"));
+            if (fehler == null) {
+                // Protokolliert wird DASS eingerichtet wurde, nie das Kennwort.
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Mailserver eingerichtet: " + Anmeldeseiten.feld(c, "host"), null);
+            }
+            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
+                    fehler == null ? "Mailserver gespeichert." : fehler, fehler != null, null),
+                    angemeldeter(c)));
+        });
+
+        /**
+         * Testversand (FA-ALA-020).
+         *
+         * <p>Ohne ihn merkt der Betreiber erst beim ersten echten Alarm, dass
+         * die Einstellung nicht stimmt — also genau dann, wenn die Nachricht
+         * gebraucht wird.
+         */
+        app.post("/benachrichtigung/test", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Der Testversand")) return;
+            String an = Anmeldeseiten.feld(c, "testempfaenger");
+            var zugang = benachrichtigung.zugang();
+            String verlauf = null, meldung;
+            boolean fehler;
+            if (zugang.isEmpty()) {
+                meldung = "Es ist kein Mailserver eingerichtet.";
+                fehler = true;
+            } else {
+                var e = Mailversand.senden(zugang.get(), Benachrichtigung.adressenZerlegen(an),
+                        "PIN-Roboter: Testnachricht",
+                        """
+                        Diese Nachricht bestätigt, dass der PIN-Roboter Ihren Mailserver
+                        erreichen kann.
+
+                        Sie wurde von Hand ausgelöst und bedeutet nicht, dass ein Alarm
+                        vorliegt. Echte Meldungen nennen Gerät und Handlungsempfehlung —
+                        und niemals Zugangsdaten oder personenbezogene Daten.
+                        """);
+                fehler = !e.geklappt();
+                meldung = e.geklappt()
+                        ? "Testnachricht an " + an + " übergeben. Wenn sie nicht ankommt, "
+                          + "prüfen Sie den Spam-Ordner und die Protokolle Ihres Mailservers."
+                        : e.fehler();
+                verlauf = e.verlauf();
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT,
+                        e.geklappt(), angemeldeter(c).anzeigename(), null,
+                        "Testnachricht " + (e.geklappt() ? "versendet" : "fehlgeschlagen"),
+                        e.geklappt() ? null : e.fehler());
+            }
+            c.html(seite("benachrichtigung",
+                    benachrichtigungsSeite(c, meldung, fehler, verlauf), angemeldeter(c)));
+        });
+
+        app.post("/benachrichtigung/regel", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(),
+                    "Das Einrichten von Benachrichtigungen")) return;
+            Long org = zahlOderNull(Anmeldeseiten.feld(c, "organisationId"));
+            String fehler = org == null
+                    ? "Bitte eine Organisationseinheit wählen."
+                    : benachrichtigung.regelSpeichern(org, Anmeldeseiten.feld(c, "empfaenger"),
+                            Anmeldeseiten.feld(c, "schwelle"), Anmeldeseiten.feld(c, "fenster"),
+                            angekreuzt(c, "aktiv"), bereich(c));
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Benachrichtigungsregel gespeichert", null);
+            }
+            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
+                    fehler == null ? "Regel gespeichert." : fehler, fehler != null, null),
+                    angemeldeter(c)));
+        });
+
+        app.post("/benachrichtigung/regel/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(),
+                    "Das Entfernen von Benachrichtigungen")) return;
+            String fehler = benachrichtigung.regelLoeschen(
+                    Long.parseLong(c.pathParam("id")), bereich(c));
+            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
+                    fehler == null ? "Regel entfernt." : fehler, fehler != null, null),
+                    angemeldeter(c)));
+        });
+
         // ------------------------------------------------------- Organisation
         // FA-ORG-020. Wer den Baum aendert, aendert Geltungsbereiche - deshalb
         // ist jede Aenderung protokollpflichtig und auf Standortebene begrenzt.
@@ -1283,6 +1382,51 @@ public class Zentrale {
                   catch (Exception ignored) { }
             }
         });
+
+        // FA-ALA-020: Sammelfenster abarbeiten. Der Takt ist absichtlich
+        // kuerzer als das kuerzeste sinnvolle Fenster — sonst haette ein
+        // Fenster von 30 s effektiv 60 s.
+        Thread.ofVirtual().start(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(15_000);
+                    var d = benachrichtigung.versendeFaellige();
+                    if (d.mails() > 0) {
+                        protokoll.anfuegen("Praxis", null, Ereignisart.BENACHRICHTIGUNG_VERSENDET,
+                                true, "Automatik", null,
+                                "%d Benachrichtigung(en) versendet, %d Meldung(en) zusammengefasst"
+                                        .formatted(d.mails(), d.alarme()), null);
+                    }
+                    for (String f : d.fehler()) {
+                        protokoll.anfuegen("Praxis", null, Ereignisart.BENACHRICHTIGUNG_VERSENDET,
+                                false, "Automatik", null,
+                                "Benachrichtigung konnte nicht zugestellt werden", f);
+                    }
+                } catch (InterruptedException e) { return; }
+                  catch (Exception ignored) { }
+            }
+        });
+    }
+
+    /**
+     * Die Organisationseinheit eines Geräts — für die Zuordnung einer
+     * Benachrichtigung.
+     *
+     * <p>Ohne bekanntes Gerät (etwa beim Speicheralarm) gibt es keine Einheit;
+     * dann wird nicht benachrichtigt. Eine Mail an alle wäre die falsche
+     * Antwort auf eine fehlende Zuordnung.
+     */
+    private Long organisationVon(String terminalId) {
+        if (terminalId == null) return null;
+        try (var p = db.verbindung().prepareStatement(
+                "SELECT organisation_id FROM kartenterminal WHERE terminal_id = ? LIMIT 1")) {
+            p.setString(1, terminalId);
+            try (var rs = p.executeQuery()) {
+                if (!rs.next()) return null;
+                long id = rs.getLong(1);
+                return rs.wasNull() ? null : id;      // sofort auswerten
+            }
+        } catch (java.sql.SQLException e) { return null; }
     }
 
     @SuppressWarnings("unchecked")
@@ -1406,6 +1550,11 @@ public class Zentrale {
             if (alarme.melden("Praxis", objekt, art, meldung, handlung)) {
                 protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_AUSGELOEST, false,
                         "Automatik", null, meldung, handlung);
+                // FA-ALA-020: nur bei NEUEN Alarmen einreihen. Ein
+                // wiederkehrender Alarm desselben Zustands wuerde die Flut
+                // sonst auf anderem Weg erzeugen.
+                benachrichtigung.einreihen(organisationVon(objekt), art.schweregrad().name(),
+                        objekt, meldung, handlung);
             }
         } else if (alarme.beheben("Praxis", objekt, art)) {
             protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_BEHOBEN, true,
@@ -1476,6 +1625,14 @@ public class Zentrale {
                 smcb == null ? null : pins.schluesselFuerTerminal(t.terminalId()).orElse(null),
                 smcb != null && pins.hinterlegtFuer(smcb).isPresent(),
                 smcb != null && pins.auftragOffen(smcb));
+    }
+
+    private String benachrichtigungsSeite(io.javalin.http.Context c, String meldung,
+                                          boolean istFehler, String verlauf) {
+        return Benachrichtigungsseiten.seite(benachrichtigung.server().orElse(null),
+                benachrichtigung.regeln(bereich(c)), bestand.organisationen(bereich(c)),
+                rechte(c).darfInstanzVerwalten(), rechte(c).darfBenutzerVerwalten(),
+                meldung, istFehler, verlauf);
     }
 
     private String organisationsSeite(io.javalin.http.Context c, String meldung,
@@ -2268,6 +2425,8 @@ public class Zentrale {
                 "<rect x=\"2.5\" y=\"4\" width=\"15\" height=\"10\" rx=\"2\"/><path d=\"M6.5 17h7M10 14v3\"/>", 0));
         s.append(bereichsLink(aktiv, "gruppen", "/gruppen", "Gerätegruppen",
                 "<rect x=\"2.5\" y=\"3\" width=\"6\" height=\"6\" rx=\"1.5\"/><rect x=\"11.5\" y=\"3\" width=\"6\" height=\"6\" rx=\"1.5\"/><rect x=\"2.5\" y=\"11\" width=\"6\" height=\"6\" rx=\"1.5\"/><rect x=\"11.5\" y=\"11\" width=\"6\" height=\"6\" rx=\"1.5\"/>", 0));
+        s.append(bereichsLink(aktiv, "benachrichtigung", "/benachrichtigung", "Benachrichtigung",
+                "<path d=\"M3 6.5 10 11l7-4.5\"/><rect x=\"3\" y=\"4.5\" width=\"14\" height=\"11\" rx=\"2\"/>", 0));
         s.append(bereichsLink(aktiv, "protokoll", "/protokoll", "Protokoll",
                 "<path d=\"M5 3h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z\"/><path d=\"M7 9h6M7 12h6\"/>", 0));
 

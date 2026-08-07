@@ -58,6 +58,8 @@ public class Simulator {
                 "Konnektor-Webadmin", 8443);
         starteTls(8444, ctx, "/api/", new TerminalVerwaltung(zustand), "Kartenterminal-Management");
         starteSteuerung(8480, zustand, kette);
+        // Nur fuer die Nachweise: ein Auffangserver fuer Benachrichtigungsmails.
+        Mailauffang.starten(1025);
 
         System.out.println("""
                   TLS: %s, nur zulässige Suites nach [gemSpec_Krypt]
@@ -109,6 +111,26 @@ public class Simulator {
                 ex.getResponseBody().write(b);
             } catch (Exception e) { ex.sendResponseHeaders(500, -1); }
             ex.close();
+        });
+
+        // Auffang fuer Benachrichtigungsmails (FA-ALA-020). Die Nachweise
+        // fragen hier ab, was tatsaechlich verschickt wurde.
+        server.createContext("/mail", ex -> {
+            if ("DELETE".equals(ex.getRequestMethod())) {
+                Mailauffang.leeren();
+                TerminalVerwaltung.antworte(ex, 200, "{\"geleert\":true}");
+                return;
+            }
+            var eingang = Mailauffang.eingang();
+            StringBuilder j = new StringBuilder("{\"anzahl\":").append(eingang.size())
+                    .append(",\"nachrichten\":[");
+            for (int i = 0; i < eingang.size(); i++) {
+                if (i > 0) j.append(',');
+                j.append('"').append(eingang.get(i)
+                        .replace("\\", "\\\\").replace("\"", "\\\"")
+                        .replace("\n", "\\n").replace("\r", "")).append('"');
+            }
+            TerminalVerwaltung.antworte(ex, 200, j.append("]}").toString());
         });
 
         server.createContext("/steuerung/", ex -> {

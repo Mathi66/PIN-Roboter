@@ -103,7 +103,7 @@ mit 84 Anforderungen
 |---|---|---|
 | ✓ | FA-ALA-010 | Alarme entstehen und verschwinden selbsttätig, keine Alarmflut |
 | ✔ | FA-ALA-010 (Quittieren) | Zuvor **falsch unter FA-ALA-020 geführt**. Die Oberfläche bot den Knopf an, die Route gab es nicht — ein Klick lief ins Leere. Route ergänzt, Quittierung protokolliert, Geltungsbereich als Pflichtparameter. Nachgewiesen, auch dass Quittieren den Alarm nicht behebt |
-| – | FA-ALA-020 | Benachrichtigung per E-Mail (SMTP, Empfänger je Einrichtung, Sammelfenster) — **nicht begonnen** |
+| ✔ | FA-ALA-020 | Benachrichtigung per E-Mail | SMTP von Hand (RFC 5321), Testversand aus der Oberfläche, Empfänger und Schwelle je Einheit mit Vererbung nach unten. **Sammelfenster**: 50 Alarme ergeben nachweislich eine Mail, nicht 50. Kennwort verschlüsselt (ADR-0008), keine Geheimnisse im Mailverkehr. [Umsetzung 18](03-umsetzung/18-benachrichtigung.md) |
 
 ## A.9 Updates (FA-UPD)
 

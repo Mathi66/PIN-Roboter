@@ -78,6 +78,11 @@ public enum Ereignisart {
     ALARM_AUSGELOEST("Alarm ausgelöst", Stufe.ROUTINE),
     ALARM_BEHOBEN("Alarm behoben", Stufe.ROUTINE),
     ALARM_QUITTIERT("Alarm quittiert", Stufe.ROUTINE),
+    BENACHRICHTIGUNG_VERSENDET("Benachrichtigung versendet", Stufe.ROUTINE),
+    // Wer benachrichtigt wird und wie der Mailserver erreicht wird, gehoert auf
+    // die Sicherheitsstufe: Eine geaenderte Empfaengeradresse leitet Meldungen
+    // ueber Betriebszustaende an eine andere Stelle um.
+    EINSTELLUNG_GEAENDERT("Einstellung geändert", Stufe.SICHERHEIT),
 
     NOT_AUS_AUSGELOEST("Not-Aus ausgelöst", Stufe.SICHERHEIT),
     NOT_AUS_AUFGEHOBEN("Not-Aus aufgehoben", Stufe.SICHERHEIT),

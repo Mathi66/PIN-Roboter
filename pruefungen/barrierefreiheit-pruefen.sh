@@ -68,6 +68,7 @@ OID_A=$(curl -s -b "$KEKSE" http://localhost:8090/organisation \
 [ -n "$OID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$OID_A" \
         > "$SEITEN/organisation-detail.html"
 curl -s -b "$KEKSE" http://localhost:8090/organisation/neu      > "$SEITEN/organisation-neu.html"
+curl -s -b "$KEKSE" http://localhost:8090/benachrichtigung      > "$SEITEN/benachrichtigung.html"
 curl -s -b "$KEKSE" http://localhost:8090/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
 curl -s -b "$KEKSE" http://localhost:8090/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 

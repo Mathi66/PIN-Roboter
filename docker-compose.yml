@@ -19,6 +19,7 @@ services:
       - "8443:8443"   # Konnektor, SOAP über Brainpool-TLS
       - "8444:8444"   # Kartenterminal-Management über Brainpool-TLS
       - "8480:8480"   # Steuerung für Tests und Ausgabe des Vertrauensankers
+      - "1025:1025"   # Auffang für Benachrichtigungsmails, nur für Nachweise
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8480' || exit 1"]
       interval: 5s
