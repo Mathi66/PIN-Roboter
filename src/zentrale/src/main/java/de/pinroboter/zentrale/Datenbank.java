@@ -467,6 +467,35 @@ public class Datenbank implements AutoCloseable {
             CREATE INDEX alarm_org_idx         ON alarm (organisation_id);
             CREATE INDEX geraetegruppe_org_idx ON geraetegruppe (organisation_id);
             """);
+
+        migration(13, """
+            -- Einladungen (Block B, FA-BEN-010).
+            --
+            -- Ein Administrator legt kein Kennwort fest, sondern laedt ein. Der
+            -- Eingeladene setzt sein Kennwort selbst und richtet den zweiten
+            -- Faktor ein. Grund: Ein vom Administrator gesetztes Kennwort ist
+            -- ihm bekannt - damit ist jede spaetere Handlung des Kontos nicht
+            -- mehr eindeutig zurechenbar, und genau das braucht ein System, das
+            -- selbsttaetig handelt (ADR-0005).
+            --
+            -- Gespeichert wird nur der HASH des Einladungsgeheimnisses, wie beim
+            -- Registrierungsgeheimnis des Agenten. Wer die Datenbank liest, kann
+            -- keine Einladung einloesen.
+            CREATE TABLE einladung (
+              geheimnis_hash TEXT        PRIMARY KEY,
+              benutzername   TEXT        NOT NULL,
+              anzeigename    TEXT        NOT NULL,
+              rolle          TEXT        NOT NULL,
+              organisation_id BIGINT     REFERENCES organisation(id) ON DELETE CASCADE,
+              gueltig_bis    TIMESTAMPTZ NOT NULL,
+              verbraucht     TIMESTAMPTZ,
+              eingeladen_von TEXT        NOT NULL,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX einladung_name_offen_idx
+              ON einladung (lower(benutzername)) WHERE verbraucht IS NULL;
+            CREATE INDEX einladung_org_idx ON einladung (organisation_id);
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

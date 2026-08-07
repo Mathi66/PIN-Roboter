@@ -1208,3 +1208,65 @@ Sicherheitsmittel die schlechtere Wahl. Als offener Punkt vermerkt.
 Auch die beiden Nachweise, die zuletzt umkippten, sind grün. Sie waren
 zustandsabhängig formuliert (feste Zahlen, erwartete Wortlaute); jetzt prüfen sie
 die Zusage und geben im Fehlerfall die tatsächliche Antwort aus.
+
+
+---
+
+# Iteration 21 — Benutzerverwaltung (Block B)
+
+## Die eine Entscheidung, die alles andere bestimmt
+
+**Ein Administrator legt kein Kennwort fest — er lädt ein.**
+
+Ein Administrator, der ein Kennwort setzt, *kennt* es. Damit ist jede spätere
+Handlung dieses Kontos nicht mehr eindeutig zurechenbar. Für ein System, das
+selbsttätig handelt und dessen Auslösung nachvollziehbar sein muss, ist das ein
+Widerspruch im Fundament.
+
+Der Eingeladene setzt sein Kennwort selbst und richtet den zweiten Faktor ein.
+Der Administrator sieht es nie.
+
+## Der Zugangscode
+
+32 Byte Zufall, in der Datenbank nur als SHA-256-Hash, einmalig und auf 7 Tage
+befristet. **Nicht im Protokoll** — er wäre sonst für jeden lesbar, der das
+Protokoll einsehen darf. Am laufenden System belegt: 0 Treffer im Protokoll,
+0 im Klartext in der Datenbank.
+
+Ein schwaches Kennwort verbraucht die Einladung **nicht** — sonst wäre sie durch
+einen Tippfehler unbrauchbar. Ein gültiges verbraucht sie *vor* dem Anlegen,
+sonst ließe sich ein Geheimnis durch absichtliche Fehlversuche beliebig oft
+prüfen.
+
+## Zweiter Faktor und Deaktivieren
+
+Das Zurücksetzen ist der häufigste Supportfall: Telefon weg, Zugang weg. **Der
+Administrator sieht das neue Geheimnis nicht** — es erscheint erst der
+betroffenen Person bei ihrer nächsten Anmeldung. Sonst könnte er sich dauerhaft
+als sie ausgeben.
+
+**Deaktivieren statt Löschen:** Ein gelöschtes Konto reißt seine Spur im
+Protokoll mit. Der letzte handlungsfähige Administrator lässt sich nicht
+deaktivieren — sonst sperrt sich eine Praxis selbst aus.
+
+## Ein Nachweis, der die Lage zerstörte, die er prüfen wollte
+
+Der erste Anlauf nahm an, der Prüfadmin sei der einzige Administrator. Der
+Demodatensatz legt aber drei weitere an — die Schutzregel griff also zu Recht
+nicht, und **der Nachweis deaktivierte dabei den Prüfadmin selbst**. Hätte er
+nicht am Ende des Laufs gestanden, wären alle folgenden Nachweise gescheitert,
+ohne dass die Ursache erkennbar gewesen wäre.
+
+Jetzt stellt er die Ausgangslage her (alle anderen Administratoren
+deaktivieren), prüft, und stellt sie wieder her. Dazu ein Modultest, der
+dasselbe isoliert prüft.
+
+## Eine bewusste Abweichung
+
+Filterung und Blättern der Benutzerliste laufen **im Speicher**, nicht in der
+Abfrage. Bei 1.000 Konten ist das vertretbar, und die Alternative wäre eine
+weitere Abfrage mit Mandantengrenze gewesen — eine Stelle mehr, an der sie
+fehlen könnte. Bei der Geräteliste mit 5.000 Einträgen wurde genau deshalb
+anders entschieden. Das steht so in der Umsetzungsbeschreibung.
+
+## Stand: 182 Modultests, 138 Systemnachweise — alle grün

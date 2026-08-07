@@ -19,7 +19,7 @@
 | Baustein | Stand |
 |---|---|
 | **Standort-Agent** | Überwachung, Sicherungslogik, PEviM-Ablauf, Registrierung — läuft |
-| **Zentrale** | Oberfläche, Anmeldung mit TOTP, Fachprotokoll, Alarme, Gruppen, Export, Bestandsverwaltung — läuft |
+| **Zentrale** | Oberfläche, Anmeldung mit TOTP, Fachprotokoll, Alarme, Gruppen, Export, Bestandsverwaltung, Benutzerverwaltung — läuft |
 | **Simulator** | Konnektor und Terminals mit Brainpool-TLS — läuft, ersetzt echte Hardware **nicht** |
 | Herstellerkapselung | angelegt, bisher nur eine Umsetzung (CHERRY-artig) |
 | Bestandsverwaltung | Konnektoren und Terminals erfassen, ändern, löschen (FA-GER-010/020) — läuft |
@@ -30,12 +30,13 @@
 | Mandantentrennung | **durchgesetzt** für Bestand, Ermittlung, Protokoll, Export, Alarme, Gruppen und Benutzerliste — zentral über `Geltungsbereich` als Pflichtparameter ([Umsetzung](03-umsetzung/10-mandantentrennung.md)). Ergänzt um Rechte je Ebene ([Umsetzung](03-umsetzung/11-rechte-je-ebene.md)) |
 | Betriebsdokumentation | [docs/04-betrieb.md](04-betrieb.md) — Wiederherstellung durchgeführt und als Nachweis automatisiert |
 | Sicherheit und Datenschutz | [docs/05-sicherheit-datenschutz.md](05-sicherheit-datenschutz.md) — TOMs belegt, Lücken benannt |
+| Benutzerverwaltung | Einladungen statt gesetzter Kennwörter, zweiter Faktor zurücksetzbar, Deaktivieren statt Löschen ([Umsetzung](03-umsetzung/12-benutzerverwaltung.md)) |
 | Update-Manager | **nicht umgesetzt** |
 | Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
 | Protokollansicht | Paginierung, 50 Zeilen je Seite; bei 5 Mio Einträgen 110 ms. **Grenze:** sehr tiefes Blättern (ab ~Seite 75.000) überschreitet 1 s |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-rund 12.800 Zeilen, **170 Modultests, 124 Systemnachweise** — im letzten Vollauf alle grün.
+rund 13.700 Zeilen, **182 Modultests, 138 Systemnachweise**.
 
 > **Unverändert offen und weiterhin der wichtigste Punkt:** Alle Nachweise
 > laufen gegen den selbstgebauten Simulator. Die in

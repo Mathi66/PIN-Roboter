@@ -123,6 +123,69 @@ public class Benutzerverwaltung {
     }
 
     /** Schließt die TOTP-Einrichtung ab — erst nach erfolgreicher Probe. */
+    /**
+     * Setzt den zweiten Faktor zurück (FA-BEN-030).
+     *
+     * <p>Der häufigste Supportfall überhaupt: Das Telefon ist weg, und damit
+     * der Zugang. Ohne diesen Weg müsste ein Konto neu angelegt werden — und
+     * seine Historie im Protokoll wäre von der Person getrennt.
+     *
+     * <p>Der Administrator sieht das neue Geheimnis <b>nicht</b>. Er löst nur
+     * das Zurücksetzen aus; das neue Geheimnis erscheint erst der betroffenen
+     * Person bei ihrer nächsten Anmeldung. Sonst könnte der Administrator sich
+     * dauerhaft als sie ausgeben.
+     *
+     * @return ob zurückgesetzt wurde
+     */
+    public boolean totpZuruecksetzen(long benutzerId, Geltungsbereich bereich) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE benutzer SET totp_geheimnis = NULL, totp_bestaetigt = FALSE,"
+                + " fehlversuche = 0, gesperrt_bis = NULL WHERE id = ?"
+                + bereich.bedingung("organisation_id"))) {
+            p.setLong(1, benutzerId);
+            bereich.wertSetzen(db.verbindung(), p, 2);
+            return p.executeUpdate() > 0;
+        } catch (SQLException e) { return false; }
+    }
+
+    /**
+     * Aktiviert oder deaktiviert ein Konto (FA-BEN-040).
+     *
+     * <p><b>Deaktivieren statt Löschen:</b> Ein gelöschtes Konto reißt seine
+     * Spur im Protokoll mit — der Anzeigename bliebe stehen, aber niemand
+     * könnte ihn mehr zuordnen. Ein deaktiviertes Konto kann sich nicht
+     * anmelden und bleibt trotzdem nachvollziehbar.
+     */
+    public String aktivSetzen(long benutzerId, boolean aktiv, Geltungsbereich bereich) {
+        if (!aktiv) {
+            // FA-BEN-010: Es muss immer mindestens einen handlungsfaehigen
+            // Administrator geben - sonst sperrt sich eine Praxis selbst aus.
+            try (PreparedStatement p = db.verbindung().prepareStatement("""
+                    SELECT count(*) FROM benutzer
+                    WHERE aktiv AND rolle = 'ADMINISTRATOR' AND id <> ?""")) {
+                p.setLong(1, benutzerId);
+                try (ResultSet rs = p.executeQuery()) {
+                    if (rs.next() && rs.getLong(1) == 0) {
+                        return "Das ist der letzte handlungsfähige Administrator. "
+                             + "Bitte zuerst einen weiteren einrichten.";
+                    }
+                }
+            } catch (SQLException e) { return "Die Änderung ist derzeit nicht möglich."; }
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE benutzer SET aktiv = ? WHERE id = ?" + bereich.bedingung("organisation_id"))) {
+            p.setBoolean(1, aktiv);
+            p.setLong(2, benutzerId);
+            bereich.wertSetzen(db.verbindung(), p, 3);
+            return p.executeUpdate() > 0 ? null : "Dieses Konto gibt es nicht mehr.";
+        } catch (SQLException e) { return "Die Änderung ist derzeit nicht möglich."; }
+    }
+
+    /** Ein Konto im Geltungsbereich. */
+    public Optional<Benutzer> benutzer(long id, Geltungsbereich bereich) {
+        return alle(bereich).stream().filter(b -> b.id() == id).findFirst();
+    }
+
     public boolean totpBestaetigen(long benutzerId, String code) {
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "SELECT totp_geheimnis FROM benutzer WHERE id = ?")) {

@@ -40,6 +40,7 @@ public class Zentrale {
     private final Bestandsverwaltung bestand;
     private final Ermittlung ermittlung;
     private final Lasterzeuger last;
+    private final Einladungen einladungen;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -83,6 +84,7 @@ public class Zentrale {
                 de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
         this.ermittlung = new Ermittlung(db);
         this.last = new Lasterzeuger(db);
+        this.einladungen = new Einladungen(db, benutzer);
     }
 
     private static String env(String name, String vorgabe) {
@@ -135,6 +137,10 @@ public class Zentrale {
                 c.attribute("agent", agent.get());
                 return;
             }
+
+            // Das Einloesen einer Einladung braucht naturgemaess keine
+            // Anmeldung - wer sie einloest, hat noch kein Konto.
+            if (pfad.equals("/einladung")) return;
 
             if (benutzer.ersteinrichtungNoetig()) {
                 if (pfad.equals("/ersteinrichtung") || pfad.equals("/totp-bestaetigen")) return;
@@ -636,6 +642,115 @@ public class Zentrale {
             var e = bestand.terminalPruefen(id, bereich(c));
             c.html(Bestandsseiten.pruefmeldung(t.map(Bestandsverwaltung.Terminal::bezeichnung)
                     .orElse("Kartenterminal"), e));
+        });
+
+        // ----------------------------------------------------------- Benutzer
+        app.get("/benutzer", c -> c.html(seite("benutzer",
+                benutzerSeite(c, null, false, null, null), angemeldeter(c))));
+
+        app.post("/benutzer/einladen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Einladen von Personen")) return;
+            Long orgId = null;
+            try {
+                String o = Anmeldeseiten.feld(c, "organisationId");
+                if (o != null && !o.isBlank()) orgId = Long.parseLong(o);
+            } catch (NumberFormatException ignored) { }
+
+            Benutzerverwaltung.Rolle rolle;
+            try { rolle = Benutzerverwaltung.Rolle.valueOf(Anmeldeseiten.feld(c, "rolle")); }
+            catch (Exception e) { rolle = Benutzerverwaltung.Rolle.BENUTZER; }
+
+            String name = Anmeldeseiten.feld(c, "benutzername");
+            var e = einladungen.einladen(name, Anmeldeseiten.feld(c, "anzeigename"), rolle,
+                    orgId, angemeldeter(c).anzeigename(), bereich(c));
+            if (e.geklappt()) {
+                // Das Geheimnis selbst steht NICHT im Protokoll - es waere sonst
+                // fuer jeden lesbar, der das Protokoll einsehen darf.
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Person \u201e" + name + "\u201c eingeladen (Rolle " + rolle.anzeige() + ")",
+                        "Der Zugangscode wird nur einmal angezeigt und ist nicht im Protokoll "
+                        + "enthalten.");
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    e.geklappt() ? null : e.fehler(), !e.geklappt(),
+                    e.geheimnis(), name), angemeldeter(c)));
+        });
+
+        app.post("/benutzer/einladung/zurueckziehen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Zurückziehen von Einladungen")) return;
+            String name = Anmeldeseiten.feld(c, "benutzername");
+            boolean weg = einladungen.zurueckziehen(name, bereich(c));
+            if (weg) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Einladung für \u201e" + name + "\u201c zurückgezogen", null);
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    weg ? "Einladung zurückgezogen." : "Diese Einladung gibt es nicht mehr.",
+                    !weg, null, null), angemeldeter(c)));
+        });
+
+        app.post("/benutzer/{id}/totp-zuruecksetzen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Zurücksetzen des zweiten Faktors")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var ziel = benutzer.benutzer(id, bereich(c));
+            boolean ok = benutzer.totpZuruecksetzen(id, bereich(c));
+            if (ok && ziel.isPresent()) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_ZURUECKGESETZT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Zweiter Faktor von \u201e" + ziel.get().anzeigename() + "\u201c zurückgesetzt",
+                        "Die Person richtet ihn bei der nächsten Anmeldung neu ein. Das neue "
+                        + "Geheimnis sieht nur sie selbst.");
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    ok ? "Der zweite Faktor wurde zurückgesetzt. Die Person richtet ihn bei der "
+                       + "nächsten Anmeldung neu ein."
+                       : "Dieses Konto gibt es nicht mehr.", !ok, null, null), angemeldeter(c)));
+        });
+
+        app.post("/benutzer/{id}/aktiv", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Ändern von Konten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            boolean aktiv = "ja".equals(Anmeldeseiten.feld(c, "aktiv"));
+            var ziel = benutzer.benutzer(id, bereich(c));
+            String fehler = benutzer.aktivSetzen(id, aktiv, bereich(c));
+            if (fehler == null && ziel.isPresent()) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Konto \u201e" + ziel.get().anzeigename() + "\u201c "
+                                + (aktiv ? "aktiviert" : "deaktiviert"),
+                        aktiv ? null : "Das Konto bleibt im Protokoll nachvollziehbar; es kann "
+                                     + "sich nur nicht mehr anmelden.");
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    fehler == null ? "Konto " + (aktiv ? "aktiviert." : "deaktiviert.") : fehler,
+                    fehler != null, null, null), angemeldeter(c)));
+        });
+
+        // Einloesen einer Einladung - ohne Anmeldung erreichbar.
+        app.get("/einladung", c -> c.html(Benutzerseiten.einloesenSeite(
+                c.queryParam("code"), null)));
+
+        app.post("/einladung", c -> {
+            String geheimnis = Anmeldeseiten.feld(c, "geheimnis");
+            char[] kennwort = Anmeldeseiten.feld(c, "kennwort").toCharArray();
+            var e = einladungen.einloesen(geheimnis, kennwort);
+            java.util.Arrays.fill(kennwort, '\0');
+
+            if (e instanceof Einladungen.Einloesung.Abgelehnt a) {
+                c.html(Benutzerseiten.einloesenSeite(geheimnis, a.grund()));
+                return;
+            }
+            var erfolg = (Einladungen.Einloesung.Erfolg) e;
+            protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                    "Einladung", null,
+                    "Einladung eingelöst, Konto eingerichtet (Nummer " + erfolg.benutzerId() + ")",
+                    null);
+            // Weiter zur TOTP-Einrichtung - derselbe Ablauf wie bei der
+            // Ersteinrichtung, damit niemand zwei Wege lernen muss.
+            c.html(Anmeldeseiten.totpEinrichten(erfolg.benutzerId(), erfolg.totpUri(),
+                    erfolg.totpGeheimnis(), null));
         });
 
         // ---------------------------------------------------------- Verwaltung
@@ -1166,6 +1281,54 @@ public class Zentrale {
         return Geltungsbereich.fuerBenutzer(db, b.organisationId(), b.istInstanzbetreiber());
     }
 
+    /**
+     * Baut die Benutzerseite mit Filtern aus der Anfrage.
+     *
+     * <p>Filterung und Blättern laufen serverseitig — bei bis zu 1.000 Benutzern
+     * ist alles andere unbrauchbar. Der Geltungsbereich schränkt zusätzlich ein:
+     * Ein Praxisadministrator sieht nur die Konten seiner Praxis.
+     */
+    private String benutzerSeite(Context c, String meldung, boolean istFehler,
+                                 String neuesGeheimnis, String neuerName) {
+        var ansicht = new Benutzerseiten.Ansicht(c.queryParam("suche"), c.queryParam("rolle"),
+                c.queryParam("status"), Math.max(1, zahl(c.queryParam("seite"), 1)));
+
+        var alle = benutzer.alle(bereich(c)).stream()
+                .filter(b -> passt(b, ansicht))
+                .sorted(java.util.Comparator.comparing(
+                        x -> x.benutzername().toLowerCase()))
+                .toList();
+        int von = Math.min(alle.size(), (ansicht.seite() - 1) * Benutzerseiten.SEITENGROESSE);
+        int bis = Math.min(alle.size(), von + Benutzerseiten.SEITENGROESSE);
+
+        return Benutzerseiten.seite(alle.subList(von, bis), alle.size(), ansicht,
+                einladungen.offene(bereich(c)), bestand.organisationen(bereich(c)),
+                rechte(c).darfBenutzerVerwalten(), meldung, istFehler,
+                neuesGeheimnis, neuerName);
+    }
+
+    /**
+     * Filtert ein Konto gegen die Ansicht.
+     *
+     * <p>Im Speicher, nicht in der Abfrage: Bei 1.000 Konten ist das
+     * vertretbar, und die Alternative wäre eine weitere Abfrage mit
+     * Mandantengrenze — eine Stelle mehr, an der sie fehlen könnte. Sollte die
+     * Zahl je deutlich wachsen, gehört das in die Datenbank.
+     */
+    private static boolean passt(Benutzerverwaltung.Benutzer b, Benutzerseiten.Ansicht a) {
+        String suche = a.suche() == null ? "" : a.suche().trim().toLowerCase();
+        if (!suche.isEmpty()
+                && !b.benutzername().toLowerCase().contains(suche)
+                && !b.anzeigename().toLowerCase().contains(suche)) return false;
+        if (a.rolle() != null && !a.rolle().isBlank() && !b.rolle().name().equals(a.rolle())) return false;
+        return switch (a.status() == null ? "" : a.status()) {
+            case "aktiv"     -> b.aktiv();
+            case "inaktiv"   -> !b.aktiv();
+            case "ohne-totp" -> !b.totpBestaetigt();
+            default          -> true;
+        };
+    }
+
     /** Ein nicht angekreuztes Kästchen wird vom Browser gar nicht gesendet. */
     private static boolean angekreuzt(Context c, String name) {
         return c.formParam(name) != null;
@@ -1632,6 +1795,7 @@ public class Zentrale {
                     <a href="/geraete" %s>Kartenterminals</a>
                     <a href="/bestand" %s>Bestand</a>
                     <a href="/gruppen" %s>Gruppen</a>
+                    <a href="/benutzer" %s>Benutzer</a>
                     <a href="/verwaltung" %s>Verwaltung</a>
                     <a href="/protokoll" %s>Protokoll</a>
                     <button class="knopf %s" hx-post="/notaus"
@@ -1647,6 +1811,7 @@ public class Zentrale {
                         aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
                         aktiv.equals("bestand") ? "aria-current=\"page\"" : "",
                         aktiv.equals("gruppen") ? "aria-current=\"page\"" : "",
+                        aktiv.equals("benutzer") ? "aria-current=\"page\"" : "",
                         aktiv.equals("verwaltung") ? "aria-current=\"page\"" : "",
                         aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",
                         notAus ? "" : "warnend", notAus ? "Not-Aus aufheben" : "Not-Aus",

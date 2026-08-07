@@ -1029,6 +1029,103 @@ else
   echo "  uebersprungen: Demo-Zugangsdaten nicht ermittelbar"
 fi
 
+hinweis "Block B — Benutzerverwaltung und Einladungen"
+ORG_B=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
+ANTWORT_EIN=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/benutzer/einladen \
+  --data-urlencode "benutzername=nachweis.person" --data-urlencode "anzeigename=Nachweis Person" \
+  --data-urlencode "rolle=BENUTZER" --data-urlencode "organisationId=$ORG_B")
+CODE_EIN=$(echo "$ANTWORT_EIN" | grep -A3 'class="geheimnis"' \
+           | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
+[ -n "$CODE_EIN" ] && [ ${#CODE_EIN} -ge 40 ] && BE=ja || BE=nein
+ergebnis "eine Einladung liefert einen Zugangscode (${#CODE_EIN} Zeichen)" "$BE"
+
+# Der Code darf NICHT im Protokoll stehen - es waere sonst fuer jeden lesbar,
+# der das Protokoll einsehen darf.
+IST=$(sql "SELECT count(*) FROM fachprotokoll
+           WHERE text LIKE '%$CODE_EIN%' OR coalesce(handlung,'') LIKE '%$CODE_EIN%'")
+[ "${IST:-1}" = "0" ] && BP=ja || BP=nein
+ergebnis "der Zugangscode steht nicht im Protokoll (Treffer: $IST)" "$BP"
+
+# Und nur als Hash in der Datenbank.
+IST=$(sql "SELECT count(*) FROM einladung WHERE geheimnis_hash = '$CODE_EIN'")
+[ "${IST:-1}" = "0" ] && BH=ja || BH=nein
+ergebnis "der Zugangscode steht nicht im Klartext in der Datenbank" "$BH"
+
+IST=$(sql "SELECT count(*) FROM benutzer WHERE benutzername='nachweis.person'")
+[ "${IST:-1}" = "0" ] && BK=ja || BK=nein
+ergebnis "eine Einladung ist noch kein Konto" "$BK"
+
+# Ein schwaches Kennwort darf die Einladung nicht verbrauchen - sonst waere sie
+# durch einen Tippfehler unbrauchbar.
+curl -s -X POST http://localhost:8090/einladung \
+  --data-urlencode "geheimnis=$CODE_EIN" --data-urlencode "kennwort=kurz" \
+  | grep -q "mindestens 12 Zeichen" && BS=ja || BS=nein
+ergebnis "ein schwaches Kennwort wird mit Begruendung abgelehnt" "$BS"
+
+curl -s -X POST http://localhost:8090/einladung \
+  --data-urlencode "geheimnis=$CODE_EIN" --data-urlencode "kennwort=EinLangesUnverdaechtigesWort42" \
+  | grep -q "Einmalkennwort" && BL=ja || BL=nein
+ergebnis "nach dem Kennwort folgt die Einrichtung des zweiten Faktors" "$BL"
+
+IST=$(sql "SELECT organisation_id FROM benutzer WHERE benutzername='nachweis.person'")
+[ "$IST" = "$ORG_B" ] && BO=ja || BO=nein
+ergebnis "das Konto landet in der eingeladenen Einrichtung ($IST)" "$BO"
+
+curl -s -X POST http://localhost:8090/einladung \
+  --data-urlencode "geheimnis=$CODE_EIN" --data-urlencode "kennwort=EinLangesUnverdaechtigesWort42" \
+  | grep -q "bereits verwendet" && BZ=ja || BZ=nein
+ergebnis "derselbe Zugangscode ein zweites Mal wird abgewiesen" "$BZ"
+
+# Zweiten Faktor zuruecksetzen - der haeufigste Supportfall.
+NID=$(sql "SELECT id FROM benutzer WHERE benutzername='nachweis.person'")
+curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/benutzer/$NID/totp-zuruecksetzen"
+IST=$(sql "SELECT coalesce(totp_geheimnis,'-') FROM benutzer WHERE id=$NID")
+[ "$IST" = "-" ] && BT=ja || BT=nein
+ergebnis "der zweite Faktor laesst sich zuruecksetzen" "$BT"
+IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='TOTP_ZURUECKGESETZT'")
+[ "${IST:-0}" -ge 1 ] && BTP=ja || BTP=nein
+ergebnis "das Zuruecksetzen ist protokolliert" "$BTP"
+
+# Deaktivieren statt Loeschen
+curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/benutzer/$NID/aktiv" \
+  --data-urlencode "aktiv=nein"
+IST=$(sql "SELECT aktiv FROM benutzer WHERE id=$NID")
+[ "$IST" = "f" ] && BD=ja || BD=nein
+ergebnis "ein Konto laesst sich deaktivieren" "$BD"
+IST=$(sql "SELECT count(*) FROM benutzer WHERE id=$NID")
+[ "$IST" = "1" ] && BDL=ja || BDL=nein
+ergebnis "das Konto bleibt erhalten und damit nachvollziehbar" "$BDL"
+
+# Der letzte handlungsfaehige Administrator darf nicht deaktiviert werden.
+#
+# Der erste Anlauf dieses Nachweises war falsch gebaut: Er nahm an, der
+# Pruefadmin sei der einzige Administrator. Der Demodatensatz legt aber drei
+# weitere an - die Regel griff also zu Recht NICHT, und der Nachweis
+# deaktivierte dabei den Pruefadmin selbst. Ein Nachweis, der die Lage
+# zerstoert, die er pruefen will.
+AID=$(sql "SELECT id FROM benutzer WHERE benutzername='pruefadmin'")
+ANDERE=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+         "SELECT id FROM benutzer WHERE aktiv AND rolle='ADMINISTRATOR' AND id <> $AID" | tr -d ' \r')
+for a in $ANDERE; do
+  docker exec pr-db psql -U pinroboter -d pinroboter -c \
+    "UPDATE benutzer SET aktiv = FALSE WHERE id = $a" >/dev/null 2>&1
+done
+VERBLEIBEND=$(sql "SELECT count(*) FROM benutzer WHERE aktiv AND rolle='ADMINISTRATOR'")
+echo "  Ausgangslage: $VERBLEIBEND aktiver Administrator"
+
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/benutzer/$AID/aktiv" \
+  --data-urlencode "aktiv=nein" | grep -q "letzte handlungsfähige" && BA=ja || BA=nein
+ergebnis "der letzte Administrator laesst sich nicht deaktivieren" "$BA"
+IST=$(sql "SELECT aktiv FROM benutzer WHERE id=$AID")
+[ "$IST" = "t" ] && BA2=ja || BA2=nein
+ergebnis "er ist nach dem Versuch weiterhin aktiv" "$BA2"
+
+# Ausgangslage wiederherstellen, damit folgende Nachweise nicht darauf treffen.
+for a in $ANDERE; do
+  docker exec pr-db psql -U pinroboter -d pinroboter -c \
+    "UPDATE benutzer SET aktiv = TRUE WHERE id = $a" >/dev/null 2>&1
+done
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"
