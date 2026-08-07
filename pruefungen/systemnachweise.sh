@@ -582,10 +582,15 @@ done
 ergebnis "das Kennwort erscheint auf keiner Oberflaechenseite (Treffer: $TREFFER)" "$KO"
 
 # A_24080: PEviM ist ausschliesslich fuer SMC-B zulaessig.
-curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+ANTWORT_PV=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
   --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
   --data-urlencode "bezeichnung=Behandlung" --data-urlencode "adresse=192.0.2.90" \
-  --data-urlencode "pevimAktiv=ja" | grep -q "A_24080" && PV=ja || PV=nein
+  --data-urlencode "pevimAktiv=ja")
+echo "$ANTWORT_PV" | grep -q "A_24080" && PV=ja || PV=nein
+if [ "$PV" = "nein" ]; then
+  echo "    Diagnose: Konnektor-Kennung war \"$KID\". Antwort:"
+  echo "$ANTWORT_PV" | grep -oE 'role="alert">[^<]*' | head -1 | sed 's/^/      /'
+fi
 ergebnis "PIN-Automatik ohne SMC-B wird abgelehnt (A_24080)" "$PV"
 IST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01'")
 [ "$IST" = "0" ] && PN=ja || PN=nein
@@ -769,10 +774,17 @@ ergebnis "der Statusfilter zeigt die deaktivierten Geraete" "$MI"
 
 # Ein nicht mehr vorhandenes Geraet darf nicht stillschweigend uebergangen
 # werden - "Aktion ausgefuehrt" bei 3 von 4 waere eine Falschmeldung.
-curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
-  "${MARGS[@]}" --data-urlencode "geraet=999999999" --data-urlencode "aktion=aktivieren" \
-  | grep -q "1 von $((ANZ_AUSGEWAEHLT + 1))" && MU=ja || MU=nein
-ergebnis "uebersprungene Geraete werden gezaehlt, nicht verschwiegen" "$MU"
+ANTWORT_MU=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+  "${MARGS[@]}" --data-urlencode "geraet=999999999" --data-urlencode "aktion=aktivieren")
+# Geprueft wird die Zusage, nicht der genaue Wortlaut: Es muss GENAU EIN Geraet
+# als uebersprungen gemeldet werden - das erfundene.
+UEBERSPRUNGEN=$(echo "$ANTWORT_MU" | grep -oE '[0-9]+ von [0-9]+ Ger' | grep -oE '^[0-9]+')
+[ "${UEBERSPRUNGEN:-0}" = "1" ] && MU=ja || MU=nein
+if [ "$MU" = "nein" ]; then
+  echo "    Diagnose: erwartet 1 uebersprungenes Geraet. Antwort:"
+  echo "$ANTWORT_MU" | grep -oE 'role="alert">[^<]*' | head -1 | sed 's/^/      /'
+fi
+ergebnis "uebersprungene Geraete werden gezaehlt, nicht verschwiegen ($UEBERSPRUNGEN)" "$MU"
 
 curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
   --data-urlencode "aktion=deaktivieren" | grep -q "kein Gerät" && ML=ja || ML=nein
@@ -992,6 +1004,25 @@ if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
             | grep -c "<tr>")
   [ "${TREFFER:-1}" = "0" ] && MG=ja || MG=nein
   ergebnis "ein Filter auf ein fremdes Geraet liefert keine Protokolleintraege ($TREFFER)" "$MG"
+
+  # Rechte je Ebene: Der Demo-Benutzer ist Ebene 1 (Praxis).
+  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
+         -X POST http://localhost:8090/verwaltung/demodaten/loeschen)
+  [ "$CODE" = "403" ] && RD=ja || RD=nein
+  ergebnis "ein Praxisbenutzer kann den Demodatensatz nicht loeschen (HTTP $CODE)" "$RD"
+  IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
+  [ "${IST:-0}" -gt 0 ] && RD2=ja || RD2=nein
+  ergebnis "der Demodatensatz ist nach dem Versuch noch da ($IST Geraete)" "$RD2"
+
+  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
+         -X POST http://localhost:8090/verwaltung/lasttest/anlegen --data-urlencode "anzahl=10")
+  [ "$CODE" = "403" ] && RL=ja || RL=nein
+  ergebnis "ein Praxisbenutzer kann keinen Lasttestbestand anlegen (HTTP $CODE)" "$RL"
+
+  # Die Meldung muss sagen, WAS fehlt - nicht nur, dass etwas fehlt.
+  curl -s -b "$DEMO_KEKSE" -X POST http://localhost:8090/verwaltung/demodaten/anlegen \
+    | grep -q "Ihre Berechtigung" && RM=ja || RM=nein
+  ergebnis "die Abweisung nennt die eigene Berechtigung" "$RM"
 
   rm -f "$DEMO_KEKSE"
 else

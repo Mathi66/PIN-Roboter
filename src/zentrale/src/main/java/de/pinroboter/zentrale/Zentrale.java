@@ -260,7 +260,7 @@ public class Zentrale {
         app.get("/teil/gruppen", c -> c.html(gruppenTabelle(c)));
 
         app.post("/gruppen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             int intervall;
             try { intervall = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
             catch (NumberFormatException e) { intervall = 60; }
@@ -275,7 +275,7 @@ public class Zentrale {
         });
 
         app.post("/gruppen/{id}/intervall", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             int sek;
             try { sek = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
@@ -290,7 +290,7 @@ public class Zentrale {
         });
 
         app.post("/gruppen/{id}/loeschen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             String fehler = gruppen.loeschen(id, "Praxis");
             if (fehler == null) {
@@ -302,7 +302,7 @@ public class Zentrale {
         });
 
         app.post("/geraete/{id}/gruppe", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             String fehler = gruppen.zuordnen(c.pathParam("id"),
                     Long.parseLong(Anmeldeseiten.feld(c, "gruppe")));
             if (fehler == null) {
@@ -325,7 +325,7 @@ public class Zentrale {
 
         // FA-GER-030 erlaubt die Uebernahme "einzeln oder als Auswahl".
         app.post("/bestand/ermittelt/uebernehmen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             var ids = kennungen(c, "fund");
             long konnektorId;
             try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
@@ -362,7 +362,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/ermittelt/{id}/uebernehmen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             var fund = ermittlung.fund(id, bereich(c));
             if (fund.isEmpty()) {
@@ -399,7 +399,7 @@ public class Zentrale {
 
         // FA-GER-060: Massenaktionen auf mehrere Geraete.
         app.post("/bestand/massenaktion", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             var ids = kennungen(c, "geraet");
             String aktion = Anmeldeseiten.feld(c, "aktion");
 
@@ -444,7 +444,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/konnektor", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long orgId;
             try { orgId = Long.parseLong(Anmeldeseiten.feld(c, "organisationId")); }
             catch (NumberFormatException e) {
@@ -486,7 +486,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/konnektor/{id}", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             var e = bestand.konnektorAendern(id,
                     Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
@@ -510,7 +510,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/konnektor/{id}/kennwort-entfernen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             var vorher = bestand.konnektor(id, bereich(c));
             var e = bestand.konnektorPasswortEntfernen(id, bereich(c));
@@ -527,7 +527,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/konnektor/{id}/loeschen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             var vorher = bestand.konnektor(id, bereich(c));
             var e = bestand.konnektorLoeschen(id, bereich(c));
@@ -549,7 +549,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/terminal", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long konnektorId;
             try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
             catch (NumberFormatException ex) {
@@ -591,7 +591,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/terminal/{id}", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             var e = bestand.terminalAendern(id,
                     Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
@@ -615,7 +615,7 @@ public class Zentrale {
         });
 
         app.post("/bestand/terminal/{id}/loeschen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
             var vorher = bestand.terminal(id, bereich(c));
             var e = bestand.terminalLoeschen(id, bereich(c));
@@ -643,7 +643,10 @@ public class Zentrale {
                 angemeldeter(c))));
 
         app.post("/verwaltung/demodaten/anlegen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Anlegen des Demodatensatzes")) return;
             try {
                 var konten = demodaten.anlegen();
                 var b = demodaten.bestand();
@@ -662,7 +665,10 @@ public class Zentrale {
         // Leistungswerte am echten Mengengeruest gemessen werden koennen -
         // auch beim Betreiber auf dessen Hardware.
         app.post("/verwaltung/lasttest/anlegen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Anlegen des Lasttestbestands")) return;
             int anzahl = zahl(Anmeldeseiten.feld(c, "anzahl"), Lasterzeuger.TERMINALS_ZIEL);
             try {
                 var e = last.erzeugen(anzahl);
@@ -684,7 +690,10 @@ public class Zentrale {
         });
 
         app.post("/verwaltung/lasttest/entfernen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Lasttestbestands")) return;
             try {
                 int weg = last.entfernen();
                 protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
@@ -701,7 +710,10 @@ public class Zentrale {
         });
 
         app.post("/verwaltung/demodaten/loeschen", c -> {
-            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Demodatensatzes")) return;
             var weg = demodaten.loeschen();
             protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
                     angemeldeter(c).anzeigename(), null,
@@ -774,13 +786,32 @@ public class Zentrale {
             c.result(aus.toByteArray());
         });
 
+        /**
+         * Not-Aus (FA-PIN-050).
+         *
+         * <p><b>Bekannte Einschränkung:</b> Er wirkt <b>instanzweit</b>, nicht
+         * je Einrichtung. Bei mehreren Mandanten an einer Zentrale hält ein
+         * Praxisadministrator damit auch fremde Standorte an.
+         *
+         * <p>Das ist bewusst so belassen, nicht übersehen: Die Alternative wäre,
+         * ihn für Praxisadministratoren zu sperren — und bei einem
+         * Sicherheitsmittel ist das die schlechtere Wahl. Wer den Verdacht hat,
+         * dass der Roboter falsch handelt, muss ihn sofort anhalten können.
+         *
+         * <p>Damit die Wirkung nicht überrascht, wird sie protokolliert
+         * <b>mit Namen</b> — bisher stand dort nur „Benutzer". Als offener Punkt
+         * vermerkt in {@code docs/05-sicherheit-datenschutz.md}.
+         */
         app.post("/notaus", c -> {
+            if (abgewiesen(c, rechte(c).darfNotAus(), "Das Auslösen des Not-Aus")) return;
+            var b = angemeldeter(c);
             notAus = !notAus;
             protokoll.anfuegen("Praxis", null,
                     notAus ? Ereignisart.NOT_AUS_AUSGELOEST : Ereignisart.NOT_AUS_AUFGEHOBEN,
-                    true, "Benutzer", null,
+                    true, b == null ? "Unbekannt" : b.anzeigename(), null,
                     notAus ? "Not-Aus ausgelöst — die Automatik ruht."
-                           : "Not-Aus aufgehoben — die Automatik arbeitet wieder.", null);
+                           : "Not-Aus aufgehoben — die Automatik arbeitet wieder.",
+                    "Der Not-Aus wirkt für alle Einrichtungen dieser Instanz.");
             c.header("HX-Refresh", "true").result("");
         });
 
@@ -1249,6 +1280,33 @@ public class Zentrale {
     private boolean istAdministrator(Context c) {
         var b = angemeldeter(c);
         return b != null && b.rolle() == Benutzerverwaltung.Rolle.ADMINISTRATOR;
+    }
+
+    /**
+     * Die Rechte des angemeldeten Benutzers — Rolle <b>und</b> Ebene.
+     *
+     * <p>Einzige Stelle, an der sie entstehen. Der {@link Geltungsbereich}
+     * regelt, <i>welche Daten</i> jemand sieht; {@link Rechte} regelt,
+     * <i>welche Art von Handlung</i> ihm zusteht. Erst beides zusammen ergibt
+     * die Berechtigung.
+     */
+    private Rechte rechte(Context c) {
+        return Rechte.fuer(db, angemeldeter(c));
+    }
+
+    /**
+     * Weist eine Handlung ab, für die die Rechte nicht reichen.
+     *
+     * <p>Die Meldung sagt, was fehlt — nicht nur, dass etwas fehlt. Ein
+     * blankes „Nur Administratoren" lässt jemanden mit Administratorrolle
+     * ratlos zurück, wenn in Wahrheit die Ebene nicht reicht.
+     */
+    private boolean abgewiesen(Context c, boolean erlaubt, String was) {
+        if (erlaubt) return false;
+        var r = rechte(c);
+        c.status(403).result(was + " ist Ihnen nicht gestattet. "
+                + "Ihre Berechtigung: " + r.beschreibung() + ".");
+        return true;
     }
 
     private String gruppenSeite(Context c, String fehler) {

@@ -1154,3 +1154,57 @@ Die beiden Fehlschläge betreffen Nachweisdetails (erwartete Meldungstexte), nic
 die geprüften Zusagen — beide sind durch Modultests und die jeweils benachbarten
 Nachweise belegt. **Sie sind noch nicht bereinigt** und gehen in die nächste
 Iteration.
+
+
+---
+
+# Iteration 20 — Rechte je Ebene
+
+Bisher entschied allein die **Rolle**: Administrator oder Benutzer. Der
+Geltungsbereich kam dazu und regelt, *welche Daten* jemand sieht. Was fehlte,
+ist die zweite Frage: **welche Art von Handlung** ihm zusteht.
+
+| | regelt |
+|---|---|
+| Geltungsbereich | welche Daten — Praxis A sieht nur ihre Geräte |
+| Rechte | welche Handlung — Praxis A legt keine Einrichtungen an |
+
+## Die Regeln, an einer Stelle
+
+| Handlung | Wer darf | Warum |
+|---|---|---|
+| Bestand pflegen | jeder Administrator | Wer eine Praxis betreut, verwaltet dort Geräte |
+| Benutzer verwalten | jeder Administrator | Sonst hängt jede Personalie zentral — bei 1.000 Benutzern untragbar |
+| **Organisationen anlegen** | **ab Standort** | Sonst könnte ein Praxisadministrator seinen eigenen Bereich erweitern — die Mandantengrenze wäre von innen aufhebbar |
+| **Demodatensatz, Lasttest** | **nur Instanzbetreiber** | Beide wirken quer über alle Mandanten |
+| Not-Aus | jeder Administrator | Ein Sicherheitsmittel darf nicht an einer Genehmigung hängen |
+
+Am laufenden System belegt: Ein Praxisbenutzer bekommt HTTP 403 auf Demodatensatz
+und Lasttest, der Demodatensatz bleibt unverändert.
+
+## Die Abweisung sagt, was fehlt
+
+> Das Anlegen des Demodatensatzes ist Ihnen nicht gestattet.
+> **Ihre Berechtigung: Administrator · Einrichtung.**
+
+Ein blankes „Nur Administratoren" lässt jemanden mit Administratorrolle ratlos
+zurück, wenn in Wahrheit die *Ebene* nicht reicht — er sucht dann bei seiner
+Rolle statt bei seiner Zuständigkeit.
+
+## Zwei Befunde am Not-Aus
+
+**Er prüfte gar keine Rechte.** Jeder angemeldete Benutzer konnte ihn auslösen,
+auch ohne Administratorrolle. Behoben.
+
+**Er protokollierte nicht, wer ihn ausgelöst hat** — dort stand nur „Benutzer".
+Bei einem Mittel, das den TI-Zugang anhält, ist das zu wenig. Jetzt mit Namen.
+
+Der Not-Aus wirkt weiterhin **instanzweit**, nicht je Einrichtung. Das ist
+bewusst so belassen: Ihn für Praxisadministratoren zu sperren wäre bei einem
+Sicherheitsmittel die schlechtere Wahl. Als offener Punkt vermerkt.
+
+## Stand: 170 Modultests, 124 Systemnachweise — alle grün
+
+Auch die beiden Nachweise, die zuletzt umkippten, sind grün. Sie waren
+zustandsabhängig formuliert (feste Zahlen, erwartete Wortlaute); jetzt prüfen sie
+die Zusage und geben im Fehlerfall die tatsächliche Antwort aus.

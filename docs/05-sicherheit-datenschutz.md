@@ -102,7 +102,7 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 | **Kennwortablage** | Argon2id | Modultests |
 | **Zweiter Faktor** | TOTP nach RFC 6238, gegen die offiziellen Testvektoren geprüft | Modultests gegen RFC-Vektoren |
 | **Einmalkennwort gilt einmal** | verbrauchte Codes werden abgewiesen | Systemnachweis |
-| **Rollentrennung** | Administrator / Benutzer; schreibende Bestandsaktionen nur für Administratoren | Routenprüfung |
+| **Rollentrennung** | Administrator / Benutzer, **zusätzlich nach Ebene** (Instanz / Verbund / Standort / Einrichtung); Abweisungen nennen die eigene Berechtigung | 8 Tests, Systemnachweise mit HTTP 403 |
 | **Mandantentrennung** | `Geltungsbereich` als Pflichtparameter jeder mandantengebundenen Abfrage — Bestand, Ermittlung, Protokoll, Export, Alarme, Gruppen, Benutzerliste. Keine Zuordnung heißt „sieht nichts" | 22 Tests inkl. Angriffe über manipulierte Kennungen; Systemnachweise mit echter Anmeldung |
 | **Agent-Authentisierung** | einmalig gültiges Registrierungsgeheimnis → dauerhaftes Token | Systemnachweise: erfundenes und wiederverwendetes Geheimnis werden abgewiesen |
 | **Transportverschlüsselung TI** | TLS 1.2 mit Brainpool (BouncyCastle), Cipher-Suites nach `[gemSpec_Krypt]` eingeschränkt | Durchstich über Brainpool-TLS |
@@ -135,8 +135,9 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
    ist mit eingeschränkt — er wäre sonst der bequemste Weg an fremde Daten.
    Nachweis: 22 Tests, dazu Systemnachweise mit echter Anmeldung.
 
-   **Was bleibt:** Rollen und Rechte sind noch nicht nach Ebene verfeinert (was
-   darf Praxis, Standort, Verbund?), und neue Funde aus der Bestandsermittlung
+   **Seit dem 07.08.2026 ergänzt um Rechte je Ebene** ([Umsetzung](03-umsetzung/11-rechte-je-ebene.md)):
+   Organisationen anlegen erst ab Standortebene, instanzweite Werkzeuge nur für
+   den Instanzbetreiber. **Was bleibt:** Neue Funde aus der Bestandsermittlung
    haben noch keine Zuordnung — die Grenze greift dort bei der Übernahme.
 2. **Kein TLS auf der eigenen Oberfläche.** Die Zentrale spricht HTTP. Für den
    Zugriff über ein Netzsegment hinaus gehört ein TLS-Vermittler davor — nicht
@@ -151,6 +152,12 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
    eine Lücke.
 6. **Kein Vier-Augen-Prinzip** für kritische Aktionen (PIN hinterlegen,
    Not-Aus aufheben). Nicht gefordert, aber in einer Klinik erwägbar.
+7. **Der Not-Aus wirkt instanzweit, nicht je Einrichtung.** Bei mehreren
+   Mandanten an einer Zentrale hält ein Praxisadministrator damit auch fremde
+   Standorte an. Bewusst so belassen: Die Alternative wäre, ihn für
+   Praxisadministratoren zu sperren, und bei einem Sicherheitsmittel ist das die
+   schlechtere Wahl. Der Umbau auf einen Not-Aus je Einrichtung berührt auch den
+   Agenten, der den Zustand global abfragt.
 7. **Kalibrierung an echter Hardware** (ADR-0007). Alle Aussagen über das
    Verhalten von Konnektor und Terminals beruhen auf dem Simulator.
 
