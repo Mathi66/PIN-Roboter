@@ -17,6 +17,15 @@ RUN useradd --system --uid 10001 --create-home roboter
 WORKDIR /app
 COPY --from=bau /bau/src/${BAUSTEIN}/target/${BAUSTEIN}.jar /app/anwendung.jar
 COPY docker/brainpool.security /app/brainpool.security
+
+# Datenverzeichnis des Agenten: Token, Schluesselpaar und PIN-Ablage.
+#
+# Es MUSS hier angelegt und uebereignet werden, nicht erst zur Laufzeit: Ein
+# frisch erzeugtes benanntes Volume uebernimmt Eigentuemer und Rechte des
+# Mountpunkts aus dem Image. Fehlt das Verzeichnis, gehoert das Volume root -
+# und der Container laeuft als Nicht-Root (NFA-SIC-030). Er kann dann weder
+# sein Token noch seinen privaten Schluessel ablegen.
+RUN mkdir -p /daten && chown 10001:10001 /daten
 USER 10001
 # Speicherobergrenze: NFA-LEI-030 verlangt ≤ 3 GB für den ganzen Stack,
 # der Agent allein ≤ 512 MB. Die Laufzeitvorgaben genügen dafür nicht.

@@ -113,24 +113,7 @@ services:
       - agentdaten:/daten
     depends_on:
       simulator: { condition: service_healthy }
-      datenbank:
-    image: postgres:17-alpine
-    container_name: pinroboter-datenbank
-    environment:
-      POSTGRES_DB: pinroboter
-      POSTGRES_USER: pinroboter
-      # Beim Kunden aus einer Konfigurationsdatei, nie im Repository (NFA-BET-010).
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-nur-fuer-die-entwicklung}
-    volumes:
-      # NFA-BET-020: persistente Daten liegen in Volumes, nie im Container-Layer.
-      - betriebsdaten:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pinroboter -d pinroboter"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
-  zentrale:  { condition: service_healthy }
+      zentrale:  { condition: service_healthy }
 
 volumes:
   agentdaten:

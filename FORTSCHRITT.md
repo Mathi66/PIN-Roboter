@@ -1511,4 +1511,38 @@ Löschen: Ein Gerät darf durch eine gelöschte Gruppe nicht aus der Überwachun
 fallen. Geprüft ist, dass es in die Vorgabegruppe umzieht und weiter existiert —
 und dass die Vorgabegruppe selbst sich nicht löschen lässt.
 
-## Stand: 230 Modultests, 204 Systemnachweise — alle grün
+## Der Stack aus dem Repository war nicht startbar
+
+Beim Hochfahren für die Vorführung kam heraus, was 230 Modultests und 204
+Systemnachweise nicht gefunden hatten:
+
+**Die `docker-compose.yml` war über zwei Commits hinweg kein gültiges YAML.**
+Der Datenbank-Block war in das `depends_on` des Agenten gerutscht, und
+`zentrale: { condition: … }` stand als Waise am Dateiende. `docker compose up`
+brach mit einem Parserfehler ab.
+
+**Das Datenverzeichnis des Agenten gehörte root.** Der Container läuft als
+Nicht-Root (NFA-SIC-030). Ein frisches Volume erbt Eigentümer und Rechte des
+Mountpunkts aus dem Image — und den gab es dort nicht. Weder Token noch
+privater Schlüssel waren speicherbar.
+
+**Und mein eigener Code beendete den Agenten deswegen.** Eine nicht
+speicherbare Schlüsseldatei warf eine Ausnahme bis in `main`. Falsch: Die
+Kernfunktion dieses Produkts ist die Überwachung der SMC-B, und die hängt nicht
+an dieser Datei (FA-AGT-030). Der Agent warnt jetzt deutlich, nennt die
+Ursache samt Prüfbefehl und arbeitet mit einem flüchtigen Schlüsselpaar weiter.
+
+### Warum das keine Prüfung gefunden hat
+
+Die Systemnachweise starten jeden Container einzeln mit `docker run`. Das ist
+schnell und gut isoliert — und prüft die Auslieferung nicht. Die Definition of
+Done verlangt „Läuft im Docker-Stack aus dem Repository — verifiziert, nicht
+angenommen". Genau dieser Punkt war über mehrere Iterationen abgehakt, ohne
+ausgeführt zu werden.
+
+`pruefungen/stack-pruefen.sh` schließt die Lücke: gültiges YAML mit allen vier
+Diensten, Volumes an den Stellen, an denen Zustand liegt, keine fest
+eingetragenen Geheimnisse, und im gebauten Image gehört `/daten` dem
+Container-Benutzer 10001.
+
+## Stand: 230 Modultests, 204 Systemnachweise, 6 Stack-Prüfungen — alle grün

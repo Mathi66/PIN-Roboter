@@ -86,6 +86,20 @@ im Repository (`NFA-BET-010`). Vorgesehener Weg: eine Datei `.env` neben der
 | `PIN_ABLAGE_SCHLUESSEL` | dringend empfohlen | Verschlüsselt die hinterlegten SMC-B-PINs. Siehe unten. |
 | `PIN_<kartenhandle>` | **nein — nur Testaufbau** | Setzt eine PIN direkt. **Für den Betrieb ungeeignet:** Die PIN steht damit im Klartext auf dem Host und in jeder Sicherung. Der Agent warnt beim Start. Im Betrieb über die Oberfläche hinterlegen. |
 
+### Vor dem ersten Start: `.env` anlegen
+
+Neben der `docker-compose.yml`:
+
+```
+DB_PASSWORD=<eigenes Kennwort>
+GEHEIMNIS_SCHLUESSEL=<openssl rand -base64 32>
+PIN_ABLAGE_SCHLUESSEL=<openssl rand -base64 32>
+```
+
+Die Datei ist per `.gitignore` vom Repository ausgeschlossen und gehört in die
+Sicherung — aber **nicht in dieselbe Datei wie der Datenbankauszug**, sonst
+schützt die Verschlüsselung vor nichts.
+
 ### Der Schlüssel für die PIN-Ablage des Agenten
 
 Erzeugen:
@@ -304,6 +318,28 @@ einen laufenden Vorgang abzuschneiden. Zu verwenden, wenn unklar ist, ob der
 Roboter richtig handelt — er ist reversibel und ausdrücklich dafür gedacht.
 
 ---
+
+### Wenn der Agent nicht schreiben kann
+
+Meldet der Agent beim Start
+
+> WARNUNG: Der private Schlüssel konnte nicht gespeichert werden
+
+dann gehört sein Datenverzeichnis nicht ihm. Der Container läuft als
+Nicht-Root (`NFA-SIC-030`); ein Volume, das root gehört, ist für ihn nicht
+beschreibbar. Prüfen:
+
+```bash
+docker compose exec agent ls -ld /daten
+```
+
+Erwartet wird `roboter roboter`. Steht dort `root`, ist das Volume mit einem
+älteren Image angelegt worden — dann `docker compose down`, das Volume
+`agentdaten` entfernen und neu starten. Der Agent registriert sich danach neu.
+
+**Der Agent läuft in diesem Zustand weiter** — die Überwachung der SMC-B hängt
+nicht an dieser Datei. Verloren gehen nur die über die Oberfläche hinterlegten
+PINs bei jedem Neustart.
 
 ## 7. Was diese Anleitung nicht abdeckt
 

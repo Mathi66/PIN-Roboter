@@ -122,9 +122,18 @@ public final class Schluesselpaar {
                         + "Auf diesem Dateisystem ist das nicht durchsetzbar.");
             }
         } catch (java.io.IOException e) {
-            throw new GeneralSecurityException(
-                    "Der private Schlüssel konnte nicht gespeichert werden: " + e.getMessage()
-                    + " — ohne Ablage wäre nach jedem Neustart jede hinterlegte PIN unbrauchbar.", e);
+            // Nicht abbrechen. Die Kernfunktion dieses Produkts ist die
+            // Ueberwachung der SMC-B, und die haengt nicht an dieser Datei
+            // (FA-AGT-030). Der Agent arbeitet mit einem fluechtigen
+            // Schluesselpaar weiter; hinterlegte PINs ueberstehen dann keinen
+            // Neustart. Das ist schlecht, aber ein stehender Agent waere
+            // schlechter - dann verifiziert niemand mehr eine Karte.
+            System.err.println("  WARNUNG: Der private Schlüssel konnte nicht gespeichert werden ("
+                    + e.getMessage() + ").");
+            System.err.println("  Der Agent läuft weiter, aber über die Oberfläche hinterlegte "
+                    + "PINs gehen bei jedem Neustart verloren und müssen neu eingegeben werden.");
+            System.err.println("  Ursache ist fast immer, dass das Datenverzeichnis dem Container "
+                    + "nicht gehört. Prüfen: docker compose exec agent ls -ld " + datei.getParent());
         }
         return new Schluesselpaar(neu);
     }
