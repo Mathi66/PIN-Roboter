@@ -40,8 +40,14 @@ public final class TlsClient {
         // scheitert - obwohl die Bibliothek die Kurven beherrscht.
         //
         // Gefunden erst beim Ausfuehren, nicht beim Lesen der Dokumentation.
-        Security.addProvider(new BouncyCastleProvider());
-        Security.addProvider(new BouncyCastleJsseProvider());
+        // BCJSSE muss AUSDRUECKLICH auf BouncyCastle als Krypto-Unterbau
+        // verwiesen werden. Ohne Argument nutzt es den JDK-Standardprovider -
+        // und der kennt Brainpool nicht. Die Folge ist die irrefuehrende Meldung
+        // "'jdk.tls.namedGroups' contains disabled NamedGroup: brainpoolP256r1",
+        // obwohl die Sicherheitsrichtlinie die Kurven laengst freigegeben hat.
+        BouncyCastleProvider bc = new BouncyCastleProvider();
+        Security.addProvider(bc);
+        Security.addProvider(new BouncyCastleJsseProvider(bc));
         BrainpoolFreischaltung.kurvenlisteSetzen();   // nach der Provider-Registrierung
     }
 

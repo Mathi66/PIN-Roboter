@@ -55,6 +55,15 @@ public final class BrainpoolFreischaltung {
      * BouncyCastle. Zu früh gesetzt lehnt das Standard-JDK sie ab mit
      * „contains no supported named groups", weil es Brainpool nicht kennt.
      */
+    /** Gibt aus, was wirklich gilt — Diagnose statt Vermutung. */
+    public static void zustandAusgeben(String wer) {
+        System.out.println("  [" + wer + "] jdk.disabled.namedCurves = \""
+                + Security.getProperty("jdk.disabled.namedCurves") + "\"");
+        String d = Security.getProperty("jdk.tls.disabledAlgorithms");
+        System.out.println("  [" + wer + "] enthaelt namedCurves-Sperre: "
+                + (d != null && d.contains("jdk.disabled.namedCurves")));
+    }
+
     public static void kurvenlisteSetzen() {
         System.setProperty("jdk.tls.namedGroups", "brainpoolP256r1,brainpoolP384r1");
     }

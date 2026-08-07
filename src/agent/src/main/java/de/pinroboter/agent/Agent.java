@@ -36,7 +36,9 @@ public class Agent {
     private volatile boolean notAus = false;
 
     public static void main(String[] args) throws Exception {
+        BrainpoolFreischaltung.zustandAusgeben("vor anwenden");
         BrainpoolFreischaltung.anwenden();   // muss als Erstes laufen
+        BrainpoolFreischaltung.zustandAusgeben("nach anwenden");
         String konnektorUrl = env("KONNEKTOR_URL", "https://simulator:8443/");
         String terminalUrl  = env("TERMINAL_URL",  "https://simulator:8444/");
         String zentraleUrl  = env("ZENTRALE_URL",  "http://zentrale:8090/");

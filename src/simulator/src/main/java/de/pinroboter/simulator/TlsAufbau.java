@@ -49,7 +49,14 @@ public final class TlsAufbau {
         // scheitert - obwohl die Bibliothek die Kurven beherrscht.
         //
         // Gefunden erst beim Ausfuehren, nicht beim Lesen der Dokumentation.
-        Security.addProvider(new BouncyCastleJsseProvider());
+        // BCJSSE muss AUSDRUECKLICH auf BouncyCastle als Krypto-Unterbau
+        // verwiesen werden. Ohne Argument nutzt es den JDK-Standardprovider,
+        // der Brainpool nicht kennt - der Server findet dann trotz passendem
+        // Zertifikat "no selectable cipher suite".
+        org.bouncycastle.jce.provider.BouncyCastleProvider bc =
+                new org.bouncycastle.jce.provider.BouncyCastleProvider();
+        if (Security.getProvider(bc.getName()) == null) Security.addProvider(bc);
+        Security.addProvider(new BouncyCastleJsseProvider(bc));
         // Ohne diese Eigenschaft bietet der Handshake die Brainpool-Gruppen nicht an,
         // obwohl die Bibliothek sie beherrscht. Gemessen am 06.08.2026.
         BrainpoolFreischaltung.kurvenlisteSetzen();   // nach der Provider-Registrierung
