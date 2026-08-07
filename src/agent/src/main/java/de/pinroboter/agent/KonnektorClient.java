@@ -123,6 +123,30 @@ public class KonnektorClient {
         return new VerifyAntwort(e, zahl(tag(a, "LeftTries"), -1), null, null);
     }
 
+    /**
+     * Liest das Informationsmodell über die Webadmin-Schnittstelle (FA-GER-035).
+     *
+     * <p><b>Diese Schnittstelle ist herstellerspezifisch und von niemandem
+     * spezifiziert.</b> Sie ist deshalb <b>immer optional</b> (NFA-QS-035): Ist
+     * sie nicht erreichbar oder nicht konfiguriert, bleibt jede Angabe von Hand
+     * erfassbar. Ein Fehler hier darf nichts anhalten — er wird gemeldet, und
+     * die Einrichtung läuft ohne die Unterstützung weiter.
+     *
+     * @param webadmin Basisadresse der Webadmin-Schnittstelle, oder {@code null}
+     * @return das Modell als JSON, oder {@code null}, wenn es nicht abrufbar ist
+     */
+    public String informationsmodell(URI webadmin) {
+        if (webadmin == null) return null;
+        try {
+            HttpRequest r = HttpRequest.newBuilder(webadmin.resolve("/webadmin/informationsmodell"))
+                    .timeout(Duration.ofSeconds(15)).GET().build();
+            var a = http.send(r, HttpResponse.BodyHandlers.ofString());
+            return a.statusCode() == 200 ? a.body() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private String ruf(String inhalt) throws Exception {
         String umschlag = """
                 <?xml version="1.0" encoding="UTF-8"?>

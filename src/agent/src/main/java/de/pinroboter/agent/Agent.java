@@ -36,6 +36,20 @@ public class Agent {
     private volatile boolean notAus = false;
     private volatile String agentToken;
 
+    /**
+     * Adresse der Webadmin-Schnittstelle des Konnektors, oder {@code null}.
+     * Herstellerspezifisch und immer optional (NFA-QS-035).
+     */
+    private volatile URI webadmin;
+
+    /**
+     * Kennzeichen des zuletzt gemeldeten Bestands. Verhindert, dass sich ein
+     * unveraenderter Bestand in jedem Pruefzyklus wiederholt - dieselbe
+     * Ueberlegung wie bei der Protokoll-Grundregel: Zustandsaenderungen
+     * melden, nicht Abfragen.
+     */
+    private volatile String letzterBestandsabdruck = "";
+
     public static void main(String[] args) throws Exception {
         BrainpoolFreischaltung.zustandAusgeben("vor anwenden");
         BrainpoolFreischaltung.anwenden();   // muss als Erstes laufen
@@ -62,6 +76,11 @@ public class Agent {
 
         Agent agent = new Agent(new KonnektorClient(http, URI.create(konnektorUrl), kontext),
                 http, URI.create(terminalUrl), URI.create(zentraleUrl));
+
+        // Ohne diese Angabe laeuft alles weiter, nur ohne Unterstuetzung beim
+        // Einrichten (FA-GER-035, NFA-QS-035). Vorbelegt auf den Konnektor
+        // selbst, weil die Webadmin-Oberflaeche dort ueblicherweise mitlaeuft.
+        agent.webadmin = URI.create(env("WEBADMIN_URL", konnektorUrl));
 
         // FA-AGT-010: Beim ersten Start loest der Agent sein einmalig gueltiges
         // Registrierungsgeheimnis gegen ein dauerhaftes Token ein. Das Token
@@ -104,6 +123,8 @@ public class Agent {
                 var terminals = konnektor.terminals();
                 var karten = konnektor.karten();
 
+                bestandMelden(terminals, karten);
+
                 for (var t : terminals) {
                     var karte = karten.stream()
                             .filter(k -> k.terminalId().equals(t.id()) && "SMC-B".equals(k.kartentyp()))
@@ -114,6 +135,67 @@ public class Agent {
                 System.out.println("  Konnektor nicht erreichbar: " + e.getMessage());
             }
             Thread.sleep(intervallSekunden * 1000L);
+        }
+    }
+
+    /**
+     * Meldet den beim Konnektor vorgefundenen Bestand an die Zentrale
+     * (FA-GER-030, FA-GER-035).
+     *
+     * <p><b>Warum das der Agent tut und nicht die Zentrale:</b> Der Konnektor
+     * steht im Praxisnetz und ist von außen nicht erreichbar — der Agent baut
+     * ausgehend auf (ADR-0002). Die Zentrale könnte die Abfrage also gar nicht
+     * selbst durchführen.
+     *
+     * <p><b>Gemeldet wird nur, was sich geändert hat.</b> Bei 5.000 Terminals
+     * im Minutentakt wäre eine vollständige Meldung je Zyklus rund 7 Millionen
+     * Datensätze am Tag — dieselbe Überlegung wie bei der Protokoll-Grundregel.
+     *
+     * <p>Die Zentrale <b>übernimmt nichts selbsttätig</b>. Sie legt den Fund ab
+     * und bietet ihn zur Bestätigung an; das verlangt FA-GER-030 ausdrücklich.
+     */
+    private void bestandMelden(List<KonnektorClient.Terminal> terminals,
+                               List<KonnektorClient.Karte> karten) {
+        if (agentToken == null) return;
+
+        var eintraege = new ArrayList<Map<String, Object>>();
+        for (var t : terminals) {
+            var smcb = karten.stream()
+                    .filter(k -> k.terminalId().equals(t.id()) && "SMC-B".equals(k.kartentyp()))
+                    .findFirst().orElse(null);
+            var e = new LinkedHashMap<String, Object>();
+            e.put("terminalId", t.id());
+            e.put("name", t.name());
+            e.put("modell", t.modell());
+            e.put("firmware", t.firmware());
+            e.put("erreichbar", t.erreichbar());
+            e.put("pevimUnterstuetzt", t.pevimUnterstuetzt());
+            e.put("pevimAktiv", t.pevimAktiv());
+            e.put("hatSmcb", smcb != null);
+            if (smcb != null) {
+                e.put("kartenhandle", smcb.kartenhandle());
+                e.put("iccsn", smcb.iccsn());
+            }
+            eintraege.add(e);
+        }
+
+        String modell = konnektor.informationsmodell(webadmin);
+        String abdruck = String.valueOf(eintraege.hashCode()) + ":"
+                + (modell == null ? "-" : modell.hashCode());
+        if (abdruck.equals(letzterBestandsabdruck)) return;   // nichts Neues
+
+        var meldung = new LinkedHashMap<String, Object>();
+        meldung.put("terminals", eintraege);
+        // Ist die Webadmin-Schnittstelle nicht verfuegbar, wird das ausdruecklich
+        // gemeldet - die Oberflaeche weist dann auf die entfallende
+        // Unterstuetzung hin (NFA-QS-035), statt das Feld leer zu lassen.
+        meldung.put("informationsmodellVerfuegbar", modell != null);
+        if (modell != null) meldung.put("informationsmodell", modell);
+
+        if (senden("/api/agent/bestand", alsJson(meldung))) {
+            letzterBestandsabdruck = abdruck;
+            System.out.printf("  Bestand gemeldet: %d Terminals, Informationsmodell %s%n",
+                    eintraege.size(), modell != null ? "gelesen" : "nicht verfügbar");
         }
     }
 
@@ -255,16 +337,32 @@ public class Agent {
 
         if (agentToken == null) return;   // ohne Token keine Meldung, aber Weiterbetrieb
         try {
-            String json = alsJson(zustand);
-            http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/melden"))
-                    .header("Content-Type", "application/json")
-                    .header("X-Agent-Token", agentToken)
-                    .timeout(Duration.ofSeconds(10))
-                    .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8)).build(),
-                    HttpResponse.BodyHandlers.discarding());
+            senden("/api/agent/melden", alsJson(zustand));
         } catch (Exception e) {
             // Ausfall der Zentrale hält den Agenten nicht auf (FA-AGT-030).
             // Die Ereignisse wären im Produkt zu puffern statt zu verwerfen.
+        }
+    }
+
+    /**
+     * Schickt eine Meldung an die Zentrale.
+     *
+     * @return ob die Zentrale sie angenommen hat. Ein Ausfall der Zentrale hält
+     *         den Agenten nicht auf (FA-AGT-030) — der TI-Zugang der Praxis darf
+     *         nicht an unserer Verwaltungsschicht hängen.
+     */
+    private boolean senden(String pfad, String json) {
+        if (agentToken == null) return false;
+        try {
+            var a = http.send(HttpRequest.newBuilder(zentrale.resolve(pfad))
+                            .header("Content-Type", "application/json")
+                            .header("X-Agent-Token", agentToken)
+                            .timeout(Duration.ofSeconds(10))
+                            .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8)).build(),
+                    HttpResponse.BodyHandlers.discarding());
+            return a.statusCode() < 300;
+        } catch (Exception e) {
+            return false;
         }
     }
 

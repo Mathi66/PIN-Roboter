@@ -25,13 +25,15 @@
 | Bestandsverwaltung | Konnektoren und Terminals erfassen, ändern, löschen (FA-GER-010/020) — läuft |
 | Geräte-Zugangsdaten | verschlüsselt in der Zentrale (AES-GCM), Abgrenzung zur PIN in ADR-0008 |
 | Bedienbarkeit bei 5.000 Geräten | Paginierung, Suche, Filter, Index stehen; Sortierung und Massenaktionen **fehlen** (FA-GER-060 teilweise) |
-| Automatische Terminal-Ermittlung | **nicht umgesetzt** (FA-GER-030, FA-GER-035) |
+| Automatische Terminal-Ermittlung | Agent ermittelt, Zentrale gleicht ab, Übernahme nur nach Bestätigung (FA-GER-030, FA-GER-035) |
+| Informationsmodell des Konnektors | wird gelesen und angezeigt; herstellerspezifisch und immer optional (NFA-QS-035) |
 | Mandantentrennung | im Datenmodell, **in der Oberfläche noch nicht nutzbar** |
 | Update-Manager | **nicht umgesetzt** |
 | Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
+| Protokollansicht | zeigt die 200 jüngsten Einträge; **Blättern in älteren fehlt** — der Excel-Export reicht weiter zurück |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-rund 8.000 Zeilen, **97 Modultests, 64 Systemnachweise**.
+rund 9.000 Zeilen, **110 Modultests, 77 Systemnachweise**.
 
 > **Unverändert offen und weiterhin der wichtigste Punkt:** Alle Nachweise
 > laufen gegen den selbstgebauten Simulator. Die in

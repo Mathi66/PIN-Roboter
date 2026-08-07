@@ -409,6 +409,56 @@ public class Bestandsverwaltung {
         return entschluesselnAus("SELECT admin_chiffrat FROM kartenterminal WHERE id=?", id);
     }
 
+    /**
+     * Übernimmt einen ermittelten Fund in den Bestand (FA-GER-030).
+     *
+     * <p>Nur nach ausdrücklicher Bestätigung durch einen Administrator — diese
+     * Methode wird nie selbsttätig aufgerufen.
+     *
+     * <p>Der Konnektor liefert keine Netzadresse des Terminals; die wird beim
+     * Übernehmen vom Administrator ergänzt oder bleibt zunächst leer. Deshalb
+     * ist {@code adresse} hier optional, anders als beim Anlegen von Hand.
+     */
+    public Ergebnis uebernehmen(Ermittlung.Fund fund, long konnektorId, String adresse) {
+        if (fund.bestandsId() != null) {
+            return Ergebnis.fehler("Das Kartenterminal „" + fund.terminalId()
+                    + "“ ist bereits erfasst. Doppelte Übernahme ist nicht möglich.");
+        }
+        var k = konnektor(konnektorId);
+        if (k.isEmpty()) {
+            return Ergebnis.fehler("Bitte einen Konnektor auswählen, dem das Gerät zugeordnet wird.");
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO kartenterminal (terminal_id, konnektor_id, organisation_id, bezeichnung,
+                    adresse, modell, firmware, hat_smcb, pevim_aktiv, kartenhandle, iccsn)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id""")) {
+            p.setString(1, fund.terminalId());
+            p.setLong(2, konnektorId);
+            p.setLong(3, k.get().organisationId());
+            p.setString(4, leer(fund.name()) ? fund.terminalId() : fund.name());
+            p.setString(5, leerZuNull(adresse));
+            p.setString(6, leerZuNull(fund.modell()));
+            p.setString(7, leerZuNull(fund.firmware()));
+            p.setBoolean(8, fund.hatSmcb());
+            // PEviM wird uebernommen, wie das Geraet es meldet - aber nur, wenn
+            // eine SMC-B steckt (A_24080). Der Konnektor kann beides melden;
+            // die Regel setzen wir durch, nicht er.
+            p.setBoolean(9, fund.pevimAktiv() && fund.hatSmcb());
+            p.setString(10, leerZuNull(fund.kartenhandle()));
+            p.setString(11, leerZuNull(fund.iccsn()));
+            try (ResultSet rs = p.executeQuery()) {
+                rs.next();
+                return Ergebnis.erfolg(rs.getLong(1));
+            }
+        } catch (SQLException e) {
+            if (String.valueOf(e.getMessage()).contains("kartenterminal_terminal_id_key")) {
+                return Ergebnis.fehler("Die Kennung „" + fund.terminalId()
+                        + "“ ist inzwischen von jemand anderem vergeben worden.");
+            }
+            return Ergebnis.fehler("Die Übernahme ist fehlgeschlagen: " + klartext(e));
+        }
+    }
+
     // --------------------------------------------------------- Organisationen
 
     /** Einrichtungen zur Auswahl, in hierarchischer Reihenfolge. */

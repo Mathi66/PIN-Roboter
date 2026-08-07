@@ -38,6 +38,7 @@ public class Zentrale {
     private final Speicherwaechter speicher;
     private final Demodaten demodaten;
     private final Bestandsverwaltung bestand;
+    private final Ermittlung ermittlung;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -79,6 +80,7 @@ public class Zentrale {
         this.demodaten = new Demodaten(db);
         this.bestand = new Bestandsverwaltung(db,
                 de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
+        this.ermittlung = new Ermittlung(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -312,6 +314,48 @@ public class Zentrale {
         // ------------------------------------------------------------ Bestand
         // FA-GER-010, FA-GER-020: Konnektoren und Kartenterminals erfassen.
         app.get("/bestand", c -> c.html(seite("bestand", bestandsSeite(c, null, false), angemeldeter(c))));
+
+        // FA-GER-030 / FA-GER-035: Vorschlagsliste aus der Ermittlung.
+        app.get("/bestand/ermittelt", c -> c.html(seite("bestand",
+                Bestandsseiten.ermitteltSeite(ermittlung.abgleich(), ermittlung.juengstesModell(),
+                        bestand.konnektoren(), null, false),
+                angemeldeter(c))));
+
+        app.post("/bestand/ermittelt/{id}/uebernehmen", c -> {
+            if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
+            long id = Long.parseLong(c.pathParam("id"));
+            var fund = ermittlung.fund(id);
+            if (fund.isEmpty()) {
+                c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
+                        ermittlung.juengstesModell(), bestand.konnektoren(),
+                        "Dieser Fund ist nicht mehr vorhanden. Bitte die Seite neu laden.", true),
+                        angemeldeter(c)));
+                return;
+            }
+            long konnektorId;
+            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
+            catch (NumberFormatException e) { konnektorId = -1; }
+
+            var e = bestand.uebernehmen(fund.get(), konnektorId, Anmeldeseiten.feld(c, "adresse"));
+            String meldung;
+            if (e.geklappt()) {
+                ermittlung.alsUebernommenMarkieren(id);
+                var t = bestand.terminal(e.id()).orElseThrow();
+                protokoll.anfuegen(t.organisation(), t.terminalId(),
+                        Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
+                        "Kartenterminal \u201e" + t.bezeichnung() + "\u201c aus der Ermittlung "
+                                + "in den Bestand \u00fcbernommen",
+                        t.adresse() == null ? "Die Adresse des Ger\u00e4ts ist noch nicht "
+                                + "hinterlegt \u2014 ohne sie ist keine Erreichbarkeitspr\u00fcfung "
+                                + "m\u00f6glich." : null);
+                meldung = "Kartenterminal \u201e" + t.bezeichnung() + "\u201c \u00fcbernommen.";
+            } else {
+                meldung = e.fehler();
+            }
+            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(),
+                    ermittlung.juengstesModell(), bestand.konnektoren(), meldung, !e.geklappt()),
+                    angemeldeter(c)));
+        });
 
         app.post("/bestand/konnektor", c -> {
             if (!istAdministrator(c)) { c.status(403).result("Nur Administratoren."); return; }
@@ -616,6 +660,34 @@ public class Zentrale {
         // authentifizierte WebSocket-Verbindung, ausgehend vom Agenten (ADR-0002).
         app.post("/api/agent/melden", this::agentMeldung);
         app.get("/api/agent/notaus", c -> c.json(Map.of("notAus", notAus)));
+
+        /**
+         * FA-GER-030 / FA-GER-035: Der Agent meldet, was er beim Konnektor
+         * vorgefunden hat. Die Zentrale legt den Befund ab und übernimmt
+         * <b>nichts</b> davon selbsttätig in den Bestand.
+         */
+        app.post("/api/agent/bestand", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            Map<String, Object> m = c.bodyAsClass(Map.class);
+
+            @SuppressWarnings("unchecked")
+            var terminals = (List<Map<String, Object>>) m.getOrDefault("terminals", List.of());
+            int n = ermittlung.aufnehmen(agent.id(), terminals);
+
+            boolean modellDa = Boolean.TRUE.equals(m.get("informationsmodellVerfuegbar"));
+            ermittlung.modellAblegen(agent.id(), modellDa,
+                    modellDa ? String.valueOf(m.get("informationsmodell")) : null);
+
+            int neu = ermittlung.neueAnzahl();
+            protokoll.anfuegen(agent.einrichtung(), null, Ereignisart.BESTAND_ERMITTELT, true,
+                    "Standort-Agent", null,
+                    "Bestand beim Konnektor ermittelt: %d Kartenterminal(s)%s".formatted(n,
+                            modellDa ? ", Informationsmodell gelesen"
+                                     : ", Informationsmodell nicht verfügbar"),
+                    neu == 0 ? null : neu + " Gerät(e) sind noch nicht erfasst. "
+                            + "Unter „Bestand → Ermittelte Geräte“ prüfen und übernehmen.");
+            c.json(Map.of("aufgenommen", n, "neu", neu));
+        });
 
         /**
          * FA-AGT-010: Ein Agent löst hier sein einmalig gültiges

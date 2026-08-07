@@ -45,7 +45,17 @@ public class Simulator {
         SSLContext ctx = TlsAufbau.serverKontext(kette);
         TlsAufbau.diagnose(ctx);
 
-        starteTls(8443, ctx, "/", new KonnektorSoap(zustand), "Konnektor (SOAP)");
+        HttpsServer konnektor = starteTls(8443, ctx, "/", new KonnektorSoap(zustand), "Konnektor (SOAP)");
+
+        // Webadmin-Schnittstelle: herstellerspezifisch, von niemandem
+        // spezifiziert, und deshalb immer optional (NFA-QS-035). Sie liegt auf
+        // demselben Port wie die Fachschnittstelle, aber unter eigenem Pfad -
+        // ein laengerer Kontextpfad gewinnt bei HttpServer gegen "/".
+        Informationsmodell modell = Informationsmodell.standardaufbau(zustand);
+        konnektor.createContext("/webadmin/informationsmodell",
+                ex -> TerminalVerwaltung.antworte(ex, 200, modell.alsJson()));
+        System.out.printf("  %-28s https://0.0.0.0:%d/webadmin/informationsmodell%n",
+                "Konnektor-Webadmin", 8443);
         starteTls(8444, ctx, "/api/", new TerminalVerwaltung(zustand), "Kartenterminal-Management");
         starteSteuerung(8480, zustand, kette);
 
@@ -63,8 +73,8 @@ public class Simulator {
         Thread.currentThread().join();
     }
 
-    private static void starteTls(int port, SSLContext ctx, String pfad,
-                                  HttpHandler handler, String bezeichnung) throws IOException {
+    private static HttpsServer starteTls(int port, SSLContext ctx, String pfad,
+                                         HttpHandler handler, String bezeichnung) throws IOException {
         HttpsServer server = HttpsServer.create(new InetSocketAddress(port), 0);
         server.setHttpsConfigurator(new HttpsConfigurator(ctx) {
             @Override public void configure(HttpsParameters params) {
@@ -77,6 +87,7 @@ public class Simulator {
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
         System.out.printf("  %-28s https://0.0.0.0:%d%n", bezeichnung, port);
+        return server;
     }
 
     /**

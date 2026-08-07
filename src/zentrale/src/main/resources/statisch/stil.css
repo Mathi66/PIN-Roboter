@@ -228,3 +228,17 @@ tr.stillgelegt { opacity:.6; }
 
 /* Ohne sichtbaren Fokus ist Tastaturbedienung unbrauchbar (WCAG 2.4.7). */
 :focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }
+
+/* Ermittelte Geräte: Übernahme direkt in der Zeile, damit der Blick nicht
+   zwischen Liste und Formular springen muss. */
+.uebernahme { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; margin:0; }
+.uebernahme select, .uebernahme input {
+  padding:.3rem .5rem; border:1px solid var(--rand); border-radius:6px;
+  background:var(--karte); color:var(--text); font:inherit; font-size:.85rem; max-width:11rem;
+}
+pre.modell {
+  background:var(--unbekannt-hg); border:1px solid var(--rand); border-radius:8px;
+  padding:.9rem 1rem; overflow-x:auto; font-size:.82rem; line-height:1.5; margin:.6rem 0 0;
+  white-space:pre-wrap; word-break:break-word;
+}
+.marke.warnung { background:var(--warnung-hg); color:var(--warnung); }

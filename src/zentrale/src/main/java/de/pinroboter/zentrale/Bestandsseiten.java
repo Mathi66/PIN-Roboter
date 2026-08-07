@@ -1,6 +1,7 @@
 package de.pinroboter.zentrale;
 
 import java.util.List;
+import java.util.Optional;
 
 import static de.pinroboter.zentrale.Zentrale.esc;
 
@@ -44,6 +45,10 @@ final class Bestandsseiten {
                     + "gespeichert werden. Ohne hinterlegtes Kennwort kann der Roboter sich "
                     + "später nicht selbsttätig anmelden.", "warnend"));
         }
+        s.append("""
+                <p class="unterzeile">
+                  <a class="knopf" href="/bestand/ermittelt">Ermittelte Geräte des Konnektors ansehen</a>
+                </p>""");
         s.append(konnektorTafel(konnektoren, organisationen));
         s.append(terminalTafel(terminals, konnektoren, suche, filterKonnektor));
         return s.toString();
@@ -310,6 +315,171 @@ final class Bestandsseiten {
                 </form></details>""".formatted(konnektorOptionen(konnektoren, null)));
 
         return s.append("</div>").toString();
+    }
+
+    // ------------------------------------------------- Ermittelte Geräte
+
+    /**
+     * Zeigt den Abgleich zwischen Konnektor und Bestand (FA-GER-030, FA-GER-035).
+     *
+     * <p>Die Seite ist eine <b>Vorschlagsliste</b>, keine Bestandsansicht. Jede
+     * Übernahme braucht einen Knopfdruck; nichts geschieht von selbst.
+     */
+    static String ermitteltSeite(List<Ermittlung.Fund> funde,
+                                 Optional<Ermittlung.Modell> modell,
+                                 List<Bestandsverwaltung.Konnektor> konnektoren,
+                                 String meldung, boolean istFehler) {
+        StringBuilder s = new StringBuilder("""
+                <h2>Ermittelte Geräte</h2>
+                <p class="unterzeile">Was der Standort-Agent beim Konnektor vorgefunden hat ·
+                   <a href="/bestand">&larr; Zum erfassten Bestand</a></p>
+                """);
+        if (meldung != null) {
+            s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
+        }
+
+        if (funde.isEmpty()) {
+            s.append("""
+                    <div class="tafel"><p class="leer">
+                      Noch keine Meldung eines Standort-Agenten. Der Agent fragt den Konnektor
+                      bei jedem Prüfdurchlauf ab und meldet, was er findet — sobald er
+                      verbunden ist, erscheinen die Geräte hier.
+                    </p></div>""");
+            return s.append(modellTafel(modell)).toString();
+        }
+
+        long neu = funde.stream().filter(f -> f.lage() == Ermittlung.Lage.NEU).count();
+        s.append("<div class=\"tafel\"><h3>Abgleich mit dem Bestand <span class=\"zaehler\">")
+         .append(funde.size()).append(" Gerät(e)");
+        if (neu > 0) s.append(", ").append(neu).append(" noch nicht erfasst");
+        s.append("</span></h3>");
+
+        s.append("""
+                <div class="hinweis">
+                  <strong>Es wird nichts von selbst übernommen.</strong> Diese Liste ist ein
+                  Vorschlag. Ein falsch konfigurierter oder zurückgesetzter Konnektor würde
+                  sonst einen gepflegten Bestand überschreiben — mit Zugangsdaten und
+                  Zuordnungen, die niemand wiederherstellen kann.
+                </div>
+                <div class="rollbar"><table>
+                <caption class="nurLeser">Beim Konnektor ermittelte Kartenterminals</caption>
+                <thead><tr>
+                  <th scope="col">Kennung</th><th scope="col">Name</th>
+                  <th scope="col">Modell / Firmware</th><th scope="col">SMC-B</th>
+                  <th scope="col">PEviM</th><th scope="col">Lage</th>
+                  <th scope="col">Zuletzt gesehen</th><th scope="col">Aktion</th>
+                </tr></thead><tbody>""");
+
+        for (var f : funde) {
+            s.append("""
+                    <tr>
+                      <td><code>%s</code></td><td>%s</td>
+                      <td class="klein">%s%s</td>
+                      <td>%s</td><td>%s</td>
+                      <td>%s%s</td>
+                      <td class="klein">%s</td>
+                      <td class="aktionen">%s</td>
+                    </tr>"""
+                    .formatted(esc(f.terminalId()), esc(nz(f.name())),
+                            esc(nz(f.modell())),
+                            f.firmware() == null ? "" : " / " + esc(f.firmware()),
+                            f.hatSmcb() ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>vorhanden</span>"
+                                        : "<span class=\"marke\">keine</span>",
+                            pevimMarke(f), lageMarke(f), abweichungsliste(f),
+                            esc(nz(f.gesehen())), uebernahmeKnopf(f, konnektoren)));
+        }
+        s.append("</tbody></table></div></div>");
+        return s.append(modellTafel(modell)).toString();
+    }
+
+    private static String uebernahmeKnopf(Ermittlung.Fund f,
+                                          List<Bestandsverwaltung.Konnektor> konnektoren) {
+        if (f.lage() != Ermittlung.Lage.NEU) {
+            return f.bestandsId() == null ? "—"
+                    : "<a class=\"knopf klein\" href=\"/bestand/terminal/" + f.bestandsId()
+                      + "\">Im Bestand ansehen</a>";
+        }
+        if (konnektoren.isEmpty()) {
+            return "<span class=\"klein\">Erst einen Konnektor erfassen</span>";
+        }
+        return """
+                <form method="post" action="/bestand/ermittelt/%d/uebernehmen" class="uebernahme">
+                  <label class="nurLeser" for="u-k-%d">Konnektor für %s</label>
+                  <select id="u-k-%d" name="konnektorId">%s</select>
+                  <label class="nurLeser" for="u-a-%d">Adresse für %s</label>
+                  <input id="u-a-%d" name="adresse" placeholder="Adresse (optional)" maxlength="200">
+                  <button class="knopf klein haupt" type="submit">Übernehmen</button>
+                </form>"""
+                .formatted(f.id(), f.id(), esc(f.terminalId()), f.id(),
+                        konnektorOptionen(konnektoren, null),
+                        f.id(), esc(f.terminalId()), f.id());
+    }
+
+    private static String pevimMarke(Ermittlung.Fund f) {
+        if (!f.pevimUnterstuetzt()) {
+            return "<span class=\"marke\" title=\"Dieses Modell unterstützt die automatische "
+                 + "PIN-Eingabe nicht (A_24074).\">nicht unterstützt</span>";
+        }
+        return f.pevimAktiv()
+                ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>aktiv</span>"
+                : "<span class=\"marke warnung\" title=\"Die Funktion muss direkt am Gerät "
+                  + "aktiviert werden (A_24076).\">nicht aktiviert</span>";
+    }
+
+    private static String lageMarke(Ermittlung.Fund f) {
+        String art = switch (f.lage()) {
+            case NEU          -> "warnung";
+            case BEKANNT      -> "ok";
+            case ABWEICHEND   -> "warnung";
+            case VERSCHWUNDEN -> "fehler";
+        };
+        return "<span class=\"marke " + art + "\" title=\"" + esc(f.lage().erklaerung) + "\">"
+                + esc(f.lage().anzeige) + "</span>";
+    }
+
+    private static String abweichungsliste(Ermittlung.Fund f) {
+        if (f.abweichungen().isEmpty()) {
+            return f.lage() == Ermittlung.Lage.VERSCHWUNDEN
+                    ? "<div class=\"handlung\">Prüfen, ob das Gerät abgebaut wurde. "
+                      + "Der Bestand wird nicht selbsttätig geändert.</div>"
+                    : "";
+        }
+        StringBuilder s = new StringBuilder("<div class=\"handlung\">");
+        for (String a : f.abweichungen()) s.append(esc(a)).append("<br>");
+        return s.append("</div>").toString();
+    }
+
+    private static String modellTafel(Optional<Ermittlung.Modell> modell) {
+        if (modell.isEmpty()) return "";
+        var m = modell.get();
+        if (!m.verfuegbar()) {
+            // NFA-QS-035: Faellt die herstellerspezifische Schnittstelle aus,
+            // muss die Oberflaeche auf die entfallende Unterstuetzung hinweisen -
+            // und darf nicht so tun, als fehle etwas Pflichtiges.
+            return """
+                    <div class="tafel"><h3>Informationsmodell des Konnektors</h3>
+                    <div class="anmeldeinhalt">%s
+                      <p class="hilfe">Diese Schnittstelle ist herstellerspezifisch und von der
+                         gematik nicht spezifiziert. Ohne sie funktioniert alles weiter — die
+                         Werte des Aufrufkontexts (Mandant, Clientsystem, Arbeitsplatz) sind
+                         dann von Hand einzutragen, statt zur Auswahl zu stehen.</p>
+                    </div></div>"""
+                    .formatted(Anmeldeseiten.meldung(
+                            "Das Informationsmodell ist derzeit nicht abrufbar. "
+                            + "Die Unterstützung beim Einrichten entfällt dadurch.", "warnend"));
+        }
+        return """
+                <div class="tafel"><h3>Informationsmodell des Konnektors
+                  <span class="zaehler">gelesen %s</span></h3>
+                <div class="anmeldeinhalt">
+                  <p class="hilfe">Aus diesen Werten setzt sich der Aufrufkontext zusammen
+                     (<code>TUC_KON_000</code>). Sie beim Erfassen eines Konnektors
+                     <strong>auszuwählen statt abzutippen</strong> beseitigt die häufigste
+                     Fehlerquelle bei der Inbetriebnahme: Ein Tippfehler zeigt sich später
+                     nur als unspezifischer Zugriffsfehler.</p>
+                  <pre class="modell">%s</pre>
+                </div></div>"""
+                .formatted(esc(nz(m.gesehen())), esc(nz(m.inhalt())));
     }
 
     // ------------------------------------------------------- Einzelbearbeitung

@@ -378,6 +378,45 @@ public class Datenbank implements AutoCloseable {
             CREATE INDEX kartenterminal_suche_idx
               ON kartenterminal (lower(bezeichnung), lower(coalesce(standortangabe,'')));
             """);
+
+        migration(11, """
+            -- Was der Agent beim Konnektor vorgefunden hat (FA-GER-030).
+            --
+            -- Streng getrennt vom erfassten Bestand: Diese Tabelle ist ein
+            -- BEFUND, keine Konfiguration. Nichts hier wird selbsttaetig in
+            -- den Bestand uebernommen - das verlangt FA-GER-030 ausdruecklich
+            -- ("Uebernahme erst nach ausdruecklicher Bestaetigung, nie
+            -- automatisch"). Waere es anders, koennte ein falsch
+            -- konfigurierter Konnektor den gepflegten Bestand ueberschreiben.
+            CREATE TABLE ermittelt_terminal (
+              id                BIGSERIAL PRIMARY KEY,
+              agent_id          BIGINT      REFERENCES agent(id) ON DELETE CASCADE,
+              terminal_id       TEXT        NOT NULL,
+              name              TEXT,
+              modell            TEXT,
+              firmware          TEXT,
+              erreichbar        BOOLEAN     NOT NULL DEFAULT FALSE,
+              pevim_unterstuetzt BOOLEAN    NOT NULL DEFAULT FALSE,
+              pevim_aktiv       BOOLEAN     NOT NULL DEFAULT FALSE,
+              hat_smcb          BOOLEAN     NOT NULL DEFAULT FALSE,
+              kartenhandle      TEXT,
+              iccsn             TEXT,
+              gesehen           TIMESTAMPTZ NOT NULL DEFAULT now(),
+              uebernommen_am    TIMESTAMPTZ,
+              UNIQUE (agent_id, terminal_id)
+            );
+
+            -- Das Informationsmodell des Konnektors (FA-GER-035). Als Text
+            -- abgelegt statt zerlegt: Es ist herstellerspezifisch, und ein
+            -- eigenes Schema dafuer waere eine Festlegung auf einen Hersteller,
+            -- bevor wir einen zweiten gesehen haben.
+            CREATE TABLE ermitteltes_modell (
+              agent_id     BIGINT      PRIMARY KEY REFERENCES agent(id) ON DELETE CASCADE,
+              verfuegbar   BOOLEAN     NOT NULL DEFAULT FALSE,
+              inhalt       TEXT,
+              gesehen      TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

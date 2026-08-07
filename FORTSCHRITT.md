@@ -678,3 +678,109 @@ Firmware und Massenaktionen (Gruppe zuweisen, Intervall setzen, aktivieren).
 Die Anforderung gilt damit als **teilweise erfüllt**, nicht als erledigt.
 
 ## Stand nach Iteration 12: 97 Modultests, 64 Systemnachweise — alle grün
+
+---
+
+# Iteration 13 — Bestandsermittlung über den Konnektor (FA-GER-030, FA-GER-035)
+
+Bis hierher musste jedes Gerät von Hand erfasst werden — mit abgetippter
+Terminal-Kennung und abgetipptem Aufrufkontext. Jetzt ermittelt der Roboter
+selbst, was am Konnektor hängt, und **schlägt es zur Übernahme vor**.
+
+## Warum der Agent das tut und nicht die Zentrale
+
+Der Konnektor steht im Praxisnetz. Nach ADR-0002 baut nur der Agent ausgehend
+auf, damit im Kundennetz keine Firewall-Freigaben nötig sind. Die Zentrale
+könnte den Konnektor also gar nicht erreichen — im zentralen Betriebsmodell
+erst recht nicht.
+
+Der Agent fragt bei jedem Prüfdurchlauf ab und meldet **nur, wenn sich etwas
+geändert hat**. Bei 5.000 Terminals im Minutentakt wäre eine vollständige
+Meldung je Zyklus rund 7 Millionen Datensätze am Tag — dieselbe Überlegung wie
+bei der Protokoll-Grundregel.
+
+## Die Regel, an der alles hängt
+
+**Es wird nichts selbsttätig übernommen.** Der Befund liegt in eigenen Tabellen,
+streng getrennt vom Bestand. Die Oberfläche zeigt vier Lagen:
+
+| Lage | Bedeutung |
+|---|---|
+| **neu erkannt** | Konnektor kennt es, Bestand nicht → Übernehmen anbieten |
+| **erfasst** | deckungsgleich |
+| **weicht ab** | erfasst, aber die Angaben unterscheiden sich → nur anzeigen |
+| **nicht mehr gemeldet** | im Bestand, Konnektor kennt es nicht mehr → nur anzeigen |
+
+Der Grund ist nicht Vorsicht um ihrer selbst willen: Ein zurückgesetzter
+Konnektor würde sonst einen gepflegten Bestand überschreiben — mit Zugangsdaten,
+Gruppenzuordnungen und Standortangaben, **die er selbst gar nicht kennt und die
+niemand wiederherstellen kann**.
+
+Am laufenden System nachgewiesen: PEviM am Gerät abgeschaltet → die Oberfläche
+meldet „PIN-Automatik: erfasst ‚ja', Gerät meldet ‚nein'", der Bestand bleibt
+unverändert.
+
+## Das Informationsmodell — der eigentliche Zeitgewinn
+
+Jeder Aufruf beim Konnektor braucht Mandanten-ID, Clientsystem-ID und
+Arbeitsplatz-ID. Abgetippt sind das die häufigsten Einrichtungsfehler überhaupt,
+weil ein Tippfehler sich nur als unspezifischer Zugriffsfehler zeigt. Jetzt
+werden die Werte ausgelesen und angezeigt.
+
+**Diese Schnittstelle ist herstellerspezifisch** und deshalb immer optional
+(NFA-QS-035). Fällt sie aus, weist die Oberfläche auf die entfallende
+Unterstützung hin, und alles bleibt von Hand erfassbar. Nichts hält an.
+
+Der Simulator bildet ein KoCo-artiges Modell nach — nach ADR-0007 eine
+**Annahme**, die beim ersten Hardwarekontakt zu prüfen ist. Absichtlich keine
+saubere Welt: ein Arbeitsplatz mit zwei Terminals, einer ganz ohne.
+
+## A_24080 auch hier
+
+Der Konnektor kann „PEviM aktiv" melden, obwohl keine SMC-B steckt. Beim
+Übernehmen wird das korrigiert. **Die Regel setzen wir durch, nicht der
+Konnektor.**
+
+## Ein Fehler, den erst der Vollauf gezeigt hat
+
+Der erste vollständige Nachweislauf meldete **12 ermittelte Terminals**, obwohl
+der Simulator nur vier hat. Grund: Das Prüfskript startet den Stack mehrfach,
+jeder Lauf registriert einen neuen Agenten — und die Funde wurden je Agent
+gespeichert.
+
+**Das ist kein Testartefakt.** Im Betrieb passiert dasselbe, sobald ein Agent neu
+installiert wird: Dubletten in der Liste, und Geräte erscheinen als „nicht mehr
+gemeldet", die längst ein anderer Agent betreut.
+
+Behoben: Je Terminal-Kennung zählt nur der jüngste Fund, und nur aktive Agenten
+werden berücksichtigt. Dazu ein zweiter Befund — die Modellanzeige nahm den
+„ersten" Agenten aus der Liste, was nach einem Austausch das Modell eines
+abgemeldeten Agenten zeigte. Jetzt gilt das zuletzt gemeldete.
+
+Beide haben eigene Tests bekommen. Wieder bestätigt: **Der Vollauf findet
+Fehler, die Modultests nicht sehen können** — weil erst er die Zeitachse und
+die Wiederholung mitbringt.
+
+## Eine Lücke, die dabei sichtbar wurde
+
+Die **Protokollansicht zeigt nur die 200 jüngsten Einträge** und kann nicht
+zurückblättern. Solange wenig passierte, fiel das nicht auf. Mit den neuen
+Ermittlungs- und Bestandsereignissen rutschen ältere Einträge jetzt schneller
+aus dem Blick — ein Nachweis, der einen Eintrag von vor zehn Minuten suchte,
+fand ihn nicht mehr.
+
+**Für ADR-0005 (Nachvollziehbarkeit) ist das relevant:** Der Excel-Export reicht
+weiter zurück, die Ansicht selbst nicht. Wer einen Vorgang von gestern
+nachvollziehen will, muss exportieren. Das ist keine gute Antwort und gehört
+behoben — Blättern in der Protokollansicht ist auf die Liste gesetzt, aber in
+dieser Iteration nicht umgesetzt.
+
+Die betroffenen Nachweise prüfen jetzt getrennt, ob ein Ereignis **im Protokoll
+steht** und ob es **in der Ansicht erscheint**. Damit misst der Nachweis, was er
+behauptet — und die Lücke ist sichtbar statt zufällig rot.
+
+## Stand nach Iteration 13: 110 Modultests, 77 Systemnachweise
+
+Im letzten Vollauf waren 76 von 77 grün; der eine Fehlschlag war der oben
+beschriebene Export-Nachweis, der inzwischen getrennt ist. **Diese Trennung ist
+noch nicht in einem Vollauf bestätigt** — sie geht in den nächsten Lauf.

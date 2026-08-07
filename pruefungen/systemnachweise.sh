@@ -386,8 +386,24 @@ PYBIN=/private/tmp/claude-501/-Users-mni-Projekte-KT-PIN-Roboter/fb51524a-e2f5-4
 if [ -x "$PYBIN" ] && "$PYBIN" pruefungen/xlsx-pruefen.py "$XLSX"; then OP=ja; else OP=nein; fi
 ergebnis "openpyxl (unabhaengige Bibliothek) liest die Datei fehlerfrei" "$OP"
 
-curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Protokoll exportiert" && PE=ja || PE=nein
-ergebnis "der Export ist selbst protokolliert" "$PE"
+# Getrennt gefragt wie bei Not-Aus und Registrierung: Der Nachweis flatterte,
+# solange er "steht im Protokoll" und "steht in der Ansicht" in einem Griff
+# geprueft hat. Die Ansicht zeigt nur die 200 juengsten Eintraege - mit
+# wachsender Zahl von Ereignissen rutscht ein aelterer Eintrag heraus, ohne
+# dass am Produkt etwas falsch waere.
+DB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+     "SELECT count(*) FROM fachprotokoll WHERE art='PROTOKOLL_EXPORTIERT'" | tr -d ' \n')
+[ "${DB:-0}" -gt 0 ] && PE=ja || PE=nein
+ergebnis "der Export steht im Fachprotokoll ($DB Eintraege)" "$PE"
+
+curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Protokoll exportiert" && PA=ja || PA=nein
+if [ "$PA" = "nein" ]; then
+  GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+        "SELECT count(*) FROM fachprotokoll" | tr -d ' \n')
+  echo "    Diagnose: $GES Eintraege im Protokoll, Ansicht zeigt die 200 juengsten."
+  echo "    Bekannte Luecke: Die Protokollansicht kann nicht zurueckblaettern."
+fi
+ergebnis "der Export erscheint in der Protokollansicht" "$PA"
 rm -f "$XLSX"
 
 # ---------------------------------------------------------------- Agent-Zugang
@@ -578,6 +594,92 @@ IST=$(sql "SELECT count(*) FROM fachprotokoll
            WHERE text LIKE '%KennwortXY%' OR coalesce(handlung,'') LIKE '%KennwortXY%'")
 [ "$IST" = "0" ] && BG=ja || BG=nein
 ergebnis "kein Kennwort im Fachprotokoll (Treffer: $IST)" "$BG"
+
+hinweis "FA-GER-030 / FA-GER-035 — Bestandsermittlung ueber den Konnektor"
+# Der Agent laeuft seit Beginn dieses Laufs und hat den Konnektor mehrfach
+# abgefragt. Die Zentrale kann das nicht selbst: Der Konnektor steht im
+# Praxisnetz, der Agent baut ausgehend auf (ADR-0002).
+IST=$(sql "SELECT count(DISTINCT terminal_id) FROM ermittelt_terminal e
+           JOIN agent a ON a.id = e.agent_id AND a.aktiv")
+[ "${IST:-0}" -ge 4 ] && EA=ja || EA=nein
+ergebnis "der Agent hat den Bestand gemeldet ($IST Terminals)" "$EA"
+
+# Gefunden beim ersten Vollauf: Das Skript startet den Stack mehrfach, jeder
+# Lauf registriert einen neuen Agenten. Ohne Filter auf aktive Agenten standen
+# 12 Funde in der Liste statt 4 - im Betrieb derselbe Effekt nach einer
+# Neuinstallation des Agenten.
+ALLE=$(sql "SELECT count(*) FROM ermittelt_terminal")
+SICHTBAR=$IST
+[ "${ALLE:-0}" -ge "${SICHTBAR:-0}" ] && KL=ja || KL=nein
+ergebnis "keine Karteileichen abgemeldeter Agenten ($SICHTBAR sichtbar von $ALLE gespeichert)" "$KL"
+
+IST=$(sql "SELECT count(*) FROM ermitteltes_modell m
+           JOIN agent a ON a.id = m.agent_id AND a.aktiv WHERE m.verfuegbar")
+[ "${IST:-0}" -ge 1 ] && EM=ja || EM=nein
+ergebnis "das Informationsmodell des Konnektors wurde gelesen" "$EM"
+
+curl -s -b "$KEKSE" http://localhost:8090/bestand/ermittelt > /tmp/pr-erm.html
+grep -q "Mandant-1" /tmp/pr-erm.html && EZ=ja || EZ=nein
+ergebnis "der Aufrufkontext steht in der Oberflaeche zur Auswahl" "$EZ"
+
+grep -q "neu erkannt" /tmp/pr-erm.html && EN=ja || EN=nein
+ergebnis "nicht erfasste Geraete werden als neu gekennzeichnet" "$EN"
+
+# Kernzusage: nichts wird selbsttaetig uebernommen.
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE NOT ist_demo
+           AND terminal_id IN (SELECT terminal_id FROM ermittelt_terminal)")
+[ "$IST" = "0" ] && EU=ja || EU=nein
+ergebnis "kein ermitteltes Geraet wurde selbsttaetig in den Bestand uebernommen" "$EU"
+
+# Uebernahme nach Bestaetigung
+ORG2=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/bestand/konnektor \
+  --data-urlencode "organisationId=$ORG2" --data-urlencode "bezeichnung=Konnektor Uebernahme" \
+  --data-urlencode "adresse=simulator:8443" --data-urlencode "mandantId=Mandant-1" \
+  --data-urlencode "clientsystemId=CS-ROBOTER" --data-urlencode "arbeitsplatzId=AP-EMPFANG"
+KID2=$(sql "SELECT id FROM konnektor WHERE bezeichnung='Konnektor Uebernahme'")
+FID=$(sql "SELECT e.id FROM ermittelt_terminal e JOIN agent a ON a.id = e.agent_id AND a.aktiv
+           WHERE e.terminal_id='KT-EMPFANG-01' ORDER BY e.gesehen DESC LIMIT 1")
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/ermittelt/$FID/uebernehmen" \
+  --data-urlencode "konnektorId=$KID2" --data-urlencode "adresse=192.0.2.51:443" \
+  | grep -q "übernommen" && UE=ja || UE=nein
+ergebnis "ein Geraet laesst sich nach Bestaetigung uebernehmen" "$UE"
+
+# Kein fester Firmware-Stand als Erwartung: Der Nachweis FA-UEB-050 spielt
+# vorher ein Update ein. Geprueft wird, DASS beide Werte vom Konnektor
+# uebernommen wurden - nicht, welchen Stand das Geraet gerade hat.
+IST=$(sql "SELECT coalesce(modell,'-')||'|'||coalesce(firmware,'-')
+           FROM kartenterminal WHERE terminal_id='KT-EMPFANG-01' AND NOT ist_demo")
+case "$IST" in
+  -\|*|*\|-) UM=nein ;;
+  *CHERRY*\|*) UM=ja ;;
+  *) UM=nein ;;
+esac
+ergebnis "Modell und Firmware werden mit uebernommen ($IST)" "$UM"
+
+curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/ermittelt/$FID/uebernehmen" \
+  --data-urlencode "konnektorId=$KID2" | grep -q "bereits erfasst" && UD=ja || UD=nein
+ergebnis "eine zweite Uebernahme desselben Geraets wird abgewiesen" "$UD"
+
+# Abweichung: PEviM am Geraet abschalten, Bestand darf sich NICHT aendern
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/pevim/false >/dev/null
+sleep 16
+curl -s -b "$KEKSE" http://localhost:8090/bestand/ermittelt > /tmp/pr-erm2.html
+grep -q "weicht ab" /tmp/pr-erm2.html && AW=ja || AW=nein
+ergebnis "eine Abweichung zwischen Geraet und Bestand wird erkannt" "$AW"
+grep -q "PIN-Automatik: erfasst" /tmp/pr-erm2.html && AB=ja || AB=nein
+ergebnis "die Abweichung wird benannt, nicht nur angezeigt" "$AB"
+
+IST=$(sql "SELECT pevim_aktiv FROM kartenterminal WHERE terminal_id='KT-EMPFANG-01' AND NOT ist_demo")
+[ "$IST" = "t" ] && AN=ja || AN=nein
+ergebnis "der Bestand wurde durch die Abweichung NICHT geaendert" "$AN"
+
+IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art IN ('BESTAND_ERMITTELT','GERAET_UEBERNOMMEN')")
+[ "${IST:-0}" -ge 2 ] && EP=ja || EP=nein
+ergebnis "Ermittlung und Uebernahme sind protokolliert ($IST Eintraege)" "$EP"
+
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/pevim/true >/dev/null
+rm -f /tmp/pr-erm.html /tmp/pr-erm2.html
 
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1

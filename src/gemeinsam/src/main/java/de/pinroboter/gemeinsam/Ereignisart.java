@@ -39,6 +39,12 @@ public enum Ereignisart {
     TERMINAL_GELOESCHT("Kartenterminal gelöscht", Stufe.SICHERHEIT),
     ERREICHBARKEIT_GEPRUEFT("Erreichbarkeit geprüft", Stufe.ROUTINE),
 
+    // Bestandsermittlung (FA-GER-030, FA-GER-035). Die Ermittlung selbst ist
+    // Routine; die Uebernahme in den Bestand ist es nicht - sie entscheidet
+    // darueber, welche Geraete ueberwacht werden.
+    BESTAND_ERMITTELT("Bestand beim Konnektor ermittelt", Stufe.ROUTINE),
+    GERAET_UEBERNOMMEN("Gerät aus der Ermittlung übernommen", Stufe.SICHERHEIT),
+
     GERAET_ERREICHBAR("Gerät wieder erreichbar", Stufe.ROUTINE),
     GERAET_NICHT_ERREICHBAR("Gerät nicht erreichbar", Stufe.ROUTINE),
     KONNEKTOR_NICHT_ERREICHBAR("Konnektor nicht erreichbar", Stufe.ROUTINE),
