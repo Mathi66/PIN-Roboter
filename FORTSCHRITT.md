@@ -1270,3 +1270,51 @@ fehlen könnte. Bei der Geräteliste mit 5.000 Einträgen wurde genau deshalb
 anders entschieden. Das steht so in der Umsetzungsbeschreibung.
 
 ## Stand: 182 Modultests, 138 Systemnachweise — alle grün
+
+
+---
+
+# Iteration 23 — Nachweise, Abhängigkeits-Scan, Umsetzungsstand
+
+## Der Abhängigkeits-Scan war unvollständig — Ursache gefunden
+
+Er erfasste 4 von 31 Abhängigkeiten. Ursache: `dependency:list` je Modul
+scheitert, solange die eigenen Module nicht im lokalen Repository liegen
+(`Could not find artifact de.pinroboter:gemeinsam`). Maven bricht für dieses
+Modul ab, und die Ausgabe enthält nur die Abhängigkeiten der Module, die vorher
+durchliefen.
+
+Behoben durch ein vorgeschaltetes `install`. Jetzt **31 Abhängigkeiten**, alle
+mit fester Version, Javalin und PostgreSQL-Treiber inbegriffen.
+
+Das Skript prüft seit dem letzten Durchgang **zuerst die Vollständigkeit** und
+meldet einen Fehlschlag, wenn Kernbibliotheken fehlen — ein Scan, der die Hälfte
+übersieht und Erfolg meldet, erzeugt eine Sicherheit, die es nicht gibt.
+
+## Neue Systemnachweise
+
+Anmeldebremse und Pseudonymisierung sind jetzt am laufenden System belegt:
+Fehlversuche werden gebremst, die Bremse protokolliert ihr Greifen (nicht jeden
+Versuch), keine Absenderadresse im Protokoll, eine richtige Anmeldung bleibt
+möglich. Und: 3 alte Einträge verlieren ihren Personenbezug, an ihre Stelle
+tritt eine Kennung, die Handlung bleibt vollständig.
+
+## Umsetzungsstand je Anforderung
+
+**docs/01a-umsetzungsstand.md** macht sichtbar, was belegt ist und was nicht —
+mit getrennten Zeichen für „am laufenden System nachgewiesen" und „nur
+Modultests". Von 84 Anforderungen sind **38 belegt**, 14 nur durch Modultests,
+14 teilweise, 18 nicht begonnen.
+
+Die drei wichtigsten Lücken, ehrlich benannt: die Kalibrierung an echter
+Hardware, der Ressourcenbedarf auf der Referenzhardware, und WCAG 2.2 AA ohne
+Prüfwerkzeug — dort ist die Anforderung nicht belegt, sondern behauptet.
+
+## Was der PO entscheiden muss
+
+**docs/ENTSCHEIDUNGEN-PO.md** fasst es zusammen: formale Freigabe von ADR-0006
+und ADR-0007, die Risikoentscheidung aus ADR-0008 (Geräte-Zugangsdaten in der
+Zentrale), die offene Frage zum Firmware-Bezugsweg — und der wichtigste Punkt:
+die Kalibrierung am Testaufbau, die wenig kostet und viel klärt.
+
+## Stand: 197 Modultests, 146 Systemnachweise — alle grün

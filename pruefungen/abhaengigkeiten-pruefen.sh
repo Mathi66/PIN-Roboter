@@ -18,13 +18,26 @@ hinweis() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 FEHLER=0
 
 hinweis "Abhaengigkeiten des PIN-Roboters"
-# Ueber ALLE Module aggregieren. Ein Lauf im Wurzelmodul listet nur die
-# Module selbst - beim ersten Anlauf standen hier zwei statt gut zwanzig
-# Eintraegen, und der Scan haette nichts geprueft.
+# Ueber ALLE Module aggregieren.
+#
+# Zwei Fallen, beide beim ersten Anlauf hineingetappt:
+#
+# 1. Ein Lauf im Wurzelmodul listet nur die Module selbst.
+# 2. dependency:list je Modul scheitert, solange die eigenen Module nicht im
+#    lokalen Repository liegen - "Could not find artifact de.pinroboter:
+#    gemeinsam". Maven bricht dann fuer dieses Modul ab, und die Ausgabe
+#    enthaelt nur die Abhaengigkeiten der Module, die vorher durchliefen.
+#    Ergebnis waren 4 statt gut 20 Eintraege.
+#
+# Deshalb: erst installieren, dann listen.
+echo "  Module ins lokale Repository legen ..."
+docker run --rm -v "$PWD":/p -v pinroboter-m2:/root/.m2 -w /p \
+  maven:3.9-eclipse-temurin-21 mvn -B -q install -DskipTests 2>&1 | grep -E "^\[ERROR\]" | head -3
+
 : > /tmp/pr-deps.txt
 for modul in gemeinsam zentrale agent simulator; do
   docker run --rm -v "$PWD":/p -v pinroboter-m2:/root/.m2 -w /p \
-    maven:3.9-eclipse-temurin-21 mvn -B -pl "src/$modul" -am dependency:list \
+    maven:3.9-eclipse-temurin-21 mvn -B -pl "src/$modul" dependency:list \
     -DincludeScope=runtime 2>/dev/null \
     | grep -oE '[a-z0-9._\-]+:[a-z0-9._\-]+:jar:[0-9][^: ]*' >> /tmp/pr-deps.txt
 done

@@ -1126,6 +1126,76 @@ for a in $ANDERE; do
     "UPDATE benutzer SET aktiv = TRUE WHERE id = $a" >/dev/null 2>&1
 done
 
+hinweis "NFA-SIC — Anmeldebremse und Pseudonymisierung"
+# Die Kontosperre schuetzt das einzelne Konto. Die Bremse schuetzt gegen den
+# aussichtsreicheren Angriff: viele Konten mit je einem naheliegenden Kennwort.
+VORHER=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ANMELDUNG_GEBREMST'")
+for i in 1 2 3 4 5 6 7 8; do
+  curl -s -o /dev/null -X POST http://localhost:8090/anmelden \
+    -d "benutzer=gibtesnicht$i&passwort=FalschesKennwortXY&code=000000"
+done
+NACHHER=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ANMELDUNG_GEBREMST'")
+[ "${NACHHER:-0}" -gt "${VORHER:-0}" ] && AB=ja || AB=nein
+ergebnis "wiederholte Fehlversuche eines Absenders werden gebremst" "$AB"
+
+# Nicht jeder Fehlversuch wird protokolliert - sonst waeren tausend Versuche
+# tausend Eintraege, und die Protokoll-Grundregel waere ausgehebelt.
+[ "${NACHHER:-0}" -le $((VORHER + 2)) ] && AF=ja || AF=nein
+ergebnis "die Bremse protokolliert das Greifen, nicht jeden Versuch ($VORHER -> $NACHHER)" "$AF"
+
+# Die Adresse ist ein personenbezogenes Datum und gehoert nicht ins Protokoll.
+IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ANMELDUNG_GEBREMST'
+           AND (text ~ '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'
+                OR coalesce(handlung,'') ~ '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')")
+[ "${IST:-1}" = "0" ] && AA=ja || AA=nein
+ergebnis "keine Absenderadresse im Protokoll (Treffer: $IST)" "$AA"
+
+# Die Anmeldung muss trotz Bremse weiter moeglich sein - eine harte Sperre
+# waere die schlechtere Wahl.
+rm -f "$KEKSE"
+anmelden
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/geraete)
+[ "$CODE" = "200" ] && AN=ja || AN=nein
+ergebnis "eine richtige Anmeldung bleibt trotz Bremse moeglich (HTTP $CODE)" "$AN"
+
+# Pseudonymisierung (Art. 17 DSGVO): alte Eintraege verlieren den Personenbezug.
+docker exec pr-db psql -U pinroboter -d pinroboter -c \
+  "SET pinroboter.rotation = 'an';
+   UPDATE fachprotokoll SET zeitpunkt = now() - interval '400 days'
+   WHERE ausloeser = 'Pruefung' AND id IN
+     (SELECT id FROM fachprotokoll WHERE ausloeser = 'Pruefung' ORDER BY id LIMIT 3);
+   SET pinroboter.rotation = 'aus';" >/dev/null 2>&1
+ALT=$(sql "SELECT count(*) FROM fachprotokoll
+           WHERE ausloeser = 'Pruefung' AND zeitpunkt < now() - interval '183 days'")
+echo "  $ALT Eintraege aelter als 183 Tage vorbereitet"
+
+# Die Zentrale pseudonymisiert beim Start und danach taeglich. Ein Neustart
+# holt Versaeumtes sofort nach.
+docker restart pr-zen >/dev/null 2>&1
+for _ in $(seq 60); do
+  curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1
+done
+sleep 35
+NOCH=$(sql "SELECT count(*) FROM fachprotokoll
+            WHERE ausloeser = 'Pruefung' AND zeitpunkt < now() - interval '183 days'")
+[ "${NOCH:-1}" = "0" ] && PS=ja || PS=nein
+ergebnis "alte Eintraege verlieren den Personenbezug ($ALT -> $NOCH)" "$PS"
+
+KENNUNG=$(sql "SELECT count(*) FROM fachprotokoll
+               WHERE ausloeser LIKE 'Person %' AND zeitpunkt < now() - interval '183 days'")
+[ "${KENNUNG:-0}" -ge 1 ] && PK=ja || PK=nein
+ergebnis "an ihre Stelle tritt eine Kennung ($KENNUNG Eintraege)" "$PK"
+
+# Die Handlung selbst muss vollstaendig erhalten bleiben - das ist der Kern.
+IST=$(sql "SELECT count(*) FROM fachprotokoll
+           WHERE ausloeser LIKE 'Person %' AND art IS NOT NULL AND text IS NOT NULL")
+[ "${IST:-0}" -ge 1 ] && PH=ja || PH=nein
+ergebnis "die Handlung bleibt vollstaendig nachvollziehbar" "$PH"
+
+IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='PROTOKOLL_PSEUDONYMISIERT'")
+[ "${IST:-0}" -ge 1 ] && PP=ja || PP=nein
+ergebnis "die Pseudonymisierung ist selbst protokolliert" "$PP"
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"
