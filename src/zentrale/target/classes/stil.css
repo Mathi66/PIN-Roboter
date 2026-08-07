@@ -126,3 +126,43 @@ code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
 @keyframes puls { 0%,100%{opacity:1} 50%{opacity:.25} }
 @media (prefers-reduced-motion: reduce) { .puls { animation:none; } }
 @media (max-width:760px) { main{padding:1rem} th,td{padding:.6rem .8rem} header{padding:.7rem 1rem} }
+
+/* ---------------------------------------------------- Anmeldung und Onboarding */
+body.anmeldeseite { display:grid; place-items:center; min-height:100vh; padding:1.5rem; }
+main.anmeldung { width:100%; max-width:480px; }
+main.anmeldung .tafel { margin:0; }
+.anmeldeinhalt { padding:1.4rem; }
+.anmeldeinhalt .unterzeile { margin-bottom:1.2rem; }
+
+form label {
+  display:block; margin:.9rem 0 .3rem; font-weight:560; font-size:.92rem;
+}
+form input[type=text], form input[type=password] {
+  width:100%; padding:.6rem .75rem; border:1px solid var(--rand); border-radius:8px;
+  background:var(--karte); color:var(--text); font:inherit;
+}
+form input:focus-visible { border-color:var(--akzent); }
+.feldhinweis { color:var(--gedaempft); font-size:.86rem; margin:.4rem 0 0; }
+.knopf.haupt {
+  margin-top:1.3rem; width:100%; padding:.65rem 1rem; background:var(--akzent);
+  color:#fff; border-color:var(--akzent); font-weight:600; text-align:center;
+  text-decoration:none; display:inline-block;
+}
+.knopf.haupt:hover { filter:brightness(1.1); color:#fff; }
+.hinweis.warnend {
+  background:var(--warnung-hg); border-left-color:var(--warnung); color:var(--text);
+}
+.schritte { padding-left:1.3rem; margin:1rem 0; }
+.schritte li { margin-bottom:1rem; }
+.geheimnis {
+  margin:.6rem 0; padding:.7rem .9rem; background:var(--unbekannt-hg);
+  border-radius:8px; text-align:center;
+}
+.geheimnis code {
+  font-size:1.05rem; letter-spacing:.08em; background:none; padding:0;
+  user-select:all;   /* ein Klick markiert alles — es wird abgetippt */
+}
+.angemeldet {
+  color:var(--gedaempft); font-size:.9rem; padding:.4rem .3rem .4rem .8rem;
+  border-left:1px solid var(--rand); margin-left:.4rem;
+}

@@ -306,3 +306,46 @@ schlecht gewählt.
 Die **Oberflächen-Integration** (Anmeldemaske, Onboarding-Assistent,
 Benutzerverwaltung als Seite) steht noch aus. Die Fachlogik ist fertig und
 geprüft, die Oberfläche ist noch ungeschützt.
+
+---
+
+# Iteration 5 — Die Oberfläche ist geschützt
+
+Bis hierher konnte jeder im Netz den Not-Aus drücken.
+
+## Umgesetzt
+
+- **Zugriffsschutz an einer Stelle**, als Sperre mit Ausnahmeliste. Eine neue
+  Seite ist damit von sich aus geschützt — andersherum wäre sie offen, bis
+  jemand daran denkt. Dasselbe Prinzip wie bei der Mandantentrennung.
+- **Anmeldemaske**, **Ersteinrichtungs-Assistent**, **TOTP-Einrichtung** mit
+  Schlüssel in Vierergruppen (er wird abgetippt) und `otpauth://`-Link
+- **Sitzungscookie** mit `HttpOnly` und `SameSite=Strict`
+- Anmeldungen, Fehlversuche und Kontoanlagen im Fachprotokoll — **nie das Passwort**
+
+## Zwei echte Befunde
+
+1. **HTMX-Antworten lieferten HTTP 200 ohne Sitzung.** Der Inhalt war leer, aber
+   ein 200 sagt „in Ordnung" und macht jeden Test darauf blind. Jetzt 401 mit
+   `HX-Redirect`.
+2. **Der Zugriffsschutz sperrte den Standort-Agenten aus.** Er fragt
+   `/api/notaus` ab, hat aber keine Sitzung — der Not-Aus erreichte ihn nicht
+   mehr. Die Agent-Pfade sind jetzt ausgenommen, **mit einem ausdrücklichen
+   Warnhinweis im Code**: Sie sind derzeit ungeschützt. Die richtige Lösung ist
+   die Agent-Registrierung (FA-AGT-010/020) — das ist die nächste
+   Sicherheitsaufgabe.
+
+## Drei Fehler im Prüfskript, keiner davon im Produkt
+
+- `curl -f` schlägt **nicht bei Umleitungen** an. Die Kontrolle, ob die Anmeldung
+  geklappt hat, war dadurch blind und meldete Erfolg bei einem 302.
+- Das Skript meldete sich mehrfach an und scheiterte am **Einmalcode-Schutz** —
+  der also nachweislich wirkt. Es prüft jetzt zuerst die vorhandene Sitzung.
+- Die Integrationstests hinterlassen Benutzer in derselben Datenbank; danach
+  griff die Ersteinrichtung nicht mehr. Die Datenbank wird jetzt frisch
+  aufgesetzt.
+
+Alle drei sind die Sorte Fehler, die eine Testsuite entwertet: Sie melden Erfolg
+oder Misserfolg aus Gründen, die mit dem Produkt nichts zu tun haben.
+
+## Stand: 16 Systemnachweise, 35 Modultests — alle grün

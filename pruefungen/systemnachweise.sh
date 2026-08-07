@@ -24,10 +24,57 @@ verifikationen() { docker logs pr-agt 2>&1 | grep -c "starte Verifikation"; }
 
 datenbank_starten() {
   docker rm -f pr-db >/dev/null 2>&1
+  docker volume rm pr-testdaten >/dev/null 2>&1
   docker run -d --name pr-db --network $NETZ --network-alias datenbank \
     -e POSTGRES_DB=pinroboter -e POSTGRES_USER=pinroboter -e POSTGRES_PASSWORD=test \
     -v pr-testdaten:/var/lib/postgresql/data postgres:17-alpine >/dev/null
   sleep 10
+}
+
+KEKSE=/tmp/pr-kekse.txt
+TOTP_GEHEIMNIS=""
+ADMIN_PW=RichtigPferdBatterieKlammer
+
+# Legt bei Bedarf das Administratorkonto an und meldet sich an.
+# Ab Iteration 5 ist die Oberfläche geschützt — ohne Sitzung kein Zugriff.
+# Legt bei Bedarf das Administratorkonto an und meldet sich an.
+# Ab Iteration 5 ist die Oberflaeche geschuetzt - ohne Sitzung kein Zugriff.
+#
+# Meldet sich nur an, wenn die vorhandene Sitzung nicht mehr gilt. Grund: Ein
+# verbrauchtes Einmalkennwort gilt kein zweites Mal (FA-BEN-020, gewollt), und
+# zwei Anmeldungen im selben 30-Sekunden-Fenster scheitern daran. Die Sitzung
+# liegt in der Datenbank und uebersteht einen Neustart der Zentrale - eine
+# erneute Anmeldung ist also fast nie noetig.
+anmelden() {
+  if [ -f "$KEKSE" ] && \
+     [ "$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/geraete)" = "200" ]; then
+    return 0
+  fi
+  rm -f "$KEKSE"
+
+  if curl -s http://localhost:8090/ersteinrichtung | grep -q "Administratorkonto"; then
+    A=$(curl -s -X POST http://localhost:8090/ersteinrichtung \
+        -d "benutzer=pruefadmin&anzeigename=Pruefung&passwort=$ADMIN_PW")
+    echo "$A" | grep -oE '<code>[A-Z2-7 ]+</code>' | sed 's/<[^>]*>//g' | tr -d ' ' > /tmp/pr-totp.txt
+    BID=$(echo "$A" | grep -oE 'name="benutzerId" value="[0-9]+"' | grep -oE '[0-9]+')
+    curl -s -o /dev/null -X POST http://localhost:8090/totp-bestaetigen \
+      -d "benutzerId=$BID&code=$(python3 pruefungen/totp.py "$(cat /tmp/pr-totp.txt)")"
+    # Die Bestaetigung hat den Code dieses Fensters verbraucht.
+    sleep 31
+  fi
+  TOTP_GEHEIMNIS=$(cat /tmp/pr-totp.txt)
+
+  for versuch in 1 2 3; do
+    curl -s -c "$KEKSE" -o /dev/null -X POST http://localhost:8090/anmelden \
+      -d "benutzer=pruefadmin&passwort=$ADMIN_PW&code=$(python3 pruefungen/totp.py "$TOTP_GEHEIMNIS")"
+    if [ "$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/geraete)" = "200" ]; then
+      return 0
+    fi
+    sleep 31   # naechstes Zeitfenster abwarten
+  done
+
+  echo "  ABBRUCH: Anmeldung im Pruefskript nach 3 Versuchen fehlgeschlagen." >&2
+  exit 2
 }
 
 stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
@@ -43,9 +90,11 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     -e DB_USER=pinroboter -e DB_PASSWORD=test \
     $JRE java -jar /app.jar >/dev/null
   for _ in $(seq 40); do
-    curl -sf http://localhost:8090/api/notaus >/dev/null 2>&1 && break
+    curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break
+    curl -sf -o /dev/null http://localhost:8090/ersteinrichtung 2>/dev/null && break
     sleep 1
   done
+  anmelden
   docker run -d --name pr-agt --network $NETZ \
     -v "$PWD/src/agent/target/agent.jar":/app.jar -v "$SEC":/sec:ro \
     -e KONNEKTOR_URL=https://simulator:8443/ -e TERMINAL_URL=https://simulator:8444/ \
@@ -75,6 +124,10 @@ if docker run --rm --network $NETZ -v "$PWD":/p -v pinroboter-m2:/root/.m2 -w /p
      maven:3.9-eclipse-temurin-21 mvn -B -q test >/tmp/pr-tests.log 2>&1; then T=ja; else T=nein; fi
 ergebnis "alle automatisierten Tests grün" "$T"
 [ "$T" = "nein" ] && tail -20 /tmp/pr-tests.log
+# Die Integrationstests legen Testbenutzer an. Fuer die folgenden Nachweise
+# wird ein frisches System gebraucht - sonst greift die Ersteinrichtung nicht.
+datenbank_starten
+rm -f "$KEKSE" /tmp/pr-totp.txt
 
 # ---------------------------------------------------------------- Durchstich
 hinweis "Durchstich — vollständige PEviM-Kette über Brainpool-TLS"
@@ -110,17 +163,19 @@ ergebnis "Wiederherstellung nach dem Update (gemessen: $((N-W)))" "$R"
 
 # ---------------------------------------------------------------- FA-PIN-050
 hinweis "FA-PIN-050 — Not-Aus hält die Automatik an"
-curl -s -X POST http://localhost:8090/notaus >/dev/null
+anmelden   # frische Sitzung, damit der Nachweis nicht an der Sitzungshistorie haengt
+C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" -X POST http://localhost:8090/notaus)
+echo "  POST /notaus -> HTTP $C, Zustand: $(curl -s http://localhost:8090/api/notaus)"
 sleep 5; V=$(verifikationen)
 curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
 sleep 22; W=$(verifikationen)
 [ $((W-V)) -eq 0 ] && E=ja || E=nein
 ergebnis "0 Versuche bei aktivem Not-Aus (gemessen: $((W-V)))" "$E"
-curl -s -X POST http://localhost:8090/notaus >/dev/null
+curl -s -b "$KEKSE" -X POST http://localhost:8090/notaus >/dev/null
 sleep 20; N=$(verifikationen)
 [ $((N-W)) -ge 1 ] && F=ja || F=nein
 ergebnis "Automatik läuft nach Aufhebung wieder (gemessen: $((N-W)))" "$F"
-curl -s http://localhost:8090/teil/protokoll | grep -q "Not-Aus" && G=ja || G=nein
+curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Not-Aus" && G=ja || G=nein
 ergebnis "Not-Aus ist protokolliert" "$G"
 
 # ---------------------------------------------------------------- FA-PRO-020
@@ -128,7 +183,7 @@ hinweis "FA-PRO-020 — keine Geheimnisse in Protokollen"
 GEHEIM=0
 for w in 123456 999999 654321; do
   docker logs pr-agt 2>&1 | grep -q "$w" && GEHEIM=$((GEHEIM+1))
-  curl -s http://localhost:8090/teil/protokoll | grep -q "$w" && GEHEIM=$((GEHEIM+1))
+  curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "$w" && GEHEIM=$((GEHEIM+1))
 done
 [ $GEHEIM -eq 0 ] && S=ja || S=nein
 ergebnis "keine PIN in Agent-Ausgabe oder Fachprotokoll (Treffer: $GEHEIM)" "$S"
@@ -156,8 +211,31 @@ T=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
 [ "$T" = "0" ] && I=ja || I=nein
 ergebnis "Fachprotokoll ist weder änderbar noch löschbar" "$I"
 
+# ---------------------------------------------------------------- Zugriffsschutz
+hinweis "FA-BEN-020 / NFA-SIC-050 — ohne Anmeldung kein Zugriff"
+OFFEN=0
+for pfad in / /geraete /protokoll /teil/geraete /teil/protokoll; do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090$pfad")
+  [ "$CODE" = "200" ] && OFFEN=$((OFFEN+1))
+done
+[ $OFFEN -eq 0 ] && Z=ja || Z=nein
+ergebnis "keine Oberflaechenseite ohne Sitzung erreichbar (offen: $OFFEN von 5)" "$Z"
+
+VORHER=$(curl -s -b "$KEKSE" http://localhost:8090/api/notaus)
+curl -s -o /dev/null -X POST http://localhost:8090/notaus     # ohne Sitzung
+NACHHER=$(curl -s -b "$KEKSE" http://localhost:8090/api/notaus)
+[ "$VORHER" = "$NACHHER" ] && K=ja || K=nein
+ergebnis "Not-Aus lässt sich ohne Anmeldung nicht auslösen" "$K"
+
+curl -s -b "$KEKSE" -o /dev/null -w "" -X POST http://localhost:8090/abmelden
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" http://localhost:8090/geraete)
+[ "$CODE" != "200" ] && AB=ja || AB=nein
+ergebnis "nach dem Abmelden ist die Sitzung serverseitig ungültig" "$AB"
+anmelden
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten >/dev/null 2>&1
+rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"
 hinweis "Ergebnis"
 [ $FEHLER -eq 0 ] && { echo "  Alle Systemnachweise bestanden."; exit 0; }
 echo "  $FEHLER Nachweis(e) fehlgeschlagen."; exit 1

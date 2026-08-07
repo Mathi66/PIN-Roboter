@@ -31,6 +31,14 @@ public enum Ereignisart {
     TERMINAL_AKTUALISIEREND("Terminal wird gerade aktualisiert", Stufe.ROUTINE),
 
     // --- Betrieb ---
+    ANMELDUNG_ERFOLGREICH("Anmeldung", Stufe.SICHERHEIT),
+    ANMELDUNG_FEHLGESCHLAGEN("Anmeldung fehlgeschlagen", Stufe.SICHERHEIT),
+    ABMELDUNG("Abmeldung", Stufe.ROUTINE),
+    BENUTZER_ANGELEGT("Benutzer angelegt", Stufe.SICHERHEIT),
+    BENUTZER_GEAENDERT("Benutzer geändert", Stufe.SICHERHEIT),
+    TOTP_EINGERICHTET("Zweiter Faktor eingerichtet", Stufe.SICHERHEIT),
+    TOTP_ZURUECKGESETZT("Zweiter Faktor zurückgesetzt", Stufe.SICHERHEIT),
+
     NOT_AUS_AUSGELOEST("Not-Aus ausgelöst", Stufe.SICHERHEIT),
     NOT_AUS_AUFGEHOBEN("Not-Aus aufgehoben", Stufe.SICHERHEIT),
     AGENT_VERBUNDEN("Standort-Agent verbunden", Stufe.ROUTINE),

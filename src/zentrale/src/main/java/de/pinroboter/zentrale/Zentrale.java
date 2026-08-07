@@ -26,6 +26,9 @@ public class Zentrale {
     private final Map<String, Geraetezustand> geraete = new ConcurrentHashMap<>();
     private final Fachprotokoll protokoll;
     private final Datenbank db;
+    private final Benutzerverwaltung benutzer;
+    /** Name der Sitzungs-Kennung im Cookie. */
+    private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
     private volatile Instant agentGesehen = null;
 
@@ -54,6 +57,7 @@ public class Zentrale {
     Zentrale(Datenbank db, long protokollHoechstzahl) {
         this.db = db;
         this.protokoll = new Fachprotokoll(db, protokollHoechstzahl);
+        this.benutzer = new Benutzerverwaltung(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -67,9 +71,143 @@ public class Zentrale {
             cfg.staticFiles.add(s -> { s.hostedPath = "/statisch"; s.directory = "/"; s.location = io.javalin.http.staticfiles.Location.CLASSPATH; });
         });
 
-        app.get("/",           c -> c.html(seite("uebersicht", uebersicht())));
-        app.get("/geraete",    c -> c.html(seite("geraete", geraeteSeite())));
-        app.get("/protokoll",  c -> c.html(seite("protokoll", protokollSeite(c))));
+        // ------------------------------------------------------------------
+        // Zugriffsschutz an EINER Stelle (FA-BEN-020, NFA-SIC-050).
+        //
+        // Bewusst als Sperre mit Ausnahmeliste, nicht als Schutz je Seite: Eine
+        // neue Seite ist damit von sich aus geschützt. Andersherum wäre sie
+        // offen, bis jemand daran denkt — und irgendwann denkt niemand daran.
+        // Dasselbe Prinzip wie bei der Mandantentrennung.
+        app.before(c -> {
+            String pfad = c.path();
+            // Schnittstellen des Standort-Agenten. Er ist kein Browser-Benutzer
+            // und hat keine Sitzung.
+            //
+            // ACHTUNG, offener Punkt: Diese Pfade sind derzeit UNGESCHÜTZT. Wer
+            // das Netz der Zentrale erreicht, kann Gerätezustände melden und den
+            // Not-Aus-Zustand auslesen. Die eigentliche Absicherung ist die
+            // Agent-Registrierung mit gegenseitig authentifizierter Verbindung
+            // (FA-AGT-010/020) — sie ist noch nicht umgesetzt und die nächste
+            // Sicherheitsaufgabe. Bis dahin darf die Zentrale nicht in einem
+            // Netz stehen, das über die Einrichtung hinausreicht.
+            if (pfad.startsWith("/statisch/")
+                    || pfad.equals("/api/melden") || pfad.equals("/api/notaus")) return;
+
+            if (benutzer.ersteinrichtungNoetig()) {
+                if (pfad.equals("/ersteinrichtung") || pfad.equals("/totp-bestaetigen")) return;
+                if (pfad.startsWith("/teil/") || pfad.startsWith("/api/")) {
+                    c.status(401).header("HX-Redirect", "/ersteinrichtung").result("");
+                    c.skipRemainingHandlers();
+                    return;
+                }
+                c.redirect("/ersteinrichtung");
+                c.skipRemainingHandlers();
+                return;
+            }
+            if (pfad.equals("/anmelden") || pfad.equals("/ersteinrichtung")
+                    || pfad.equals("/totp-bestaetigen")) return;
+
+            var angemeldet = benutzer.sitzungPruefen(c.cookie(SITZUNGSCOOKIE));
+            if (angemeldet.isEmpty()) {
+                if (pfad.startsWith("/api/")) {
+                    c.status(401).json(java.util.Map.of("fehler", "Nicht angemeldet"));
+                    c.skipRemainingHandlers();
+                    return;
+                }
+                if (pfad.startsWith("/teil/")) {
+                    // 401 statt 200: Der HX-Redirect-Header schickt den Browser
+                    // zur Anmeldung, der Statuscode sagt die Wahrheit.
+                    c.status(401).header("HX-Redirect", "/anmelden").result("");
+                }
+                else c.redirect("/anmelden");
+                c.skipRemainingHandlers();
+                return;
+            }
+            c.attribute("benutzer", angemeldet.get());
+        });
+
+        // ------------------------------------------------------------------ Anmeldung
+        app.get("/anmelden", c -> c.html(Anmeldeseiten.anmeldeformular(null)));
+
+        app.post("/anmelden", c -> {
+            String name = Anmeldeseiten.feld(c, "benutzer");
+            var ergebnis = benutzer.anmelden(name,
+                    Anmeldeseiten.passwortFeld(c, "passwort"), Anmeldeseiten.feld(c, "code"));
+
+            switch (ergebnis) {
+                case Benutzerverwaltung.Anmeldung.Erfolg e -> {
+                    setzeSitzungscookie(c, e.sitzung());
+                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_ERFOLGREICH,
+                            true, e.benutzer().anzeigename(), null,
+                            "Anmeldung erfolgreich", null);
+                    c.redirect("/");
+                }
+                case Benutzerverwaltung.Anmeldung.TotpEinrichten t ->
+                    c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(),
+                            "Bitte richten Sie zuerst den zweiten Faktor ein."));
+                case Benutzerverwaltung.Anmeldung.Gesperrt g -> {
+                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
+                            false, name, null, "Anmeldung bei gesperrtem Konto", null);
+                    c.html(Anmeldeseiten.anmeldeformular(g.meldung()));
+                }
+                case Benutzerverwaltung.Anmeldung.Abgelehnt a -> {
+                    // Der Benutzername wird protokolliert, das Passwort nie (FA-PRO-020).
+                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
+                            false, name.isBlank() ? "unbekannt" : name, null,
+                            "Anmeldung fehlgeschlagen", null);
+                    c.html(Anmeldeseiten.anmeldeformular(a.meldung()));
+                }
+            }
+        });
+
+        app.post("/abmelden", c -> {
+            benutzer.abmelden(c.cookie(SITZUNGSCOOKIE));
+            c.removeCookie(SITZUNGSCOOKIE, "/");
+            c.header("HX-Redirect", "/anmelden").redirect("/anmelden");
+        });
+
+        // ------------------------------------------------------------ Ersteinrichtung
+        app.get("/ersteinrichtung", c -> {
+            if (!benutzer.ersteinrichtungNoetig()) { c.redirect("/anmelden"); return; }
+            c.html(Anmeldeseiten.ersteinrichtung(null));
+        });
+
+        app.post("/ersteinrichtung", c -> {
+            if (!benutzer.ersteinrichtungNoetig()) { c.redirect("/anmelden"); return; }
+            var e = benutzer.anlegen(Anmeldeseiten.feld(c, "benutzer"),
+                    Anmeldeseiten.feld(c, "anzeigename"),
+                    Anmeldeseiten.passwortFeld(c, "passwort"),
+                    Benutzerverwaltung.Rolle.ADMINISTRATOR);
+            if (e instanceof Benutzerverwaltung.Anmeldung.TotpEinrichten t) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                        "Ersteinrichtung", null,
+                        "Erstes Administratorkonto angelegt: " + Anmeldeseiten.feld(c, "benutzer"), null);
+                c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(), null));
+            } else if (e instanceof Benutzerverwaltung.Anmeldung.Abgelehnt a) {
+                c.html(Anmeldeseiten.ersteinrichtung(a.meldung()));
+            }
+        });
+
+        app.post("/totp-bestaetigen", c -> {
+            long id = Long.parseLong(Anmeldeseiten.feld(c, "benutzerId"));
+            if (benutzer.totpBestaetigen(id, Anmeldeseiten.feld(c, "code"))) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_EINGERICHTET, true,
+                        "Benutzer " + id, null, "Zweiter Faktor eingerichtet", null);
+                c.html(Anmeldeseiten.rahmen("Einrichtung abgeschlossen", """
+                        <div class="hinweis"><strong>Der zweite Faktor ist eingerichtet.</strong>
+                        Sie können sich jetzt anmelden.</div>
+                        <a class="knopf haupt" href="/anmelden">Zur Anmeldung</a>"""));
+            } else {
+                c.html(Anmeldeseiten.rahmen("Einrichtung", Anmeldeseiten.meldung(
+                        "Der Code stimmt nicht. Bitte prüfen Sie die Uhrzeit Ihres Telefons "
+                        + "und versuchen Sie es mit dem nächsten Code erneut.", "warnend")
+                        + "<a class=\"knopf\" href=\"/anmelden\">Zurück</a>"));
+            }
+        });
+
+        app.get("/", c -> c.html(seite("uebersicht", uebersicht(), angemeldeter(c))));
+        app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(), angemeldeter(c))));
+        app.get("/protokoll", c -> c.html(seite("protokoll", protokollSeite(c), angemeldeter(c))));
         app.get("/teil/uebersicht", c -> c.html(uebersicht()));
         app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
         app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
@@ -164,6 +302,23 @@ public class Zentrale {
     }
 
     // ---------------------------------------------------------------- Ansichten
+
+    /**
+     * NFA-SIC-050: Die Sitzungskennung ist gegen Auslesen durch Skripte
+     * geschützt (HttpOnly) und wird bei seitenübergreifenden Anfragen nicht
+     * mitgeschickt (SameSite=Strict). Das Secure-Kennzeichen setzt der
+     * Reverse-Proxy in der Auslieferung; im Prototyp läuft die Oberfläche
+     * unverschlüsselt auf localhost.
+     */
+    private Benutzerverwaltung.Benutzer angemeldeter(Context c) {
+        Object o = c.attribute("benutzer");
+        return o instanceof Benutzerverwaltung.Benutzer b ? b : null;
+    }
+
+    private void setzeSitzungscookie(Context c, String kennung) {
+        c.header("Set-Cookie", SITZUNGSCOOKIE + "=" + kennung
+                + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + (8 * 3600));
+    }
 
     private String uebersicht() {
         var alle = geraete.values();
@@ -284,7 +439,15 @@ public class Zentrale {
     // ---------------------------------------------------------------- Rahmen
 
     private String seite(String aktiv, String inhalt) {
+        return seite(aktiv, inhalt, null);
+    }
+
+    private String seite(String aktiv, String inhalt, Benutzerverwaltung.Benutzer angemeldet) {
         String agentText = agentGesehen == null ? "kein Agent verbunden" : "Agent verbunden";
+        String benutzerBlock = angemeldet == null ? "" : """
+                <span class="angemeldet" title="Rolle: %s">%s</span>
+                <button class="knopf" hx-post="/abmelden">Abmelden</button>"""
+                .formatted(esc(angemeldet.rolle().anzeige()), esc(angemeldet.anzeigename()));
         return """
                 <!doctype html><html lang="de"><head><meta charset="utf-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -299,6 +462,7 @@ public class Zentrale {
                     <a href="/protokoll" %s>Protokoll</a>
                     <button class="knopf %s" hx-post="/notaus"
                       title="Hält die Automatik sofort an">%s</button>
+                    %s
                   </nav>
                 </header>
                 <main id="inhalt">
@@ -309,6 +473,7 @@ public class Zentrale {
                         aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
                         aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",
                         notAus ? "" : "warnend", notAus ? "Not-Aus aufheben" : "Not-Aus",
+                        benutzerBlock,
                         aktiv.equals("uebersicht") ? "" : "hx-disable", inhalt);
     }
 
