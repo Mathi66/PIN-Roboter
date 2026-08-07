@@ -75,6 +75,11 @@ services:
       ZENTRALE_URL:  "http://zentrale:8090/"
       CA_URL:        "http://simulator:8480/ca.pem"
       PRUEFINTERVALL_SEKUNDEN: "10"
+      # FA-AGT-010: Beim ersten Start loest der Agent dieses einmalig gueltige
+      # Geheimnis gegen ein dauerhaftes Token ein. Es wird in der Zentrale unter
+      # "Agenten" erzeugt. Nach der Registrierung kann der Eintrag entfallen.
+      REGISTRIERUNG: ${REGISTRIERUNG:-}
+      TOKEN_DATEI: "/daten/agent-token"
       MANDANT_ID: "Mandant1"
       CLIENTSYSTEM_ID: "PIN-Roboter"
       ARBEITSPLATZ_ID: "Arbeitsplatz1"
@@ -103,6 +108,7 @@ services:
   zentrale:  { condition: service_healthy }
 
 volumes:
+  agentdaten:
   # Betriebsdaten und Protokolldaten getrennt (ADR-0005): unterschiedliches
   # Wachstum, unterschiedliche Aufbewahrung, unterschiedliches Ausfallrisiko.
   betriebsdaten:

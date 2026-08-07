@@ -134,6 +134,31 @@ public class Datenbank implements AutoCloseable {
             );
             CREATE INDEX sitzung_benutzer_idx ON sitzung (benutzer_id);
             """);
+
+        migration(5, """
+            CREATE TABLE agent (
+              id            BIGSERIAL PRIMARY KEY,
+              bezeichnung   TEXT        NOT NULL,
+              einrichtung   TEXT        NOT NULL,
+              token_hash    TEXT        NOT NULL UNIQUE,
+              angelegt      TIMESTAMPTZ NOT NULL DEFAULT now(),
+              zuletzt_gesehen TIMESTAMPTZ,
+              aktiv         BOOLEAN     NOT NULL DEFAULT TRUE
+            );
+
+            -- Einmalig gueltiges, zeitlich begrenztes Registrierungsgeheimnis
+            -- (FA-AGT-010). Es wird verbraucht, nicht wiederverwendet: Ein
+            -- Geheimnis, das beliebig oft gilt, ist ein Dauerzugang.
+            CREATE TABLE registrierung (
+              geheimnis_hash TEXT        PRIMARY KEY,
+              bezeichnung    TEXT        NOT NULL,
+              einrichtung    TEXT        NOT NULL,
+              gueltig_bis    TIMESTAMPTZ NOT NULL,
+              verbraucht     TIMESTAMPTZ,
+              angelegt_von   TEXT        NOT NULL,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

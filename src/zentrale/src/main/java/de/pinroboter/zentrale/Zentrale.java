@@ -27,6 +27,7 @@ public class Zentrale {
     private final Fachprotokoll protokoll;
     private final Datenbank db;
     private final Benutzerverwaltung benutzer;
+    private final Agentenverwaltung agenten;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -58,6 +59,7 @@ public class Zentrale {
         this.db = db;
         this.protokoll = new Fachprotokoll(db, protokollHoechstzahl);
         this.benutzer = new Benutzerverwaltung(db);
+        this.agenten = new Agentenverwaltung(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -80,18 +82,26 @@ public class Zentrale {
         // Dasselbe Prinzip wie bei der Mandantentrennung.
         app.before(c -> {
             String pfad = c.path();
-            // Schnittstellen des Standort-Agenten. Er ist kein Browser-Benutzer
-            // und hat keine Sitzung.
-            //
-            // ACHTUNG, offener Punkt: Diese Pfade sind derzeit UNGESCHÜTZT. Wer
-            // das Netz der Zentrale erreicht, kann Gerätezustände melden und den
-            // Not-Aus-Zustand auslesen. Die eigentliche Absicherung ist die
-            // Agent-Registrierung mit gegenseitig authentifizierter Verbindung
-            // (FA-AGT-010/020) — sie ist noch nicht umgesetzt und die nächste
-            // Sicherheitsaufgabe. Bis dahin darf die Zentrale nicht in einem
-            // Netz stehen, das über die Einrichtung hinausreicht.
-            if (pfad.startsWith("/statisch/")
-                    || pfad.equals("/api/melden") || pfad.equals("/api/notaus")) return;
+            if (pfad.startsWith("/statisch/")) return;
+
+            // Registrierung eines neuen Agenten: Der Schutz liegt im
+            // Registrierungsgeheimnis selbst (einmalig gültig, zeitlich
+            // begrenzt), nicht in einer Sitzung — der Agent hat noch keine.
+            if (pfad.equals("/api/registrieren")) return;
+
+            // Schnittstellen des Standort-Agenten (FA-AGT-020). Er ist kein
+            // Browser-Benutzer und weist sich mit seinem Token aus.
+            if (pfad.startsWith("/api/agent/")) {
+                var agent = agenten.pruefeToken(kopfWert(c, "X-Agent-Token"));
+                if (agent.isEmpty()) {
+                    c.status(401).json(java.util.Map.of("fehler",
+                            "Kein gültiges Agent-Token. Bitte den Agenten neu registrieren."));
+                    c.skipRemainingHandlers();
+                    return;
+                }
+                c.attribute("agent", agent.get());
+                return;
+            }
 
             if (benutzer.ersteinrichtungNoetig()) {
                 if (pfad.equals("/ersteinrichtung") || pfad.equals("/totp-bestaetigen")) return;
@@ -224,8 +234,48 @@ public class Zentrale {
 
         // Meldeschnittstelle des Agenten. Im Produkt eine gegenseitig
         // authentifizierte WebSocket-Verbindung, ausgehend vom Agenten (ADR-0002).
-        app.post("/api/melden", this::agentMeldung);
-        app.get("/api/notaus", c -> c.json(Map.of("notAus", notAus)));
+        app.post("/api/agent/melden", this::agentMeldung);
+        app.get("/api/agent/notaus", c -> c.json(Map.of("notAus", notAus)));
+
+        /**
+         * FA-AGT-010: Ein Agent löst hier sein einmalig gültiges
+         * Registrierungsgeheimnis gegen ein dauerhaftes Token ein.
+         */
+        app.post("/api/registrieren", c -> {
+            String geheimnis = kopfWert(c, "X-Registrierung");
+            var ergebnis = agenten.registrieren(geheimnis);
+            if (ergebnis instanceof Agentenverwaltung.Registrierung.Erfolg e) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERT, true,
+                        "Registrierung", null,
+                        "Standort-Agent registriert (Nummer " + e.agentId() + ")", null);
+                c.json(Map.of("token", e.token(), "agentId", e.agentId()));
+            } else {
+                var a = (Agentenverwaltung.Registrierung.Abgelehnt) ergebnis;
+                // Fehlversuche werden protokolliert - sie sind ein Angriffshinweis.
+                protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERUNG_ABGELEHNT,
+                        false, "Registrierung", null, a.grund(),
+                        "Falls ein Agent eingerichtet werden soll, bitte ein neues "
+                        + "Registrierungsgeheimnis erzeugen.");
+                c.status(403).json(Map.of("fehler", a.grund()));
+            }
+        });
+
+        // Erzeugt ein Registrierungsgeheimnis. Nur für angemeldete Administratoren.
+        app.post("/agenten/geheimnis", c -> {
+            var angemeldet = angemeldeter(c);
+            if (angemeldet == null || angemeldet.rolle() != Benutzerverwaltung.Rolle.ADMINISTRATOR) {
+                c.status(403).result("Nur Administratoren dürfen Agenten einrichten.");
+                return;
+            }
+            String bez = Anmeldeseiten.feld(c, "bezeichnung");
+            String geheimnis = agenten.geheimnisAnlegen(
+                    bez.isBlank() ? "Standort-Agent" : bez, "Praxis", angemeldet.anzeigename());
+            protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,
+                    angemeldet.anzeigename(), null,
+                    "Registrierungsgeheimnis für \"" + bez + "\" erzeugt", null);
+            // Der Klartext erscheint genau einmal - danach ist nur der Hash gespeichert.
+            c.html(geheimnisAnzeige(geheimnis));
+        });
 
         app.start("0.0.0.0", port);
         System.out.println("""
@@ -310,6 +360,23 @@ public class Zentrale {
      * Reverse-Proxy in der Auslieferung; im Prototyp läuft die Oberfläche
      * unverschlüsselt auf localhost.
      */
+    private static String kopfWert(Context c, String name) {
+        String v = c.header(name);
+        return v == null ? "" : v.trim();
+    }
+
+    private String geheimnisAnzeige(String geheimnis) {
+        return """
+                <div class="hinweis">
+                  <strong>Registrierungsgeheimnis erzeugt</strong>
+                  Es gilt <b>einmalig</b> und läuft nach 24 Stunden ab.
+                  Tragen Sie es beim Standort-Agenten als <code>REGISTRIERUNG</code> ein.
+                  <div class="geheimnis"><code>%s</code></div>
+                  Dieser Wert wird <b>nicht noch einmal angezeigt</b>. Wenn er verloren
+                  geht, erzeugen Sie einfach ein neues.
+                </div>""".formatted(esc(geheimnis));
+    }
+
     private Benutzerverwaltung.Benutzer angemeldeter(Context c) {
         Object o = c.attribute("benutzer");
         return o instanceof Benutzerverwaltung.Benutzer b ? b : null;

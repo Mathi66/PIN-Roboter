@@ -349,3 +349,41 @@ Alle drei sind die Sorte Fehler, die eine Testsuite entwertet: Sie melden Erfolg
 oder Misserfolg aus Gründen, die mit dem Produkt nichts zu tun haben.
 
 ## Stand: 16 Systemnachweise, 35 Modultests — alle grün
+
+---
+
+# Iteration 6 — Der Agent muss sich ausweisen
+
+Die letzte große Lücke: Bis hierher konnte jeder, der das Netz der Zentrale
+erreichte, Gerätezustände melden.
+
+## Umgesetzt (FA-AGT-010 / FA-AGT-020)
+
+**Zwei Geheimnisse mit unterschiedlicher Lebensdauer:**
+
+| | Gültigkeit | Zweck |
+|---|---|---|
+| **Registrierungsgeheimnis** | **einmalig**, 24 Stunden | Erstanmeldung eines Agenten |
+| **Agent-Token** | dauerhaft bis Widerruf | laufender Betrieb |
+
+Ein Geheimnis, das beliebig oft gilt, ist ein Dauerzugang — genau das, was ein
+Registrierungsverfahren vermeiden soll. Deshalb wird es beim Einlösen verbraucht.
+
+Beide liegen **nur als Hash** in der Datenbank. Ein Datenbankauszug genügt damit
+nicht, um sich als Agent auszugeben. Verwendet wird SHA-256 statt Argon2: Die
+Werte sind 256 Bit aus einem sicheren Zufallsgenerator, nicht menschengewählt —
+gegen Zufall dieser Länge hilft kein Durchprobieren, und die Prüfung liegt auf
+dem heißen Pfad jeder Agentenmeldung.
+
+## Bewusste Entscheidung: Ohne Token arbeitet der Agent weiter
+
+Er überwacht und verifiziert eigenständig; nur die Meldungen an die Zentrale
+entfallen, und er sagt das deutlich. **Der TI-Zugang einer Praxis darf nicht
+daran hängen, dass eine Verwaltungsschicht erreichbar ist** (FA-AGT-030).
+
+## Nachgewiesen: 21 Systemnachweise
+
+Neu: Agent-Schnittstellen ohne Token gesperrt (3 von 3), erfundenes Geheimnis
+abgewiesen, gültiges einlösbar, dasselbe ein zweites Mal abgewiesen, abgelehnte
+Registrierungen protokolliert. Zusätzlich geprüft: Das Token überlebt einen
+Neustart des Agenten, eine erneute Registrierung ist nicht nötig.

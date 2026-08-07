@@ -95,8 +95,13 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     sleep 1
   done
   anmelden
+  # Ab Iteration 6 muss der Agent registriert sein (FA-AGT-010).
+  GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis \
+    -d "bezeichnung=Pruefagent" | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
+  docker volume rm pr-agentdaten >/dev/null 2>&1
   docker run -d --name pr-agt --network $NETZ \
-    -v "$PWD/src/agent/target/agent.jar":/app.jar -v "$SEC":/sec:ro \
+    -v "$PWD/src/agent/target/agent.jar":/app.jar -v "$SEC":/sec:ro -v pr-agentdaten:/daten \
+    -e REGISTRIERUNG="$GEHEIMNIS" \
     -e KONNEKTOR_URL=https://simulator:8443/ -e TERMINAL_URL=https://simulator:8444/ \
     -e ZENTRALE_URL=http://zentrale:8090/ -e CA_URL=http://simulator:8480/ca.pem \
     -e PRUEFINTERVALL_SEKUNDEN="$2" -e PIN_card_smcb_001="$1" \
@@ -165,7 +170,7 @@ ergebnis "Wiederherstellung nach dem Update (gemessen: $((N-W)))" "$R"
 hinweis "FA-PIN-050 — Not-Aus hält die Automatik an"
 anmelden   # frische Sitzung, damit der Nachweis nicht an der Sitzungshistorie haengt
 C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" -X POST http://localhost:8090/notaus)
-echo "  POST /notaus -> HTTP $C, Zustand: $(curl -s http://localhost:8090/api/notaus)"
+echo "  POST /notaus -> HTTP $C"
 sleep 5; V=$(verifikationen)
 curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
 sleep 22; W=$(verifikationen)
@@ -233,8 +238,36 @@ CODE=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" http://localhost:8090/
 ergebnis "nach dem Abmelden ist die Sitzung serverseitig ungültig" "$AB"
 anmelden
 
+# ---------------------------------------------------------------- Agent-Zugang
+hinweis "FA-AGT-010 / FA-AGT-020 — Agent-Registrierung und Token"
+OFFEN=0
+for pfad in /api/agent/melden /api/agent/notaus; do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090$pfad")
+  [ "$CODE" != "401" ] && OFFEN=$((OFFEN+1))
+done
+CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Agent-Token: erfunden" \
+       http://localhost:8090/api/agent/notaus)
+[ "$CODE" != "401" ] && OFFEN=$((OFFEN+1))
+[ $OFFEN -eq 0 ] && AG=ja || AG=nein
+ergebnis "Agent-Schnittstellen ohne gültiges Token gesperrt (offen: $OFFEN von 3)" "$AG"
+
+curl -s -X POST -H "X-Registrierung: erfunden" http://localhost:8090/api/registrieren \
+  | grep -q "Unbekanntes" && RG=ja || RG=nein
+ergebnis "erfundenes Registrierungsgeheimnis wird abgewiesen" "$RG"
+
+G2=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis -d "bezeichnung=Einmaltest" \
+     | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
+curl -s -X POST -H "X-Registrierung: $G2" http://localhost:8090/api/registrieren | grep -q "token" && E1=ja || E1=nein
+ergebnis "gültiges Geheimnis lässt sich einlösen" "$E1"
+curl -s -X POST -H "X-Registrierung: $G2" http://localhost:8090/api/registrieren \
+  | grep -q "bereits verwendet" && E2=ja || E2=nein
+ergebnis "dasselbe Geheimnis ein zweites Mal wird abgewiesen" "$E2"
+
+curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll | grep -q "Registrierung abgelehnt" && PR=ja || PR=nein
+ergebnis "abgelehnte Registrierungen werden protokolliert" "$PR"
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
-docker volume rm pr-testdaten >/dev/null 2>&1
+docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"
 hinweis "Ergebnis"
 [ $FEHLER -eq 0 ] && { echo "  Alle Systemnachweise bestanden."; exit 0; }

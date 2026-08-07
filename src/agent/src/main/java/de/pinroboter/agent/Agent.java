@@ -34,6 +34,7 @@ public class Agent {
     private final List<Verifikationsablauf.Meldung> gepuffert = new CopyOnWriteArrayList<>();
 
     private volatile boolean notAus = false;
+    private volatile String agentToken;
 
     public static void main(String[] args) throws Exception {
         BrainpoolFreischaltung.zustandAusgeben("vor anwenden");
@@ -61,6 +62,12 @@ public class Agent {
 
         Agent agent = new Agent(new KonnektorClient(http, URI.create(konnektorUrl), kontext),
                 http, URI.create(terminalUrl), URI.create(zentraleUrl));
+
+        // FA-AGT-010: Beim ersten Start loest der Agent sein einmalig gueltiges
+        // Registrierungsgeheimnis gegen ein dauerhaftes Token ein. Das Token
+        // liegt danach im Datenverzeichnis und wird nie wieder ausgegeben.
+        agent.agentToken = agent.tokenBesorgen(env("TOKEN_DATEI", "/daten/agent-token"),
+                                               System.getenv("REGISTRIERUNG"));
 
         // NFA-BET-010: Konfiguration ausschliesslich ueber Umgebungsvariablen.
         // Format: PIN_<kartenhandle mit - als _>=<wert>, z. B.
@@ -180,6 +187,62 @@ public class Agent {
         melden(meldung);
     }
 
+    /**
+     * Holt das Agent-Token: aus der Datei, sonst per Registrierung.
+     *
+     * <p>Ohne Token arbeitet der Agent weiter — er ueberwacht und verifiziert
+     * eigenstaendig (FA-AGT-030). Nur die Meldungen an die Zentrale entfallen.
+     * Der TI-Zugang einer Praxis darf nicht daran haengen, dass eine
+     * Verwaltungsschicht erreichbar ist.
+     */
+    String tokenBesorgen(String dateipfad, String registrierungsgeheimnis) {
+        java.nio.file.Path datei = java.nio.file.Path.of(dateipfad);
+        try {
+            if (java.nio.file.Files.exists(datei)) {
+                String t = java.nio.file.Files.readString(datei).trim();
+                if (!t.isBlank()) { System.out.println("  Agent-Token aus Datei geladen"); return t; }
+            }
+        } catch (Exception ignored) { }
+
+        if (registrierungsgeheimnis == null || registrierungsgeheimnis.isBlank()) {
+            System.out.println("""
+                      KEIN AGENT-TOKEN VORHANDEN.
+                      Die Ueberwachung laeuft weiter, aber es werden keine Zustaende an die
+                      Zentrale gemeldet. Bitte in der Zentrale ein Registrierungsgeheimnis
+                      erzeugen und als Umgebungsvariable REGISTRIERUNG eintragen.""");
+            return null;
+        }
+
+        try {
+            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/registrieren"))
+                    .header("X-Registrierung", registrierungsgeheimnis)
+                    .timeout(Duration.ofSeconds(15))
+                    .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (a.statusCode() != 200) {
+                System.out.println("  Registrierung abgelehnt: " + a.body());
+                return null;
+            }
+            var m = java.util.regex.Pattern.compile("\"token\"\\s*:\\s*\"([^\"]+)\"").matcher(a.body());
+            if (!m.find()) return null;
+            String token = m.group(1);
+            try {
+                java.nio.file.Files.createDirectories(datei.getParent());
+                java.nio.file.Files.writeString(datei, token);
+                java.nio.file.Files.setPosixFilePermissions(datei,
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+            } catch (Exception e) {
+                System.out.println("  Hinweis: Token konnte nicht gespeichert werden — "
+                        + "nach einem Neustart ist eine neue Registrierung noetig.");
+            }
+            System.out.println("  Registrierung erfolgreich, Token erhalten");
+            return token;
+        } catch (Exception e) {
+            System.out.println("  Registrierung nicht moeglich: " + e.getMessage());
+            return null;
+        }
+    }
+
     /** Sendet Zustand und gepufferte Ereignisse an die Zentrale. */
     private void melden(Map<String, Object> zustand) {
         List<Map<String, Object>> ereignisse = new ArrayList<>();
@@ -190,10 +253,12 @@ public class Agent {
         gepuffert.clear();
         zustand.put("ereignisse", ereignisse);
 
+        if (agentToken == null) return;   // ohne Token keine Meldung, aber Weiterbetrieb
         try {
             String json = alsJson(zustand);
-            http.send(HttpRequest.newBuilder(zentrale.resolve("/api/melden"))
+            http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/melden"))
                     .header("Content-Type", "application/json")
+                    .header("X-Agent-Token", agentToken)
                     .timeout(Duration.ofSeconds(10))
                     .POST(HttpRequest.BodyPublishers.ofString(json, StandardCharsets.UTF_8)).build(),
                     HttpResponse.BodyHandlers.discarding());
@@ -204,8 +269,10 @@ public class Agent {
     }
 
     private boolean notAusAbfragen() {
+        if (agentToken == null) return notAus;
         try {
-            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/notaus"))
+            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/notaus"))
+                    .header("X-Agent-Token", agentToken)
                     .timeout(Duration.ofSeconds(5)).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
             return a.body().contains("\"notAus\":true");
