@@ -56,13 +56,27 @@ nur für SMC-B).
 Protokolleinträge bis zur Rotation — die greift nach Speicherbudget, nicht nach
 Frist.
 
-> **Lücke, offen:** Es gibt **keine Löschfrist** für Protokolleinträge und keine
-> Funktion, einzelne Personenbezüge nachträglich zu entfernen. Das Fachprotokoll
-> ist absichtlich unveränderlich (`FA-PRO-010`) — genau das kollidiert mit einem
-> Löschbegehren nach Art. 17 DSGVO. **Der Konflikt ist real und ungelöst.**
-> Naheliegende Auflösung: eine Frist, nach der der Anzeigename im Protokoll
-> durch eine Kennung ersetzt wird (Pseudonymisierung statt Löschung), damit die
-> Nachvollziehbarkeit der *Handlung* bleibt. Nicht umgesetzt.
+> **Gelöst seit 07.08.2026: Pseudonymisierung statt Löschung.** Nach einer
+> konfigurierbaren Frist (Vorgabe **183 Tage**, `PSEUDONYM_FRIST_TAGE`) wird der
+> Anzeigename im Protokoll durch eine Kennung ersetzt:
+> `"Anna Beispiel"` → `"Person 7"`.
+>
+> Die **Handlung** bleibt vollständig nachvollziehbar — was geschah, wann, an
+> welchem Gerät, mit welchem Ergebnis. Verloren geht nur die Zuordnung zu einer
+> natürlichen Person, und genau das ist der Zweck.
+>
+> Eine Kennung statt eines leeren Feldes, weil sonst nicht mehr unterscheidbar
+> wäre, ob zwei Einträge von derselben Person stammen. Sie ist aus der
+> Benutzer-Kennung abgeleitet, nicht aus dem Namen.
+>
+> Rollen ohne Personenbezug (`System`, `Standort-Agent`, `Registrierung`)
+> bleiben unberührt. Die Frist lässt sich auf `0` setzen — das ist eine bewusste
+> Entscheidung des Betreibers und wird angezeigt.
+>
+> **Was das nicht ist:** ein Löschen auf Zuruf. Ein einzelnes Löschbegehren vor
+> Fristablauf lässt sich weiterhin nicht erfüllen — das Protokoll ist ein
+> Nachweis, und ein Nachweis mit Lücken ist keiner. Die Abwägung nach
+> Art. 17 Abs. 3 lit. b/e DSGVO obliegt dem Betreiber.
 
 ---
 
@@ -143,13 +157,24 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
    Zugriff über ein Netzsegment hinaus gehört ein TLS-Vermittler davor — nicht
    umgesetzt, nicht dokumentiert.
 3. **Keine Löschfrist / Pseudonymisierung im Protokoll** (Abschnitt 2).
-4. **Kein Abhängigkeits-Scan im Bauvorgang.** CLAUDE.md verlangt ihn. Die
-   Abhängigkeiten sind gepinnt, aber nicht automatisch auf Schwachstellen
-   geprüft.
-5. **Keine Begrenzung fehlgeschlagener Anmeldungen.** Fehlversuche werden
-   protokolliert, aber ein Konto wird nicht gesperrt und ein Absender nicht
-   gebremst. Bei TOTP als zweitem Faktor ist das Risiko begrenzt, aber es ist
-   eine Lücke.
+4. **Abhängigkeits-Scan: Skript vorhanden, Erfassung unvollständig.**
+   `pruefungen/abhaengigkeiten-pruefen.sh` prüft feste Versionen und gleicht
+   gegen die OSS-Index-Datenbank ab. **Es erfasst derzeit nur 4 von rund 20
+   Abhängigkeiten** — Javalin und der PostgreSQL-Treiber fehlen, weil
+   `dependency:list` sie in dieser Aufrufform nicht ausgibt. Das Skript meldet
+   das ausdrücklich als Fehlschlag, statt „bestanden" zu sagen: Ein Scan, der
+   die Hälfte übersieht und Erfolg meldet, erzeugt eine Sicherheit, die es nicht
+   gibt. **Zu beheben, bevor er als Nachweis zählt.**
+5. **Begrenzung fehlgeschlagener Anmeldungen: umgesetzt.** Neben der Kontosperre
+   bremst jetzt eine Absenderbremse (`Anmeldebremse`): Nach 5 Fehlversuchen
+   wächst die Antwortzeit, gedeckelt bei 30 Sekunden, Verfall nach 15 Minuten
+   ohne Fehlversuch. Bewusst **bremsen statt sperren** — eine harte Sperre träfe
+   eine ganze Praxis hinter einem gemeinsamen Anschluss, und ein Angreifer
+   könnte sie gezielt auslösen, um Personal auszusperren.
+   *Grenze:* Die Zählung liegt im Arbeitsspeicher, je Instanz. Ein Neustart
+   setzt sie zurück. Für eine Zentrale je Einrichtung angemessen; eine Ablage
+   in der Datenbank wäre ein Schreibvorgang je Anmeldeversuch — genau das, was
+   ein Angreifer auslösen möchte.
 6. **Kein Vier-Augen-Prinzip** für kritische Aktionen (PIN hinterlegen,
    Not-Aus aufheben). Nicht gefordert, aber in einer Klinik erwägbar.
 7. **Der Not-Aus wirkt instanzweit, nicht je Einrichtung.** Bei mehreren

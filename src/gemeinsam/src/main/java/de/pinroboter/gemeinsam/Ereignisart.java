@@ -65,6 +65,8 @@ public enum Ereignisart {
     DEMODATEN_ANGELEGT("Demodatensatz angelegt", Stufe.SICHERHEIT),
     DEMODATEN_GELOESCHT("Demodatensatz entfernt", Stufe.SICHERHEIT),
     PROTOKOLL_ROTIERT("Protokoll rotiert", Stufe.SICHERHEIT),
+    PROTOKOLL_PSEUDONYMISIERT("Protokoll pseudonymisiert", Stufe.SICHERHEIT),
+    ANMELDUNG_GEBREMST("Anmeldeversuche gebremst", Stufe.SICHERHEIT),
 
     ALARM_AUSGELOEST("Alarm ausgelöst", Stufe.ROUTINE),
     ALARM_BEHOBEN("Alarm behoben", Stufe.ROUTINE),

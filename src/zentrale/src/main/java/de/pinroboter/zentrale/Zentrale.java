@@ -41,6 +41,8 @@ public class Zentrale {
     private final Ermittlung ermittlung;
     private final Lasterzeuger last;
     private final Einladungen einladungen;
+    private final Anmeldebremse bremse = new Anmeldebremse();
+    private final Pseudonymisierung pseudonym;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -85,6 +87,8 @@ public class Zentrale {
         this.ermittlung = new Ermittlung(db);
         this.last = new Lasterzeuger(db);
         this.einladungen = new Einladungen(db, benutzer);
+        this.pseudonym = new Pseudonymisierung(db, protokoll,
+                Pseudonymisierung.fristAusUmgebung());
     }
 
     private static String env(String name, String vorgabe) {
@@ -180,11 +184,23 @@ public class Zentrale {
 
         app.post("/anmelden", c -> {
             String name = Anmeldeseiten.feld(c, "benutzer");
+            String absender = c.ip();
+
+            // Bremse VOR der Pruefung: Wer schon auffaellig war, wartet - und
+            // zwar unabhaengig davon, ob dieses Kennwort stimmt. Sonst liesse
+            // sich die Bremse durch einen bekannten Treffer zuruecksetzen.
+            var warten = bremse.wartezeit(absender);
+            if (!warten.isZero()) {
+                try { Thread.sleep(warten.toMillis()); }
+                catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+
             var ergebnis = benutzer.anmelden(name,
                     Anmeldeseiten.passwortFeld(c, "passwort"), Anmeldeseiten.feld(c, "code"));
 
             switch (ergebnis) {
                 case Benutzerverwaltung.Anmeldung.Erfolg e -> {
+                    bremse.erfolg(absender);
                     setzeSitzungscookie(c, e.sitzung());
                     protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_ERFOLGREICH,
                             true, e.benutzer().anzeigename(), null,
@@ -195,11 +211,13 @@ public class Zentrale {
                     c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(),
                             "Bitte richten Sie zuerst den zweiten Faktor ein."));
                 case Benutzerverwaltung.Anmeldung.Gesperrt g -> {
+                    zaehleFehlversuch(absender, name);
                     protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
                             false, name, null, "Anmeldung bei gesperrtem Konto", null);
                     c.html(Anmeldeseiten.anmeldeformular(g.meldung()));
                 }
                 case Benutzerverwaltung.Anmeldung.Abgelehnt a -> {
+                    zaehleFehlversuch(absender, name);
                     // Der Benutzername wird protokolliert, das Passwort nie (FA-PRO-020).
                     protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
                             false, name.isBlank() ? "unbekannt" : name, null,
@@ -1013,6 +1031,9 @@ public class Zentrale {
                 """.formatted(port, speicher.zustand().eintraege(),
                         speicher.zustand().belegtLesbar(), speicher.zustand().budgetLesbar()));
 
+        // Art. 17 DSGVO: Der Personenbezug im Protokoll verfaellt nach Frist.
+        pseudonym.starten();
+
         // FA-PRO-070: Der Füllstand wird regelmäßig geprüft, nicht nur beim
         // Schreiben. Ein Protokoll, das nachts vollläuft, muss auch nachts
         // rotieren.
@@ -1327,6 +1348,32 @@ public class Zentrale {
             case "ohne-totp" -> !b.totpBestaetigt();
             default          -> true;
         };
+    }
+
+    /**
+     * Vermerkt einen Fehlversuch für die Absenderbremse.
+     *
+     * <p>Protokolliert wird erst, wenn die Bremse <b>greift</b> — nicht jeder
+     * einzelne Fehlversuch. Sonst wäre ein Angriff mit tausend Versuchen
+     * gleichbedeutend mit tausend Protokolleinträgen, und genau das würde die
+     * Protokoll-Grundregel aushebeln: Zustandsänderungen protokollieren, keine
+     * Abfragen.
+     *
+     * <p>Die Adresse selbst steht <b>nicht</b> im Protokoll. Sie ist ein
+     * personenbezogenes Datum, und für die Aussage „hier läuft etwas
+     * Auffälliges" wird sie nicht gebraucht.
+     */
+    private void zaehleFehlversuch(String absender, String benutzername) {
+        boolean vorherFrei = !bremse.gebremst(absender);
+        int n = bremse.fehlversuch(absender);
+        if (vorherFrei && bremse.gebremst(absender)) {
+            protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_GEBREMST, false,
+                    "System", null,
+                    "Anmeldeversuche von einem Absender werden gebremst (%d Fehlversuche)"
+                            .formatted(n),
+                    "Weitere Versuche dieses Absenders werden zunehmend verzögert. "
+                    + "Bei anhaltenden Versuchen prüfen, ob ein Angriff vorliegt.");
+        }
     }
 
     /** Ein nicht angekreuztes Kästchen wird vom Browser gar nicht gesendet. */

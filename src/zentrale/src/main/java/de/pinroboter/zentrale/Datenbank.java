@@ -496,6 +496,35 @@ public class Datenbank implements AutoCloseable {
               ON einladung (lower(benutzername)) WHERE verbraucht IS NULL;
             CREATE INDEX einladung_org_idx ON einladung (organisation_id);
             """);
+
+        migration(14, """
+            -- Korrektur am Schutz des Fachprotokolls.
+            --
+            -- Der Trigger gab im privilegierten Fall RETURN OLD zurueck. Bei
+            -- einem BEFORE DELETE ist das richtig; bei einem BEFORE UPDATE
+            -- bedeutet es aber, dass die Aenderung STILLSCHWEIGEND VERWORFEN
+            -- wird - kein Fehler, keine Meldung, nur keine Wirkung.
+            --
+            -- Aufgefallen ist es bei der Pseudonymisierung (Art. 17 DSGVO):
+            -- Sie lief durch, meldete geaenderte Zeilen, und das Protokoll war
+            -- unveraendert. Die Rotation war nie betroffen, weil sie loescht.
+            CREATE OR REPLACE FUNCTION fachprotokoll_unveraenderlich()
+            RETURNS TRIGGER AS $$
+            BEGIN
+              IF current_setting('pinroboter.rotation', true) = 'an' THEN
+                -- Bei DELETE muss OLD zurueck, bei UPDATE NEW. Sonst greift
+                -- die Aenderung nicht.
+                IF TG_OP = 'DELETE' THEN
+                  RETURN OLD;
+                ELSE
+                  RETURN NEW;
+                END IF;
+              END IF;
+              RAISE EXCEPTION
+                'Das Fachprotokoll ist nur anfuegbar. Aenderung oder Loeschung einzelner Eintraege ist unzulaessig.';
+            END;
+            $$ LANGUAGE plpgsql;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {
