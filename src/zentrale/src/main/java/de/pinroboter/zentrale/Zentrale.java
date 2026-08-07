@@ -28,6 +28,7 @@ public class Zentrale {
     private final Datenbank db;
     private final Benutzerverwaltung benutzer;
     private final Agentenverwaltung agenten;
+    private final Gruppenverwaltung gruppen;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -60,6 +61,7 @@ public class Zentrale {
         this.protokoll = new Fachprotokoll(db, protokollHoechstzahl);
         this.benutzer = new Benutzerverwaltung(db);
         this.agenten = new Agentenverwaltung(db);
+        this.gruppen = new Gruppenverwaltung(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -296,6 +298,9 @@ public class Zentrale {
         Geraetezustand g = geraete.computeIfAbsent(id, k -> {
             Geraetezustand neu = new Geraetezustand();
             neu.terminalId = k;
+            // Neu erkannte Geräte landen in der Vorgabegruppe (FA-GER-050),
+            // damit sie überwacht werden, bevor jemand sie zuordnet.
+            gruppen.geraetSicherstellen(k, "Praxis", String.valueOf(m.get("name")));
             protokoll.anfuegen("Praxis", k, Ereignisart.GERAET_ERKANNT, true, "Automatik", null,
                     "Kartenterminal erstmals erkannt", null);
             return neu;
@@ -360,6 +365,64 @@ public class Zentrale {
      * Reverse-Proxy in der Auslieferung; im Prototyp läuft die Oberfläche
      * unverschlüsselt auf localhost.
      */
+    private boolean istAdministrator(Context c) {
+        var b = angemeldeter(c);
+        return b != null && b.rolle() == Benutzerverwaltung.Rolle.ADMINISTRATOR;
+    }
+
+    private String gruppenSeite(String fehler) {
+        return """
+                <h2>Gerätegruppen</h2>
+                <p class="unterzeile">
+                  Gruppen tragen das Prüfintervall — und später die Zeitfenster für
+                  Firmware-Updates. Neu erkannte Geräte landen zunächst in der Vorgabegruppe.
+                </p>
+                %s
+                <div class="tafel">
+                  <h3>Neue Gruppe</h3>
+                  <div class="filter">
+                    <form method="post" action="/gruppen" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end">
+                      <div><label for="bez">Bezeichnung</label>
+                        <input id="bez" name="bezeichnung" type="text" required
+                               placeholder="z. B. Notaufnahme"></div>
+                      <div><label for="iv">Prüfintervall (Sekunden)</label>
+                        <input id="iv" name="intervall" type="text" inputmode="numeric"
+                               value="60" size="6"></div>
+                      <button class="knopf" type="submit">Anlegen</button>
+                    </form>
+                  </div>
+                </div>
+                <div class="tafel"><h3>Gruppen</h3>
+                  <div id="gruppen" hx-get="/teil/gruppen" hx-trigger="every 10s" hx-swap="innerHTML">%s</div>
+                </div>"""
+                .formatted(fehler == null ? "" : Anmeldeseiten.meldung(fehler, "warnend"),
+                           gruppenTabelle());
+    }
+
+    private String gruppenTabelle() {
+        var liste = gruppen.alle("Praxis");
+        StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>"
+                + "<th>Gruppe</th><th>Geräte</th><th>Prüfintervall</th><th></th>"
+                + "</tr></thead><tbody>");
+        for (var g : liste) {
+            s.append("""
+                    <tr><td class="geraet">%s%s</td><td>%d</td>
+                    <td><form method="post" action="/gruppen/%d/intervall"
+                              style="display:flex;gap:.4rem;align-items:center">
+                          <input name="intervall" type="text" inputmode="numeric" size="5" value="%d">
+                          <span class="feldhinweis">s</span>
+                          <button class="knopf" type="submit">Speichern</button></form></td>
+                    <td>%s</td></tr>"""
+                    .formatted(esc(g.bezeichnung()),
+                            g.istVorgabe() ? " <span class=\"marke unbekannt\">Vorgabe</span>" : "",
+                            g.geraetezahl(), g.id(), g.pruefintervallSekunden(),
+                            g.istVorgabe() ? "" :
+                              ("<form method=\"post\" action=\"/gruppen/" + g.id() + "/loeschen\">"
+                               + "<button class=\"knopf warnend\" type=\"submit\">Löschen</button></form>")));
+        }
+        return s.append("</tbody></table></div>").toString();
+    }
+
     private static String kopfWert(Context c, String name) {
         String v = c.header(name);
         return v == null ? "" : v.trim();
@@ -526,6 +589,7 @@ public class Zentrale {
                   <nav aria-label="Hauptnavigation">
                     <a href="/" %s>Übersicht</a>
                     <a href="/geraete" %s>Kartenterminals</a>
+                    <a href="/gruppen" %s>Gruppen</a>
                     <a href="/protokoll" %s>Protokoll</a>
                     <button class="knopf %s" hx-post="/notaus"
                       title="Hält die Automatik sofort an">%s</button>
@@ -538,6 +602,7 @@ public class Zentrale {
                 .formatted(esc(agentText),
                         aktiv.equals("uebersicht") ? "aria-current=\"page\"" : "",
                         aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
+                        aktiv.equals("gruppen") ? "aria-current=\"page\"" : "",
                         aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",
                         notAus ? "" : "warnend", notAus ? "Not-Aus aufheben" : "Not-Aus",
                         benutzerBlock,

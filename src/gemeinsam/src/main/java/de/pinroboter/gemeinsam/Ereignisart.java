@@ -23,6 +23,10 @@ public enum Ereignisart {
 
     // --- Geräte und Verbindungen ---
     GERAET_ERKANNT("Gerät erkannt", Stufe.ROUTINE),
+    GERAET_ZUGEORDNET("Gerät einer Gruppe zugeordnet", Stufe.ROUTINE),
+    GRUPPE_ANGELEGT("Gerätegruppe angelegt", Stufe.ROUTINE),
+    GRUPPE_GEAENDERT("Gerätegruppe geändert", Stufe.ROUTINE),
+    GRUPPE_GELOESCHT("Gerätegruppe gelöscht", Stufe.ROUTINE),
     GERAET_ERREICHBAR("Gerät wieder erreichbar", Stufe.ROUTINE),
     GERAET_NICHT_ERREICHBAR("Gerät nicht erreichbar", Stufe.ROUTINE),
     KONNEKTOR_NICHT_ERREICHBAR("Konnektor nicht erreichbar", Stufe.ROUTINE),

@@ -387,3 +387,33 @@ Neu: Agent-Schnittstellen ohne Token gesperrt (3 von 3), erfundenes Geheimnis
 abgewiesen, gültiges einlösbar, dasselbe ein zweites Mal abgewiesen, abgelehnte
 Registrierungen protokolliert. Zusätzlich geprüft: Das Token überlebt einen
 Neustart des Agenten, eine erneute Registrierung ist nicht nötig.
+
+---
+
+# Iteration 7 — Gerätegruppen
+
+Gruppen sind mehr als Ordnung: Sie tragen das **Prüfintervall** und später die
+**Rollout-Pläne** (ADR-0004). Bei 5.000 Terminals ist die Last nur darüber
+steuerbar — die Notaufnahme braucht 30 Sekunden, das Archiv kommt mit fünf
+Minuten aus. Deshalb stehen sie schon in Version 1 im Datenmodell, obwohl der
+Rollout eine spätere Stufe ist.
+
+## Umgesetzt (FA-GER-050)
+
+- Gruppen anlegen, Prüfintervall ändern, löschen; Geräte zuordnen
+- **Genau eine Vorgabegruppe je Einrichtung**, per Datenbank-Index erzwungen —
+  ein neu erkanntes Gerät muss irgendwo landen, bevor jemand es zuordnet
+- **Beim Löschen einer Gruppe ziehen ihre Geräte in die Vorgabegruppe um.** Kein
+  Gerät darf durch eine Löschung aus der Überwachung fallen.
+- Die Vorgabegruppe selbst ist gegen Löschen geschützt
+- Untergrenze 10 Sekunden für das Prüfintervall, auf Datenbankebene und in der
+  Fachlogik — kürzere Abstände belasten Konnektor und Terminals ohne Nutzen
+- Neue Seite „Gruppen" in der Oberfläche, Änderungen nur für Administratoren
+
+## Tests: 43 grün
+
+Acht neue Integrationstests gegen echte PostgreSQL, darunter der wichtigste:
+**Beim Löschen einer Gruppe landet das Gerät nachweislich in der Vorgabegruppe**
+— nicht im Nichts.
+
+## Systemnachweise: 21, weiterhin alle grün

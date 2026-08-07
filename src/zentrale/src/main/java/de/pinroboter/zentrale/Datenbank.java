@@ -159,6 +159,42 @@ public class Datenbank implements AutoCloseable {
               angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
             );
             """);
+
+        migration(6, """
+            CREATE TABLE geraetegruppe (
+              id             BIGSERIAL PRIMARY KEY,
+              bezeichnung    TEXT        NOT NULL,
+              einrichtung    TEXT        NOT NULL,
+              -- Prüfintervall je Gruppe (FA-UEB-010). Bei 5.000 Terminals ist die
+              -- Last nur so steuerbar: Die Notaufnahme braucht 30 Sekunden, das
+              -- Archiv kommt mit fünf Minuten aus.
+              pruefintervall_sekunden INTEGER NOT NULL DEFAULT 60
+                CHECK (pruefintervall_sekunden >= 10),
+              ist_vorgabe    BOOLEAN     NOT NULL DEFAULT FALSE,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE UNIQUE INDEX geraetegruppe_name_idx
+              ON geraetegruppe (einrichtung, lower(bezeichnung));
+
+            -- Genau eine Vorgabegruppe je Einrichtung: Ein neu erkanntes Gerät
+            -- muss irgendwo landen, ohne dass jemand es vorher zuordnet.
+            CREATE UNIQUE INDEX geraetegruppe_vorgabe_idx
+              ON geraetegruppe (einrichtung) WHERE ist_vorgabe;
+
+            CREATE TABLE geraet (
+              terminal_id    TEXT        PRIMARY KEY,
+              einrichtung    TEXT        NOT NULL,
+              gruppe_id      BIGINT      NOT NULL REFERENCES geraetegruppe(id),
+              bezeichnung    TEXT,
+              standort       TEXT,
+              aktiv          BOOLEAN     NOT NULL DEFAULT TRUE,
+              erstmals_gesehen TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            CREATE INDEX geraet_gruppe_idx ON geraet (gruppe_id);
+
+            INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe)
+            VALUES ('Nicht zugeordnet', 'Praxis', TRUE);
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

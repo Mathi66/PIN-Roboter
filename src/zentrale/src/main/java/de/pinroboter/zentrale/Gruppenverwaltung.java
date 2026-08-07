@@ -1,0 +1,186 @@
+package de.pinroboter.zentrale;
+
+import java.sql.*;
+import java.util.*;
+
+/**
+ * Gerätegruppen und Gerätezuordnung (FA-GER-050).
+ *
+ * <p>Gruppen sind mehr als Ordnung: Sie tragen das <b>Prüfintervall</b> und
+ * später die <b>Rollout-Pläne</b> (ADR-0004). Bei 5.000 Terminals ist die Last
+ * nur darüber steuerbar — die Notaufnahme braucht 30 Sekunden, das Archiv kommt
+ * mit fünf Minuten aus.
+ *
+ * <p>Deshalb stehen sie schon in der ersten Version im Datenmodell, obwohl der
+ * Firmware-Rollout eine spätere Stufe ist. Nachrüsten wäre ein Umbau des halben
+ * Modells.
+ */
+public class Gruppenverwaltung {
+
+    public record Gruppe(long id, String bezeichnung, String einrichtung,
+                         int pruefintervallSekunden, boolean istVorgabe, int geraetezahl) {}
+
+    public record Geraet(String terminalId, String einrichtung, long gruppeId,
+                         String bezeichnung, String standort, boolean aktiv) {}
+
+    private final Datenbank db;
+
+    public Gruppenverwaltung(Datenbank db) { this.db = db; }
+
+    // ---------------------------------------------------------------- Gruppen
+
+    public List<Gruppe> alle(String einrichtung) {
+        List<Gruppe> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT g.id, g.bezeichnung, g.einrichtung, g.pruefintervall_sekunden,
+                       g.ist_vorgabe, count(t.terminal_id) AS anzahl
+                FROM geraetegruppe g
+                LEFT JOIN geraet t ON t.gruppe_id = g.id
+                WHERE g.einrichtung = ?
+                GROUP BY g.id
+                ORDER BY g.ist_vorgabe DESC, lower(g.bezeichnung)""")) {
+            p.setString(1, einrichtung);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) liste.add(lesen(rs));
+            }
+        } catch (SQLException ignored) { }
+        return liste;
+    }
+
+    public Optional<Gruppe> vorgabegruppe(String einrichtung) {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT g.id, g.bezeichnung, g.einrichtung, g.pruefintervall_sekunden,
+                       g.ist_vorgabe, 0 AS anzahl
+                FROM geraetegruppe g WHERE g.einrichtung = ? AND g.ist_vorgabe""")) {
+            p.setString(1, einrichtung);
+            try (ResultSet rs = p.executeQuery()) {
+                return rs.next() ? Optional.of(lesen(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) { return Optional.empty(); }
+    }
+
+    /** @return Fehlermeldung im Klartext, oder null bei Erfolg */
+    public String anlegen(String bezeichnung, String einrichtung, int intervall) {
+        if (bezeichnung == null || bezeichnung.isBlank()) {
+            return "Bitte eine Bezeichnung für die Gruppe angeben.";
+        }
+        if (intervall < 10) {
+            return "Das Prüfintervall muss mindestens 10 Sekunden betragen. "
+                 + "Kürzere Abstände belasten Konnektor und Terminals unnötig.";
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO geraetegruppe (bezeichnung, einrichtung, pruefintervall_sekunden)
+                VALUES (?,?,?)""")) {
+            p.setString(1, bezeichnung.trim());
+            p.setString(2, einrichtung);
+            p.setInt(3, intervall);
+            p.executeUpdate();
+            return null;
+        } catch (SQLException e) {
+            if ("23505".equals(e.getSQLState())) {
+                return "Eine Gruppe mit dieser Bezeichnung gibt es bereits.";
+            }
+            return "Die Gruppe konnte nicht angelegt werden.";
+        }
+    }
+
+    public String intervallSetzen(long gruppeId, int sekunden) {
+        if (sekunden < 10) return "Das Prüfintervall muss mindestens 10 Sekunden betragen.";
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE geraetegruppe SET pruefintervall_sekunden = ? WHERE id = ?")) {
+            p.setInt(1, sekunden);
+            p.setLong(2, gruppeId);
+            return p.executeUpdate() == 1 ? null : "Diese Gruppe gibt es nicht.";
+        } catch (SQLException e) { return "Das Intervall konnte nicht geändert werden."; }
+    }
+
+    /**
+     * Löscht eine Gruppe. Zugeordnete Geräte ziehen in die Vorgabegruppe um —
+     * kein Gerät darf durch eine Löschung aus der Überwachung fallen (FA-GER-050).
+     */
+    public String loeschen(long gruppeId, String einrichtung) {
+        var vorgabe = vorgabegruppe(einrichtung);
+        if (vorgabe.isEmpty()) return "Es gibt keine Vorgabegruppe.";
+        if (vorgabe.get().id() == gruppeId) {
+            return "Die Vorgabegruppe lässt sich nicht löschen. Neu erkannte Geräte "
+                 + "brauchen eine Gruppe, in der sie landen können.";
+        }
+        try {
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "UPDATE geraet SET gruppe_id = ? WHERE gruppe_id = ?")) {
+                p.setLong(1, vorgabe.get().id());
+                p.setLong(2, gruppeId);
+                p.executeUpdate();
+            }
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "DELETE FROM geraetegruppe WHERE id = ?")) {
+                p.setLong(1, gruppeId);
+                return p.executeUpdate() == 1 ? null : "Diese Gruppe gibt es nicht.";
+            }
+        } catch (SQLException e) { return "Die Gruppe konnte nicht gelöscht werden."; }
+    }
+
+    // ---------------------------------------------------------------- Geräte
+
+    /**
+     * Trägt ein gemeldetes Gerät ein, falls es noch unbekannt ist.
+     * Neue Geräte landen in der Vorgabegruppe.
+     *
+     * @return true, wenn das Gerät neu war
+     */
+    public boolean geraetSicherstellen(String terminalId, String einrichtung, String bezeichnung) {
+        var vorgabe = vorgabegruppe(einrichtung);
+        if (vorgabe.isEmpty()) return false;
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung)
+                VALUES (?,?,?,?) ON CONFLICT (terminal_id) DO NOTHING""")) {
+            p.setString(1, terminalId);
+            p.setString(2, einrichtung);
+            p.setLong(3, vorgabe.get().id());
+            p.setString(4, bezeichnung);
+            return p.executeUpdate() == 1;
+        } catch (SQLException e) { return false; }
+    }
+
+    public String zuordnen(String terminalId, long gruppeId) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE geraet SET gruppe_id = ? WHERE terminal_id = ?")) {
+            p.setLong(1, gruppeId);
+            p.setString(2, terminalId);
+            return p.executeUpdate() == 1 ? null : "Dieses Gerät ist nicht erfasst.";
+        } catch (SQLException e) {
+            return "Die Zuordnung konnte nicht gespeichert werden.";
+        }
+    }
+
+    /** Prüfintervalle je Gerät — der Agent holt sie sich hier ab. */
+    public Map<String, Integer> intervalleJeGeraet(String einrichtung) {
+        Map<String, Integer> m = new LinkedHashMap<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT t.terminal_id, g.pruefintervall_sekunden
+                FROM geraet t JOIN geraetegruppe g ON g.id = t.gruppe_id
+                WHERE t.einrichtung = ? AND t.aktiv""")) {
+            p.setString(1, einrichtung);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) m.put(rs.getString(1), rs.getInt(2));
+            }
+        } catch (SQLException ignored) { }
+        return m;
+    }
+
+    public Optional<Long> gruppeVon(String terminalId) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT gruppe_id FROM geraet WHERE terminal_id = ?")) {
+            p.setString(1, terminalId);
+            try (ResultSet rs = p.executeQuery()) {
+                return rs.next() ? Optional.of(rs.getLong(1)) : Optional.empty();
+            }
+        } catch (SQLException e) { return Optional.empty(); }
+    }
+
+    private static Gruppe lesen(ResultSet rs) throws SQLException {
+        return new Gruppe(rs.getLong("id"), rs.getString("bezeichnung"),
+                rs.getString("einrichtung"), rs.getInt("pruefintervall_sekunden"),
+                rs.getBoolean("ist_vorgabe"), rs.getInt("anzahl"));
+    }
+}

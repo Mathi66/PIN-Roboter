@@ -1,6 +1,7 @@
 de/pinroboter/zentrale/Fachprotokoll.class
 de/pinroboter/zentrale/Agentenverwaltung$Registrierung.class
 de/pinroboter/zentrale/Benutzerverwaltung$Rolle.class
+de/pinroboter/zentrale/Gruppenverwaltung$Geraet.class
 de/pinroboter/zentrale/Geraetezustand.class
 de/pinroboter/zentrale/Datenbank.class
 de/pinroboter/zentrale/Agentenverwaltung.class
@@ -9,11 +10,13 @@ de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Abgelehnt.class
 de/pinroboter/zentrale/Ereignis.class
 de/pinroboter/zentrale/Agentenverwaltung$Registrierung$Abgelehnt.class
 de/pinroboter/zentrale/Benutzerverwaltung.class
+de/pinroboter/zentrale/Gruppenverwaltung.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung.class
 de/pinroboter/zentrale/Agentenverwaltung$Agent.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Erfolg.class
 de/pinroboter/zentrale/Benutzerverwaltung$Anmeldung$Gesperrt.class
 de/pinroboter/zentrale/Agentenverwaltung$Registrierung$Erfolg.class
 de/pinroboter/zentrale/Benutzerverwaltung$Benutzer.class
+de/pinroboter/zentrale/Gruppenverwaltung$Gruppe.class
 de/pinroboter/zentrale/Anmeldeseiten.class
 de/pinroboter/zentrale/Zentrale.class
