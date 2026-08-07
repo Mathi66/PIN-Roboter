@@ -94,3 +94,63 @@ Java mit BouncyCastle Brainpool-TLS beherrscht — dort war BouncyCastle auf
 3. `docker compose up --build` als Ganzes prüfen
 4. Fehlerfall-Tests gegen den laufenden Stack: falsche PIN, Terminal weg,
    Firmware-Update während der Verifikation
+
+---
+
+# Nachtrag 07.08.2026 — zweite Sitzung
+
+## Wesentlicher Fortschritt: Die Server-Seite funktioniert nachweislich
+
+Ein **echter Fehler gefunden und behoben**: Der Simulator legte seinen privaten
+Schlüssel mit einem **leeren Passwort** in den KeyStore. Der KeyManager gab ihn
+daraufhin nicht heraus, und der Server meldete `no selectable cipher suite` —
+ein Fehler, der nach einem Problem mit den Cipher-Suites aussieht und in
+Wahrheit eins der Schlüsselverwaltung ist. Mit einem echten Passwort findet der
+KeyManager den Schlüssel (`Serverschluessel fuer ECDHE_ECDSA: server`).
+
+**Nachweis, dass der Simulator korrekt arbeitet:**
+```
+$ openssl s_client -connect localhost:8443 -CAfile ca.pem -groups brainpoolP256r1 -tls1_2
+  Verification: OK
+  Protocol: TLSv1.2
+```
+Ein OpenSSL-Client handelt erfolgreich über **brainpoolP256r1** mit dem
+Simulator. Damit ist belegt: Brainpool-TLS funktioniert in diesem Aufbau, und
+die Stack-Entscheidung aus ADR-0006 trägt.
+
+## Was noch offen ist — eng eingegrenzt
+
+Der **Agent als Client** kommt weiterhin nicht durch:
+```
+WARNING: 'jdk.tls.namedGroups' contains disabled NamedGroup: brainpoolP256r1
+SEVERE:  'jdk.tls.namedGroups' contained no usable NamedGroup values
+```
+
+Die Brainpool-Kurven sind im Agenten gesperrt, im Simulator nicht — **obwohl
+beide dieselbe Sicherheitsrichtlinie per `-Djava.security.properties` bekommen**.
+Genau dieser Unterschied ist der Schlüssel zur Lösung.
+
+Zwei Hypothesen wurden geprüft und **widerlegt**:
+1. ~~Die Freischaltung zur Laufzeit überschreibt die Datei-Werte~~ — eine
+   Schutzabfrage änderte nichts; die erwartete Meldung erschien nicht, also
+   greift die Datei im Agenten gar nicht erst.
+2. ~~Die Cipher-Suite-Liste ist zu eng~~ — ein OpenSSL-Client mit 46 angebotenen
+   Suites scheiterte am selben Punkt, ein Client mit Brainpool-Gruppe kam durch.
+
+**Nächster Schritt:** Prüfen, warum die Richtlinie im Agenten nicht greift.
+Konkret: im Agenten beim Start `Security.getProperty("jdk.disabled.namedCurves")`
+und `jdk.tls.disabledAlgorithms` ausgeben und mit dem Simulator vergleichen. Der
+Unterschied zwischen beiden Prozessen ist die Antwort — beide bekommen dieselbe
+Datei, verhalten sich aber verschieden.
+
+Ein Verdacht bleibt: Der Simulator lädt BouncyCastle über
+`BrainpoolZertifikate` (statischer Block) **vor** dem TLS-Aufbau, der Agent erst
+in `TlsClient`. Möglicherweise ist nicht die Richtlinie das Problem, sondern
+erneut die Reihenfolge der Provider-Registrierung.
+
+## Bewertung
+
+Der Durchstich ist **nicht fertig**, aber deutlich näher: Von „beide Seiten
+scheitern, Ursache unklar" auf „Server nachweislich in Ordnung, Client-Problem
+auf eine Frage eingegrenzt". Der behobene KeyStore-Fehler war zudem ein echter
+Fund, der sonst später im Produkt aufgetreten wäre.

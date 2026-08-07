@@ -1,0 +1,25 @@
+# Sicherheitsrichtlinie für den PIN-Roboter — hebt die Sperre der Brainpool-Kurven auf.
+#
+# Java sperrt Brainpool in seiner Standardrichtlinie: jdk.tls.disabledAlgorithms
+# und jdk.certpath.disabledAlgorithms enthalten "include jdk.disabled.namedCurves",
+# und dort sind brainpoolP256r1 und brainpoolP384r1 aufgeführt.
+#
+# Das ist für die Telematikinfrastruktur nicht haltbar: Die Geräteidentitäten von
+# Konnektor (gSMC-K) und Kartenterminal (gSMC-KT) verwenden zwingend
+# brainpoolP256r1 — in den Objektsystemen der Chipkarten fixiert ([gemSpec_Krypt]).
+# Ohne diese Datei scheitert jeder Handshake mit "no selectable cipher suite".
+#
+# Einbindung:  java -Djava.security.properties=/app/brainpool.security -jar ...
+# Ein einfaches "=" ergänzt die Standardrichtlinie, ein doppeltes "==" ersetzt sie.
+# Hier wird ergänzt, damit alle übrigen Absicherungen erhalten bleiben.
+
+jdk.disabled.namedCurves=
+
+# Beide Listen ohne "include jdk.disabled.namedCurves", sonst unverändert
+# gegenüber der Voreinstellung von Temurin 21.
+jdk.tls.disabledAlgorithms=SSLv3, TLSv1, TLSv1.1, DTLSv1.0, RC4, DES, MD5withRSA, \
+    DH keySize < 1024, EC keySize < 224, 3DES_EDE_CBC, anon, NULL, ECDH
+
+jdk.certpath.disabledAlgorithms=MD2, MD5, SHA1 jdkCA & usage TLSServer, \
+    RSA keySize < 1024, DSA keySize < 1024, EC keySize < 224, \
+    SHA1 usage SignedJAR & denyAfter 2019-01-01

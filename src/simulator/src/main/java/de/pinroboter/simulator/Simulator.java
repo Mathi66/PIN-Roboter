@@ -43,6 +43,7 @@ public class Simulator {
         System.out.println("  Zertifikatskette erzeugt auf " + BrainpoolZertifikate.KURVE);
 
         SSLContext ctx = TlsAufbau.serverKontext(kette);
+        TlsAufbau.diagnose(ctx);
 
         starteTls(8443, ctx, "/", new KonnektorSoap(zustand), "Konnektor (SOAP)");
         starteTls(8444, ctx, "/api/", new TerminalVerwaltung(zustand), "Kartenterminal-Management");

@@ -56,13 +56,24 @@ public final class TlsAufbau {
     }
 
     public static SSLContext serverKontext(BrainpoolZertifikate.Kette kette) throws Exception {
+        // Ein LEERES Passwort fuehrt hier dazu, dass der KeyManager den Schluessel
+        // nicht herausgibt - der Server findet dann "no selectable cipher suite",
+        // obwohl Zertifikat und Kurve stimmen. Der Fehler sieht aus wie ein
+        // Suite-Problem und ist in Wahrheit eins der Schluesselverwaltung.
+        char[] kennwort = "simulator".toCharArray();
+
         KeyStore ks = KeyStore.getInstance("PKCS12", "BC");
-        ks.load(null, null);
-        ks.setKeyEntry("server", kette.schluessel().getPrivate(), new char[0],
+        ks.load(null, kennwort);
+        ks.setKeyEntry("server", kette.schluessel().getPrivate(), kennwort,
                 new java.security.cert.Certificate[]{kette.zertifikat(), kette.caZertifikat()});
 
         KeyManagerFactory kmf = KeyManagerFactory.getInstance("PKIX", "BCJSSE");
-        kmf.init(ks, new char[0]);
+        kmf.init(ks, kennwort);
+
+        var km = (javax.net.ssl.X509KeyManager) kmf.getKeyManagers()[0];
+        String alias = km.chooseServerAlias("ECDHE_ECDSA", null, null);
+        System.out.println("  Serverschluessel fuer ECDHE_ECDSA: "
+                + (alias == null ? "KEINER - Handshake wird scheitern" : alias));
 
         SSLContext ctx = SSLContext.getInstance("TLSv1.2", "BCJSSE");
         ctx.init(kmf.getKeyManagers(), null, null);
@@ -78,6 +89,23 @@ public final class TlsAufbau {
     public static void parameterSetzen(SSLParameters p) {
         p.setProtocols(PROTOKOLLE);
         p.setCipherSuites(ZULAESSIGE_SUITES);
+        // Ohne diese Zeile findet der Server "no selectable cipher suite": Er kann
+        // sein eigenes Brainpool-Zertifikat keiner ECDSA-Suite zuordnen, weil die
+        // zugehoerige Kurve nicht als Gruppe angeboten wird. Die Cipher-Suites
+        // allein zu setzen genuegt also nicht.
+        p.setNamedGroups(GRUPPEN);
+    }
+
+    public static final String[] GRUPPEN = {"brainpoolP256r1", "brainpoolP384r1"};
+
+    /** Gibt aus, was tatsaechlich ausgehandelt werden kann - Diagnose statt Vermutung. */
+    public static void diagnose(SSLContext ctx) {
+        SSLParameters p = ctx.getSupportedSSLParameters();
+        java.util.List<String> bp = java.util.Arrays.stream(
+                p.getNamedGroups() == null ? new String[0] : p.getNamedGroups())
+                .filter(g -> g.toLowerCase().contains("brainpool")).toList();
+        System.out.println("  Verfuegbare Brainpool-Gruppen: "
+                + (bp.isEmpty() ? "KEINE - Handshake wird scheitern" : String.join(", ", bp)));
     }
 
     private static String[] schnittmenge(String[] unterstuetzt) {

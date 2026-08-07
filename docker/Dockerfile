@@ -16,8 +16,13 @@ ARG BAUSTEIN
 RUN useradd --system --uid 10001 --create-home roboter
 WORKDIR /app
 COPY --from=bau /bau/src/${BAUSTEIN}/target/${BAUSTEIN}.jar /app/anwendung.jar
+COPY docker/brainpool.security /app/brainpool.security
 USER 10001
 # Speicherobergrenze: NFA-LEI-030 verlangt ≤ 3 GB für den ganzen Stack,
 # der Agent allein ≤ 512 MB. Die Laufzeitvorgaben genügen dafür nicht.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k"
+# Die Sicherheitsrichtlinie muss beim JVM-Start greifen. Zur Laufzeit gesetzte
+# Security-Properties kommen zu spaet: Der Krypto-Provider hat die Kurvenliste
+# dann bereits gelesen, und die Freischaltung bleibt wirkungslos.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k \
+    -Djava.security.properties=/app/brainpool.security"
 ENTRYPOINT ["java", "-jar", "/app/anwendung.jar"]

@@ -29,6 +29,13 @@ public final class BrainpoolFreischaltung {
 
     /** Schritt 1: Sperre aufheben. Muss vor jeder Provider-Nutzung laufen. */
     public static void anwenden() {
+        // Ist die Richtlinie bereits per -Djava.security.properties geladen,
+        // darf zur Laufzeit nichts mehr geaendert werden: Ein erneutes
+        // setProperty setzt den Wert zurueck, den der Provider dann sperrt.
+        if ("".equals(Security.getProperty("jdk.disabled.namedCurves"))) {
+            System.out.println("  Brainpool bereits per Sicherheitsrichtlinie freigeschaltet");
+            return;
+        }
         Security.setProperty("jdk.disabled.namedCurves", "");
         for (String eigenschaft : new String[]{"jdk.tls.disabledAlgorithms",
                                                "jdk.certpath.disabledAlgorithms"}) {
