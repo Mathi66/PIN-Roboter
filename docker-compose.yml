@@ -25,6 +25,23 @@ services:
       timeout: 3s
       retries: 12
 
+  datenbank:
+    image: postgres:17-alpine
+    container_name: pinroboter-datenbank
+    environment:
+      POSTGRES_DB: pinroboter
+      POSTGRES_USER: pinroboter
+      # Beim Kunden aus einer Konfigurationsdatei, nie im Repository (NFA-BET-010).
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nur-fuer-die-entwicklung}
+    volumes:
+      # NFA-BET-020: persistente Daten liegen in Volumes, nie im Container-Layer.
+      - betriebsdaten:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pinroboter -d pinroboter"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   zentrale:
     build:
       context: .
@@ -33,8 +50,13 @@ services:
     container_name: pinroboter-zentrale
     environment:
       PORT: "8090"
+      DB_URL: "jdbc:postgresql://datenbank:5432/pinroboter"
+      DB_USER: "pinroboter"
+      DB_PASSWORD: ${DB_PASSWORD:-nur-fuer-die-entwicklung}
     ports:
       - "8090:8090"
+    depends_on:
+      datenbank: { condition: service_healthy }
     healthcheck:
       test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8090' || exit 1"]
       interval: 5s
@@ -61,4 +83,26 @@ services:
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
     depends_on:
       simulator: { condition: service_healthy }
-      zentrale:  { condition: service_healthy }
+      datenbank:
+    image: postgres:17-alpine
+    container_name: pinroboter-datenbank
+    environment:
+      POSTGRES_DB: pinroboter
+      POSTGRES_USER: pinroboter
+      # Beim Kunden aus einer Konfigurationsdatei, nie im Repository (NFA-BET-010).
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nur-fuer-die-entwicklung}
+    volumes:
+      # NFA-BET-020: persistente Daten liegen in Volumes, nie im Container-Layer.
+      - betriebsdaten:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pinroboter -d pinroboter"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  zentrale:  { condition: service_healthy }
+
+volumes:
+  # Betriebsdaten und Protokolldaten getrennt (ADR-0005): unterschiedliches
+  # Wachstum, unterschiedliche Aufbewahrung, unterschiedliches Ausfallrisiko.
+  betriebsdaten:

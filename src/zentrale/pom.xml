@@ -10,6 +10,7 @@
     <dependency><groupId>io.javalin</groupId><artifactId>javalin</artifactId></dependency>
     <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId></dependency>
     <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build><finalName>zentrale</finalName><plugins>

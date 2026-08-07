@@ -211,3 +211,47 @@ rund sieben Mal währenddessen. Erst damit ist das Ergebnis eine Aussage und
 kein Zufall.
 
 Das ist die Art Fehler, die einen Test wertlos macht, ohne dass er rot wird.
+
+---
+
+# Iteration 3 — Persistenz
+
+Die Zentrale hielt alles im Arbeitsspeicher. Ein Fachprotokoll, das einen
+Neustart nicht übersteht, ist als Nachweis wertlos — und Neustarts sind durch
+Produktupdates der Regelfall, nicht die Ausnahme.
+
+## Umgesetzt
+
+- **PostgreSQL** in der Zentrale (ADR-0006), im Compose-Stack mit eigenem Volume
+- **Migrationen laufen automatisch und idempotent** (FA-INS-010) — der Betreiber
+  hat kein IT-Personal, das eine Datenbank von Hand einrichtet
+- **Indizes von Anfang an** auf Zeit, Einrichtung, Gerät, Ereignisart, Vorgang.
+  FA-PRO-030 verlangt < 2 s bei 5 Millionen Zeilen; ohne Indizes unerreichbar.
+- **Unveränderlichkeit auf Datenbankebene**: Ein Trigger weist Änderungen und
+  Löschungen einzelner Einträge ab. Die Rotation nach Speicherbudget ist der
+  einzige zulässige Löschweg und muss sich ausdrücklich dafür kennzeichnen.
+- **Fehlende Zugangsdaten** führen zu einer verständlichen Meldung statt zu einem
+  Absturz (NFA-BET-010)
+
+## Bewusst NICHT persistiert: der Gerätezustand
+
+Er ist flüchtig und wird vom Agenten binnen eines Prüfintervalls neu gemeldet.
+Ihn zu speichern hieße, nach einem Neustart einen womöglich veralteten Zustand
+anzuzeigen — schlechter als ehrlich „noch unbekannt".
+
+## Systemnachweise: 13 von 13
+
+Neu hinzugekommen: Protokoll überlebt den **Containeraustausch** (nicht nur den
+Neustart), Migrationen sind idempotent, Fachprotokoll ist weder änderbar noch
+löschbar.
+
+## Zwei Testfehler, die nichts mit dem Produkt zu tun hatten
+
+1. **Feste Wartezeiten** machten das Skript wetterfühlig — es wurde rot, weil die
+   Datenbank beim ersten Start länger braucht. Ersetzt durch aktives Warten.
+2. **Zu unscharfe Abbruchbedingung**: Die Warteschleife brach schon bei
+   „Karte *nicht* freigeschaltet — starte Verifikation" ab, also *vor* dem
+   Ergebnis. Sie wartet jetzt auf den abgeschlossenen Zyklus.
+
+Beides ist die Sorte Fehler, die Vertrauen in eine Testsuite zerstört: Sie wird
+rot, ohne dass etwas kaputt ist — und irgendwann schaut niemand mehr hin.

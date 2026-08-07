@@ -24,13 +24,41 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Zentrale {
 
     private final Map<String, Geraetezustand> geraete = new ConcurrentHashMap<>();
-    private final Fachprotokoll protokoll = new Fachprotokoll(5000);
+    private final Fachprotokoll protokoll;
+    private final Datenbank db;
     private volatile boolean notAus = false;
     private volatile Instant agentGesehen = null;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "8090"));
-        new Zentrale().starten(port);
+        String url  = env("DB_URL",  "jdbc:postgresql://datenbank:5432/pinroboter");
+        String nutz = env("DB_USER", "pinroboter");
+        String kenn = env("DB_PASSWORD", null);
+        if (kenn == null || kenn.isBlank()) {
+            // NFA-BET-010: Fehlende Pflichtangaben fuehren zu einer verstaendlichen
+            // Meldung, nicht zu einem Absturz mit Stapelueberwachung.
+            System.err.println("""
+                    Die Umgebungsvariable DB_PASSWORD fehlt.
+                    Die Zentrale benoetigt Zugangsdaten zur Datenbank. Bitte in der
+                    Konfigurationsdatei ergaenzen und den Stack neu starten.""");
+            System.exit(2);
+        }
+        // Das Speicherbudget begrenzt den einzigen unbegrenzt wachsenden Anteil
+        // (FA-PRO-070). 200.000 Eintraege entsprechen grob 100 MB.
+        long budget = Long.parseLong(env("PROTOKOLL_HOECHSTZAHL", "200000"));
+
+        Datenbank db = Datenbank.verbinden(url, nutz, kenn, 30);
+        new Zentrale(db, budget).starten(port);
+    }
+
+    Zentrale(Datenbank db, long protokollHoechstzahl) {
+        this.db = db;
+        this.protokoll = new Fachprotokoll(db, protokollHoechstzahl);
+    }
+
+    private static String env(String name, String vorgabe) {
+        String v = System.getenv(name);
+        return v == null || v.isBlank() ? vorgabe : v;
     }
 
     void starten(int port) {
@@ -66,8 +94,9 @@ public class Zentrale {
                 ────────────────────────────────────────────────────────────
                   PIN-Roboter · Zentrale
                   Oberfläche:  http://localhost:%d
+                  Protokoll:   %d Einträge in der Datenbank
                 ────────────────────────────────────────────────────────────
-                """.formatted(port));
+                """.formatted(port, protokoll.anzahl()));
     }
 
     @SuppressWarnings("unchecked")

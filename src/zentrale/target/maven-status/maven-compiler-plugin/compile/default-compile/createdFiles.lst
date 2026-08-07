@@ -1,4 +1,5 @@
 de/pinroboter/zentrale/Fachprotokoll.class
+de/pinroboter/zentrale/Geraetezustand.class
+de/pinroboter/zentrale/Datenbank.class
 de/pinroboter/zentrale/Ereignis.class
 de/pinroboter/zentrale/Zentrale.class
-de/pinroboter/zentrale/Geraetezustand.class
