@@ -40,6 +40,7 @@ public class Zentrale {
     private final Bestandsverwaltung bestand;
     private final Ermittlung ermittlung;
     private final Pinverwaltung pins;
+    private final Organisationsverwaltung organisationen;
     private final Lasterzeuger last;
     private final Einladungen einladungen;
     private final Anmeldebremse bremse = new Anmeldebremse();
@@ -87,6 +88,7 @@ public class Zentrale {
                 de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
         this.ermittlung = new Ermittlung(db);
         this.pins = new Pinverwaltung(db);
+        this.organisationen = new Organisationsverwaltung(db);
         this.last = new Lasterzeuger(db);
         this.einladungen = new Einladungen(db, benutzer);
         this.pseudonym = new Pseudonymisierung(db, protokoll,
@@ -711,6 +713,86 @@ public class Zentrale {
                         + "PIN hinterlegt wird.");
             }
             c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
+        });
+
+        // ------------------------------------------------------- Organisation
+        // FA-ORG-020. Wer den Baum aendert, aendert Geltungsbereiche - deshalb
+        // ist jede Aenderung protokollpflichtig und auf Standortebene begrenzt.
+
+        app.get("/organisation", c -> {
+            Long gewaehlt = null;
+            try {
+                String b = c.queryParam("bearbeiten");
+                if (b != null && !b.isBlank()) gewaehlt = Long.parseLong(b);
+            } catch (NumberFormatException ignored) { }
+            c.html(seite("organisation", organisationsSeite(c, null, false, gewaehlt),
+                    angemeldeter(c)));
+        });
+
+        app.post("/organisation", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Anlegen von Organisationseinheiten")) return;
+            Long eltern = zahlOderNull(Anmeldeseiten.feld(c, "elternId"));
+            var e = organisationen.anlegen(Anmeldeseiten.feld(c, "bezeichnung"),
+                    String.valueOf(Anmeldeseiten.feld(c, "art")), eltern, bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_ANGELEGT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(),
+                        "Konten und Geräte lassen sich dieser Einheit ab sofort zuordnen.");
+            }
+            c.html(seite("organisation", organisationsSeite(c,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(), null),
+                    angemeldeter(c)));
+        });
+
+        app.post("/organisation/{id}/umbenennen", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Ändern von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.umbenennen(id, Anmeldeseiten.feld(c, "bezeichnung"), bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_UMBENANNT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(), null);
+            }
+            c.html(seite("organisation", organisationsSeite(c,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(),
+                    e.geklappt() ? null : id), angemeldeter(c)));
+        });
+
+        app.post("/organisation/{id}/umhaengen", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Umhängen von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.umhaengen(id, zahlOderNull(Anmeldeseiten.feld(c, "elternId")),
+                    bereich(c));
+            if (e.geklappt()) {
+                // Sicherheitsstufe: Diese Aenderung verschiebt, wer was sieht.
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_UMGEHAENGT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(),
+                        "Mit der Einheit wechseln auch die Zuständigkeiten für ihre Geräte "
+                        + "und Konten.");
+            }
+            c.html(seite("organisation", organisationsSeite(c,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(),
+                    e.geklappt() ? null : id), angemeldeter(c)));
+        });
+
+        app.post("/organisation/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Löschen von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.loeschen(id, bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_GELOESCHT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(), null);
+            }
+            c.html(seite("organisation", organisationsSeite(c,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt(),
+                    e.geklappt() ? null : id), angemeldeter(c)));
         });
 
         // ----------------------------------------------------------- Benutzer
@@ -1341,6 +1423,18 @@ public class Zentrale {
                 smcb != null && pins.auftragOffen(smcb));
     }
 
+    private String organisationsSeite(io.javalin.http.Context c, String meldung,
+                                      boolean istFehler, Long gewaehlt) {
+        return Organisationsseiten.seite(organisationen.baum(bereich(c)),
+                rechte(c).darfOrganisationVerwalten(), meldung, istFehler, gewaehlt);
+    }
+
+    /** Zahl aus einem Formularfeld, oder {@code null}. Ein Tippfehler darf nicht abstürzen. */
+    private static Long zahlOderNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return Long.parseLong(s.trim()); } catch (NumberFormatException e) { return null; }
+    }
+
     private String bestandsSeite(Context c, String meldung, boolean istFehler) {
         var ansicht = ansichtAus(c);
         int seitenNummer = zahl(c.queryParam("seite"), 1);
@@ -1962,6 +2056,7 @@ public class Zentrale {
                     <a href="/geraete" %s>Kartenterminals</a>
                     <a href="/bestand" %s>Bestand</a>
                     <a href="/gruppen" %s>Gruppen</a>
+                    <a href="/organisation" %s>Organisation</a>
                     <a href="/benutzer" %s>Benutzer</a>
                     <a href="/verwaltung" %s>Verwaltung</a>
                     <a href="/protokoll" %s>Protokoll</a>
@@ -1978,6 +2073,7 @@ public class Zentrale {
                         aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
                         aktiv.equals("bestand") ? "aria-current=\"page\"" : "",
                         aktiv.equals("gruppen") ? "aria-current=\"page\"" : "",
+                        aktiv.equals("organisation") ? "aria-current=\"page\"" : "",
                         aktiv.equals("benutzer") ? "aria-current=\"page\"" : "",
                         aktiv.equals("verwaltung") ? "aria-current=\"page\"" : "",
                         aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",

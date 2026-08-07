@@ -1454,4 +1454,32 @@ Umgebungs-PIN aus dem Testaufbau hätte die über die Oberfläche hinterlegte na
 jedem Neustart lautlos verdrängt — jetzt hat die Ablage Vorrang, und der Agent
 warnt, wenn PINs aus Umgebungsvariablen stammen.
 
-## Stand: 212 Modultests, 172 Systemnachweise — alle grün
+## FA-ORG-020 — die Struktur über die Oberfläche verwalten
+
+Verbünde, Standorte und Einrichtungen lassen sich jetzt anlegen, umbenennen,
+umhängen und löschen. **Erst ab Standortebene** — wer eine Praxis betreut, legt
+keine weiteren Praxen an.
+
+Das ist die heikelste Verwaltungsfunktion des Produkts, und der Grund ist nicht
+offensichtlich: Der Geltungsbereich eines Benutzers ergibt sich aus dem Baum.
+Wer den Baum ändern darf, ändert Geltungsbereiche — auch seinen eigenen. Ein
+Standortadministrator, der eine fremde Praxis unter sich hängen könnte, hätte
+Zugriff auf deren Geräte, Protokolle und Konten, ohne dass an der
+Mandantentrennung selbst etwas kaputt wäre.
+
+Deshalb sind die Prüfungen hier überwiegend Angriffsversuche: eine fremde
+Einheit übernehmen, die eigene aus dem Bereich schieben, unter einer fremden
+Einheit anlegen, einen Zyklus bauen. Jeder Fall einzeln — denn beim Lesen des
+Codes meint man leicht, eine Prüfung genüge, und tatsächlich braucht das
+Umhängen zwei.
+
+**Löschen wird abgelehnt statt nachgefragt.** Der Fremdschlüssel steht auf
+CASCADE; ein Löschen risse Teilbaum, Konten und Geräte mit. Gelöscht wird nur,
+was leer ist, und die Meldung sagt, was im Weg steht.
+
+Nebenbei aufgefallen: Die Barrierefreiheitsprüfung sah nur Seiten im
+Grundzustand. Die Terminalmaske mit PIN-Formular und die aufgeklappte
+Bearbeitungszeile der Organisation waren damit ungeprüft. Beide sind jetzt
+drin — 13 Seiten statt 10.
+
+## Stand: 224 Modultests, 188 Systemnachweise — alle grün

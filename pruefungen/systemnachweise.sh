@@ -1028,7 +1028,36 @@ if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
     | grep -q "Ihre Berechtigung" && RM=ja || RM=nein
   ergebnis "die Abweisung nennt die eigene Berechtigung" "$RM"
 
-  rm -f "$DEMO_KEKSE"
+  # FA-ORG-020: Struktur aendern erst ab Standortebene. Ein Praxisbenutzer
+  # koennte sonst seinen eigenen Zustaendigkeitsbereich erweitern.
+  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
+         -X POST http://localhost:8090/organisation \
+         --data-urlencode "bezeichnung=Praxis Eindringling" --data-urlencode "art=EINRICHTUNG" \
+         --data-urlencode "elternId=$ORGID")
+  [ "$CODE" = "403" ] && RO=ja || RO=nein
+  ergebnis "ein Praxisbenutzer kann keine Organisationseinheit anlegen (HTTP $CODE)" "$RO"
+  [ "$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='Praxis Eindringling'")" = "0" ] \
+    && RO2=ja || RO2=nein
+  ergebnis "nach dem Versuch existiert keine neue Einheit" "$RO2"
+
+  # Und die Oberflaeche bietet ihm keinen Knopf an, den es nicht gibt.
+  curl -s -b "$DEMO_KEKSE" http://localhost:8090/organisation > /tmp/pr-org-praxis.html
+  grep -q "Einheit hinzufügen" /tmp/pr-org-praxis.html && RO3=nein || RO3=ja
+  ergebnis "die Organisationsseite zeigt ihm kein Anlegeformular" "$RO3"
+  grep -q "ab der Standortebene" /tmp/pr-org-praxis.html && RO4=ja || RO4=nein
+  ergebnis "sie erklaert ihm stattdessen, warum" "$RO4"
+
+  # Ein fremder Verbund darf auch mit direkter Kennung nicht erreichbar sein.
+  FREMD_ORG=$(sql "SELECT id FROM organisation WHERE id <> $ORGID AND art='EINRICHTUNG'
+                   ORDER BY id LIMIT 1")
+  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST \
+    "http://localhost:8090/organisation/$FREMD_ORG/umbenennen" \
+    --data-urlencode "bezeichnung=Uebernommen"
+  [ "$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='Uebernommen'")" = "0" ] \
+    && RO5=ja || RO5=nein
+  ergebnis "eine fremde Einheit laesst sich nicht umbenennen" "$RO5"
+
+  rm -f /tmp/pr-org-praxis.html "$DEMO_KEKSE"
 else
   echo "  uebersprungen: Demo-Zugangsdaten nicht ermittelbar"
 fi
@@ -1378,6 +1407,82 @@ else
   rm -f /tmp/pr-pin.html /tmp/pr-pin2.html /tmp/pr-pin-neu.html /tmp/pr-pin-klartext.html \
         /tmp/pr-agent-pub.pem
 fi
+
+# ---------------------------------------------------------------- FA-ORG-020
+hinweis "FA-ORG-020 — Organisationseinheiten über die Oberfläche verwalten"
+
+curl -s -b "$KEKSE" http://localhost:8090/organisation > /tmp/pr-org.html
+grep -q "<h2>Organisation</h2>" /tmp/pr-org.html && OB=ja || OB=nein
+ergebnis "die Organisationsseite ist erreichbar" "$OB"
+grep -q "Einheit hinzufügen" /tmp/pr-org.html && OF=ja || OF=nein
+ergebnis "der Instanzbetreiber bekommt das Anlegeformular" "$OF"
+
+# Anlegen unterhalb eines Standorts.
+STANDORT=$(sql "SELECT id FROM organisation WHERE art='STANDORT' ORDER BY id LIMIT 1")
+VERBUND=$(sql "SELECT id FROM organisation WHERE art='VERBUND' ORDER BY id LIMIT 1")
+if [ -z "$STANDORT" ] || [ -z "$VERBUND" ]; then
+  echo "  uebersprungen: kein Standort/Verbund im Demodatensatz"
+  FEHLER=$((FEHLER+1))
+else
+  curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/organisation \
+    --data-urlencode "bezeichnung=Nachweis Praxis" --data-urlencode "art=EINRICHTUNG" \
+    --data-urlencode "elternId=$STANDORT"
+  NEU=$(sql "SELECT id FROM organisation WHERE bezeichnung='Nachweis Praxis'")
+  [ -n "$NEU" ] && OA=ja || OA=nein
+  ergebnis "eine Einrichtung laesst sich unterhalb eines Standorts anlegen" "$OA"
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ORGANISATION_ANGELEGT'")" != "0" ] \
+    && OP=ja || OP=nein
+  ergebnis "das Anlegen steht im Fachprotokoll" "$OP"
+
+  if [ -n "$NEU" ]; then
+    # Umbenennen
+    curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/organisation/$NEU/umbenennen" \
+      --data-urlencode "bezeichnung=Nachweis Praxis Nord"
+    [ "$(sqltext "SELECT bezeichnung FROM organisation WHERE id=$NEU")" = "Nachweis Praxis Nord" ] \
+      && OU=ja || OU=nein
+    ergebnis "eine Einheit laesst sich umbenennen" "$OU"
+
+    # Umhaengen an den Verbund
+    curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/organisation/$NEU/umhaengen" \
+      --data-urlencode "elternId=$VERBUND"
+    [ "$(sql "SELECT eltern_id FROM organisation WHERE id=$NEU")" = "$VERBUND" ] && OH=ja || OH=nein
+    ergebnis "eine Einheit laesst sich umhaengen" "$OH"
+    [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ORGANISATION_UMGEHAENGT'")" != "0" ] \
+      && OHP=ja || OHP=nein
+    ergebnis "das Umhaengen steht im Fachprotokoll (Sicherheitsstufe)" "$OHP"
+
+    # Zyklus: den Verbund unter seine eigene neue Einrichtung haengen.
+    curl -s -b "$KEKSE" -X POST "http://localhost:8090/organisation/$VERBUND/umhaengen" \
+      --data-urlencode "elternId=$NEU" > /tmp/pr-org-zyklus.html
+    [ -z "$(sql "SELECT eltern_id FROM organisation WHERE id=$VERBUND")" ] && OZ=ja || OZ=nein
+    ergebnis "ein Zyklus wird abgelehnt und der Baum bleibt heil" "$OZ"
+
+    # Loeschen: die leere neue Einheit geht.
+    curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/organisation/$NEU/loeschen"
+    [ "$(sql "SELECT count(*) FROM organisation WHERE id=$NEU")" = "0" ] && OL=ja || OL=nein
+    ergebnis "eine leere Einheit laesst sich loeschen" "$OL"
+  fi
+
+  # Loeschen einer Einheit MIT Inhalt muss scheitern - CASCADE wuerde sonst
+  # Geraete und Konten mitreissen.
+  VOLL=$(sql "SELECT o.id FROM organisation o
+              WHERE EXISTS (SELECT 1 FROM kartenterminal k WHERE k.organisation_id = o.id)
+              ORDER BY o.id LIMIT 1")
+  if [ -n "$VOLL" ]; then
+    VORHER_KT=$(sql "SELECT count(*) FROM kartenterminal WHERE organisation_id = $VOLL")
+    curl -s -b "$KEKSE" -X POST "http://localhost:8090/organisation/$VOLL/loeschen" \
+      > /tmp/pr-org-voll.html
+    NACHHER_KT=$(sql "SELECT count(*) FROM kartenterminal WHERE organisation_id = $VOLL")
+    [ "$VORHER_KT" = "$NACHHER_KT" ] && [ "$(sql "SELECT count(*) FROM organisation WHERE id=$VOLL")" = "1" ] \
+      && OV=ja || OV=nein
+    ergebnis "eine Einheit mit Geraeten wird nicht geloescht ($VORHER_KT -> $NACHHER_KT Geraete)" "$OV"
+    grep -q "Kartenterminal" /tmp/pr-org-voll.html && OVM=ja || OVM=nein
+    ergebnis "die Meldung nennt, was im Weg steht" "$OVM"
+    rm -f /tmp/pr-org-voll.html
+  fi
+  rm -f /tmp/pr-org-zyklus.html
+fi
+rm -f /tmp/pr-org.html
 
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.

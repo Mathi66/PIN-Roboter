@@ -52,9 +52,20 @@ curl -s http://localhost:8090/anmelden  > "$SEITEN/anmelden.html"
 curl -s http://localhost:8090/einladung > "$SEITEN/einladung.html"
 for paar in "uebersicht:/" "geraete:/geraete" "bestand:/bestand" "gruppen:/gruppen" \
             "benutzer:/benutzer" "verwaltung:/verwaltung" "protokoll:/protokoll" \
-            "ermittelt:/bestand/ermittelt"; do
+            "ermittelt:/bestand/ermittelt" "organisation:/organisation"; do
   curl -s -b "$KEKSE" "http://localhost:8090${paar#*:}" > "$SEITEN/${paar%%:*}.html"
 done
+# Zwei Zustaende, die im Grundaufruf nicht entstehen und deshalb sonst
+# ungeprueft blieben: die Terminalmaske mit PIN-Formular (FA-PIN-010) und die
+# aufgeklappte Bearbeitungszeile der Organisation (FA-ORG-020).
+TID_A=$(curl -s -b "$KEKSE" http://localhost:8090/bestand \
+        | grep -oE '/bestand/terminal/[0-9]+' | head -1)
+[ -n "$TID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$TID_A" > "$SEITEN/terminalmaske.html"
+OID_A=$(curl -s -b "$KEKSE" http://localhost:8090/organisation \
+        | grep -oE 'bearbeiten=[0-9]+' | head -1)
+[ -n "$OID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090/organisation?$OID_A" \
+        > "$SEITEN/organisation-bearbeiten.html"
+
 ANZ=$(ls "$SEITEN" | wc -l | tr -d ' ')
 
 if docker run --rm -v "$PWD/pruefungen/barrierefreiheit":/p -v "$SEITEN":/seiten:ro \

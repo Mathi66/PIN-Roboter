@@ -24,6 +24,13 @@ public enum Ereignisart {
     // --- Geräte und Verbindungen ---
     GERAET_ERKANNT("Gerät erkannt", Stufe.ROUTINE),
     GERAET_ZUGEORDNET("Gerät einer Gruppe zugeordnet", Stufe.ROUTINE),
+    // Aenderungen an der Organisationsstruktur veraendern Geltungsbereiche und
+    // damit, wer was sieht. Sie gehoeren auf die Sicherheitsstufe, nicht in die
+    // Routine (FA-ORG-020).
+    ORGANISATION_ANGELEGT("Organisationseinheit angelegt", Stufe.SICHERHEIT),
+    ORGANISATION_UMBENANNT("Organisationseinheit umbenannt", Stufe.ROUTINE),
+    ORGANISATION_UMGEHAENGT("Organisationseinheit umgehängt", Stufe.SICHERHEIT),
+    ORGANISATION_GELOESCHT("Organisationseinheit gelöscht", Stufe.SICHERHEIT),
     GRUPPE_ANGELEGT("Gerätegruppe angelegt", Stufe.ROUTINE),
     GRUPPE_GEAENDERT("Gerätegruppe geändert", Stufe.ROUTINE),
     GRUPPE_GELOESCHT("Gerätegruppe gelöscht", Stufe.ROUTINE),

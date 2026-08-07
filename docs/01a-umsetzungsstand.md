@@ -72,7 +72,7 @@ mit 84 Anforderungen
 | | Anforderung | Stand | Anmerkung |
 |---|---|---|---|
 | ✓ | FA-ORG-010 | Mandanten/Einrichtungen | dreistufig, Trennung zentral erzwungen |
-| ◐ | FA-ORG-020 | Serviceorganisationen | Datenmodell und Geltungsbereich stehen. **Offen:** Anlegen und Umhängen von Organisationseinheiten über die Oberfläche |
+| ✔ | FA-ORG-020 | Serviceorganisationen | Struktur über die Oberfläche anlegen, umbenennen, umhängen und löschen — erst ab Standortebene. Übernahme fremder Einheiten, Wegschieben aus dem Bereich und Zyklen sind einzeln nachgewiesen abgewehrt. Löschen nur, was leer ist. [Umsetzung 16](03-umsetzung/16-organisationsstruktur.md) |
 
 ## A.6 Benutzer und Anmeldung (FA-BEN)
 
