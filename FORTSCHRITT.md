@@ -1416,7 +1416,42 @@ Zentrale reicht nur das Chiffrat weiter und kann es nicht lesen.
 
 Das erfordert JavaScript in genau einer Maske — bisher kommt die Oberfläche
 ohne aus, und das war eine bewusste Wahl. Die Einschränkung wird in der Maske
-ausgesprochen, statt sie stillschweigend hinzunehmen. **Die Umsetzung steht
-noch aus.**
+ausgesprochen, statt sie stillschweigend hinzunehmen.
 
-## Stand: 202 Modultests, 157 Systemnachweise — alle grün
+## FA-PIN-010 und FA-PIN-060 — umgesetzt und nachgewiesen
+
+Die PIN lässt sich jetzt über die Oberfläche hinterlegen und löschen. Der
+Browser verschlüsselt sie mit dem öffentlichen Schlüssel des Standort-Agenten;
+die Zentrale reicht nur das Chiffrat weiter, kann es nicht lesen und löscht es
+nach der Zustellung. Beim Agenten liegt sie mit AES-256-GCM verschlüsselt.
+
+In der Oberfläche steht nur das Kennzeichen „PIN hinterlegt", nie der Wert —
+auch für einen Administrator nicht. Fünfzehn neue Systemnachweise messen genau
+das: dass das Chiffrat verschwindet, dass weder PIN noch Chiffrat in irgendein
+Protokoll geraten, dass die Ablagedatei die PIN nicht im Klartext enthält.
+
+### Der Fehler, den nur der Systemnachweis finden konnte
+
+Javas `OAEPWithSHA-256AndMGF1Padding` klingt eindeutig und ist es nicht: Die
+Kurzform setzt nur den Nachrichten-Hash auf SHA-256 und lässt die
+Maskengenerierung MGF1 stillschweigend auf SHA-1. WebCrypto im Browser nimmt
+für beides SHA-256. Jede PIN kam beim Agenten an und ließ sich nicht
+entschlüsseln.
+
+**Der Modultest konnte das nicht finden** — er war auf beiden Seiten gleich
+falsch, weil er dieselbe Java-Kurzform zum Ver- und Entschlüsseln nutzte.
+Gefunden hat es der Systemnachweis, der gegen OpenSSL verschlüsselt, also gegen
+eine unabhängige Umsetzung. Ein Test, der beide Seiten einer Schnittstelle mit
+derselben Bibliothek bedient, prüft die Bibliothek gegen sich selbst.
+
+### Drei Fehler nebenbei
+
+Das Volume des Agenten war in der Compose-Datei deklariert, aber **nicht
+eingebunden** — Token und Schlüsselpaar hätten keinen Neustart überlebt, und
+damit wäre jede hinterlegte PIN unbrauchbar geworden. `PIN_ABLAGE` wurde von
+der Umgebungs-Schleife als vermeintliche Karten-PIN eingelesen. Und eine
+Umgebungs-PIN aus dem Testaufbau hätte die über die Oberfläche hinterlegte nach
+jedem Neustart lautlos verdrängt — jetzt hat die Ablage Vorrang, und der Agent
+warnt, wenn PINs aus Umgebungsvariablen stammen.
+
+## Stand: 212 Modultests, 172 Systemnachweise — alle grün

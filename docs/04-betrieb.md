@@ -83,6 +83,32 @@ im Repository (`NFA-BET-010`). Vorgesehener Weg: eine Datei `.env` neben der
 | `TERMINAL_URL` | ja | Adresse der Terminal-Managementschnittstelle |
 | `WEBADMIN_URL` | nein | Webadmin-Schnittstelle des Konnektors. Herstellerspezifisch und **immer optional** (`NFA-QS-035`) — ohne sie bleibt alles von Hand erfassbar. |
 | `PRUEFINTERVALL_SEKUNDEN` | nein | Vorgabe 10 s. Im Betrieb üblicherweise 60 s. |
+| `PIN_ABLAGE_SCHLUESSEL` | dringend empfohlen | Verschlüsselt die hinterlegten SMC-B-PINs. Siehe unten. |
+| `PIN_<kartenhandle>` | **nein — nur Testaufbau** | Setzt eine PIN direkt. **Für den Betrieb ungeeignet:** Die PIN steht damit im Klartext auf dem Host und in jeder Sicherung. Der Agent warnt beim Start. Im Betrieb über die Oberfläche hinterlegen. |
+
+### Der Schlüssel für die PIN-Ablage des Agenten
+
+Erzeugen:
+
+```bash
+openssl rand -base64 32
+```
+
+Das Ergebnis gehört in `.env` als `PIN_ABLAGE_SCHLUESSEL=…`.
+
+**Wofür er ist:** Er verschlüsselt die hinterlegten SMC-B-PINs im Volume des
+Agenten (AES-256-GCM). Er ist **bewusst ein anderer** als der
+`GEHEIMNIS_SCHLUESSEL` der Zentrale — wer den einen erlangt, bekommt damit
+nicht auch den anderen.
+
+**Fehlt er,** bleiben hinterlegte PINs nur im Arbeitsspeicher und sind nach
+einem Neustart des Agenten weg. Der Roboter arbeitet weiter, kann die
+betroffenen Karten nach dem Neustart aber nicht mehr verifizieren, bis die PIN
+erneut hinterlegt wird. Der Agent sagt das beim Start.
+
+**Wird er getauscht,** sind die abgelegten PINs unlesbar. Der Agent meldet das
+je Karte und arbeitet mit den übrigen weiter; die betroffenen PINs sind neu zu
+hinterlegen.
 
 ### Der Schlüssel für Zugangsdaten
 
@@ -127,7 +153,9 @@ Docker-Host. Begründung und Grenzen: [ADR-0008](adr/0008-ablage-von-geraete-zug
 |---|---|---|
 | Datenbank | Volume `betriebsdaten` | Bestand, Benutzer, Protokoll |
 | `.env` mit `GEHEIMNIS_SCHLUESSEL` | neben der Compose-Datei | ohne ihn sind Kennwörter nach dem Restore unlesbar |
-| Agent-Token | Volume des Agenten | sonst muss der Agent neu registriert werden |
+| Agent-Token | Volume `agentdaten` | sonst muss der Agent neu registriert werden |
+| Schlüsselpaar des Agenten | Volume `agentdaten` | **bei Verlust ist jede hinterlegte PIN unbrauchbar** und muss neu eingegeben werden |
+| `.env` mit `PIN_ABLAGE_SCHLUESSEL` | neben der Compose-Datei | ohne ihn sind die hinterlegten PINs nach dem Restore unlesbar |
 
 ### Sicherung ziehen
 

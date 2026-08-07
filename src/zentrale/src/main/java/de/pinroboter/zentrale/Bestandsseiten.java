@@ -721,6 +721,12 @@ final class Bestandsseiten {
 
     static String terminalMaske(Bestandsverwaltung.Terminal t, List<Ermittlung.Karte> karten,
                                 String fehler) {
+        return terminalMaske(t, karten, fehler, null, null, false, false);
+    }
+
+    static String terminalMaske(Bestandsverwaltung.Terminal t, List<Ermittlung.Karte> karten,
+                                String fehler, String smcbHandle, String oeffentlicherSchluessel,
+                                boolean pinHinterlegt, boolean auftragOffen) {
         StringBuilder s = new StringBuilder();
         s.append("<h2>Kartenterminal: ").append(esc(t.bezeichnung())).append("</h2>");
         s.append("<p class=\"unterzeile\">Kennung <code>").append(esc(t.terminalId()))
@@ -786,7 +792,160 @@ final class Bestandsseiten {
                         t.hatSmcb() ? "checked" : "", t.pevimAktiv() ? "checked" : "",
                         t.aktiv() ? "checked" : ""));
         s.append(kartenTafel(karten));
+        s.append(pinTafel(t, smcbHandle, oeffentlicherSchluessel, pinHinterlegt, auftragOffen));
         return s.toString();
+    }
+
+    /**
+     * Die PIN-Maske (FA-PIN-010, FA-PIN-060) nach ADR-0009.
+     *
+     * <h2>Die PIN verlässt diesen Browser nur verschlüsselt</h2>
+     *
+     * Das eingegebene Feld wird <b>nicht abgeschickt</b> — es hat bewusst keinen
+     * {@code name}. Abgeschickt wird nur, was das Skript mit dem öffentlichen
+     * Schlüssel des Standort-Agenten verschlüsselt hat. Damit kann die Zentrale
+     * die PIN nicht lesen, selbst wenn sie es wollte.
+     *
+     * <h2>Warum hier ausnahmsweise JavaScript nötig ist</h2>
+     *
+     * Verschlüsseln im Browser geht ohne Skript nicht. Das ist eine echte
+     * Einschränkung, und sie wird in der Maske ausgesprochen statt verschwiegen
+     * (ADR-0009). Ohne Skript sieht der Betreiber den Hinweis und weiß, woran es
+     * liegt — nicht ein Formular, das lautlos nichts tut.
+     */
+    static String pinTafel(Bestandsverwaltung.Terminal t, String smcbHandle,
+                           String schluessel, boolean hinterlegt, boolean auftragOffen) {
+        StringBuilder s = new StringBuilder("<div class=\"tafel\" id=\"pin\"><h3>SMC-B-PIN</h3>");
+
+        if (!t.hatSmcb() || smcbHandle == null || smcbHandle.isBlank()) {
+            return s.append("""
+                    <p class="leer">Für dieses Kartenterminal ist keine SMC-B gemeldet.
+                       Eine PIN lässt sich erst hinterlegen, wenn der Standort-Agent
+                       eine SMC-B im Gerät gefunden hat.</p></div>""").toString();
+        }
+
+        // Zustand zuerst - die haeufigste Frage an dieser Stelle ist
+        // "ist ueberhaupt eine PIN hinterlegt?", nicht "wie hinterlege ich eine".
+        if (auftragOffen) {
+            s.append("""
+                    <p class="marke warnung">Wird zum Standort-Agenten übertragen …
+                       Die Übertragung erfolgt beim nächsten Durchgang des Agenten.</p>""");
+        } else if (hinterlegt) {
+            s.append("""
+                    <p class="marke ok"><span class="sym">✓</span>PIN hinterlegt</p>
+                    <p class="hilfe">Die PIN liegt verschlüsselt beim Standort-Agenten.
+                       Sie lässt sich hier nicht anzeigen — auch nicht von einem
+                       Administrator. Zum Ändern eine neue PIN eingeben.</p>""");
+        } else {
+            s.append("""
+                    <p class="marke">Keine PIN hinterlegt</p>
+                    <p class="hilfe">Ohne hinterlegte PIN kann der Roboter den verifizierten
+                       Zustand dieser SMC-B nicht wiederherstellen.</p>""");
+        }
+
+        if (schluessel == null || schluessel.isBlank()) {
+            return s.append("""
+                    <div class="hinweis"><strong>Noch kein Schlüssel des Standort-Agenten.</strong>
+                      Die PIN wird im Browser mit dem Schlüssel des Agenten verschlüsselt, damit
+                      sie die Zentrale nie im Klartext erreicht. Dieser Schlüssel liegt noch nicht
+                      vor. Er wird gemeldet, sobald der Agent das erste Mal Bestand meldet —
+                      danach ist diese Maske nutzbar.</div></div>""").toString();
+        }
+
+        s.append("""
+                <noscript><div class="hinweis warnend">
+                  <strong>Diese Maske braucht JavaScript.</strong> Die PIN wird in Ihrem Browser
+                  verschlüsselt, bevor sie abgeschickt wird — damit die Zentrale sie nie im
+                  Klartext sieht. Das geht ohne JavaScript nicht. Bitte JavaScript für diese
+                  Seite erlauben. Alle anderen Funktionen des Produkts kommen ohne aus.
+                </div></noscript>
+
+                <form method="post" action="/bestand/terminal/%d/pin" class="maske" id="pinMaske">
+                  <input type="hidden" name="chiffrat" id="pinChiffrat">
+                  <input type="hidden" name="kartenhandle" value="%s">
+                  <div class="feldgruppe">
+                    <label for="pinFeld">%s</label>
+                    <input id="pinFeld" type="password" inputmode="numeric" autocomplete="off"
+                           maxlength="16" aria-describedby="pinHilfe">
+                  </div>
+                  <p id="pinHilfe" class="hilfe">
+                    Die PIN wird in Ihrem Browser verschlüsselt und ausschließlich für den
+                    Standort-Agenten lesbar übertragen. Sie wird nirgends im Klartext
+                    gespeichert und erscheint in keinem Protokoll.
+                  </p>
+                  <p id="pinMeldung" class="hilfe" role="status" aria-live="polite"></p>
+                  <button class="knopf haupt" type="submit" style="width:auto">%s</button>
+                </form>""".formatted(t.id(), esc(smcbHandle),
+                        hinterlegt ? "Neue PIN" : "PIN", hinterlegt ? "PIN ersetzen" : "PIN hinterlegen"));
+
+        if (hinterlegt) {
+            s.append("""
+                    <form method="post" action="/bestand/terminal/%d/pin-loeschen" class="maske"
+                          onsubmit="return confirm('Hinterlegte PIN wirklich löschen? Der Roboter kann diese SMC-B danach nicht mehr verifizieren.')">
+                      <input type="hidden" name="kartenhandle" value="%s">
+                      <button class="knopf" type="submit" style="width:auto">PIN löschen</button>
+                    </form>
+                    <p class="hilfe">Löschen wirkt sofort in der Anzeige und beim nächsten
+                       Durchgang beim Agenten. Der Roboter verifiziert diese Karte danach
+                       nicht mehr.</p>""".formatted(t.id(), esc(smcbHandle)));
+        }
+
+        s.append("<script>\n").append(pinSkript(schluessel)).append("\n</script>");
+        return s.append("</div>").toString();
+    }
+
+    /**
+     * Verschlüsselt die PIN im Browser (WebCrypto, RSA-OAEP mit SHA-256).
+     *
+     * <p>Muss zu {@code Schluesselpaar} im Agenten passen: SPKI-Import,
+     * RSA-OAEP, SHA-256. Ändert sich dort etwas, ändert es sich hier mit.
+     */
+    private static String pinSkript(String schluesselBase64) {
+        return """
+                (function () {
+                  var f = document.getElementById('pinMaske');
+                  var feld = document.getElementById('pinFeld');
+                  var ziel = document.getElementById('pinChiffrat');
+                  var meldung = document.getElementById('pinMeldung');
+                  if (!f || !window.crypto || !window.crypto.subtle) {
+                    if (meldung) meldung.textContent =
+                      'Dieser Browser unterstützt die nötige Verschlüsselung nicht. '
+                      + 'Bitte einen aktuellen Browser verwenden — die PIN darf nicht '
+                      + 'unverschlüsselt übertragen werden.';
+                    if (f) f.querySelector('button').disabled = true;
+                    return;
+                  }
+                  var roh = atob('%s');
+                  var bytes = new Uint8Array(roh.length);
+                  for (var i = 0; i < roh.length; i++) bytes[i] = roh.charCodeAt(i);
+
+                  f.addEventListener('submit', function (e) {
+                    if (ziel.value) return;           // zweiter Durchlauf: abschicken
+                    e.preventDefault();
+                    var pin = feld.value;
+                    if (!pin) { meldung.textContent = 'Bitte eine PIN eingeben.'; return; }
+                    meldung.textContent = 'Wird verschlüsselt …';
+                    crypto.subtle.importKey('spki', bytes.buffer,
+                        { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+                      .then(function (k) {
+                        return crypto.subtle.encrypt({ name: 'RSA-OAEP' }, k,
+                            new TextEncoder().encode(pin));
+                      })
+                      .then(function (ch) {
+                        var b = new Uint8Array(ch), t = '';
+                        for (var i = 0; i < b.length; i++) t += String.fromCharCode(b[i]);
+                        ziel.value = btoa(t);
+                        feld.value = '';              // Klartext sofort aus dem Feld
+                        meldung.textContent = 'Wird übertragen …';
+                        f.submit();
+                      })
+                      .catch(function () {
+                        meldung.textContent = 'Die PIN konnte nicht verschlüsselt werden. '
+                          + 'Aus Sicherheitsgründen wurde nichts abgeschickt. '
+                          + 'Bitte die Seite neu laden und erneut versuchen.';
+                      });
+                  });
+                })();""".formatted(schluesselBase64);
     }
 
     // ----------------------------------------------------------- Kleinteiliges

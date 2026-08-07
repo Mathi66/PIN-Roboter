@@ -39,6 +39,7 @@ public class Zentrale {
     private final Demodaten demodaten;
     private final Bestandsverwaltung bestand;
     private final Ermittlung ermittlung;
+    private final Pinverwaltung pins;
     private final Lasterzeuger last;
     private final Einladungen einladungen;
     private final Anmeldebremse bremse = new Anmeldebremse();
@@ -85,6 +86,7 @@ public class Zentrale {
         this.bestand = new Bestandsverwaltung(db,
                 de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung());
         this.ermittlung = new Ermittlung(db);
+        this.pins = new Pinverwaltung(db);
         this.last = new Lasterzeuger(db);
         this.einladungen = new Einladungen(db, benutzer);
         this.pseudonym = new Pseudonymisierung(db, protokoll,
@@ -611,7 +613,7 @@ public class Zentrale {
             if (t.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
                     angemeldeter(c))); return; }
-            c.html(seite("bestand", Bestandsseiten.terminalMaske(t.get(), ermittlung.karten(t.get().terminalId()), null), angemeldeter(c)));
+            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
         });
 
         app.post("/bestand/terminal/{id}", c -> {
@@ -626,7 +628,7 @@ public class Zentrale {
             if (!e.geklappt()) {
                 var t = bestand.terminal(id, bereich(c));
                 c.html(seite("bestand", t.isPresent()
-                        ? Bestandsseiten.terminalMaske(t.get(), ermittlung.karten(t.get().terminalId()), e.fehler())
+                        ? terminalMaske(t.get(), e.fehler())
                         : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
@@ -660,6 +662,55 @@ public class Zentrale {
             var e = bestand.terminalPruefen(id, bereich(c));
             c.html(Bestandsseiten.pruefmeldung(t.map(Bestandsverwaltung.Terminal::bezeichnung)
                     .orElse("Kartenterminal"), e));
+        });
+
+        // --------------------------------------------------------- SMC-B-PIN
+        // FA-PIN-010 / FA-PIN-060 nach ADR-0009. Hier kommt ausschliesslich ein
+        // Chiffrat an, das nur der Standort-Agent entschluesseln kann.
+
+        app.post("/bestand/terminal/{id}/pin", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Hinterlegen einer PIN")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+
+            String handle = Anmeldeseiten.feld(c, "kartenhandle");
+            String fehler = pins.hinterlegen(t.get().terminalId(), handle,
+                    Anmeldeseiten.feld(c, "chiffrat"), angemeldeter(c).anzeigename());
+            if (fehler != null) {
+                c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
+                return;
+            }
+            // Protokolliert wird DASS, nie WAS. Weder PIN noch Chiffrat -
+            // ADR-0009, Festlegung 4.
+            protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                    Ereignisart.PIN_HINTERLEGT, true, angemeldeter(c).anzeigename(), null,
+                    "PIN für die SMC-B in „" + t.get().bezeichnung() + "“ hinterlegt",
+                    "Die PIN wurde im Browser verschlüsselt und wird zum Standort-Agenten "
+                    + "übertragen. Die Zentrale kann sie nicht lesen.");
+            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/pin-loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Löschen einer PIN")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+
+            String fehler = pins.loeschen(t.get().terminalId(),
+                    Anmeldeseiten.feld(c, "kartenhandle"), angemeldeter(c).anzeigename());
+            if (fehler == null) {
+                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                        Ereignisart.PIN_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
+                        "Hinterlegte PIN für „" + t.get().bezeichnung() + "“ gelöscht",
+                        "Der Roboter kann diese SMC-B nicht mehr verifizieren, bis eine neue "
+                        + "PIN hinterlegt wird.");
+            }
+            c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
         });
 
         // ----------------------------------------------------------- Benutzer
@@ -975,6 +1026,13 @@ public class Zentrale {
                         String.valueOf(eintrag.get("terminalId")), liste);
             }
 
+            // ADR-0009: Der oeffentliche Schluessel des Agenten. Er ist nicht
+            // geheim - der Browser braucht ihn, um die PIN zu verschluesseln.
+            Object schluessel = m.get("oeffentlicherSchluessel");
+            if (schluessel instanceof String s && !s.isBlank()) {
+                pins.schluesselMerken(agent.id(), s);
+            }
+
             boolean modellDa = Boolean.TRUE.equals(m.get("informationsmodellVerfuegbar"));
             ermittlung.modellAblegen(agent.id(), modellDa,
                     modellDa ? String.valueOf(m.get("informationsmodell")) : null);
@@ -989,6 +1047,38 @@ public class Zentrale {
                     neu == 0 ? null : neu + " Gerät(e) sind noch nicht erfasst. "
                             + "Unter „Bestand → Ermittelte Geräte“ prüfen und übernehmen.");
             c.json(Map.of("aufgenommen", n, "neu", neu));
+        });
+
+        /**
+         * Der Agent holt seine offenen PIN-Aufträge ab (ADR-0009).
+         *
+         * <p>Das Chiffrat wird dabei aus der Datenbank gelöscht — es ist
+         * ausgeliefert. Was hier durchgeht, kann die Zentrale nicht lesen.
+         */
+        app.get("/api/agent/pin-auftraege", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            c.json(Map.of("auftraege", pins.abholen(agent.id())));
+        });
+
+        /** Der Agent quittiert einen Auftrag. */
+        app.post("/api/agent/pin-quittung", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            Map<String, Object> m = c.bodyAsClass(Map.class);
+            boolean erfolg = Boolean.TRUE.equals(m.get("erfolg"));
+            String art = String.valueOf(m.getOrDefault("art", "HINTERLEGEN"));
+            String handle = String.valueOf(m.get("kartenhandle"));
+            pins.quittieren(agent.id(), ((Number) m.get("auftragId")).longValue(),
+                    erfolg, erfolg ? null : String.valueOf(m.get("fehler")), handle, art);
+
+            if (!erfolg) {
+                protokoll.anfuegen(agent.einrichtung(), handle,
+                        "HINTERLEGEN".equals(art) ? Ereignisart.PIN_HINTERLEGT
+                                                  : Ereignisart.PIN_GELOESCHT,
+                        false, "Standort-Agent", null,
+                        "Der Standort-Agent konnte den PIN-Auftrag nicht ausführen",
+                        String.valueOf(m.get("fehler")));
+            }
+            c.json(Map.of("quittiert", true));
         });
 
         /**
@@ -1234,6 +1324,23 @@ public class Zentrale {
      * Erreichbarkeitsprüfung auf, ohne die Seite neu zu laden — sonst ginge die
      * Position in einer langen Geräteliste verloren.
      */
+    /**
+     * Baut die Terminalmaske einschließlich PIN-Zustand.
+     *
+     * <p>An einer Stelle, damit die Maske überall denselben Zustand zeigt —
+     * eine zweite Aufbaustelle wäre eine zweite Gelegenheit, den PIN-Teil zu
+     * vergessen.
+     */
+    private String terminalMaske(Bestandsverwaltung.Terminal t, String fehler) {
+        var karten = ermittlung.karten(t.terminalId());
+        String smcb = karten.stream().filter(Ermittlung.Karte::verwaltet)
+                .map(Ermittlung.Karte::kartenhandle).findFirst().orElse(null);
+        return Bestandsseiten.terminalMaske(t, karten, fehler, smcb,
+                smcb == null ? null : pins.schluesselFuerTerminal(t.terminalId()).orElse(null),
+                smcb != null && pins.hinterlegtFuer(smcb).isPresent(),
+                smcb != null && pins.auftragOffen(smcb));
+    }
+
     private String bestandsSeite(Context c, String meldung, boolean istFehler) {
         var ansicht = ansichtAus(c);
         int seitenNummer = zahl(c.queryParam("seite"), 1);

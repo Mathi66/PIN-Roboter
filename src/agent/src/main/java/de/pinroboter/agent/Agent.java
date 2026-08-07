@@ -50,6 +50,12 @@ public class Agent {
      */
     private volatile String letzterBestandsabdruck = "";
 
+    /** Schlüsselpaar für die Ende-zu-Ende-Übergabe der PIN (ADR-0009). */
+    private volatile Schluesselpaar schluessel;
+
+    /** Ablage der verschlüsselten PINs. Der Schlüssel dafür kommt aus der Umgebung. */
+    private volatile Pinablage ablage;
+
     public static void main(String[] args) throws Exception {
         BrainpoolFreischaltung.zustandAusgeben("vor anwenden");
         BrainpoolFreischaltung.anwenden();   // muss als Erstes laufen
@@ -88,19 +94,51 @@ public class Agent {
         agent.agentToken = agent.tokenBesorgen(env("TOKEN_DATEI", "/daten/agent-token"),
                                                System.getenv("REGISTRIERUNG"));
 
-        // NFA-BET-010: Konfiguration ausschliesslich ueber Umgebungsvariablen.
-        // Format: PIN_<kartenhandle mit - als _>=<wert>, z. B.
-        //   PIN_card_smcb_001=123456
-        // Im Produkt hinterlegt ein Benutzer die PIN ueber die Oberflaeche; sie
-        // wird verschluesselt beim Agenten abgelegt und ist nie wieder auslesbar.
+        // ADR-0009: Der Browser verschluesselt die PIN mit dem oeffentlichen
+        // Schluessel DIESES Agenten. Der private Teil verlaesst sein Geraet nie.
+        agent.schluessel = Schluesselpaar.ladenOderErzeugen(
+                java.nio.file.Path.of(env("SCHLUESSEL_DATEI", "/daten/agent-schluessel")));
+        agent.ablage = Pinablage.ausUmgebung(
+                java.nio.file.Path.of(env("PIN_ABLAGE", "/daten/pins")));
+        System.out.println("  Schlüsselpaar bereit (PIN-Übergabe Ende-zu-Ende)");
+        agent.pins.putAll(agent.ablage.alleLaden());
+        System.out.println("  Aus der Ablage geladen: " + agent.pins.size()
+                + " PIN(s)   (Werte werden nie ausgegeben)");
+
+        // Nur fuer TESTAUFBAUTEN: PIN ueber eine Umgebungsvariable.
+        // Format: PIN_<kartenhandle mit - als _>=<wert>, z. B. PIN_card_smcb_001=123456
+        //
+        // Fuer den Betrieb ist dieser Weg ausdruecklich UNGEEIGNET (ADR-0009):
+        // Die PIN steht im Klartext auf dem Docker-Host, landet in jeder
+        // Sicherung dieser Datei und ist ueber "docker inspect" einsehbar. Im
+        // Betrieb hinterlegt ein Benutzer sie ueber die Oberflaeche.
+        //
+        // Eine ueber die Oberflaeche hinterlegte PIN hat VORRANG: Sonst wuerde
+        // ein vergessener Testeintrag sie nach jedem Neustart wieder
+        // verdraengen - lautlos, und mit einer PIN, die niemand mehr erwartet.
         int gefunden = 0;
         for (var e : System.getenv().entrySet()) {
             if (!e.getKey().startsWith("PIN_")) continue;
+            // PIN_ABLAGE und PIN_ABLAGE_SCHLUESSEL sind Konfiguration, keine
+            // PINs. Ohne diese Ausnahme landeten sie als vermeintliche
+            // Karten-PIN im Speicher.
+            if (e.getKey().equals("PIN_ABLAGE") || e.getKey().equals("PIN_ABLAGE_SCHLUESSEL")) continue;
             String handle = e.getKey().substring(4).replace('_', '-');
+            if (agent.pins.containsKey(handle)) {
+                System.out.println("  Hinweis: PIN_" + e.getKey().substring(4) + " wird ignoriert — "
+                        + "für diese Karte ist bereits eine PIN über die Oberfläche hinterlegt.");
+                continue;
+            }
             agent.pinHinterlegen(handle, e.getValue().toCharArray());
             gefunden++;
         }
-        System.out.println("  Hinterlegte PINs: " + gefunden + "   (Werte werden nie ausgegeben)");
+        if (gefunden > 0) {
+            System.out.println("  WARNUNG: " + gefunden + " PIN(s) stammen aus Umgebungsvariablen. "
+                    + "Das ist nur für Testaufbauten vorgesehen — im Betrieb steht die PIN damit "
+                    + "im Klartext auf dem Host. Bitte über die Oberfläche hinterlegen (ADR-0009).");
+        }
+        System.out.println("  Hinterlegte PINs gesamt: " + agent.pins.size()
+                + "   (Werte werden nie ausgegeben)");
 
         agent.ueberwachen(intervall);
     }
@@ -124,6 +162,7 @@ public class Agent {
                 var karten = konnektor.karten();
 
                 bestandMelden(terminals, karten);
+                pinAuftraegeAbarbeiten();
 
                 for (var t : terminals) {
                     var karte = karten.stream()
@@ -209,6 +248,9 @@ public class Agent {
         // gemeldet - die Oberflaeche weist dann auf die entfallende
         // Unterstuetzung hin (NFA-QS-035), statt das Feld leer zu lassen.
         meldung.put("informationsmodellVerfuegbar", modell != null);
+        // Der oeffentliche Schluessel ist nicht geheim - er MUSS die Zentrale
+        // erreichen, damit der Browser damit verschluesseln kann (ADR-0009).
+        if (schluessel != null) meldung.put("oeffentlicherSchluessel", schluessel.oeffentlichBase64());
         if (modell != null) meldung.put("informationsmodell", modell);
 
         if (senden("/api/agent/bestand", alsJson(meldung))) {
@@ -216,6 +258,75 @@ public class Agent {
             System.out.printf("  Bestand gemeldet: %d Terminals, Informationsmodell %s%n",
                     eintraege.size(), modell != null ? "gelesen" : "nicht verfügbar");
         }
+    }
+
+    /**
+     * Holt PIN-Aufträge von der Zentrale und arbeitet sie ab (FA-PIN-010, FA-PIN-060).
+     *
+     * <p>Die Zentrale liefert ein Chiffrat, das nur dieser Agent entschlüsseln
+     * kann. Der Klartext existiert danach ausschließlich hier — im
+     * Arbeitsspeicher und verschlüsselt in der Ablage.
+     *
+     * <p><b>Weder PIN noch Chiffrat werden protokolliert.</b> Gemeldet wird
+     * ausschließlich, dass ein Auftrag abgearbeitet wurde.
+     */
+    private void pinAuftraegeAbarbeiten() {
+        if (agentToken == null || schluessel == null) return;
+        String antwort;
+        try {
+            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/pin-auftraege"))
+                            .header("X-Agent-Token", agentToken)
+                            .timeout(Duration.ofSeconds(15)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (a.statusCode() != 200) return;
+            antwort = a.body();
+        } catch (Exception e) { return; }
+
+        // Bewusst ein enger Zerleger statt einer Bibliothek: Die Struktur ist
+        // klein und fest, und in einem Pfad, durch den eine PIN laeuft, ist
+        // weniger fremder Code besser als mehr.
+        var m = java.util.regex.Pattern.compile(
+                "\\{\"id\":(\\d+),\"kartenhandle\":\"([^\"]*)\",\"art\":\"([^\"]*)\""
+                + "(?:,\"chiffrat\":\"([^\"]*)\")?").matcher(antwort);
+        while (m.find()) {
+            long id = Long.parseLong(m.group(1));
+            String handle = m.group(2), art = m.group(3), chiffrat = m.group(4);
+            boolean erfolg = false;
+            String fehler = null;
+            try {
+                if ("LOESCHEN".equals(art)) {
+                    char[] alt = pins.remove(handle);
+                    if (alt != null) java.util.Arrays.fill(alt, '\0');
+                    ablage.entfernen(handle);
+                    erfolg = true;
+                } else if (chiffrat != null && !chiffrat.isBlank()) {
+                    char[] pin = schluessel.entschluesseln(chiffrat);
+                    ablage.speichern(handle, pin);
+                    char[] vorher = pins.put(handle, pin);
+                    if (vorher != null) java.util.Arrays.fill(vorher, '\0');
+                    erfolg = true;
+                } else {
+                    fehler = "Es wurde kein Chiffrat mitgeliefert.";
+                }
+            } catch (Exception e) {
+                // Die Meldung darf keinen Rueckschluss auf den Inhalt zulassen.
+                fehler = "Die übermittelte PIN konnte nicht entschlüsselt werden. "
+                       + "Wurde der Agent neu eingerichtet? Dann bitte neu hinterlegen.";
+            }
+            System.out.printf("  PIN-Auftrag %d (%s) %s%n", id, art,
+                    erfolg ? "ausgeführt" : "fehlgeschlagen");
+            quittieren(id, handle, art, erfolg, fehler);
+        }
+    }
+
+    private void quittieren(long id, String handle, String art, boolean erfolg, String fehler) {
+        var m = new LinkedHashMap<String, Object>();
+        m.put("auftragId", id);
+        m.put("kartenhandle", handle);
+        m.put("art", art);
+        m.put("erfolg", erfolg);
+        if (fehler != null) m.put("fehler", fehler);
+        senden("/api/agent/pin-quittung", alsJson(m));
     }
 
     private void durchgang(KonnektorClient.Terminal t, KonnektorClient.Karte karte) {

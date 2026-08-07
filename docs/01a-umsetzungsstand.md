@@ -54,12 +54,12 @@ mit 84 Anforderungen
 
 | | Anforderung | Stand | Anmerkung |
 |---|---|---|---|
-| ◐ | FA-PIN-010 | PIN hinterlegen | Der Agent nimmt sie über die Umgebung entgegen. **Weg entschieden** in [ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md): Ende-zu-Ende vom Browser zum Agenten, die Zentrale sieht nie Klartext. **Umsetzung offen** |
+| ✔ | FA-PIN-010 | PIN hinterlegen | Über die Oberfläche, Ende-zu-Ende nach [ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md): Der Browser verschlüsselt mit dem öffentlichen Schlüssel des Agenten (RSA-OAEP 3072), die Zentrale reicht nur das Chiffrat weiter und löscht es nach der Zustellung. Beim Agenten AES-256-GCM. Nachgewiesen — auch, dass weder PIN noch Chiffrat im Protokoll landen. [Umsetzung 15](03-umsetzung/15-pin-hinterlegen.md) |
 | ✓ | FA-PIN-020 | PIN automatisch verifizieren | vollständiger PEviM-Durchstich über Brainpool-TLS |
 | ✓ | FA-PIN-030 | **Falsche PIN löst genau einen Versuch aus** | vor jeder Auslieferung verpflichtend; nachgewiesen: 1 Versuch bei ~10 Gelegenheiten |
 | ○ | FA-PIN-040 | Fehlversuchszähler auswerten | Sicherungsprüfung mit 10 Modultests |
 | ✓ | FA-PIN-050 | Not-Aus | nachgewiesen: 0 Versuche bei aktivem Not-Aus. **Einschränkung:** wirkt instanzweit, nicht je Einrichtung |
-| – | FA-PIN-060 | PIN löschen | nicht begonnen |
+| ✔ | FA-PIN-060 | PIN löschen | Ein Knopf in derselben Maske, mit Rückfrage. Wirkt bis in die Ablage des Agenten durch — nachgewiesen. [Umsetzung 15](03-umsetzung/15-pin-hinterlegen.md) |
 
 ## A.4 Firmware-Verwaltung (FA-FW)
 

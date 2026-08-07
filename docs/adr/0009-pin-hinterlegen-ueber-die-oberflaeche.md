@@ -1,6 +1,7 @@
 # ADR-0009: PIN hinterlegen über die Oberfläche
 
-- **Status:** **Vorschlag** (07.08.2026) — Entscheidung getroffen, Umsetzung offen
+- **Status:** **Angenommen** (07.08.2026), umgesetzt und nachgewiesen
+  → [Umsetzung 15](../03-umsetzung/15-pin-hinterlegen.md)
 - **Betrifft:** Sicherheit, Architektur, Bedienung
 - **Grundlage:** FA-PIN-010, Sicherheitsleitplanke CLAUDE.md,
   [ADR-0002](0002-betriebsmodell-und-systemtopologie.md),
@@ -106,6 +107,10 @@ in der Maske ausgesprochen, statt sie stillschweigend hinzunehmen.
 1. **Schlüsselpaar beim Agenten**, erzeugt beim ersten Start, privater Teil im
    Datenverzeichnis des Agenten. RSA-4096 oder ECIES — die Wahl fällt bei der
    Umsetzung, entscheidend ist, dass WebCrypto es beherrscht.
+   → *Umgesetzt als **RSA-OAEP 3072 Bit**. ECIES scheidet aus: WebCrypto
+   beherrscht für asymmetrische Verschlüsselung ausschließlich RSA-OAEP.
+   3072 statt 4096, weil `BSI TR-02102-1` das als ausreichend führt und 4096
+   im Browser spürbar länger rechnet, ohne hier etwas zu gewinnen.*
 2. **Der öffentliche Schlüssel wird gemeldet** wie der Bestand — über den
    bestehenden ausgehenden Weg.
 3. **Die Zentrale speichert das Chiffrat nur bis zur Zustellung.** Danach wird
@@ -142,3 +147,23 @@ liefert.
 - **Offen für den PO:** Ob der JavaScript-Einsatz akzeptabel ist. Die Alternative
   wäre Weg 1 (eigene Oberfläche am Agenten) mit dem beschriebenen Bruch im
   Bedienmodell.
+
+---
+
+## Nachtrag zur Umsetzung (07.08.2026)
+
+Umgesetzt wie entschieden. Ein Punkt hat sich bei der Umsetzung als
+Stolperstelle erwiesen und gehört hierher, weil er die Wahl von RSA-OAEP
+betrifft:
+
+**Javas Kurzform `OAEPWithSHA-256AndMGF1Padding` ist nicht WebCrypto-kompatibel.**
+Sie setzt nur den Nachrichten-Hash auf SHA-256 und lässt MGF1 auf SHA-1;
+WebCrypto verwendet für beides SHA-256. Die Parameter müssen ausgeschrieben
+werden. Gefunden hat das der Systemnachweis gegen OpenSSL — der Modultest
+konnte es nicht finden, weil er beide Seiten mit derselben Java-Kurzform
+bediente.
+
+**Offen bleibt** die Frage an den PO aus dem Abschnitt „Konsequenzen": ob der
+JavaScript-Einsatz in dieser einen Maske akzeptabel ist. Die Umsetzung liegt
+vor und ist nutzbar; sollte der PO widersprechen, wäre Weg 1 (eigene Oberfläche
+am Agenten) die Alternative — mit dem dort beschriebenen Bruch im Bedienmodell.

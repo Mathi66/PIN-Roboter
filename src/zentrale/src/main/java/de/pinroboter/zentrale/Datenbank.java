@@ -551,6 +551,48 @@ public class Datenbank implements AutoCloseable {
             -- Ablaufdatum am erfassten Terminal, fuer die Bestandsansicht.
             ALTER TABLE kartenterminal ADD COLUMN zertifikat_gueltig_bis DATE;
             """);
+
+        migration(16, """
+            -- PIN-Hinterlegung Ende-zu-Ende (ADR-0009, FA-PIN-010).
+            --
+            -- Der oeffentliche Schluessel des Agenten. Der Browser holt ihn und
+            -- verschluesselt die PIN damit; die Zentrale kann das Ergebnis nicht
+            -- lesen. Oeffentliche Schluessel sind nicht geheim - sie duerfen
+            -- hier stehen.
+            ALTER TABLE agent ADD COLUMN oeffentlicher_schluessel TEXT;
+            ALTER TABLE agent ADD COLUMN schluessel_gemeldet TIMESTAMPTZ;
+
+            -- Auftraege an den Agenten: eine PIN hinterlegen oder loeschen.
+            --
+            -- Das Chiffrat liegt hier NUR BIS ZUR ZUSTELLUNG. Die Zentrale kann
+            -- es ohnehin nicht lesen, aber ein Chiffrat, das ewig liegt, ist ein
+            -- Angriffsziel fuer spaeter - etwa wenn der private Schluessel des
+            -- Agenten eines Tages doch abhandenkommt.
+            CREATE TABLE pin_auftrag (
+              id             BIGSERIAL PRIMARY KEY,
+              agent_id       BIGINT      NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+              kartenhandle   TEXT        NOT NULL,
+              art            TEXT        NOT NULL CHECK (art IN ('HINTERLEGEN','LOESCHEN')),
+              -- NULL bei LOESCHEN. Nach der Zustellung auch bei HINTERLEGEN.
+              chiffrat       TEXT,
+              angelegt_von   TEXT        NOT NULL,
+              angelegt       TIMESTAMPTZ NOT NULL DEFAULT now(),
+              zugestellt     TIMESTAMPTZ,
+              quittiert      TIMESTAMPTZ,
+              fehler         TEXT
+            );
+            CREATE INDEX pin_auftrag_offen_idx ON pin_auftrag (agent_id)
+              WHERE quittiert IS NULL;
+
+            -- Welche Karte eine hinterlegte PIN hat. NUR das Kennzeichen -
+            -- der Wert liegt ausschliesslich beim Agenten.
+            CREATE TABLE pin_hinterlegt (
+              agent_id     BIGINT      NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+              kartenhandle TEXT        NOT NULL,
+              seit         TIMESTAMPTZ NOT NULL DEFAULT now(),
+              PRIMARY KEY (agent_id, kartenhandle)
+            );
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

@@ -34,6 +34,9 @@ datenbank_starten() {
 # Schluessel fuer die verschluesselte Ablage von Zugangsdaten. Wird je Lauf
 # neu gezogen - im Betrieb kommt er aus der Konfiguration, nie aus dem Repo.
 SCHLUESSEL=$(openssl rand -base64 32 | tr -d '\n')
+# ADR-0009: getrennter Schluessel fuer die PIN-Ablage des Agenten. Getrennt,
+# damit einer der beiden nicht den anderen mitliefert.
+ABLAGESCHLUESSEL=$(openssl rand -base64 32 | tr -d '\n')
 
 KEKSE=/tmp/pr-kekse.txt
 TOTP_GEHEIMNIS=""
@@ -110,6 +113,7 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     -e KONNEKTOR_URL=https://simulator:8443/ -e TERMINAL_URL=https://simulator:8444/ \
     -e ZENTRALE_URL=http://zentrale:8090/ -e CA_URL=http://simulator:8480/ca.pem \
     -e PRUEFINTERVALL_SEKUNDEN="$2" -e PIN_card_smcb_001="$1" \
+    -e PIN_ABLAGE_SCHLUESSEL="$ABLAGESCHLUESSEL" \
     $JRE java $JOPT -jar /app.jar >/dev/null
   # Aktiv warten statt fest schlafen: Feste Wartezeiten machen Tests wetterfühlig
   # — sie werden rot, wenn eine Maschine langsamer ist, und das sagt nichts über
@@ -1238,6 +1242,141 @@ if [ -n "$TID_K" ]; then
   rm -f /tmp/pr-karten.html
 else
   echo "  uebersprungen: kein erfasstes Terminal KT-EMPFANG-01"
+fi
+
+# ------------------------------------------------- FA-PIN-010 / FA-PIN-060
+# Ende-zu-Ende-Uebergabe der PIN nach ADR-0009. Der entscheidende Punkt: Die
+# Zentrale darf die PIN nie im Klartext sehen - weder in der Datenbank, noch im
+# Protokoll, noch in ihrer Ausgabe. Das wird hier nachgesehen, nicht geglaubt.
+hinweis "FA-PIN-010 / FA-PIN-060 — PIN über die Oberfläche hinterlegen und löschen"
+
+PIN_NEU=428913     # bewusst eine andere als die des Testaufbaus (123456)
+
+# Der Agent meldet seinen oeffentlichen Schluessel ueber den bestehenden Weg.
+for _ in $(seq 30); do
+  PUBB64=$(sql "SELECT oeffentlicher_schluessel FROM agent
+                WHERE oeffentlicher_schluessel IS NOT NULL ORDER BY id DESC LIMIT 1")
+  [ -n "$PUBB64" ] && break
+  sleep 2
+done
+[ -n "$PUBB64" ] && PS=ja || PS=nein
+ergebnis "der Standort-Agent meldet seinen oeffentlichen Schluessel" "$PS"
+
+# Terminal mit einer verwalteten Karte (SMC-B) suchen - nur dort ist die
+# PIN-Maske ueberhaupt sinnvoll.
+TID_P=$(sql "SELECT k.id FROM kartenterminal k
+             JOIN ermittelte_karte e ON e.terminal_id = k.terminal_id
+             WHERE e.kartentyp = 'SMC-B' AND NOT k.ist_demo ORDER BY k.id LIMIT 1")
+HANDLE=$(sql "SELECT e.kartenhandle FROM kartenterminal k
+              JOIN ermittelte_karte e ON e.terminal_id = k.terminal_id
+              WHERE e.kartentyp = 'SMC-B' AND NOT k.ist_demo ORDER BY k.id LIMIT 1")
+
+if [ -z "$TID_P" ] || [ -z "$PUBB64" ]; then
+  echo "  uebersprungen: kein erfasstes Terminal mit SMC-B oder kein Agentenschluessel"
+  echo "    Diagnose: TID_P='$TID_P' HANDLE='$HANDLE' Schluessel vorhanden: $PS"
+  FEHLER=$((FEHLER+1))
+else
+  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_P" > /tmp/pr-pin.html
+
+  # Die Maske sagt ausdruecklich, dass sie JavaScript braucht (ADR-0009).
+  grep -q "Diese Maske braucht JavaScript" /tmp/pr-pin.html && PJ=ja || PJ=nein
+  ergebnis "die PIN-Maske nennt die JavaScript-Voraussetzung ausdruecklich" "$PJ"
+
+  # Das Eingabefeld hat KEINEN name - es darf nie mitgeschickt werden.
+  grep -q 'id="pinFeld" type="password"' /tmp/pr-pin.html \
+    && ! grep -q 'id="pinFeld"[^>]*name=' /tmp/pr-pin.html && PF=ja || PF=nein
+  ergebnis "das PIN-Eingabefeld wird nicht mitgeschickt (kein name-Attribut)" "$PF"
+
+  # Klartext statt Chiffrat wird abgewiesen - die Notbremse aus Pinverwaltung.
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_P/pin" \
+    -d "kartenhandle=$HANDLE" -d "chiffrat=$PIN_NEU" > /tmp/pr-pin-klartext.html
+  grep -q "nicht nach einer verschlüsselten PIN" /tmp/pr-pin-klartext.html && PK=ja || PK=nein
+  ergebnis "eine unverschluesselt uebergebene PIN wird abgewiesen" "$PK"
+  KLARTEXT_DB=$(sql "SELECT count(*) FROM pin_auftrag WHERE chiffrat = '$PIN_NEU'")
+  [ "$KLARTEXT_DB" = "0" ] && PKD=ja || PKD=nein
+  ergebnis "die abgewiesene Klartext-PIN steht in keinem Auftrag" "$PKD"
+
+  # Jetzt der echte Weg: verschluesseln wie der Browser (RSA-OAEP, SHA-256).
+  printf -- "-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n" \
+    "$(echo "$PUBB64" | fold -w 64)" > /tmp/pr-agent-pub.pem
+  CHIFFRAT=$(printf '%s' "$PIN_NEU" | openssl pkeyutl -encrypt -pubin -inkey /tmp/pr-agent-pub.pem \
+      -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 \
+      2>/dev/null | base64 | tr -d '\n')
+  [ -n "$CHIFFRAT" ] && PC=ja || PC=nein
+  ergebnis "der gemeldete Schluessel ist als SPKI verwendbar (RSA-OAEP/SHA-256)" "$PC"
+
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_P/pin" \
+    -d "kartenhandle=$HANDLE" --data-urlencode "chiffrat=$CHIFFRAT" > /tmp/pr-pin-neu.html
+
+  # Der Agent holt den Auftrag beim naechsten Durchgang ab.
+  for _ in $(seq 60); do
+    Q=$(sql "SELECT count(*) FROM pin_auftrag WHERE quittiert IS NOT NULL AND art='HINTERLEGEN'")
+    [ "${Q:-0}" -ge 1 ] && break
+    sleep 2
+  done
+  HINT=$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")
+  [ "${HINT:-0}" = "1" ] && PH=ja || PH=nein
+  if [ "$PH" = "nein" ]; then
+    echo "    Diagnose: $(sql "SELECT id||' zugestellt='||coalesce(zugestellt::text,'-')||' quittiert='||coalesce(quittiert::text,'-')||' fehler='||coalesce(fehler,'-') FROM pin_auftrag ORDER BY id" | tr '\n' '|')"
+  fi
+  ergebnis "die PIN erreicht den Standort-Agenten und wird quittiert" "$PH"
+
+  # ADR-0009 Festlegung 3: Das Chiffrat wird nach der Zustellung geloescht.
+  REST=$(sql "SELECT count(*) FROM pin_auftrag WHERE chiffrat IS NOT NULL")
+  [ "${REST:-1}" = "0" ] && PR=ja || PR=nein
+  ergebnis "kein Chiffrat bleibt nach der Zustellung in der Datenbank ($REST)" "$PR"
+
+  # ADR-0009 Festlegung 4: nichts davon im Protokoll - weder PIN noch Chiffrat.
+  TREFFER=0
+  ANFANG=$(printf '%s' "$CHIFFRAT" | cut -c1-24)
+  for w in "$PIN_NEU" "$ANFANG"; do
+    docker logs pr-zen 2>&1 | grep -qF "$w" && TREFFER=$((TREFFER+1))
+    docker logs pr-agt 2>&1 | grep -qF "$w" && TREFFER=$((TREFFER+1))
+    [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE coalesce(text,'') LIKE '%$w%' OR coalesce(handlung,'') LIKE '%$w%'")" != "0" ] \
+      && TREFFER=$((TREFFER+1))
+  done
+  [ $TREFFER -eq 0 ] && PP=ja || PP=nein
+  ergebnis "weder PIN noch Chiffrat in Protokoll oder Ausgaben (Treffer: $TREFFER)" "$PP"
+
+  # Protokolliert wird DASS - das gehoert nachgewiesen, nicht nur das Schweigen.
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='PIN_HINTERLEGT'")" != "0" ] && PD=ja || PD=nein
+  ergebnis "das Hinterlegen selbst steht im Fachprotokoll" "$PD"
+
+  # Beim Agenten liegt sie verschluesselt, nicht im Klartext.
+  ABL=$(docker exec pr-agt sh -c 'cat /daten/pins 2>/dev/null' || true)
+  if [ -n "$ABL" ] && ! printf '%s' "$ABL" | grep -qF "$PIN_NEU"; then PA=ja; else PA=nein; fi
+  ergebnis "die PIN liegt beim Agenten verschluesselt in der Ablage" "$PA"
+
+  # Die Oberflaeche zeigt das Kennzeichen, nie den Wert.
+  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_P" > /tmp/pr-pin2.html
+  grep -q "PIN hinterlegt" /tmp/pr-pin2.html && ! grep -qF "$PIN_NEU" /tmp/pr-pin2.html \
+    && PM=ja || PM=nein
+  ergebnis "die Oberflaeche zeigt nur das Kennzeichen, nie den Wert" "$PM"
+
+  # FA-PIN-060: Loeschen, genauso einfach wie Hinterlegen.
+  # Nur pruefbar, wenn vorher wirklich etwas hinterlegt war - sonst bestaetigen
+  # sich die folgenden Nachweise selbst.
+  if [ "$PH" = "nein" ]; then
+   echo "  Loeschen nicht pruefbar: es war keine PIN hinterlegt."
+   FEHLER=$((FEHLER+1))
+  else
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_P/pin-loeschen" \
+    -d "kartenhandle=$HANDLE" > /dev/null
+  for _ in $(seq 60); do
+    [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")" = "0" ] && break
+    sleep 2
+  done
+  [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")" = "0" ] && PL=ja || PL=nein
+  ergebnis "FA-PIN-060: die hinterlegte PIN laesst sich wieder loeschen" "$PL"
+  ABL2=$(docker exec pr-agt sh -c 'cat /daten/pins 2>/dev/null' || true)
+  printf '%s' "$ABL2" | grep -q "^$HANDLE=" && PL2=nein || PL2=ja
+  ergebnis "nach dem Loeschen ist der Eintrag auch beim Agenten weg" "$PL2"
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='PIN_GELOESCHT'")" != "0" ] && PG=ja || PG=nein
+  ergebnis "das Loeschen steht im Fachprotokoll" "$PG"
+  fi
+
+  rm -f /tmp/pr-pin.html /tmp/pr-pin2.html /tmp/pr-pin-neu.html /tmp/pr-pin-klartext.html \
+        /tmp/pr-agent-pub.pem
 fi
 
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht

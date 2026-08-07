@@ -93,9 +93,24 @@ services:
       MANDANT_ID: "Mandant1"
       CLIENTSYSTEM_ID: "PIN-Roboter"
       ARBEITSPLATZ_ID: "Arbeitsplatz1"
+      SCHLUESSEL_DATEI: "/daten/agent-schluessel"
+      PIN_ABLAGE: "/daten/pins"
+      # ADR-0009: Schluessel fuer die verschluesselte PIN-Ablage des Agenten.
+      # Getrennt vom GEHEIMNIS_SCHLUESSEL der Zentrale — wer den einen hat,
+      # bekommt damit nicht auch den anderen. Erzeugen mit:
+      #   openssl rand -base64 32
+      # Fehlt er, bleiben hinterlegte PINs nur im Arbeitsspeicher und sind nach
+      # einem Neustart weg. Nie im Repository (NFA-BET-010).
+      PIN_ABLAGE_SCHLUESSEL: ${PIN_ABLAGE_SCHLUESSEL:-}
       # Der Agent muss ≤ 512 MB bleiben (NFA-LEI-030) — er soll später auch auf
       # schwacher oder fremder Hardware mitlaufen können.
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
+    volumes:
+      # NFA-BET-020: Token, Schluesselpaar und PIN-Ablage gehoeren in ein Volume.
+      # Im Container-Layer waeren sie nach jedem Neustart weg — der Agent
+      # muesste sich neu registrieren und jede hinterlegte PIN waere unbrauchbar,
+      # weil sie fuer ein Schluesselpaar verschluesselt ist, das es nicht mehr gibt.
+      - agentdaten:/daten
     depends_on:
       simulator: { condition: service_healthy }
       datenbank:
