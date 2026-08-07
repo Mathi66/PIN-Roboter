@@ -216,6 +216,30 @@ T=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
 [ "$T" = "0" ] && I=ja || I=nein
 ergebnis "Fachprotokoll ist weder änderbar noch löschbar" "$I"
 
+# ---------------------------------------------------------------- Oberflaeche
+hinweis "Oberflaeche — Stylesheet und HTMX werden ausgeliefert"
+echo "  Diese Pruefung fehlte bis 07.08.2026. Ergebnis: Die Oberflaeche lief"
+echo "  wochenlang ungestylt, weil das Stylesheet mit 404 beantwortet wurde -"
+echo "  kein einziger Nachweis hatte je hingesehen."
+FEHLT=0
+for d in stil.css htmx.min.js; do
+  C=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090/statisch/$d")
+  G=$(curl -s -o /dev/null -w "%{size_download}" "http://localhost:8090/statisch/$d")
+  [ "$C" = "200" ] && [ "$G" -gt 1000 ] || { FEHLT=$((FEHLT+1)); echo "    $d: HTTP $C, $G Bytes"; }
+done
+[ $FEHLT -eq 0 ] && ST=ja || ST=nein
+ergebnis "Stylesheet und HTMX werden ausgeliefert (fehlend: $FEHLT von 2)" "$ST"
+
+# Die Anmeldeseite muss das Stylesheet auch einbinden - eine ausgelieferte
+# Datei nuetzt nichts, wenn die Seite sie nicht anfordert.
+curl -s http://localhost:8090/anmelden | grep -q 'href="/statisch/stil.css"' && EB=ja || EB=nein
+ergebnis "die Anmeldeseite bindet das Stylesheet ein" "$EB"
+
+# Javalin meldet Konfigurationsfehler beim Start, laeuft aber weiter. Genau so
+# blieb der 404 unbemerkt. Warnungen beim Start werden deshalb nicht toleriert.
+docker logs pr-zen 2>&1 | grep -qiE "does not exist|WARN.*static" && SW=nein || SW=ja
+ergebnis "keine Warnungen zur Ressourcenkonfiguration beim Start" "$SW"
+
 # ---------------------------------------------------------------- Zugriffsschutz
 hinweis "FA-BEN-020 / NFA-SIC-050 — ohne Anmeldung kein Zugriff"
 OFFEN=0

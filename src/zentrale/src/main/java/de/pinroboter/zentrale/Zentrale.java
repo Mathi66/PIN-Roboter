@@ -79,7 +79,17 @@ public class Zentrale {
     void starten(int port) {
         Javalin app = Javalin.create(cfg -> {
             cfg.showJavalinBanner = false;
-            cfg.staticFiles.add(s -> { s.hostedPath = "/statisch"; s.directory = "/"; s.location = io.javalin.http.staticfiles.Location.CLASSPATH; });
+            // Das Wurzelverzeichnis "/" findet Javalin im Classpath nicht — die
+            // Dateien müssen in einem echten Unterordner liegen. Ohne diesen
+            // Ordner werden Stylesheet und HTMX mit 404 beantwortet, und die
+            // Oberfläche erscheint als nacktes HTML. Der Start meldete das zwar
+            // ("Static resource directory ... does not exist"), aber die
+            // Anwendung lief weiter — deshalb fiel es beim Bauen nicht auf.
+            cfg.staticFiles.add(s -> {
+                s.hostedPath = "/statisch";
+                s.directory = "/statisch";
+                s.location = io.javalin.http.staticfiles.Location.CLASSPATH;
+            });
         });
 
         // ------------------------------------------------------------------
