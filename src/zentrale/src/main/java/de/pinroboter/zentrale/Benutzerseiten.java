@@ -25,10 +25,8 @@ final class Benutzerseiten {
                         List<Bestandsseiten.Organisationsauswahl> organisationen,
                         boolean darfVerwalten, String meldung, boolean istFehler,
                         String neuesGeheimnis, String neuerName) {
-        StringBuilder s = new StringBuilder("""
-                <h2>Benutzer</h2>
-                <p class="unterzeile">Konten, Einladungen und zweiter Faktor.</p>
-                """);
+        StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Konten",
+                "Zugänge, Einladungen und zweiter Faktor.", null));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
         }
@@ -66,11 +64,15 @@ final class Benutzerseiten {
          .append(gesamt).append("</span></h3>");
 
         s.append("""
-                <form method="get" action="/benutzer" class="filterleiste" role="search">
+                <form method="get" action="/benutzer" class="filterleiste" role="search"
+                      hx-get="/benutzer" hx-target="#kontenliste" hx-select="#kontenliste"
+                      hx-swap="outerHTML" hx-push-url="true" hx-indicator="#kontenliste"
+                      hx-trigger="input changed delay:250ms from:#b-suche, change">
                   <div class="feldgruppe">
                     <label for="b-suche">Suche</label>
                     <input id="b-suche" name="suche" value="%s" type="search"
-                           placeholder="Benutzername oder Name">
+                           placeholder="Benutzername oder Name"
+                           autocomplete="off" aria-describedby="b-treffer">
                   </div>
                   <div class="feldgruppe">
                     <label for="b-rolle">Rolle</label>
@@ -89,7 +91,6 @@ final class Benutzerseiten {
                       <option value="ohne-totp"%s>zweiter Faktor fehlt</option>
                     </select>
                   </div>
-                  <button class="knopf" type="submit">Suchen</button>
                   <a class="knopf" href="/benutzer">Zurücksetzen</a>
                 </form>"""
                 .formatted(esc(nz(a.suche())),
@@ -99,6 +100,10 @@ final class Benutzerseiten {
                         "inaktiv".equals(a.status()) ? " selected" : "",
                         "ohne-totp".equals(a.status()) ? " selected" : ""));
 
+        // Nur dieser Bereich wird beim Tippen ausgetauscht (hx-select oben).
+        s.append("<div id=\"kontenliste\" class=\"traegt\">");
+        s.append("<p class=\"suchstand\" id=\"b-treffer\" role=\"status\" aria-live=\"polite\" "
+                + "style=\"padding:.5rem 1.2rem 0;margin:0\">").append(gesamt).append(" Treffer</p>");
         if (konten.isEmpty()) {
             s.append("<p class=\"leer\">Keine Konten für diese Auswahl.</p>");
         } else {
@@ -149,6 +154,7 @@ final class Benutzerseiten {
             s.append("</tbody></table></div>");
             s.append(blaetterleiste(gesamt, a));
         }
+        s.append("</div>");   // Ende kontenliste
         return s.append("</div>").toString();
     }
 

@@ -22,11 +22,9 @@ final class Organisationsseiten {
 
     static String seite(List<Organisationsverwaltung.Einheit> baum, boolean darfVerwalten,
                         String meldung, boolean istFehler, Long ausgewaehlt) {
-        StringBuilder s = new StringBuilder("""
-                <h2>Organisation</h2>
-                <p class="unterzeile">Verbünde, Standorte und Einrichtungen — die Struktur,
-                   der Geräte und Konten zugeordnet sind.</p>
-                """);
+        StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Organisation",
+                "Verbünde, Standorte und Einrichtungen — die Struktur, der Geräte und "
+                + "Konten zugeordnet sind.", null));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
         }

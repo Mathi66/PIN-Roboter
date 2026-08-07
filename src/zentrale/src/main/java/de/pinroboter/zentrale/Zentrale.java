@@ -276,10 +276,14 @@ public class Zentrale {
             }
         });
 
-        app.get("/", c -> c.html(seite("uebersicht", uebersicht(c), angemeldeter(c))));
+        app.get("/", c -> c.html(seite("uebersicht", uebersichtsSeite(c), angemeldeter(c))));
         app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(), angemeldeter(c))));
         app.get("/protokoll", c -> c.html(seite("protokoll", protokollSeite(c), angemeldeter(c))));
         app.get("/teil/uebersicht", c -> c.html(uebersicht(c)));
+        // Zwei getrennte Einschuebe statt eines Komplettaustauschs. Siehe
+        // uebersichtsSeite() zur Begruendung.
+        app.get("/teil/alarme", c -> c.html(alarmblock(c)));
+        app.get("/teil/lage",   c -> c.html(lageblock(c)));
         app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
         app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
 
@@ -1616,10 +1620,8 @@ public class Zentrale {
 
     private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten) {
         var b = demodaten.bestand();
-        StringBuilder s = new StringBuilder("""
-                <h2>Verwaltung</h2>
-                <p class="unterzeile">Werkzeuge für Administratoren.</p>
-                """);
+        StringBuilder s = new StringBuilder(seitenkopf("Instanz",
+                "Werkzeuge für den Betreiber dieser Instanz.", null));
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
 
         s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"anmeldeinhalt\">");
@@ -1753,12 +1755,10 @@ public class Zentrale {
     }
 
     private String gruppenSeite(Context c, String fehler) {
-        return """
-                <h2>Gerätegruppen</h2>
-                <p class="unterzeile">
-                  Gruppen tragen das Prüfintervall — und später die Zeitfenster für
-                  Firmware-Updates. Neu erkannte Geräte landen zunächst in der Vorgabegruppe.
-                </p>
+        return seitenkopf("Gerätegruppen",
+                "Gruppen tragen das Prüfintervall — und später die Zeitfenster für "
+                + "Firmware-Updates. Neu erkannte Geräte landen zunächst in der Vorgabegruppe.",
+                null) + """
                 %s
                 <div class="tafel">
                   <h3>Neue Gruppe</h3>
@@ -1835,15 +1835,56 @@ public class Zentrale {
                 + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + (8 * 3600));
     }
 
+    /**
+     * Die Lage-Seite.
+     *
+     * <p><b>Sie tauscht sich nicht mehr als Ganzes aus.</b> Bis zum 07.08.2026
+     * lag der gesamte Seiteninhalt in einem Container mit
+     * {@code hx-trigger="every 3s"} — alle drei Sekunden wurde alles ersetzt,
+     * und dabei konnten Scrollposition, Tastaturfokus und eine getroffene
+     * Auswahl springen. Das war die Ursache des unruhigen Eindrucks, den der PO
+     * gemeldet hat.
+     *
+     * <p>Jetzt aktualisieren sich zwei Einschübe getrennt: die Alarme und die
+     * Lage. Der Rahmen bleibt stehen. Der Takt ist auf 5 s gesenkt — der
+     * Zustand ändert sich ohnehin nur im Prüfintervall der Gerätegruppe
+     * (im Betrieb 60 s).
+     */
+    private String uebersichtsSeite(Context c) {
+        return """
+                <div class="seitenkopf">
+                  <div>
+                    <h2 tabindex="-1">Lage</h2>
+                    <p class="unterzeile">Was gerade Aufmerksamkeit braucht — und was von selbst läuft.</p>
+                  </div>
+                  <div class="kopf-rechts">%s</div>
+                </div>
+                <div id="alarme" hx-get="/teil/alarme" hx-trigger="every 5s" hx-swap="innerHTML">%s</div>
+                <div id="lage" hx-get="/teil/lage" hx-trigger="every 5s" hx-swap="innerHTML">%s</div>
+                """.formatted(automatikMarkeGesamt(), alarmblock(c), lageblock(c));
+    }
+
+    /** Zustand der Automatik im Seitenkopf — Farbe UND Text (WCAG 1.4.1). */
+    private String automatikMarkeGesamt() {
+        return notAus
+                ? "<span class=\"marke fehler\"><span class=\"sym\">×</span>Not-Aus aktiv</span>"
+                : "<span class=\"marke ok\"><span class=\"puls\"></span>Automatik läuft</span>";
+    }
+
     private String uebersicht(Context c) {
+        return alarmblock(c) + lageblock(c);
+    }
+
+    private String lageblock(Context c) {
         var alle = geraete.values();
         long ok = alle.stream().filter(g -> g.ampel() == Ampel.OK).count();
         long warn = alle.stream().filter(g -> g.ampel() == Ampel.WARNUNG).count();
         long fehler = alle.stream().filter(g -> g.ampel() == Ampel.FEHLER).count();
         long ohnePevim = alle.stream().filter(g -> !g.pevimAktiv).count();
 
+        // Der Alarmblock steht in einem EIGENEN Einschub (siehe uebersichtsSeite)
+        // und gehoert deshalb nicht mehr hierher.
         StringBuilder s = new StringBuilder();
-        s.append(alarmblock(c));
         if (notAus) s.append("""
                 <div class="hinweis" style="border-left-color:var(--fehler);background:var(--fehler-hg)">
                   <strong>Not-Aus ist aktiv</strong>
@@ -1852,11 +1893,11 @@ public class Zentrale {
 
         s.append("""
                 <div class="lage">
-                  <a class="kachel ok" href="/geraete"><div class="zahl">%d</div><div class="bez">Karten freigeschaltet</div></a>
-                  <a class="kachel warnung" href="/geraete"><div class="zahl">%d</div><div class="bez">brauchen Aufmerksamkeit</div></a>
-                  <a class="kachel fehler" href="/geraete"><div class="zahl">%d</div><div class="bez">Handlungsbedarf</div></a>
-                  <a class="kachel unbekannt" href="/geraete"><div class="zahl">%d</div><div class="bez">ohne Automatik (PEviM)</div></a>
-                </div>""".formatted(ok, warn, fehler, ohnePevim));
+                  <a class="kachel ok" href="/geraete"><div class="bez">Karten freigeschaltet</div><div class="zahl">%d</div>%s</a>
+                  <a class="kachel warnung" href="/geraete"><div class="bez">brauchen Aufmerksamkeit</div><div class="zahl">%d</div></a>
+                  <a class="kachel fehler" href="/geraete"><div class="bez">Handlungsbedarf</div><div class="zahl">%d</div></a>
+                  <a class="kachel unbekannt" href="/geraete"><div class="bez">ohne Automatik (PEviM)</div><div class="zahl">%d</div></a>
+                </div>""".formatted(ok, verlaufsbalken(ok, warn, fehler), warn, fehler, ohnePevim));
 
         var sp = speicher.zustand();
         if (sp.anteil() >= 0.5) {
@@ -1888,6 +1929,25 @@ public class Zentrale {
             s.append("</tbody></table></div>");
         }
         s.append("</div>");
+        return s.toString();
+    }
+
+    /**
+     * Verlaufsbalken unter der Hauptkennzahl.
+     *
+     * <p>„34 freigeschaltet" sagt weniger als „34 von 36, davon 1 mit
+     * Handlungsbedarf". Der Balken trägt keine eigene Information — er macht
+     * das Verhältnis auf einen Blick lesbar und ist deshalb
+     * {@code aria-hidden}; die Zahlen daneben stehen im Text.
+     */
+    private static String verlaufsbalken(long ok, long warn, long fehler) {
+        if (ok + warn + fehler == 0) return "";
+        StringBuilder s = new StringBuilder("<div class=\"balken\" aria-hidden=\"true\">");
+        if (ok > 0)     s.append("<i class=\"b-ok\" style=\"flex:").append(ok).append("\"></i>");
+        if (warn > 0)   s.append("<i class=\"b-warn\" style=\"flex:").append(warn).append("\"></i>");
+        if (fehler > 0) s.append("<i class=\"b-krit\" style=\"flex:").append(fehler).append("\"></i>");
+        s.append("</div><span class=\"fuss\">von ").append(ok + warn + fehler)
+         .append(" überwachten Karten</span>");
         return s.toString();
     }
 
@@ -1924,11 +1984,13 @@ public class Zentrale {
     }
 
     private String geraeteSeite() {
-        return """
-                <h2>Kartenterminals</h2>
-                <p class="unterzeile">Zustand aller überwachten Geräte. Aktualisiert sich selbsttätig.</p>
+        // Takt von 3 s auf 5 s: Der Zustand aendert sich ohnehin nur im
+        // Pruefintervall der Gruppe (im Betrieb 60 s). Haeufiger zu fragen
+        // erzeugt nur Unruhe und Last.
+        return seitenkopf("Kartenterminals",
+                "Zustand aller überwachten Geräte. Aktualisiert sich selbsttätig.", null) + """
                 <div class="tafel"><h3>Geräte <span class="zaehler"><span class="puls"></span> live</span></h3>
-                <div id="geraete" hx-get="/teil/geraete" hx-trigger="load, every 3s" hx-swap="innerHTML">%s</div></div>
+                <div id="geraete" hx-get="/teil/geraete" hx-trigger="load, every 5s" hx-swap="innerHTML">%s</div></div>
                 """.formatted(geraeteTabelle());
     }
 
@@ -1953,10 +2015,9 @@ public class Zentrale {
         StringBuilder arten = new StringBuilder("<option value=\"\">alle Ereignisarten</option>");
         for (Ereignisart a : Ereignisart.values())
             arten.append("<option value=\"%s\">%s</option>".formatted(a.name(), esc(a.anzeige())));
-        return """
-                <h2>Protokoll</h2>
-                <p class="unterzeile">Jede Handlung des Roboters ist hier nachvollziehbar.
-                   Protokolliert werden Zustandsänderungen und Handlungen — keine Abfragen.</p>
+        return seitenkopf("Protokoll",
+                "Jede Handlung des Roboters ist hier nachvollziehbar. Protokolliert werden "
+                + "Zustandsänderungen und Handlungen — keine Abfragen.", null) + """
                 <div class="tafel">
                   <div class="filter">
                     <label class="nurLeser" for="f-art">Ereignisart</label>
@@ -2060,48 +2121,150 @@ public class Zentrale {
     }
 
     private String seite(String aktiv, String inhalt, Benutzerverwaltung.Benutzer angemeldet) {
-        String agentText = agentGesehen == null ? "kein Agent verbunden" : "Agent verbunden";
-        String benutzerBlock = angemeldet == null ? "" : """
-                <span class="angemeldet" title="Rolle: %s">%s</span>
-                <button class="knopf" hx-post="/abmelden">Abmelden</button>"""
-                .formatted(esc(angemeldet.rolle().anzeige()), esc(angemeldet.anzeigename()));
         return """
                 <!doctype html><html lang="de"><head><meta charset="utf-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
                 <title>PIN-Roboter</title><link rel="stylesheet" href="/statisch/stil.css">
                 <script src="/statisch/htmx.min.js" defer></script></head><body>
+                <div class="schein" aria-hidden="true"></div>
                 <a href="#inhalt" class="nurLeser">Zum Inhalt springen</a>
-                <header>
-                  <h1>PIN-Roboter <span>· %s</span></h1>
-                  <nav aria-label="Hauptnavigation">
-                    <a href="/" %s>Übersicht</a>
-                    <a href="/geraete" %s>Kartenterminals</a>
-                    <a href="/bestand" %s>Bestand</a>
-                    <a href="/gruppen" %s>Gruppen</a>
-                    <a href="/organisation" %s>Organisation</a>
-                    <a href="/benutzer" %s>Benutzer</a>
-                    <a href="/verwaltung" %s>Verwaltung</a>
-                    <a href="/protokoll" %s>Protokoll</a>
-                    <button class="knopf %s" hx-post="/notaus"
-                      title="Hält die Automatik sofort an">%s</button>
-                    %s
-                  </nav>
-                </header>
-                <main id="inhalt">
-                  <div hx-get="/teil/uebersicht" hx-trigger="every 3s" hx-swap="innerHTML" %s>%s</div>
-                </main></body></html>"""
-                .formatted(esc(agentText),
-                        aktiv.equals("uebersicht") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("geraete") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("bestand") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("gruppen") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("organisation") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("benutzer") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("verwaltung") ? "aria-current=\"page\"" : "",
-                        aktiv.equals("protokoll") ? "aria-current=\"page\"" : "",
-                        notAus ? "" : "warnend", notAus ? "Not-Aus aufheben" : "Not-Aus",
-                        benutzerBlock,
-                        aktiv.equals("uebersicht") ? "" : "hx-disable", inhalt);
+                <div class="rahmen">
+                %s
+                <main id="inhalt">%s</main>
+                </div></body></html>"""
+                .formatted(seitenleiste(aktiv, angemeldet), inhalt);
+    }
+
+    /**
+     * Die Seitenleiste (UX-Konzept vom 07.08.2026).
+     *
+     * <p>Sie ersetzt das Reiterband im Kopf. Bei acht Arbeitsbereichen wurde das
+     * Band zu voll; senkrecht ist Platz, und die Bereiche lassen sich
+     * gruppieren — Betrieb und Verwaltung sind zwei verschiedene Anlässe, die
+     * Oberfläche zu öffnen.
+     */
+    /**
+     * Der Kopf einer Seite: Titel, Unterzeile, optionale Knöpfe rechts.
+     *
+     * <p>An einer Stelle, damit jede Seite gleich aussieht. Vorher trug jede
+     * Seite ihre Überschrift selbst — mit leicht unterschiedlichen Abständen,
+     * und das war Teil des unruhigen Eindrucks.
+     *
+     * <p>Die Überschrift ist mit {@code tabindex="-1"} fokussierbar: Nach einem
+     * Seitenwechsel bekommt sie den Fokus, damit Screenreader den Wechsel
+     * ansagen. Ein Rahmen erscheint dabei nicht — sie ist kein Bedienelement.
+     */
+    static String seitenkopf(String titel, String unterzeile, String rechts) {
+        return """
+                <div class="seitenkopf">
+                  <div><h2 tabindex="-1">%s</h2>%s</div>
+                  %s
+                </div>"""
+                .formatted(esc(titel),
+                        unterzeile == null ? "" : "<p class=\"unterzeile\">" + unterzeile + "</p>",
+                        rechts == null || rechts.isBlank() ? ""
+                                : "<div class=\"kopf-rechts\">" + rechts + "</div>");
+    }
+
+    /** Seitenkopf mit Rückweg — für Detailseiten (UX-Konzept, Punkt 5). */
+    static String detailkopf(String zurueckZiel, String zurueckText, String titel,
+                             String unterzeile, String rechts) {
+        String pfeil = "<svg viewBox=\"0 0 16 16\" width=\"14\" height=\"14\" fill=\"none\" "
+                + "stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M10 3 5 8l5 5\"/></svg>";
+        return """
+                <div class="seitenkopf">
+                  <div>
+                    <a class="zurueck" href="%s">%s%s</a>
+                    <h2 tabindex="-1">%s</h2>%s
+                  </div>
+                  %s
+                </div>"""
+                .formatted(zurueckZiel, pfeil, esc(zurueckText), esc(titel),
+                        unterzeile == null ? "" : "<p class=\"unterzeile\">" + unterzeile + "</p>",
+                        rechts == null || rechts.isBlank() ? ""
+                                : "<div class=\"kopf-rechts\">" + rechts + "</div>");
+    }
+
+    private String seitenleiste(String aktiv, Benutzerverwaltung.Benutzer angemeldet) {
+        String agentText = agentGesehen == null ? "kein Agent verbunden" : "Agent verbunden";
+        int offeneAlarme = alarme.zaehlen("Praxis").values().stream().mapToInt(Integer::intValue).sum();
+
+        StringBuilder s = new StringBuilder();
+        s.append("""
+                <nav class="leiste" aria-label="Hauptnavigation">
+                  <div class="marke-kopf">
+                    <div class="marke-zeichen" aria-hidden="true">PR</div>
+                    <div class="marke-text">PIN-Roboter<small>%s</small></div>
+                  </div>
+                  <nav class="bereiche" aria-label="Arbeitsbereiche">
+                    <div class="bereich-titel">Betrieb</div>
+                """.formatted(esc(agentText)));
+
+        s.append(bereichsLink(aktiv, "uebersicht", "/", "Lage",
+                "<path d=\"M3 10a7 7 0 0 1 14 0M10 10l3.5-3\"/><circle cx=\"10\" cy=\"10\" r=\"1.3\" fill=\"currentColor\" stroke=\"none\"/>",
+                offeneAlarme));
+        s.append(bereichsLink(aktiv, "geraete", "/geraete", "Kartenterminals",
+                "<rect x=\"2.5\" y=\"4\" width=\"15\" height=\"10\" rx=\"2\"/><path d=\"M6.5 17h7M10 14v3\"/>", 0));
+        s.append(bereichsLink(aktiv, "gruppen", "/gruppen", "Gerätegruppen",
+                "<rect x=\"2.5\" y=\"3\" width=\"6\" height=\"6\" rx=\"1.5\"/><rect x=\"11.5\" y=\"3\" width=\"6\" height=\"6\" rx=\"1.5\"/><rect x=\"2.5\" y=\"11\" width=\"6\" height=\"6\" rx=\"1.5\"/><rect x=\"11.5\" y=\"11\" width=\"6\" height=\"6\" rx=\"1.5\"/>", 0));
+        s.append(bereichsLink(aktiv, "protokoll", "/protokoll", "Protokoll",
+                "<path d=\"M5 3h7l3 3v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z\"/><path d=\"M7 9h6M7 12h6\"/>", 0));
+
+        s.append("<div class=\"bereich-titel\">Verwaltung</div>");
+        s.append(bereichsLink(aktiv, "bestand", "/bestand", "Bestand",
+                "<path d=\"M3 6.5 10 3l7 3.5-7 3.5-7-3.5Z\"/><path d=\"M3 10 10 13.5 17 10M3 13.5 10 17l7-3.5\"/>", 0));
+        s.append(bereichsLink(aktiv, "organisation", "/organisation", "Organisation",
+                "<rect x=\"7.5\" y=\"2.5\" width=\"5\" height=\"4\" rx=\"1\"/><rect x=\"2\" y=\"13.5\" width=\"5\" height=\"4\" rx=\"1\"/><rect x=\"13\" y=\"13.5\" width=\"5\" height=\"4\" rx=\"1\"/><path d=\"M10 6.5v4M4.5 13.5v-3h11v3\"/>", 0));
+        s.append(bereichsLink(aktiv, "benutzer", "/benutzer", "Konten",
+                "<circle cx=\"10\" cy=\"7\" r=\"3\"/><path d=\"M4 16.5a6 6 0 0 1 12 0\"/>", 0));
+        s.append(bereichsLink(aktiv, "verwaltung", "/verwaltung", "Instanz",
+                "<circle cx=\"10\" cy=\"10\" r=\"2.6\"/><path d=\"M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4\"/>", 0));
+        s.append("</nav>");
+
+        // Not-Aus und Konto stehen unten: Beides gehoert nicht in den
+        // Arbeitsfluss, muss aber jederzeit erreichbar sein.
+        s.append("<div class=\"leiste-fuss\">");
+        s.append("""
+                <button class="knopf-leiste" hx-post="/notaus" style="color:var(--%s)"
+                        title="Hält die Automatik sofort an">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                    <circle cx="10" cy="10" r="7"/><path d="M7.2 7.2h5.6v5.6H7.2z"/>
+                  </svg>%s
+                </button>""".formatted(notAus ? "ok" : "fehler",
+                        notAus ? "Not-Aus aufheben" : "Not-Aus"));
+
+        if (angemeldet != null) {
+            s.append("""
+                    <div class="angemeldet">
+                      <div class="konto-kreis" aria-hidden="true">%s</div>
+                      <div class="konto-text"><b>%s</b><span>%s</span></div>
+                    </div>
+                    <button class="knopf-leiste" hx-post="/abmelden">
+                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+                        <path d="M12.5 6V4a1 1 0 0 0-1-1H4.5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>
+                        <path d="M8 10h8.5M14 7.5 16.5 10 14 12.5"/>
+                      </svg>Abmelden
+                    </button>""".formatted(esc(initialen(angemeldet.anzeigename())),
+                            esc(angemeldet.anzeigename()), esc(angemeldet.rolle().anzeige())));
+        }
+        return s.append("</div></nav>").toString();
+    }
+
+    private static String bereichsLink(String aktiv, String kennung, String ziel, String text,
+                                       String symbol, int zahl) {
+        return ("<a href=\"%s\" %s>"
+              + "<svg viewBox=\"0 0 20 20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" aria-hidden=\"true\">%s</svg>"
+              + "%s%s</a>")
+                .formatted(ziel, aktiv.equals(kennung) ? "aria-current=\"page\"" : "", symbol, esc(text),
+                        zahl > 0 ? "<span class=\"zahl-bereich\" title=\"offene Alarme\">" + zahl + "</span>" : "");
+    }
+
+    /** Initialen für den Kreis in der Seitenleiste. */
+    private static String initialen(String name) {
+        if (name == null || name.isBlank()) return "?";
+        String[] teile = name.trim().split("\\s+");
+        if (teile.length == 1) return teile[0].substring(0, 1).toUpperCase();
+        return (teile[0].charAt(0) + "" + teile[teile.length - 1].charAt(0)).toUpperCase();
     }
 
     private String marke(Geraetezustand g) {

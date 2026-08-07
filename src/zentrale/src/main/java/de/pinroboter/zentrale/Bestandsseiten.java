@@ -39,10 +39,8 @@ final class Bestandsseiten {
                         Bestandsverwaltung.Seite<Bestandsverwaltung.Terminal> terminals,
                         List<Organisationsauswahl> organisationen, Ansicht ansicht,
                         boolean zugangsdatenMoeglich, String meldung, boolean meldungIstFehler) {
-        StringBuilder s = new StringBuilder("""
-                <h2>Bestand</h2>
-                <p class="unterzeile">Konnektoren und Kartenterminals erfassen und pflegen.</p>
-                """);
+        StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Bestand",
+                "Konnektoren und Kartenterminals erfassen und pflegen.", null));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, meldungIstFehler ? "warnend" : "gut"));
         }
@@ -184,11 +182,15 @@ final class Bestandsseiten {
         // Suche und Filter laufen serverseitig - bei 5.000 Geraeten ist alles
         // andere unbrauchbar (FA-GER-060).
         s.append("""
-                <form method="get" action="/bestand" class="filterleiste" role="search">
+                <form method="get" action="/bestand" class="filterleiste" role="search"
+                      hx-get="/bestand" hx-target="#terminalliste" hx-select="#terminalliste"
+                      hx-swap="outerHTML" hx-push-url="true" hx-indicator="#terminalliste"
+                      hx-trigger="input changed delay:250ms from:#t-suche, change">
                   <div class="feldgruppe">
                     <label for="t-suche">Suche</label>
                     <input id="t-suche" name="suche" value="%s" type="search"
-                           placeholder="Bezeichnung, Kennung oder Standort">
+                           placeholder="Bezeichnung, Kennung oder Standort"
+                           autocomplete="off" aria-describedby="t-treffer">
                   </div>
                   <div class="feldgruppe">
                     <label for="t-konn">Konnektor</label>
@@ -226,7 +228,6 @@ final class Bestandsseiten {
                   </div>
                   <input type="hidden" name="sortierung" value="%s">
                   <input type="hidden" name="richtung" value="%s">
-                  <button class="knopf" type="submit">Filtern</button>
                   <a class="knopf" href="/bestand">Zurücksetzen</a>
                 </form>"""
                 .formatted(esc(suche == null ? "" : suche),
@@ -240,6 +241,12 @@ final class Bestandsseiten {
                         a.sortierung().name().toLowerCase(),
                         a.absteigend() ? "ab" : "auf"));
 
+        // Nur dieser Bereich wird beim Tippen ausgetauscht (hx-select oben).
+        // Alles darum — Filterleiste, Fokus, Cursorposition — bleibt stehen.
+        s.append("<div id=\"terminalliste\" class=\"traegt\">");
+        s.append("<p class=\"suchstand\" id=\"t-treffer\" role=\"status\" aria-live=\"polite\" "
+                + "style=\"padding:.5rem 1.2rem 0;margin:0\">")
+         .append(seite.gesamt()).append(seite.gesamt() == 1 ? " Treffer" : " Treffer").append("</p>");
         if (seite.eintraege().isEmpty()) {
             s.append("<p class=\"leer\">")
              .append(seite.gesamt() == 0 && (suche == null || suche.isBlank())
@@ -306,6 +313,7 @@ final class Bestandsseiten {
             s.append("</form>");
             s.append(blaetterleiste(seite, a));
         }
+        s.append("</div>");   // Ende terminalliste
 
         s.append("""
                 <details class="ausklapp"><summary>Kartenterminal hinzufügen</summary>
@@ -382,11 +390,9 @@ final class Bestandsseiten {
                                  Optional<Ermittlung.Modell> modell,
                                  List<Bestandsverwaltung.Konnektor> konnektoren,
                                  String meldung, boolean istFehler) {
-        StringBuilder s = new StringBuilder("""
-                <h2>Ermittelte Geräte</h2>
-                <p class="unterzeile">Was der Standort-Agent beim Konnektor vorgefunden hat ·
-                   <a href="/bestand">&larr; Zum erfassten Bestand</a></p>
-                """);
+        StringBuilder s = new StringBuilder(Zentrale.detailkopf("/bestand", "Bestand",
+                "Ermittelte Geräte",
+                "Was der Standort-Agent beim Konnektor vorgefunden hat.", null));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
         }
@@ -594,7 +600,7 @@ final class Bestandsseiten {
     static String konnektorMaske(Bestandsverwaltung.Konnektor k, Ermittlung.Auswahl kontext,
                                  String fehler) {
         StringBuilder s = new StringBuilder();
-        s.append("<h2>Konnektor: ").append(esc(k.bezeichnung())).append("</h2>");
+        s.append(Zentrale.detailkopf("/bestand", "Bestand", "Konnektor: " + k.bezeichnung(), null, null));
         s.append("<p class=\"unterzeile\"><a href=\"/bestand\">&larr; Zurück zum Bestand</a></p>");
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
 
@@ -728,7 +734,7 @@ final class Bestandsseiten {
                                 String fehler, String smcbHandle, String oeffentlicherSchluessel,
                                 boolean pinHinterlegt, boolean auftragOffen) {
         StringBuilder s = new StringBuilder();
-        s.append("<h2>Kartenterminal: ").append(esc(t.bezeichnung())).append("</h2>");
+        s.append(Zentrale.detailkopf("/bestand", "Alle Kartenterminals", t.bezeichnung(), null, null));
         s.append("<p class=\"unterzeile\">Kennung <code>").append(esc(t.terminalId()))
          .append("</code> am Konnektor ").append(esc(t.konnektor()))
          .append(" · <a href=\"/bestand\">&larr; Zurück zum Bestand</a></p>");
