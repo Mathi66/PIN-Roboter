@@ -29,6 +29,7 @@ public class Zentrale {
     private final Benutzerverwaltung benutzer;
     private final Agentenverwaltung agenten;
     private final Gruppenverwaltung gruppen;
+    private final Alarmverwaltung alarme;
     /** Name der Sitzungs-Kennung im Cookie. */
     private static final String SITZUNGSCOOKIE = "pinroboter_sitzung";
     private volatile boolean notAus = false;
@@ -62,6 +63,7 @@ public class Zentrale {
         this.benutzer = new Benutzerverwaltung(db);
         this.agenten = new Agentenverwaltung(db);
         this.gruppen = new Gruppenverwaltung(db);
+        this.alarme = new Alarmverwaltung(db);
     }
 
     private static String env(String name, String vorgabe) {
@@ -353,6 +355,7 @@ public class Zentrale {
                 }
             }
         }
+        alarmzustaendeAbleiten(g);
         c.json(Map.of("ok", true, "notAus", notAus));
     }
 
@@ -365,6 +368,57 @@ public class Zentrale {
      * Reverse-Proxy in der Auslieferung; im Prototyp läuft die Oberfläche
      * unverschlüsselt auf localhost.
      */
+    /**
+     * Leitet aus dem gemeldeten Gerätezustand die Alarme ab.
+     *
+     * <p>Jeder Zustand wird in beide Richtungen behandelt: Liegt er vor, wird
+     * gemeldet; liegt er nicht mehr vor, wird der Alarm geschlossen. Nur so
+     * verschwindet ein Alarm von selbst, wenn sich das Problem erledigt hat —
+     * und nur dann bedeutet ein offener Alarm wirklich noch etwas.
+     */
+    private void alarmzustaendeAbleiten(Geraetezustand g) {
+        String o = g.terminalId;
+
+        pruefe(g.automatikAngehalten, o, Alarmverwaltung.Art.AUTOMATIK_ANGEHALTEN,
+                "Die Automatik wurde für dieses Gerät angehalten.",
+                g.handlung != null ? g.handlung
+                        : "Bitte die hinterlegte PIN prüfen und die Automatik wieder freigeben.");
+
+        pruefe(!g.erreichbar, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
+                "Das Kartenterminal antwortet nicht.",
+                "Bitte prüfen, ob das Gerät eingeschaltet und mit dem Netzwerk verbunden ist.");
+
+        pruefe(g.pinStatus == de.pinroboter.gemeinsam.PinStatus.BLOCKED, o,
+                Alarmverwaltung.Art.KARTE_GESPERRT,
+                "Die SMC-B ist gesperrt. Der TI-Zugang über dieses Gerät ist unterbrochen.",
+                "Die Karte lässt sich nur mit der PUK entsperren. Ein weiterer PIN-Versuch hilft nicht.");
+
+        pruefe(g.pinStatus.handlungsbedarf()
+                        && g.pinStatus != de.pinroboter.gemeinsam.PinStatus.BLOCKED,
+                o, Alarmverwaltung.Art.HANDLUNGSBEDARF_KARTE,
+                g.pinStatus.erklaerung(),
+                "Dieser Zustand lässt sich nur von Hand am Kartenterminal auflösen.");
+
+        pruefe(g.erreichbar && g.pevimUnterstuetzt && !g.pevimAktiv, o,
+                Alarmverwaltung.Art.PEVIM_NICHT_AKTIV,
+                "Die automatische PIN-Eingabe ist an diesem Gerät nicht aktiviert.",
+                "Ein Administrator muss die Funktion direkt am Kartenterminal freischalten. "
+                + "Bis dahin wird das Gerät überwacht, aber nicht automatisch freigeschaltet.");
+    }
+
+    private void pruefe(boolean liegtVor, String objekt, Alarmverwaltung.Art art,
+                        String meldung, String handlung) {
+        if (liegtVor) {
+            if (alarme.melden("Praxis", objekt, art, meldung, handlung)) {
+                protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_AUSGELOEST, false,
+                        "Automatik", null, meldung, handlung);
+            }
+        } else if (alarme.beheben("Praxis", objekt, art)) {
+            protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_BEHOBEN, true,
+                    "Automatik", null, "Zustand behoben: " + art.name(), null);
+        }
+    }
+
     private boolean istAdministrator(Context c) {
         var b = angemeldeter(c);
         return b != null && b.rolle() == Benutzerverwaltung.Rolle.ADMINISTRATOR;
@@ -458,6 +512,7 @@ public class Zentrale {
         long ohnePevim = alle.stream().filter(g -> !g.pevimAktiv).count();
 
         StringBuilder s = new StringBuilder();
+        s.append(alarmblock());
         if (notAus) s.append("""
                 <div class="hinweis" style="border-left-color:var(--fehler);background:var(--fehler-hg)">
                   <strong>Not-Aus ist aktiv</strong>
@@ -494,6 +549,38 @@ public class Zentrale {
         }
         s.append("</div>");
         return s.toString();
+    }
+
+    /** Offene Alarme ganz oben — sie sind das Erste, was jemand sehen muss. */
+    private String alarmblock() {
+        var offen = alarme.offene("Praxis");
+        if (offen.isEmpty()) return "";
+        StringBuilder s = new StringBuilder(
+                "<div class=\"tafel\"><h3>Alarme <span class=\"zaehler\">"
+                + offen.size() + " offen</span></h3><div class=\"rollbar\"><table><tbody>");
+        for (var a : offen) {
+            s.append("""
+                    <tr class="%s"><td style="width:9rem">
+                      <span class="marke %s"><span class="sym">%s</span>%s</span><br>
+                      <span class="feldhinweis">%s</span></td>
+                      <td class="geraet">%s</td>
+                      <td>%s%s</td>
+                      <td style="width:9rem">%s</td></tr>"""
+                    .formatted(a.quittiert() ? "quittiert" : "",
+                            a.schweregrad().css(),
+                            a.schweregrad() == Alarmverwaltung.Schweregrad.KRITISCH ? "×" : "!",
+                            esc(a.schweregrad().anzeige()), esc(a.dauer()),
+                            esc(a.objekt() == null ? "—" : a.objekt()),
+                            esc(a.meldung()),
+                            a.handlung() == null ? ""
+                                : "<div class=\"handlung\">" + esc(a.handlung()) + "</div>",
+                            a.quittiert()
+                                ? "<span class=\"feldhinweis\">quittiert von "
+                                  + esc(a.quittiertVon()) + "</span>"
+                                : "<button class=\"knopf\" hx-post=\"/alarme/" + a.id()
+                                  + "/quittieren\" hx-target=\"body\">Quittieren</button>"));
+        }
+        return s.append("</tbody></table></div></div>").toString();
     }
 
     private String geraeteSeite() {

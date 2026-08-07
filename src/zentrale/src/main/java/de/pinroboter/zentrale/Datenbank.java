@@ -195,6 +195,34 @@ public class Datenbank implements AutoCloseable {
             INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe)
             VALUES ('Nicht zugeordnet', 'Praxis', TRUE);
             """);
+
+        migration(7, """
+            CREATE TABLE alarm (
+              id            BIGSERIAL PRIMARY KEY,
+              einrichtung   TEXT        NOT NULL,
+              objekt        TEXT,                    -- Gerät, Karte, Agent …
+              art           TEXT        NOT NULL,
+              schweregrad   TEXT        NOT NULL,
+              meldung       TEXT        NOT NULL,
+              handlung      TEXT,
+              seit          TIMESTAMPTZ NOT NULL DEFAULT now(),
+              zuletzt       TIMESTAMPTZ NOT NULL DEFAULT now(),
+              quittiert_von TEXT,
+              quittiert_am  TIMESTAMPTZ,
+              behoben_am    TIMESTAMPTZ
+            );
+
+            -- Je Objekt und Art hoechstens EIN offener Alarm. Das ist der
+            -- Unterschied zwischen Alarm und Protokolleintrag: Das Protokoll
+            -- sammelt Ereignisse, der Alarm beschreibt einen ANDAUERNDEN
+            -- Zustand. Ohne diese Regel erzeugt ein alle vier Sekunden
+            -- pruefender Agent 900 Alarme pro Stunde fuer dasselbe Problem.
+            CREATE UNIQUE INDEX alarm_offen_idx
+              ON alarm (einrichtung, coalesce(objekt, ''), art)
+              WHERE behoben_am IS NULL;
+
+            CREATE INDEX alarm_seit_idx ON alarm (seit DESC);
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

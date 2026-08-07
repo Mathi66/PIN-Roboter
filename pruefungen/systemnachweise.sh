@@ -238,6 +238,31 @@ CODE=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" http://localhost:8090/
 ergebnis "nach dem Abmelden ist die Sitzung serverseitig ungültig" "$AB"
 anmelden
 
+# ---------------------------------------------------------------- Alarme
+hinweis "FA-ALA-010 — Alarme entstehen und verschwinden von selbst"
+alarmzahl() { curl -s -b "$KEKSE" http://localhost:8090/ | grep -c "Quittieren" || true; }
+
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/erreichbar/false >/dev/null
+sleep 14
+A1=$(alarmzahl)
+[ "$A1" -ge 1 ] && AL=ja || AL=nein
+ergebnis "nicht erreichbares Gerät erzeugt einen Alarm (gefunden: $A1)" "$AL"
+
+curl -s -b "$KEKSE" http://localhost:8090/ | grep -q "eingeschaltet und mit dem Netzwerk" && HE=ja || HE=nein
+ergebnis "der Alarm nennt eine Handlungsempfehlung" "$HE"
+
+# Derselbe Zustand ueber viele Pruefzyklen darf keine weiteren Alarme erzeugen.
+sleep 20
+A2=$(alarmzahl)
+[ "$A2" = "$A1" ] && DU=ja || DU=nein
+ergebnis "keine Alarmflut bei andauerndem Zustand ($A1 -> $A2)" "$DU"
+
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/erreichbar/true >/dev/null
+sleep 16
+A3=$(alarmzahl)
+[ "$A3" -lt "$A1" ] && BE=ja || BE=nein
+ergebnis "behobener Zustand schließt den Alarm selbsttätig ($A1 -> $A3)" "$BE"
+
 # ---------------------------------------------------------------- Agent-Zugang
 hinweis "FA-AGT-010 / FA-AGT-020 — Agent-Registrierung und Token"
 OFFEN=0

@@ -417,3 +417,40 @@ Acht neue Integrationstests gegen echte PostgreSQL, darunter der wichtigste:
 — nicht im Nichts.
 
 ## Systemnachweise: 21, weiterhin alle grün
+
+---
+
+# Iteration 8 — Alarmierung
+
+Bis hierher sah man Probleme nur, wenn man hinschaute. Ein Automat, der nachts
+arbeitet, muss von sich aus melden.
+
+## Der tragende Unterschied
+
+**Ein Alarm ist kein Protokolleintrag.** Das Protokoll sammelt Ereignisse — was
+geschehen ist. Ein Alarm beschreibt einen *andauernden Zustand* — was gerade
+nicht in Ordnung ist. Daraus folgt alles Weitere:
+
+- **Je Objekt und Art höchstens ein offener Alarm**, per Datenbank-Index
+  erzwungen. Ohne diese Regel erzeugte ein alle vier Sekunden prüfender Agent
+  900 Alarme pro Stunde für dasselbe Problem — und niemand würde mehr hinsehen.
+  *Nachgewiesen: 100 Meldungen desselben Zustands ergeben einen Alarm.*
+- **Behobene Zustände schließen den Alarm selbsttätig.** Ein Alarm, den jemand
+  wegklicken muss, obwohl das Problem längst weg ist, erzieht dazu, Alarme
+  wegzuklicken. *Nachgewiesen im laufenden Betrieb: Gerät weg → Alarm, Gerät
+  wieder da → Alarm verschwindet.*
+- **Quittieren heißt gesehen, nicht behoben.** Ein quittierter Alarm bleibt
+  offen, zählt aber nicht mehr als Handlungsbedarf.
+- **Jeder Alarm trägt eine Handlungsempfehlung im Klartext.** Eine Meldung, die
+  nur sagt was kaputt ist, hilft in einer Praxis niemandem.
+
+## Kritisches zuerst
+
+Die Liste sortiert nach Schweregrad, nicht nach Zeit: Was den Betrieb anhält,
+muss zuerst ins Auge fallen. Offene Alarme stehen ganz oben auf der Startseite.
+
+## Nachgewiesen
+
+- **51 Modultests** (8 neue für die Alarmlogik)
+- **25 Systemnachweise**, darunter vier neue im laufenden Betrieb:
+  Alarm entsteht, nennt eine Handlung, flutet nicht, verschwindet von selbst

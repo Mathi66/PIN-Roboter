@@ -166,3 +166,4 @@ form input:focus-visible { border-color:var(--akzent); }
   color:var(--gedaempft); font-size:.9rem; padding:.4rem .3rem .4rem .8rem;
   border-left:1px solid var(--rand); margin-left:.4rem;
 }
+tr.quittiert { opacity:.62; }

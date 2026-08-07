@@ -43,6 +43,10 @@ public enum Ereignisart {
     TOTP_EINGERICHTET("Zweiter Faktor eingerichtet", Stufe.SICHERHEIT),
     TOTP_ZURUECKGESETZT("Zweiter Faktor zurückgesetzt", Stufe.SICHERHEIT),
 
+    ALARM_AUSGELOEST("Alarm ausgelöst", Stufe.ROUTINE),
+    ALARM_BEHOBEN("Alarm behoben", Stufe.ROUTINE),
+    ALARM_QUITTIERT("Alarm quittiert", Stufe.ROUTINE),
+
     NOT_AUS_AUSGELOEST("Not-Aus ausgelöst", Stufe.SICHERHEIT),
     NOT_AUS_AUFGEHOBEN("Not-Aus aufgehoben", Stufe.SICHERHEIT),
     AGENT_VERBUNDEN("Standort-Agent verbunden", Stufe.ROUTINE),
