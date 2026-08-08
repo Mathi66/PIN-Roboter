@@ -1681,3 +1681,33 @@ nicht „welche Firmware hat Gerät X", sondern „wie viele hängen zurück".
 Gegenteil: dass bei gleichbleibendem Zustand *nichts* ins Protokoll kommt.
 
 ## Stand: 249 Modultests, 246 Systemnachweise — alle grün
+
+## FA-AGT-040 und FA-INS-040 — beide Zeilen waren falsch beschriftet
+
+FA-AGT-040 stand als „Agentenverwaltung in der Oberfläche", heißt im Katalog
+aber **Versionsunterschiede**. FA-INS-040 stand als „Health-Checks", heißt
+**Sicherung und Wiederherstellung**. Beide Male war eine plausibel klingende,
+aber falsche Anforderung als fast fertig geführt — derselbe Fall wie zuvor bei
+FA-ALA-020.
+
+Eine falsch beschriftete Zeile ist gefährlicher als eine leere: Sie sieht aus
+wie Fortschritt.
+
+**Versionsunterschiede:** Der Agent meldet jetzt seine Protokollversion, die
+Zentrale bewertet sie gegen eine Spanne und zeigt sie an. Die wichtigste
+Festlegung: Ein Agent außerhalb der Spanne wird **nicht abgewiesen** — das
+hieße keine PIN-Verifikation an diesem Standort. Beides nachgewiesen: dass die
+Abweichung erkannt wird, und dass er weiterarbeitet.
+
+**Wiederherstellung:** Drei der vier Akzeptanzpunkte waren erfüllt. Der vierte
+fehlte — nach einer Wiederherstellung war nicht ersichtlich, welche PINs neu zu
+hinterlegen sind. Der Fall: Die Zentrale wird zurückgespielt, der Agent aber
+neu aufgesetzt; sein Schlüsselpaar ist ein anderes, die PINs unlesbar. Ohne
+Anzeige bliebe die Praxis im Glauben, alles sei versorgt.
+
+**Ein Nachweis meldete einen Fehler, wo keiner war:** Die Suche nach der
+Test-PIN `123456` im Datenbankauszug fand sie in der ICCSN einer Demo-eGK
+(`80276883110000123456`). Wer einem Nachweis dreimal so begegnet, glaubt ihm
+beim vierten Mal nicht — und beim vierten Mal stimmt er.
+
+## Stand: 249 Modultests, 260 Systemnachweise — alle grün

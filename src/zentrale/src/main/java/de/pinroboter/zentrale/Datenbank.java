@@ -652,6 +652,18 @@ public class Datenbank implements AutoCloseable {
             CREATE INDEX mail_warteschlange_offen_idx
               ON mail_warteschlange (organisation_id, angelegt) WHERE versendet IS NULL;
             """);
+
+        migration(18, """
+            -- Versionsunterschiede zwischen Agent und Zentrale (FA-AGT-040).
+            --
+            -- Bei 1.000 Standorten ist eine gemischte Landschaft der Normalfall:
+            -- Ein Agent, dessen Praxis ueber Nacht ausgeschaltet war, meldet
+            -- sich Tage spaeter mit einer aelteren Fassung. Ohne Versionsangabe
+            -- zeigt sich das als seltsames Verhalten, dessen Ursache niemand
+            -- findet.
+            ALTER TABLE agent ADD COLUMN protokollversion INTEGER;
+            ALTER TABLE agent ADD COLUMN bausteinversion  TEXT;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

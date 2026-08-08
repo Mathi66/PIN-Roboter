@@ -309,6 +309,9 @@ public class Agent {
         // gemeldet - die Oberflaeche weist dann auf die entfallende
         // Unterstuetzung hin (NFA-QS-035), statt das Feld leer zu lassen.
         meldung.put("informationsmodellVerfuegbar", modell != null);
+        // FA-AGT-040: Der Agent nennt die Protokollversion, die er spricht.
+        meldung.put("protokollversion", de.pinroboter.gemeinsam.Protokollversion.AKTUELL);
+        meldung.put("bausteinversion", bausteinversion());
         // Der oeffentliche Schluessel ist nicht geheim - er MUSS die Zentrale
         // erreichen, damit der Browser damit verschluesseln kann (ADR-0009).
         if (schluessel != null) meldung.put("oeffentlicherSchluessel", schluessel.oeffentlichBase64());
@@ -610,6 +613,17 @@ public class Agent {
             Thread.sleep(2000);
         }
         throw new IllegalStateException("Vertrauensanker konnte nicht geladen werden: " + url);
+    }
+
+    /**
+     * Die Version dieses Bausteins, aus dem Manifest des Jars.
+     *
+     * <p>Zur Anzeige, nicht zur Entscheidung — dafür ist die Protokollversion
+     * da. Im Entwicklungslauf ohne Jar steht „unbekannt"; das ist kein Fehler.
+     */
+    private static String bausteinversion() {
+        String v = Agent.class.getPackage().getImplementationVersion();
+        return v == null ? "unbekannt" : v;
     }
 
     private static String env(String name, String vorgabe) {

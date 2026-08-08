@@ -2027,6 +2027,109 @@ curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-fw2.html
 ergebnis "der neue Stand erscheint in der Uebersicht" "$FS"
 rm -f /tmp/pr-fw.html /tmp/pr-fw2.html
 
+# ------------------------------------------------- FA-AGT-040 / FA-INS-040
+hinweis "FA-AGT-040 — Versionsunterschiede zwischen Agent und Zentrale"
+
+VERS=$(sql "SELECT coalesce(protokollversion::text,'-') FROM agent
+            WHERE aktiv ORDER BY id DESC LIMIT 1")
+[ "$VERS" != "-" ] && AV=ja || AV=nein
+ergebnis "der Agent meldet seine Protokollversion ($VERS)" "$AV"
+[ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_VERSION'")" != "0" ] && AP=ja || AP=nein
+ergebnis "die Version steht im Fachprotokoll" "$AP"
+
+# Grundregel ADR-0005: nur der Wechsel, nicht jede Meldung. Sonst staende bei
+# 1.000 Agenten im Minutentakt nichts anderes mehr im Protokoll.
+VOR_V=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_VERSION'")
+sleep 25
+NACH_V=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_VERSION'")
+[ "$VOR_V" = "$NACH_V" ] && AW=ja || AW=nein
+ergebnis "bei gleicher Version kommt nichts dazu ($VOR_V -> $NACH_V)" "$AW"
+
+curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-agt-v.html
+[ "$(enthaelt /tmp/pr-agt-v.html "Standort-Agenten")" = "ja" ] && AT=ja || AT=nein
+ergebnis "die Oberflaeche zeigt die Agenten mit ihrer Version" "$AT"
+[ "$(enthaelt /tmp/pr-agt-v.html "nicht abgewiesen")" = "ja" ] && AS=ja || AS=nein
+ergebnis "sie erklaert, dass ein alter Agent nicht abgewiesen wird" "$AS"
+
+# Eine nicht unterstuetzte Version muss erkannt und ANGEZEIGT werden — und der
+# Agent trotzdem weiterarbeiten. Ein abgewiesener Agent hiesse: keine
+# PIN-Verifikation an diesem Standort.
+AID=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
+# Gemessen wird an den MELDUNGEN, nicht an Verifikationen: Eine bereits
+# verifizierte Karte loest keine aus, und dann saehe ein arbeitender Agent
+# aus wie ein stehender.
+GESEHEN_VOR=$(sqltext "SELECT coalesce(zuletzt_gesehen::text,'-') FROM agent WHERE id = $AID")
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "UPDATE agent SET protokollversion = 99 WHERE id = $AID" >/dev/null
+curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-agt-v2.html
+[ "$(enthaelt /tmp/pr-agt-v2.html "neuer als die Zentrale")" = "ja" ] && AU=ja || AU=nein
+ergebnis "eine nicht unterstuetzte Version wird erkannt und erklaert" "$AU"
+sleep 25
+GESEHEN_NACH=$(sqltext "SELECT coalesce(zuletzt_gesehen::text,'-') FROM agent WHERE id = $AID")
+[ "$GESEHEN_VOR" != "$GESEHEN_NACH" ] && AX=ja || AX=nein
+ergebnis "der Agent wird nicht abgewiesen und meldet weiter" "$AX"
+rm -f /tmp/pr-agt-v.html /tmp/pr-agt-v2.html
+
+hinweis "FA-INS-040 — nach der Wiederherstellung ist ersichtlich, was fehlt"
+
+# Der Fall: Die Zentrale wurde wiederhergestellt, der AGENT aber neu
+# aufgesetzt. Sein Schluesselpaar ist ein anderes — die zuvor hinterlegten
+# PINs kann er nicht mehr lesen. Ohne Anzeige bliebe die Praxis im Glauben,
+# alles sei versorgt.
+AID2=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "INSERT INTO pin_hinterlegt (agent_id, kartenhandle, seit)
+   VALUES ($AID2, 'card-nachweis-restore', now() - interval '1 hour')
+   ON CONFLICT DO NOTHING;
+   UPDATE agent SET schluessel_gemeldet = now() WHERE id = $AID2" >/dev/null
+curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-restore.html
+[ "$(enthaelt /tmp/pr-restore.html "card-nachweis-restore")" = "ja" ] && RN=ja || RN=nein
+ergebnis "die fehlende PIN wird namentlich genannt" "$RN"
+[ "$(enthaelt /tmp/pr-restore.html "neuen Schlüssel")" = "ja" ] && RE=ja || RE=nein
+ergebnis "die Meldung erklaert die Ursache" "$RE"
+[ "$(enthaelt /tmp/pr-restore.html "erneut eingegeben")" = "ja" ] && RH=ja || RH=nein
+ergebnis "und sagt, was zu tun ist" "$RH"
+
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "DELETE FROM pin_hinterlegt WHERE kartenhandle='card-nachweis-restore'" >/dev/null
+curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-restore2.html
+[ "$(enthaelt /tmp/pr-restore2.html "PINs neu zu hinterlegen")" = "nein" ] && RW=ja || RW=nein
+ergebnis "ohne fehlende PIN erscheint die Tafel gar nicht" "$RW"
+rm -f /tmp/pr-restore.html /tmp/pr-restore2.html
+
+# Die Sicherung darf keine Geheimnisse im Klartext enthalten.
+#
+# NICHT nach "123456" suchen: Diese Ziffernfolge steckt zufaellig in der ICCSN
+# einer Demo-eGK (80276883110000123456). Ein Nachweis, der daran scheitert,
+# meldet einen Fehler, wo keiner ist — und wer ihn dreimal so erlebt, glaubt
+# ihm beim vierten Mal nicht mehr. Geprueft werden deshalb unverwechselbare
+# Kennwoerter und die Form der Chiffrate.
+docker exec pr-db pg_dump -U pinroboter -d pinroboter > /tmp/pr-klartext.sql 2>/dev/null
+TREFFER=0
+for w in NachweisKennwortXY TerminalKennwortXY MailKennwortXY; do
+  [ "$(enthaelt /tmp/pr-klartext.sql "$w")" = "ja" ] && TREFFER=$((TREFFER+1))
+done
+[ $TREFFER -eq 0 ] && SG=ja || SG=nein
+ergebnis "keine Kennwoerter im Klartext in der Sicherung (Treffer: $TREFFER)" "$SG"
+
+# Und jede Geheimnisspalte traegt ein Chiffrat, keinen Klartext.
+UNVERSCHL=$(sql "SELECT
+    (SELECT count(*) FROM konnektor      WHERE passwort_chiffrat IS NOT NULL
+                                           AND passwort_chiffrat NOT LIKE 'v1:%')
+  + (SELECT count(*) FROM kartenterminal WHERE admin_chiffrat IS NOT NULL
+                                           AND admin_chiffrat NOT LIKE 'v1:%')
+  + (SELECT count(*) FROM mail_server    WHERE kennwort_chiffrat IS NOT NULL
+                                           AND kennwort_chiffrat NOT LIKE 'v1:%')")
+[ "${UNVERSCHL:-1}" = "0" ] && SV=ja || SV=nein
+ergebnis "jede Geheimnisspalte traegt ein Chiffrat ($UNVERSCHL unverschluesselt)" "$SV"
+
+# Die PIN darf ueberhaupt nicht in der Zentrale liegen — auch kein Chiffrat,
+# nachdem es zugestellt wurde (ADR-0009).
+REST_CH=$(sql "SELECT count(*) FROM pin_auftrag WHERE chiffrat IS NOT NULL")
+[ "${REST_CH:-1}" = "0" ] && SP=ja || SP=nein
+ergebnis "kein PIN-Chiffrat in der Sicherung ($REST_CH)" "$SP"
+rm -f /tmp/pr-klartext.sql
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

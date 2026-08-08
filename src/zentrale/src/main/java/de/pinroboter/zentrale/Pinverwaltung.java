@@ -238,6 +238,46 @@ public class Pinverwaltung {
         } catch (SQLException e) { return Optional.empty(); }
     }
 
+    /**
+     * SMC-B-Karten, für die eine PIN hinterlegt sein sollte, deren Agent den
+     * Schlüssel aber nicht mehr hat (FA-INS-040).
+     *
+     * <h2>Wozu</h2>
+     *
+     * Nach einer Wiederherstellung der Zentrale steht in {@code pin_hinterlegt},
+     * welche Karten versorgt waren. Wurde der <b>Agent</b> neu aufgesetzt, ist
+     * sein Schlüsselpaar ein anderes — die PINs in seiner Ablage sind unlesbar
+     * oder gar nicht mehr da. Die Zentrale kann das nicht selbst merken: Sie
+     * sieht nur, dass der Agent sich mit einem <b>neuen öffentlichen
+     * Schlüssel</b> gemeldet hat.
+     *
+     * <p>Genau das ist das Kennzeichen. Ohne diese Ansicht bliebe die Praxis im
+     * Glauben, alles sei versorgt — bis die erste Karte unverifiziert bleibt
+     * und niemand weiß, warum.
+     */
+    public List<Hinterlegt> neuZuHinterlegen() {
+        List<Hinterlegt> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT h.kartenhandle, h.seit
+                FROM pin_hinterlegt h
+                JOIN agent a ON a.id = h.agent_id AND a.aktiv
+                WHERE a.schluessel_gemeldet IS NOT NULL
+                  AND a.schluessel_gemeldet > h.seit
+                ORDER BY h.seit""")) {
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) {
+                    liste.add(new Hinterlegt(rs.getString(1),
+                            rs.getTimestamp(2).toLocalDateTime()
+                                    .format(java.time.format.DateTimeFormatter
+                                            .ofPattern("dd.MM.yyyy HH:mm"))));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Nicht ermittelbar, welche PINs fehlen: " + e.getMessage());
+        }
+        return liste;
+    }
+
     /** Ob ein Auftrag noch auf Zustellung wartet — für die Anzeige „wird übertragen". */
     public boolean auftragOffen(String kartenhandle) {
         try (PreparedStatement p = db.verbindung().prepareStatement(

@@ -41,7 +41,22 @@ public class Agentenverwaltung {
     public Agentenverwaltung(Datenbank db) { this.db = db; }
 
     public record Agent(long id, String bezeichnung, String einrichtung,
-                        Instant zuletztGesehen) {}
+                        Instant zuletztGesehen, Integer protokollversion,
+                        String bausteinversion) {
+
+        /** Ob die Zentrale mit diesem Agenten reden kann (FA-AGT-040). */
+        public boolean versionUnterstuetzt() {
+            return protokollversion == null
+                    || de.pinroboter.gemeinsam.Protokollversion.unterstuetzt(protokollversion);
+        }
+
+        /** Klartext zur Version, oder {@code null} wenn alles passt. */
+        public String versionsbewertung() {
+            return protokollversion == null
+                    ? "Dieser Agent hat sich noch nicht gemeldet."
+                    : de.pinroboter.gemeinsam.Protokollversion.bewertung(protokollversion);
+        }
+    }
 
     public sealed interface Registrierung {
         record Erfolg(String token, long agentId) implements Registrierung {}
@@ -135,13 +150,17 @@ public class Agentenverwaltung {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 UPDATE agent SET zuletzt_gesehen = now()
                 WHERE token_hash = ? AND aktiv
-                RETURNING id, bezeichnung, einrichtung, zuletzt_gesehen""")) {
+                RETURNING id, bezeichnung, einrichtung, zuletzt_gesehen,
+                          protokollversion, bausteinversion""")) {
             p.setString(1, hash(token));
             try (ResultSet rs = p.executeQuery()) {
                 if (!rs.next()) return Optional.empty();
+                int v = rs.getInt("protokollversion");
+                Integer version = rs.wasNull() ? null : v;   // sofort auswerten
                 return Optional.of(new Agent(rs.getLong("id"), rs.getString("bezeichnung"),
                         rs.getString("einrichtung"),
-                        rs.getTimestamp("zuletzt_gesehen").toInstant()));
+                        rs.getTimestamp("zuletzt_gesehen").toInstant(),
+                        version, rs.getString("bausteinversion")));
             }
         } catch (SQLException e) { return Optional.empty(); }
     }
@@ -150,12 +169,16 @@ public class Agentenverwaltung {
         List<Agent> liste = new ArrayList<>();
         try (Statement s = db.verbindung().createStatement();
              ResultSet rs = s.executeQuery("""
-                     SELECT id, bezeichnung, einrichtung, zuletzt_gesehen
+                     SELECT id, bezeichnung, einrichtung, zuletzt_gesehen,
+                            protokollversion, bausteinversion
                      FROM agent WHERE aktiv ORDER BY bezeichnung""")) {
             while (rs.next()) {
                 Timestamp t = rs.getTimestamp("zuletzt_gesehen");
+                int v = rs.getInt("protokollversion");
+                Integer version = rs.wasNull() ? null : v;   // sofort auswerten
                 liste.add(new Agent(rs.getLong("id"), rs.getString("bezeichnung"),
-                        rs.getString("einrichtung"), t == null ? null : t.toInstant()));
+                        rs.getString("einrichtung"), t == null ? null : t.toInstant(),
+                        version, rs.getString("bausteinversion")));
             }
         } catch (SQLException ignored) { }
         return liste;

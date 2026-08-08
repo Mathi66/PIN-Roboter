@@ -1,7 +1,7 @@
 # Umsetzungsstand je Anforderung
 
-**Stand:** 07.08.2026 · Grundlage: [Anforderungskatalog](01-anforderungskatalog.md)
-mit 84 Anforderungen
+**Stand:** 08.08.2026 · Grundlage: [Anforderungskatalog](01-anforderungskatalog.md)
+mit 84 Anforderungen · **249 Modultests, 260 Systemnachweise**
 
 > **Wozu dieses Dokument:** Es macht sichtbar, was belegt ist und was nicht —
 > die Grundlage für die Abnahme. Nach CLAUDE.md gilt ein Akzeptanzkriterium erst
@@ -13,10 +13,25 @@ mit 84 Anforderungen
 
 | Zeichen | Bedeutung |
 |---|---|
-| **✓** | umgesetzt **und** durch Systemnachweis am laufenden Stack belegt |
+| **✔ / ✓** | umgesetzt **und** durch Systemnachweis am laufenden Stack belegt |
 | **○** | umgesetzt, aber nur durch Modultests belegt — kein Systemnachweis |
 | **◐** | teilweise umgesetzt; was fehlt, steht dabei |
-| **–** | nicht begonnen |
+| **–** | nicht begonnen; die Begründung steht dabei |
+
+> **Warum jede Zeile misstrauisch zu lesen ist.** Am 08.08.2026 stand FA-UEB-010
+> auf „erfüllt", während die Funktion fehlte: Das Prüfintervall je Gerätegruppe
+> wurde gepflegt, gespeichert und in Nachweisen belegt — und erreichte den
+> Agenten nie. Zwei Teile je für sich fertig, nie verbunden, und die Statuszeile
+> zeigte das nicht.
+>
+> Beim Durchgang am selben Tag fanden sich vier weitere solcher Fälle:
+> `FIRMWARE_GEAENDERT` als Ereignisart, die nie ausgelöst wurde; die Route zum
+> Quittieren eines Alarms, die es nicht gab, während der Knopf schon da war;
+> und zwei Zeilen, deren **Beschriftung** nicht zur Anforderung passte
+> (FA-ALA-020, FA-AGT-040, FA-INS-040).
+>
+> Ein Haken in dieser Tabelle ist kein Nachweis. Der Nachweis ist der Verweis
+> daneben.
 
 > **Eine Einschränkung, die für alle ✓ gilt:** Die Nachweise laufen gegen den
 > **Simulator**, nicht gegen echte Hardware. Die in
@@ -92,7 +107,7 @@ mit 84 Anforderungen
 | ✓ | FA-PRO-020 | Keine Geheimnisse im Protokoll | nachgewiesen für PIN, Kennwörter, Einladungscodes |
 | ✓ | FA-PRO-030 | Filterbare Ansicht | gemessen: 110 ms bei 5 Mio Einträgen |
 | ✓ | FA-PRO-040 | Excel-Export | gegen `openpyxl` geprüft, mandantengebunden |
-| ○ | FA-PRO-050 | Vier Sichten | Übersicht, Geräteliste, Protokoll, Alarme |
+| ◐ | FA-PRO-050 | Geräte-Zeitstrahl | Alle Ereignisse eines Geräts sind über den Protokollfilter erreichbar. **Offen:** die chronologische Sicht je Terminal in einem Klick aus der Geräteliste. Kein Datenproblem — die Einträge liegen vollständig vor —, sondern eine fehlende Ansicht. **Für Version 1 vorgesehen**, noch nicht gebaut |
 | ◐ | FA-PRO-060 | Vorgangsansicht | Vorgangsnummer wird geführt und angezeigt. **Offen:** eigene Ansicht je Vorgang |
 | ✓ | FA-PRO-070 | Speicherbudget und Rotation | nachgewiesen: Kernfunktion läuft bei vollem Protokoll weiter |
 | ✓ | FA-PRO-080 | Technisches Protokoll getrennt | rotierend, getrennt vom Fachprotokoll |
@@ -119,7 +134,7 @@ mit 84 Anforderungen
 | ✓ | FA-INS-010 | Migrationen automatisch und idempotent | nachgewiesen |
 | ✓ | FA-INS-020 | Ersteinrichtung | erster Administrator mit TOTP |
 | ◐ | FA-INS-030 | Konfiguration über Umgebung | vollständig. **Offen:** eine `.env.example` als Vorlage |
-| ○ | FA-INS-040 | Health-Checks | in der Compose-Datei |
+| ✔ | FA-INS-040 | Sicherung und Wiederherstellung | **Zeile war falsch beschriftet** — die Anforderung heißt Sicherung und Wiederherstellung, nicht Health-Checks. Verfahren dokumentiert, Wiederherstellung bei jedem Nachweislauf durchgespielt, Sicherung ohne Klartext-Geheimnisse, und **neu**: nach der Wiederherstellung wird namentlich angezeigt, welche PINs neu zu hinterlegen sind. [Umsetzung 22](03-umsetzung/22-versionen-und-wiederherstellung.md) |
 
 ## A.11 Standort-Agent (FA-AGT)
 
@@ -128,7 +143,7 @@ mit 84 Anforderungen
 | ✓ | FA-AGT-010 | Registrierung mit einmaligem Geheimnis |
 | ✓ | FA-AGT-020 | Token-Authentisierung |
 | ✓ | FA-AGT-030 | Agent arbeitet ohne Zentrale weiter |
-| ○ | FA-AGT-040 | Agentenverwaltung in der Oberfläche |
+| ✔ | FA-AGT-040 | Versionsunterschiede | **Zeile war falsch beschriftet** — die Anforderung heißt Versionsunterschiede, nicht Agentenverwaltung. Agent meldet seine Protokollversion, die Zentrale bewertet sie gegen eine unterstützte Spanne und zeigt sie an. Ein Agent außerhalb der Spanne wird **nicht abgewiesen** (das hieße: keine PIN-Verifikation dort). Nachgewiesen. [Umsetzung 22](03-umsetzung/22-versionen-und-wiederherstellung.md) |
 
 ## B. Nichtfunktionale Anforderungen
 
@@ -144,19 +159,19 @@ mit 84 Anforderungen
 | ✓ | NFA-LEI-010 | Antwortzeiten | [gemessen](00-referenzen/messung-leistung-mengengeruest.md) bei 5.000 Geräten und 5 Mio Protokolleinträgen |
 | – | NFA-LEI-020 | Überwachungsdurchsatz über 24 h | **nicht gemessen** — eine eigene Messung über einen ganzen Tag |
 | – | NFA-LEI-030/035/037 | Ressourcenbedarf auf Referenzhardware | **nicht gemessen** — gemessen wurde auf einem M2 Pro, nicht auf Raspberry Pi 5 oder i.MX8 |
-| ○ | NFA-LEI-040 | Nebenläufigkeit | im Agenten angelegt |
+| ◐ | NFA-LEI-040 | Nebenläufigkeit | Der Agent taktet je Gerätegruppe getrennt (FA-UEB-010, gemessen). **Offen:** die Lastbegrenzung bei 5.000 Terminals — dafür braucht es die Messung aus NFA-LEI-020, die ohne Referenzhardware nicht aussagekräftig ist |
 | – | NFA-VER-010/020/030 | Verfügbarkeit über längere Zeiträume | nicht gemessen |
 | ✓ | NFA-USA-010 | Deutsche Oberfläche, Fachsprache | durchgehend |
 | ✓ | NFA-USA-020 | Fehlermeldungen sagen, was zu tun ist | durchgehend, an vielen Stellen nachgewiesen |
-| ◐ | NFA-USA-030 | WCAG 2.2 AA | **Maschinell geprüft** (axe-core, 10 Seiten, 0 Befunde; Kontraste rechnerisch in beiden Farbschemata) und als Systemnachweis verankert. **Offen:** Tastaturbedienung im Ablauf und Screenreader-Prüfung — beides braucht Browser bzw. Menschen |
-| ○ | NFA-USA-040 | Responsiv | Desktop und Tablet, nicht systematisch geprüft |
+| ◐ | NFA-USA-030 | WCAG 2.2 AA | **Maschinell geprüft** (axe-core, 17 Seiten, 0 Befunde; Kontraste rechnerisch in beiden Farbschemata) und als Systemnachweis verankert. **Offen:** Tastaturbedienung im Ablauf und Screenreader-Prüfung — beides braucht Browser bzw. Menschen |
+| ◐ | NFA-USA-040 | Responsiv | Die Oberfläche bricht ab 860 px auf eine Spalte um, Tabellen rollen in eigenen Behältern. Am Prototyp in drei Breiten angesehen. **Offen:** systematische Prüfung auf einem echten Tablet — am Bildschirm simulierte Breite ersetzt keine Fingerbedienung |
 | ✓ | NFA-BET-010 | Konfiguration nur über Umgebung | fehlende Pflichtangabe bricht mit erklärender Meldung ab |
 | ✓ | NFA-BET-020 | Persistenz, Sicherung, Wiederherstellung | Restore durchgeführt und als Nachweis automatisiert |
 | ◐ | NFA-BET-030 | Zielplattformen | Linux/`arm64` läuft. **Windows und macOS nicht erprobt** |
 | – | NFA-BET-040 | Multi-Arch-Abbilder, GHCR, Signatur, SBOM | nicht begonnen |
 | ✓ | NFA-QS-010 | Automatisierte Tests | 197 Modultests |
 | ✓ | NFA-QS-020 | Nachweise am Testaufbau | Systemnachweise gegen den laufenden Stack |
-| ○ | NFA-QS-030 | Dokumentation mit der Umsetzung | 12 Umsetzungsbeschreibungen, 8 ADRs |
+| ✔ | NFA-QS-030 | Dokumentation mit der Umsetzung | 22 Umsetzungsbeschreibungen, 10 ADRs, Anforderungskatalog, Betriebs- und Sicherheitsdokument — jeweils mit der Umsetzung entstanden, nicht danach |
 | ✓ | NFA-QS-035 | Herstellerspezifisches ist optional | Webadmin-Ausfall hält nichts an |
 | – | NFA-QS-040 | Bauvorgang mit Signatur und SBOM | nicht begonnen |
 

@@ -1289,6 +1289,12 @@ public class Zentrale {
 
             // ADR-0009: Der oeffentliche Schluessel des Agenten. Er ist nicht
             // geheim - der Browser braucht ihn, um die PIN zu verschluesseln.
+            // FA-AGT-040: Version merken und bewerten. Ein Agent ausserhalb der
+            // Spanne wird NICHT abgewiesen — das hiesse: keine
+            // PIN-Verifikation in dieser Praxis. Ein veralteter Agent, der
+            // seine Kernaufgabe noch erfuellt, ist besser als gar keiner.
+            versionMerken(agent.id(), m.get("protokollversion"), m.get("bausteinversion"));
+
             Object schluessel = m.get("oeffentlicherSchluessel");
             if (schluessel instanceof String s && !s.isBlank()) {
                 pins.schluesselMerken(agent.id(), s);
@@ -1441,6 +1447,50 @@ public class Zentrale {
      * dann wird nicht benachrichtigt. Eine Mail an alle wäre die falsche
      * Antwort auf eine fehlende Zuordnung.
      */
+    /**
+     * Merkt sich die Version eines Agenten und protokolliert einen Wechsel.
+     *
+     * <p>Nur den Wechsel, nicht jede Meldung — sonst stünde bei 1.000 Agenten
+     * im Minutentakt nichts anderes mehr im Protokoll (ADR-0005).
+     */
+    private void versionMerken(long agentId, Object protokoll_, Object baustein) {
+        int version;
+        try { version = ((Number) protokoll_).intValue(); }
+        catch (Exception e) { version = 1; }   // ohne Angabe: die erste Fassung
+        String bausteinText = baustein == null ? null : String.valueOf(baustein);
+
+        Integer vorher = null;
+        try (var p = db.verbindung().prepareStatement(
+                "SELECT protokollversion FROM agent WHERE id = ?")) {
+            p.setLong(1, agentId);
+            try (var rs = p.executeQuery()) {
+                if (rs.next()) {
+                    int v = rs.getInt(1);
+                    vorher = rs.wasNull() ? null : v;   // sofort auswerten
+                }
+            }
+        } catch (java.sql.SQLException ignored) { }
+
+        if (vorher != null && vorher == version) return;   // nichts geändert
+
+        try (var p = db.verbindung().prepareStatement(
+                "UPDATE agent SET protokollversion = ?, bausteinversion = ? WHERE id = ?")) {
+            p.setInt(1, version);
+            p.setString(2, bausteinText);
+            p.setLong(3, agentId);
+            p.executeUpdate();
+        } catch (java.sql.SQLException e) {
+            System.err.println("Agentenversion nicht speicherbar: " + e.getMessage());
+        }
+
+        String bewertung = de.pinroboter.gemeinsam.Protokollversion.bewertung(version);
+        protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_VERSION, bewertung == null,
+                "Standort-Agent", null,
+                "Standort-Agent %d meldet Protokoll %d (Baustein %s)"
+                        .formatted(agentId, version, bausteinText == null ? "unbekannt" : bausteinText),
+                bewertung);
+    }
+
     private Long organisationVon(String terminalId) {
         if (terminalId == null) return null;
         try (var p = db.verbindung().prepareStatement(
@@ -1876,12 +1926,98 @@ public class Zentrale {
         return c.formParam(name) != null;
     }
 
+    /**
+     * Die Standort-Agenten mit ihrer Version (FA-AGT-040).
+     *
+     * <p>Bei 1.000 Standorten ist eine gemischte Landschaft der Normalfall —
+     * Watchtower rollt nicht überall gleichzeitig aus. Ohne diese Ansicht
+     * zeigt sich ein Versionsunterschied als seltsames Verhalten, dessen
+     * Ursache niemand findet.
+     */
+    private String agententafel() {
+        var liste = agenten.alle();
+        StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Standort-Agenten "
+                + "<span class=\"zaehler\">" + liste.size() + "</span></h3>");
+        if (liste.isEmpty()) {
+            return s.append("""
+                    <p class="leer">Noch kein Agent registriert. Unter „Bestand" lässt sich ein
+                       Registrierungsgeheimnis erzeugen.</p></div>""").toString();
+        }
+        s.append("<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
+                + "Registrierte Standort-Agenten mit Protokollversion</caption><thead><tr>"
+                + "<th scope=\"col\">Agent</th><th scope=\"col\">Einrichtung</th>"
+                + "<th scope=\"col\">Protokoll</th><th scope=\"col\">Baustein</th>"
+                + "<th scope=\"col\">Zuletzt gesehen</th></tr></thead><tbody>");
+        for (var a : liste) {
+            String bewertung = a.versionsbewertung();
+            s.append("<tr><td class=\"geraet\">").append(esc(a.bezeichnung())).append("</td>")
+             .append("<td>").append(esc(nz(a.einrichtung()))).append("</td><td>")
+             .append(a.protokollversion() == null
+                     ? "<span class=\"marke unbekannt\">noch nicht gemeldet</span>"
+                     : a.versionUnterstuetzt() && bewertung == null
+                        ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>Version "
+                          + a.protokollversion() + "</span>"
+                        : "<span class=\"marke warnung\">Version " + a.protokollversion() + "</span>")
+             .append(bewertung == null ? ""
+                     : "<div class=\"handlung\">" + esc(bewertung) + "</div>")
+             .append("</td><td><code>").append(esc(nz(a.bausteinversion()))).append("</code></td>")
+             .append("<td class=\"zeit\">")
+             .append(a.zuletztGesehen() == null ? "nie"
+                     : esc(java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm")
+                            .withZone(java.time.ZoneId.systemDefault())
+                            .format(a.zuletztGesehen())))
+             .append("</td></tr>");
+        }
+        s.append("</tbody></table></div>");
+        s.append("""
+                <div class="karte-leib" style="padding:.9rem 1.2rem">
+                  <p class="hilfe">Die Zentrale unterstützt die Protokollversionen %d bis %d.
+                     Ein Agent außerhalb dieser Spanne wird <strong>nicht abgewiesen</strong> —
+                     das hieße: keine PIN-Verifikation an diesem Standort. Er arbeitet weiter,
+                     nur neuere Funktionen wirken dort nicht.</p>
+                </div>""".formatted(de.pinroboter.gemeinsam.Protokollversion.AELTESTE_UNTERSTUETZTE,
+                        de.pinroboter.gemeinsam.Protokollversion.AKTUELL));
+        return s.append("</div>").toString();
+    }
+
+    /**
+     * Welche PINs nach einer Wiederherstellung neu zu hinterlegen sind
+     * (FA-INS-040).
+     *
+     * <p>Erscheint nur, wenn tatsächlich etwas fehlt. Eine dauerhaft leere
+     * Tafel „alles in Ordnung" erzieht dazu, sie zu übersehen.
+     */
+    private String fehlendePinsTafel() {
+        var fehlen = pins.neuZuHinterlegen();
+        if (fehlen.isEmpty()) return "";
+        StringBuilder s = new StringBuilder(
+                "<div class=\"tafel\"><h3>PINs neu zu hinterlegen "
+                + "<span class=\"zaehler\">" + fehlen.size() + "</span></h3>"
+                + "<div class=\"karte-leib\" style=\"padding:1rem 1.2rem\">"
+                + "<div class=\"hinweis warnend\"><div><strong>Der Standort-Agent hat einen "
+                + "neuen Schlüssel.</strong> Das geschieht, wenn er neu aufgesetzt oder sein "
+                + "Datenverzeichnis geleert wurde. Die zuvor hinterlegten PINs kann er nicht "
+                + "mehr lesen — sie müssen erneut eingegeben werden. Bis dahin bleiben diese "
+                + "Karten unverifiziert.</div></div></div>"
+                + "<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
+                + "Karten, deren PIN neu zu hinterlegen ist</caption>"
+                + "<thead><tr><th scope=\"col\">Karte</th>"
+                + "<th scope=\"col\">zuletzt hinterlegt</th></tr></thead><tbody>");
+        for (var h : fehlen) {
+            s.append("<tr><td><code>").append(esc(h.kartenhandle())).append("</code></td>")
+             .append("<td class=\"zeit\">").append(esc(h.seit())).append("</td></tr>");
+        }
+        return s.append("</tbody></table></div></div>").toString();
+    }
+
     private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten) {
         var b = demodaten.bestand();
         StringBuilder s = new StringBuilder(seitenkopf("Instanz",
                 "Werkzeuge für den Betreiber dieser Instanz.", null));
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
 
+        s.append(agententafel());
+        s.append(fehlendePinsTafel());
         s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"anmeldeinhalt\">");
         if (b.vorhanden()) {
             s.append("""

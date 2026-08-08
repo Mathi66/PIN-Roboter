@@ -87,6 +87,7 @@ public enum Ereignisart {
     NOT_AUS_AUSGELOEST("Not-Aus ausgelöst", Stufe.SICHERHEIT),
     NOT_AUS_AUFGEHOBEN("Not-Aus aufgehoben", Stufe.SICHERHEIT),
     AGENT_VERBUNDEN("Standort-Agent verbunden", Stufe.ROUTINE),
+    AGENT_VERSION("Agentenversion gemeldet", Stufe.ROUTINE),
     AGENT_REGISTRIERT("Standort-Agent registriert", Stufe.SICHERHEIT),
     AGENT_REGISTRIERUNG_ABGELEHNT("Registrierung abgelehnt", Stufe.SICHERHEIT),
     AGENT_GEHEIMNIS_ERZEUGT("Registrierungsgeheimnis erzeugt", Stufe.SICHERHEIT),
