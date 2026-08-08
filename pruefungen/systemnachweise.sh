@@ -2379,6 +2379,74 @@ else
   rm -f /tmp/pr-gl.html /tmp/pr-zs.html /tmp/pr-zs2.html
 fi
 
+# ---------------------------------------------------------------- FA-UPD-010
+# Neue Versionen erkennen. Geprueft wird gegen die Registry-Nachbildung im
+# Simulator — ein Nachweis, der Internetzugang braucht, ist unbrauchbar.
+hinweis "FA-UPD-010 — neue Versionen erkennen"
+
+# Zugang mit GUELTIGEM Token einrichten.
+curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry \
+  --data-urlencode "registry=http://simulator:8480/registry" \
+  --data-urlencode "abbild=nieting/pin-roboter" \
+  --data-urlencode "benutzer=pin-roboter" \
+  --data-urlencode "token=ghp-testaufbau-1234567890" -o /tmp/pr-reg.html
+UZ=$(enthaelt /tmp/pr-reg.html "Produktversion")
+ergebnis "der Registry-Zugang laesst sich einrichten" "$UZ"
+
+curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry/pruefen -o /tmp/pr-reg2.html
+[ "$(enthaelt /tmp/pr-reg2.html "1.1.0")" = "ja" ] && UV=ja || UV=nein
+ergebnis "verfuegbare Versionen werden angezeigt" "$UV"
+[ "$(enthaelt /tmp/pr-reg2.html "latest")" = "nein" ] && UL=ja || UL=nein
+ergebnis "„latest\" wird nicht als Version angeboten" "$UL"
+
+# Aenderungshinweise auf Deutsch.
+[ "$(enthaelt /tmp/pr-reg2.html "Geräte-Zeitstrahl und Vorgangsansicht")" = "ja" ] && UH=ja || UH=nein
+ergebnis "die Aenderungshinweise erscheinen auf Deutsch" "$UH"
+
+# Sicherheitsrelevante Updates deutlich hervorgehoben.
+[ "$(enthaelt /tmp/pr-reg2.html "Sicherheitsupdate verfügbar")" = "ja" ] && US=ja || US=nein
+ergebnis "ein Sicherheitsupdate ist deutlich hervorgehoben" "$US"
+[ "$(enthaelt /tmp/pr-reg2.html "marke fehler")" = "ja" ] && US2=ja || US2=nein
+ergebnis "es hebt sich sichtbar von einer Verbesserung ab" "$US2"
+
+# Der Kern der Anforderung: abgelaufene Zugangsdaten als SICHTBARER
+# Fehlerzustand, nicht als ausbleibende Meldung.
+curl -s -X POST "http://localhost:8480/registry/abgelaufen" >/dev/null
+curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry/pruefen -o /tmp/pr-reg3.html
+[ "$(enthaelt /tmp/pr-reg3.html "Zugangsdaten abgelehnt")" = "ja" ] && UF=ja || UF=nein
+ergebnis "abgelaufene Zugangsdaten erscheinen als sichtbarer Fehlerzustand" "$UF"
+[ "$(enthaelt /tmp/pr-reg3.html "abgelaufen oder")" = "ja" ] && UF2=ja || UF2=nein
+ergebnis "die Meldung sagt, was zu tun ist" "$UF2"
+FEHL_DB=$(sqltext "SELECT coalesce(letzter_fehler,'-') FROM registry_zugang")
+case "$FEHL_DB" in *abgelehnt*) UF3=ja ;; *) UF3=nein ;; esac
+ergebnis "der Fehler wird gespeichert, nicht nur geloggt" "$UF3"
+
+# Und er verschwindet, sobald es wieder geht.
+curl -s -X POST "http://localhost:8480/registry/abgelaufen?nein" >/dev/null
+curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry/pruefen -o /tmp/pr-reg4.html
+[ "$(enthaelt /tmp/pr-reg4.html "Zugangsdaten abgelehnt")" = "nein" ] && UG=ja || UG=nein
+ergebnis "nach erfolgreicher Abfrage ist der Fehlerzustand weg" "$UG"
+
+# Das Token darf nirgends im Klartext stehen.
+TREFFER=0
+[ "$(enthaelt /tmp/pr-reg4.html "ghp-testaufbau")" = "ja" ] && TREFFER=$((TREFFER+1))
+[ "$(sql "SELECT count(*) FROM fachprotokoll WHERE coalesce(text,'') LIKE '%ghp-testaufbau%'")" != "0" ] \
+  && TREFFER=$((TREFFER+1))
+docker logs pr-zen 2>&1 | grep -qF "ghp-testaufbau" && TREFFER=$((TREFFER+1))
+[ $TREFFER -eq 0 ] && UT=ja || UT=nein
+ergebnis "das Zugriffstoken erscheint nirgends im Klartext (Treffer: $TREFFER)" "$UT"
+CH_R=$(sqltext "SELECT coalesce(token_chiffrat,'-') FROM registry_zugang")
+case "$CH_R" in v1:*) UC=ja ;; *) UC=nein ;; esac
+ergebnis "es liegt verschluesselt in der Datenbank" "$UC"
+
+# Ein Praxisbenutzer darf die Registry nicht umstellen.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8090/verwaltung/registry \
+       --data-urlencode "registry=http://boese.example" --data-urlencode "abbild=x/y")
+[ "$CODE" = "302" ] && UR=ja || UR=nein
+ergebnis "ohne Anmeldung laesst sich die Registry nicht umstellen (HTTP $CODE)" "$UR"
+
+rm -f /tmp/pr-reg*.html
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

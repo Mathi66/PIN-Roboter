@@ -42,6 +42,7 @@ public class Zentrale {
     private final Pinverwaltung pins;
     private final Organisationsverwaltung organisationen;
     private final Benachrichtigung benachrichtigung;
+    private final Versionspruefung versionen;
     private final Lasterzeuger last;
     private final Einladungen einladungen;
     private final Anmeldebremse bremse = new Anmeldebremse();
@@ -93,6 +94,7 @@ public class Zentrale {
         this.pins = new Pinverwaltung(db);
         this.organisationen = new Organisationsverwaltung(db);
         this.benachrichtigung = new Benachrichtigung(db, tresor);
+        this.versionen = new Versionspruefung(db, tresor);
         this.last = new Lasterzeuger(db);
         this.einladungen = new Einladungen(db, benutzer);
         this.pseudonym = new Pseudonymisierung(db, protokoll,
@@ -1123,6 +1125,28 @@ public class Zentrale {
         app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null),
                 angemeldeter(c))));
 
+        app.post("/verwaltung/registry", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Einrichten der Registry")) return;
+            String fehler = versionen.zugangSpeichern(Anmeldeseiten.feld(c, "registry"),
+                    Anmeldeseiten.feld(c, "abbild"), Anmeldeseiten.feld(c, "benutzer"),
+                    Anmeldeseiten.feld(c, "token"));
+            if (fehler == null) {
+                // Nie das Token — nur DASS eingerichtet wurde.
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Registry-Zugang eingerichtet: " + Anmeldeseiten.feld(c, "abbild"), null);
+                versionen.pruefen();
+            }
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null), angemeldeter(c)));
+        });
+
+        app.post("/verwaltung/registry/pruefen", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Die Versionsprüfung")) return;
+            var z = versionen.pruefen();
+            c.html(seite("verwaltung", verwaltungsSeite(z.fehler(), null), angemeldeter(c)));
+        });
+
         app.post("/verwaltung/demodaten/anlegen", c -> {
             // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
             // an oder entfernen sie. Ein Praxisadministrator, der den
@@ -1470,6 +1494,25 @@ public class Zentrale {
                 try {
                     Thread.sleep(60_000);
                     speicherPruefen();
+                } catch (InterruptedException e) { return; }
+                  catch (Exception ignored) { }
+            }
+        });
+
+        // FA-UPD-010: regelmaessig nach neuen Versionen sehen. Beim Start
+        // einmal sofort, damit der Betreiber nicht bis zum ersten Takt wartet.
+        Thread.ofVirtual().start(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(20_000);
+                    var z = versionen.pruefen();
+                    if (z.sicherheitsupdateOffen()) {
+                        protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT,
+                                false, "Automatik", null,
+                                "Ein sicherheitsrelevantes Update steht bereit",
+                                "Unter „Instanz“ steht, welche Version und was sich ändert.");
+                    }
+                    Thread.sleep(Versionspruefung.TAKT.toMillis());
                 } catch (InterruptedException e) { return; }
                   catch (Exception ignored) { }
             }
@@ -1995,6 +2038,102 @@ public class Zentrale {
      * zeigt sich ein Versionsunterschied als seltsames Verhalten, dessen
      * Ursache niemand findet.
      */
+    /**
+     * Verfügbare Versionen und der Zustand der Prüfung (FA-UPD-010).
+     *
+     * <p>Der <b>Fehlerzustand steht oben</b>, nicht unten: Ein abgelaufenes
+     * Token bedeutet, dass gar nicht mehr geprüft wird — und das sieht sonst
+     * aus wie „es gibt keine Updates".
+     */
+    private String versionstafel() {
+        var z = versionen.zustand();
+        StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Produktversion");
+        if (z.sicherheitsupdateOffen()) {
+            s.append(" <span class=\"marke fehler\"><span class=\"sym\">!</span>"
+                    + "Sicherheitsupdate verfügbar</span>");
+        } else if (z.neueVerfuegbar()) {
+            s.append(" <span class=\"marke warnung\">neue Version verfügbar</span>");
+        } else if (z.fehler() == null && z.zuletztGeprueft() != null) {
+            s.append(" <span class=\"marke ok\"><span class=\"sym\">✓</span>aktuell</span>");
+        }
+        s.append("</h3><div class=\"karte-leib\" style=\"padding:1.1rem 1.2rem\">");
+
+        if (z.fehler() != null) {
+            s.append("<div class=\"hinweis warnend\"><div><strong>Die Registry lässt sich "
+                    + "nicht abfragen.</strong> ").append(esc(z.fehler()))
+             .append("</div></div>");
+        }
+        s.append("<p class=\"hilfe\">Laufende Version: <code>").append(esc(z.laufendeVersion()))
+         .append("</code>")
+         .append(z.zuletztGeprueft() == null ? " · noch nicht geprüft"
+                 : " · zuletzt geprüft " + esc(java.time.format.DateTimeFormatter
+                        .ofPattern("dd.MM.yyyy HH:mm").withZone(java.time.ZoneId.systemDefault())
+                        .format(z.zuletztGeprueft())))
+         .append("</p></div>");
+
+        if (!z.verfuegbare().isEmpty()) {
+            s.append("<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
+                    + "Verfügbare Versionen</caption><thead><tr>"
+                    + "<th scope=\"col\">Version</th><th scope=\"col\">Art</th>"
+                    + "<th scope=\"col\">Was sich ändert</th></tr></thead><tbody>");
+            for (var v : z.verfuegbare()) {
+                s.append("<tr><td><code>").append(esc(v.nummer())).append("</code></td><td>")
+                 .append(!v.neuerAlsLaufende()
+                         ? "<span class=\"marke\">bereits installiert oder älter</span>"
+                         : v.sicherheitsrelevant()
+                            ? "<span class=\"marke fehler\"><span class=\"sym\">!</span>Sicherheit</span>"
+                            : "<span class=\"marke warnung\">Verbesserung</span>")
+                 .append("</td><td>").append(esc(v.hinweis() == null
+                         ? "Keine Änderungshinweise hinterlegt." : v.hinweis()))
+                 .append("</td></tr>");
+            }
+            s.append("</tbody></table></div>");
+        }
+
+        s.append("""
+                <div class="maske" style="border-top:1px solid var(--rand)">
+                <form method="post" action="/verwaltung/registry" class="maske" style="padding:0">
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="rg-host">Registry</label>
+                      <input id="rg-host" name="registry" required maxlength="200" value="%s"
+                             placeholder="https://ghcr.io"></div>
+                    <div class="feldgruppe"><label for="rg-abb">Abbild</label>
+                      <input id="rg-abb" name="abbild" required maxlength="200" value="%s"
+                             placeholder="nieting/pin-roboter"></div>
+                  </div>
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="rg-ben">Benutzername <span class="optional">(optional)</span></label>
+                      <input id="rg-ben" name="benutzer" maxlength="200" value="%s" autocomplete="off"></div>
+                    <div class="feldgruppe"><label for="rg-tok">Zugriffstoken</label>
+                      <input id="rg-tok" name="token" type="password" maxlength="400"
+                             autocomplete="new-password" aria-describedby="rg-tok-hilfe"></div>
+                  </div>
+                  <p id="rg-tok-hilfe" class="hilfe">%s Es wird verschlüsselt gespeichert und
+                     lässt sich nicht wieder anzeigen. Ein leeres Feld lässt das gespeicherte
+                     Token unverändert. Der Roboter <strong>liest nur</strong> — er braucht
+                     keinen Zugriff auf den Docker-Dienst und führt kein Update selbst aus
+                     (ADR-0001).</p>
+                  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                    <button class="knopf haupt" type="submit" style="width:auto">Zugang speichern</button>
+                  </div>
+                </form>
+                <form method="post" action="/verwaltung/registry/pruefen" style="margin-top:.6rem">
+                  <button class="knopf" type="submit">Jetzt auf neue Versionen prüfen</button>
+                </form>
+                </div>""".formatted(esc(nz(registryFeld("registry"))), esc(nz(registryFeld("abbild"))),
+                        esc(nz(registryFeld("benutzer"))),
+                        z.zugangHinterlegt() ? "Ein Token ist hinterlegt."
+                                             : "Es ist kein Token hinterlegt."));
+        return s.append("</div>").toString();
+    }
+
+    private String registryFeld(String spalte) {
+        try (var p = db.verbindung().prepareStatement(
+                "SELECT " + spalte + " FROM registry_zugang WHERE nur_eine")) {
+            try (var rs = p.executeQuery()) { return rs.next() ? rs.getString(1) : null; }
+        } catch (java.sql.SQLException e) { return null; }
+    }
+
     private String agententafel() {
         var liste = agenten.alle();
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Standort-Agenten "
@@ -2077,6 +2216,7 @@ public class Zentrale {
                 "Werkzeuge für den Betreiber dieser Instanz.", null));
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
 
+        s.append(versionstafel());
         s.append(agententafel());
         s.append(fehlendePinsTafel());
         s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"anmeldeinhalt\">");

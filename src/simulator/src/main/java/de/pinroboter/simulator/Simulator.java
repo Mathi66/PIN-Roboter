@@ -176,6 +176,10 @@ public class Simulator {
             }
         });
 
+        // Nachbildung der Registry (FA-UPD-010) — damit die Nachweise ohne
+        // Internetzugang laufen.
+        server.createContext("/registry/", new Registrynachbildung());
+
         // Zählung der Statusabfragen je Karte — Messgrundlage für FA-UEB-010.
         server.createContext("/abfragen", ex -> {
             if ("DELETE".equals(ex.getRequestMethod())) {

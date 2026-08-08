@@ -677,6 +677,28 @@ public class Datenbank implements AutoCloseable {
             ALTER TABLE pin_auftrag ADD CONSTRAINT pin_auftrag_art_check
               CHECK (art IN ('HINTERLEGEN','LOESCHEN','AENDERN'));
             """);
+
+        migration(20, """
+            -- Neue Versionen erkennen (FA-UPD-010, ADR-0001).
+            --
+            -- Nur EINE Zeile: Eine Instanz bezieht ihre Abbilder aus einer
+            -- Registry. Erzwungen ueber "nur_eine".
+            CREATE TABLE registry_zugang (
+              nur_eine       BOOLEAN     PRIMARY KEY DEFAULT TRUE CHECK (nur_eine),
+              registry       TEXT        NOT NULL,
+              abbild         TEXT        NOT NULL,
+              benutzer       TEXT,
+              -- Wie alle Zugangsdaten: AES-256-GCM (ADR-0008).
+              token_chiffrat TEXT,
+              -- Der letzte Fehler wird GESPEICHERT, nicht nur geloggt. Ein
+              -- abgelaufenes Token darf nicht als "keine Updates vorhanden"
+              -- erscheinen — genau das verlangt die Akzeptanz von FA-UPD-010.
+              letzter_fehler TEXT,
+              zuletzt_geprueft    TIMESTAMPTZ,
+              gefundene_versionen TEXT,
+              geaendert      TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

@@ -1761,3 +1761,27 @@ Datenbank-Hilfsfunktionen waren erst 150 Zeilen nach ihrer ersten Verwendung
 definiert.
 
 ## Stand: 261 Modultests, 282 Systemnachweise — alle grün
+
+## FA-UPD-010 — neue Versionen erkennen
+
+Der Roboter fragt die Registry ab und zeigt verfügbare Versionen mit deutschen
+Änderungshinweisen. **Er liest nur** — ADR-0001 trennt Erkennen (eine
+HTTPS-Abfrage, kein Risiko) vom Ausführen (Docker-Socket, entspricht Root auf
+dem Host). Watchtower und Diun verlangen beides dauerhaft.
+
+**Der Fehlerzustand ist die eigentliche Anforderung**, nicht die Abfrage. Ein
+Token läuft nach Monaten ab; versagt die Prüfung dann still, sieht der
+Betreiber nur, dass keine Updates gemeldet werden — und hält das für „es gibt
+keine". So bleibt eine Sicherheitslücke ein Jahr ungepatcht. Der letzte Fehler
+wird deshalb gespeichert und angezeigt, bis eine Abfrage wieder gelingt.
+
+Zwei Details, die leicht falsch werden: Versionen werden über **Zahlen**
+verglichen — als Text ist `1.10.0` kleiner als `1.9.0`, und der Betreiber bekäme
+kein Update angeboten. Und `latest` wird nicht angeboten: ein Zeiger, keine
+Version.
+
+Der Nachweis läuft gegen eine Registry-Nachbildung im Simulator. Ein Prüflauf,
+der Internetzugang braucht, ist als Nachweis unbrauchbar — dieselbe Lehre wie
+beim Mailauffang.
+
+## Stand: 268 Modultests, 295 Systemnachweise — alle grün

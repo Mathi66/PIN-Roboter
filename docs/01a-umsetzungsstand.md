@@ -1,7 +1,7 @@
 # Umsetzungsstand je Anforderung
 
 **Stand:** 08.08.2026 · Grundlage: [Anforderungskatalog](01-anforderungskatalog.md)
-mit 84 Anforderungen · **261 Modultests, 282 Systemnachweise**
+mit 84 Anforderungen · **268 Modultests, 295 Systemnachweise**
 
 > **Diese Liste wurde am 08.08.2026 neu aus dem Katalog erzeugt.** Die vorige
 > Fassung trug bei 36 von 84 Zeilen eine Beschriftung, die nicht zur Anforderung
@@ -127,7 +127,7 @@ mit 84 Anforderungen · **261 Modultests, 282 Systemnachweise**
 
 | | Anforderung | | Stand |
 |---|---|---|---|
-| **◐** | `FA-UPD-010` Neue Versionen erkennen <br><span style="opacity:.7">MUSS</span> |  | Update-Pfad beschrieben, Migrationen idempotent. **Offen:** GHCR abfragen und Versionen anzeigen |
+| **✔** | `FA-UPD-010` Neue Versionen erkennen <br><span style="opacity:.7">MUSS</span> |  | Registry-Abfrage ohne Docker-Rechte (ADR-0001), Änderungshinweise auf Deutsch, Sicherheitsupdates hervorgehoben. **Abgelaufene Zugangsdaten erscheinen als sichtbarer Fehlerzustand** — der schwierige Teil, nachgewiesen. [Umsetzung 25](03-umsetzung/25-neue-versionen-erkennen.md) |
 | **–** | `FA-UPD-020` Geführte Ausführung <br><span style="opacity:.7">MUSS</span> |  | geführte Ausführung: nicht begonnen |
 | **–** | `FA-UPD-030` Unbeaufsichtigte Patch-Updates <br><span style="opacity:.7">KANN</span> |  | unbeaufsichtigte Patch-Updates: KANN-Anforderung, bewusst zurückgestellt |
 
