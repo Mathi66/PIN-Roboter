@@ -19,6 +19,7 @@ public enum Ereignisart {
     KARTE_GESPERRT("Karte gesperrt", Stufe.SICHERHEIT),
     PIN_HINTERLEGT("PIN hinterlegt", Stufe.SICHERHEIT),
     PIN_GELOESCHT("PIN gelöscht", Stufe.SICHERHEIT),
+    PIN_GEAENDERT("PIN geändert", Stufe.SICHERHEIT),
     HANDLUNGSBEDARF("Handlungsbedarf erkannt", Stufe.ROUTINE),
 
     // --- Geräte und Verbindungen ---

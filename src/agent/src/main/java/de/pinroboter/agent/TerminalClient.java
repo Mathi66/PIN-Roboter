@@ -54,6 +54,40 @@ public class TerminalClient implements AutoCloseable {
         return a.statusCode() == 200;
     }
 
+    /**
+     * Ändert die PIN über die Managementschnittstelle
+     * ({@code SICCT MODIFY VERIFICATION DATA}, {@code A_24082}, FA-PIN-060).
+     *
+     * <p><b>Auch das Ändern kann die Karte sperren.</b> Stimmt die alte PIN
+     * nicht, zählt der Fehlversuchszähler herunter — genau wie beim
+     * Verifizieren. Der Aufrufer muss deshalb dieselbe Sicherungsprüfung
+     * vorschalten (Sicherungspruefung, FA-PIN-030): erst prüfen, wie viele
+     * Versuche übrig sind, und bei Unsicherheit abbrechen statt es zu wagen.
+     *
+     * @return das Ergebnis samt verbleibender Versuche
+     */
+    public Aenderungsergebnis pinAendern(String kartenhandle, char[] alt, char[] neu)
+            throws Exception {
+        if (sitzung == null) throw new IllegalStateException("Keine Sitzung als SMC-B_Nutzer");
+        String koerper = "{\"kartenhandle\":\"" + kartenhandle + "\",\"alt\":\""
+                + new String(alt) + "\",\"neu\":\"" + new String(neu) + "\"}";
+        HttpResponse<String> a = post("/api/" + terminalId + "/pin-aendern", koerper, true);
+        int uebrig = -1;
+        try { uebrig = Integer.parseInt(feld(a.body(), "verbleibendeVersuche")); }
+        catch (Exception ignored) { }
+        boolean ok = a.statusCode() == 200 && "true".equals(feld(a.body(), "geaendert"));
+        return new Aenderungsergebnis(ok, uebrig,
+                ok ? null : feldOderStandard(a.body(), "fehler",
+                        "Das Kartenterminal hat die Änderung abgelehnt."));
+    }
+
+    public record Aenderungsergebnis(boolean geklappt, int verbleibendeVersuche, String fehler) {}
+
+    private static String feldOderStandard(String json, String name, String vorgabe) {
+        String w = feld(json, name);
+        return w == null || w.isBlank() ? vorgabe : w;
+    }
+
     public boolean wartetAufPin() throws Exception {
         HttpResponse<String> a = get("/api/" + terminalId + "/status");
         return a.statusCode() == 200 && "true".equals(feld(a.body(), "wartetAufPin"));

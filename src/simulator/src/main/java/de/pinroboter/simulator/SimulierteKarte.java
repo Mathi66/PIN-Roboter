@@ -18,7 +18,8 @@ public class SimulierteKarte {
     private final String kartenhandle;
     private final String iccsn;
     private final String kartentyp;
-    private final String richtigePin;
+    /** Nicht final: SICCT MODIFY VERIFICATION DATA ändert sie (A_24082). */
+    private String richtigePin;
 
     /**
      * Ablaufdatum des Zertifikats (FA-GER-040).
@@ -99,4 +100,30 @@ public class SimulierteKarte {
     public String kartentyp() { return kartentyp; }
 
     public record Pruefergebnis(String ergebnis, int verbleibendeVersuche) {}
+    /**
+     * Ändert die PIN — das Kartenkommando hinter
+     * {@code SICCT MODIFY VERIFICATION DATA} ({@code A_24082}).
+     *
+     * <p><b>Die alte PIN muss stimmen.</b> Eine Karte, die eine neue PIN ohne
+     * Nachweis der alten annähme, wäre kein Sicherheitsmerkmal mehr. Ein
+     * Fehlversuch zählt wie bei der Verifikation — auch das Ändern kann die
+     * Karte sperren.
+     *
+     * @return {@code true}, wenn geändert wurde
+     */
+    public synchronized boolean pinAendern(String alt, String neu) {
+        if (gesperrt || sonderzustand == PinStatus.BLOCKED) return false;
+        if (!richtigePin.equals(alt)) {
+            verbleibendeVersuche--;
+            if (verbleibendeVersuche <= 0) { gesperrt = true; verifiziert = false; }
+            return false;
+        }
+        richtigePin = neu;
+        verbleibendeVersuche = MAX_VERSUCHE;
+        // Die Karte bleibt verifiziert: Der Nutzer hat sich soeben mit der
+        // alten PIN ausgewiesen. Ein erzwungenes Abmelden waere in einer
+        // Praxis nur laestig.
+        return true;
+    }
+
 }

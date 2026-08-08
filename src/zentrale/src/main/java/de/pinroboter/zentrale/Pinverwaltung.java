@@ -26,7 +26,8 @@ import java.util.*;
  */
 public class Pinverwaltung {
 
-    public record Auftrag(long id, String kartenhandle, String art, String chiffrat) {}
+    public record Auftrag(long id, String kartenhandle, String art, String chiffrat,
+                          String chiffratNeu) {}
 
     /** Nur das Kennzeichen — nie der Wert. */
     public record Hinterlegt(String kartenhandle, String seit) {}
@@ -116,7 +117,50 @@ public class Pinverwaltung {
         return auftragAnlegen(agentId.get(), kartenhandle, "HINTERLEGEN", chiffrat, angelegtVon);
     }
 
-    /** Legt einen Auftrag an, eine PIN zu löschen (FA-PIN-060). */
+    /**
+     * Legt einen Auftrag an, die PIN zu ändern (FA-PIN-060, {@code A_24082}).
+     *
+     * <p><b>Beide Werte sind Chiffrate</b> — die alte PIN zum Nachweis, die
+     * neue als Ersatz. Die Zentrale kann keinen von beiden lesen; sie prüft
+     * nur, dass es überhaupt Chiffrate sind.
+     *
+     * <p>Die Prüfung, ob die neue PIN zweimal gleich eingegeben wurde, findet
+     * im Browser statt — sie muss dort stattfinden, denn hier liegen nur noch
+     * verschlüsselte Werte, und zwei Verschlüsselungen desselben Klartexts
+     * sehen unterschiedlich aus (RSA-OAEP ist nicht deterministisch).
+     */
+    public String aendern(String terminalId, String kartenhandle, String chiffratAlt,
+                          String chiffratNeu, String angelegtVon) {
+        if (chiffratAlt == null || chiffratAlt.length() < 300
+                || chiffratNeu == null || chiffratNeu.length() < 300) {
+            return "Es wurden keine verschlüsselten PINs übermittelt. Ist JavaScript im "
+                 + "Browser abgeschaltet? Ohne Verschlüsselung im Browser kann die Änderung "
+                 + "nicht entgegengenommen werden.";
+        }
+        var agentId = agentFuerTerminal(terminalId);
+        if (agentId.isEmpty()) {
+            return "Für dieses Kartenterminal ist kein Standort-Agent bekannt.";
+        }
+        if (kartenhandle == null || kartenhandle.isBlank()) {
+            return "Für dieses Terminal ist keine SMC-B gemeldet.";
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO pin_auftrag (agent_id, kartenhandle, art, chiffrat, chiffrat_neu,
+                                         angelegt_von)
+                VALUES (?,?,'AENDERN',?,?,?)""")) {
+            p.setLong(1, agentId.get());
+            p.setString(2, kartenhandle);
+            p.setString(3, chiffratAlt);
+            p.setString(4, chiffratNeu);
+            p.setString(5, angelegtVon);
+            p.executeUpdate();
+            return null;
+        } catch (SQLException e) {
+            return "Der Auftrag konnte nicht angelegt werden.";
+        }
+    }
+
+    /** Legt einen Auftrag an, eine PIN zu löschen. */
     public String loeschen(String terminalId, String kartenhandle, String angelegtVon) {
         var agentId = agentFuerTerminal(terminalId);
         if (agentId.isEmpty()) {
@@ -160,12 +204,13 @@ public class Pinverwaltung {
                 WHERE id IN (SELECT id FROM pin_auftrag
                              WHERE agent_id = ? AND zugestellt IS NULL
                              ORDER BY id LIMIT 50)
-                RETURNING id, kartenhandle, art, chiffrat""")) {
+                RETURNING id, kartenhandle, art, chiffrat, chiffrat_neu""")) {
             p.setLong(1, agentId);
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) {
                     liste.add(new Auftrag(rs.getLong("id"), rs.getString("kartenhandle"),
-                            rs.getString("art"), rs.getString("chiffrat")));
+                            rs.getString("art"), rs.getString("chiffrat"),
+                            rs.getString("chiffrat_neu")));
                 }
             }
         } catch (SQLException e) {
@@ -176,7 +221,8 @@ public class Pinverwaltung {
         // Chiffrate sofort loeschen - sie wurden gerade ausgeliefert.
         if (!liste.isEmpty()) {
             try (PreparedStatement p = db.verbindung().prepareStatement(
-                    "UPDATE pin_auftrag SET chiffrat = NULL WHERE id = ANY (?)")) {
+                    "UPDATE pin_auftrag SET chiffrat = NULL, chiffrat_neu = NULL "
+                    + "WHERE id = ANY (?)")) {
                 p.setArray(1, db.verbindung().createArrayOf("bigint",
                         liste.stream().map(Auftrag::id).toArray(Long[]::new)));
                 p.executeUpdate();
@@ -200,7 +246,7 @@ public class Pinverwaltung {
 
         if (!erfolg) return;
         try {
-            if ("HINTERLEGEN".equals(art)) {
+            if ("HINTERLEGEN".equals(art) || "AENDERN".equals(art)) {
                 try (PreparedStatement p = db.verbindung().prepareStatement("""
                         INSERT INTO pin_hinterlegt (agent_id, kartenhandle) VALUES (?,?)
                         ON CONFLICT (agent_id, kartenhandle) DO UPDATE SET seit = now()""")) {

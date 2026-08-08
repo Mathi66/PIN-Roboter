@@ -2130,6 +2130,133 @@ REST_CH=$(sql "SELECT count(*) FROM pin_auftrag WHERE chiffrat IS NOT NULL")
 ergebnis "kein PIN-Chiffrat in der Sicherung ($REST_CH)" "$SP"
 rm -f /tmp/pr-klartext.sql
 
+# ---------------------------------------------------------------- FA-PIN-060
+# PIN aendern ueber die Managementschnittstelle (A_24082). Geprueft wird der
+# ganze Weg: Browser verschluesselt beide Werte, Zentrale reicht durch, Agent
+# aendert auf der KARTE, danach gilt die neue PIN.
+hinweis "FA-PIN-060 — PIN ändern (A_24082)"
+
+stack_starten 123456 4
+
+PUB=$(sql "SELECT oeffentlicher_schluessel FROM agent
+           WHERE oeffentlicher_schluessel IS NOT NULL ORDER BY id DESC LIMIT 1")
+TID_C=$(sql "SELECT k.id FROM kartenterminal k
+             JOIN ermittelte_karte e ON e.terminal_id = k.terminal_id
+             WHERE e.kartentyp='SMC-B' AND NOT k.ist_demo ORDER BY k.id LIMIT 1")
+H_C=$(sqltext "SELECT e.kartenhandle FROM kartenterminal k
+               JOIN ermittelte_karte e ON e.terminal_id = k.terminal_id
+               WHERE e.kartentyp='SMC-B' AND NOT k.ist_demo ORDER BY k.id LIMIT 1")
+
+if [ -z "$PUB" ] || [ -z "$TID_C" ]; then
+  echo "  uebersprungen: kein Agentenschluessel oder kein Terminal mit SMC-B"
+  FEHLER=$((FEHLER+1))
+else
+  printf -- "-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n" \
+    "$(echo "$PUB" | fold -w 64)" > /tmp/pr-pub-c.pem
+  chiffre() {
+    printf '%s' "$1" | openssl pkeyutl -encrypt -pubin -inkey /tmp/pr-pub-c.pem \
+      -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
+      -pkeyopt rsa_mgf1_md:sha256 2>/dev/null | base64 | tr -d '\n'
+  }
+
+  # Zuerst die PIN hinterlegen, sonst gibt es nichts zu aendern.
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin" \
+    -d "kartenhandle=$H_C" --data-urlencode "chiffrat=$(chiffre 123456)" -o /dev/null
+  for _ in $(seq 30); do
+    [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle='$H_C'")" = "1" ] && break
+    sleep 2
+  done
+
+  # Die Maske muss drei Felder anbieten: alt, neu, Wiederholung.
+  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_C" -o /tmp/pr-aend.html
+  DREI=0
+  for f in 'id="pinAlt"' 'id="pinNeu"' 'id="pinNeu2"'; do
+    [ "$(enthaelt /tmp/pr-aend.html "$f")" = "ja" ] && DREI=$((DREI+1))
+  done
+  [ "$DREI" = "3" ] && CM=ja || CM=nein
+  ergebnis "die Maske erfasst alte und neue PIN mit Bestaetigung ($DREI von 3)" "$CM"
+  [ "$(enthaelt /tmp/pr-aend.html "A_24082")" = "ja" ] && CQ=ja || CQ=nein
+  ergebnis "sie nennt die Grundlage der Aenderung (A_24082)" "$CQ"
+
+  # Der eigentliche Weg: 123456 -> 424242
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin-aendern" \
+    -d "kartenhandle=$H_C" \
+    --data-urlencode "chiffratAlt=$(chiffre 123456)" \
+    --data-urlencode "chiffratNeu=$(chiffre 424242)" -o /dev/null
+  for _ in $(seq 40); do
+    [ "$(sql "SELECT count(*) FROM pin_auftrag WHERE art='AENDERN' AND quittiert IS NOT NULL")" != "0" ] && break
+    sleep 2
+  done
+  FEHL_C=$(sqltext "SELECT coalesce(fehler,'-') FROM pin_auftrag WHERE art='AENDERN'
+                    ORDER BY id DESC LIMIT 1")
+  [ "$FEHL_C" = "-" ] && CA=ja || CA=nein
+  [ "$CA" = "nein" ] && echo "    Diagnose: $FEHL_C"
+  ergebnis "die Aenderung wird ausgefuehrt und quittiert" "$CA"
+
+  # Auf der KARTE muss jetzt die neue PIN gelten. Beweis: Der Roboter
+  # verifiziert weiter erfolgreich, nachdem die Verifikation entzogen wurde.
+  curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+  V_C=$(verifikationen)
+  for _ in $(seq 30); do
+    [ $(( $(verifikationen) - V_C )) -ge 1 ] && break
+    sleep 2
+  done
+  sleep 4
+  docker logs pr-agt 2>&1 | tail -25 | grep -q "freigeschaltet" && CF=ja || CF=nein
+  ergebnis "die Karte laesst sich mit der NEUEN PIN wieder freischalten" "$CF"
+
+  # Weder alte noch neue PIN duerfen irgendwo auftauchen.
+  TREFFER=0
+  for w in 424242; do
+    docker logs pr-zen 2>&1 | grep -qF "$w" && TREFFER=$((TREFFER+1))
+    docker logs pr-agt 2>&1 | grep -qF "$w" && TREFFER=$((TREFFER+1))
+    [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE coalesce(text,'') LIKE '%$w%'")" != "0" ] \
+      && TREFFER=$((TREFFER+1))
+  done
+  [ $TREFFER -eq 0 ] && CG=ja || CG=nein
+  ergebnis "die neue PIN erscheint nirgends im Klartext (Treffer: $TREFFER)" "$CG"
+  REST_C=$(sql "SELECT count(*) FROM pin_auftrag WHERE chiffrat_neu IS NOT NULL")
+  [ "${REST_C:-1}" = "0" ] && CR=ja || CR=nein
+  ergebnis "auch das zweite Chiffrat wird nach der Zustellung geloescht ($REST_C)" "$CR"
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='PIN_GEAENDERT'")" != "0" ] && CP=ja || CP=nein
+  ergebnis "die Aenderung steht im Fachprotokoll" "$CP"
+
+  # Schlaegt die Aenderung fehl, bleibt die hinterlegte PIN unveraendert —
+  # sonst haette der Agent eine PIN im Speicher, die auf der Karte nicht gilt,
+  # und wuerde reihenweise Fehlversuche erzeugen.
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin-aendern" \
+    -d "kartenhandle=$H_C" \
+    --data-urlencode "chiffratAlt=$(chiffre 999999)" \
+    --data-urlencode "chiffratNeu=$(chiffre 111111)" -o /dev/null
+  for _ in $(seq 30); do
+    [ "$(sql "SELECT count(*) FROM pin_auftrag WHERE art='AENDERN' AND fehler IS NOT NULL")" != "0" ] && break
+    sleep 2
+  done
+  MELDUNG_C=$(sqltext "SELECT coalesce(fehler,'-') FROM pin_auftrag
+                       WHERE art='AENDERN' AND fehler IS NOT NULL ORDER BY id DESC LIMIT 1")
+  [ "$MELDUNG_C" != "-" ] && CE=ja || CE=nein
+  ergebnis "eine falsche alte PIN wird abgelehnt und gemeldet" "$CE"
+
+  curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+  V_D=$(verifikationen)
+  for _ in $(seq 30); do
+    [ $(( $(verifikationen) - V_D )) -ge 1 ] && break
+    sleep 2
+  done
+  sleep 4
+  docker logs pr-agt 2>&1 | tail -25 | grep -q "freigeschaltet" && CU=ja || CU=nein
+  ergebnis "nach dem Fehlschlag gilt weiter die zuletzt gueltige PIN" "$CU"
+
+  # Und die Notbremse: Klartext statt Chiffrat wird abgewiesen.
+  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin-aendern" \
+    -d "kartenhandle=$H_C" -d "chiffratAlt=123456" -d "chiffratNeu=424242" \
+    -o /tmp/pr-aend-klar.html
+  [ "$(enthaelt /tmp/pr-aend-klar.html "keine verschlüsselten PINs")" = "ja" ] && CK=ja || CK=nein
+  ergebnis "unverschluesselt uebergebene PINs werden abgewiesen" "$CK"
+
+  rm -f /tmp/pr-pub-c.pem /tmp/pr-aend.html /tmp/pr-aend-klar.html
+fi
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

@@ -80,6 +80,43 @@ public class TerminalVerwaltung implements HttpHandler {
                     }
                     antworte(ex, 200, "{\"ok\":true}");
                 }
+                /*
+                 * SICCT MODIFY VERIFICATION DATA (A_24082, FA-PIN-060).
+                 *
+                 * Anders als beim Verifizieren gibt es hier keine Aufforderung
+                 * vom Konnektor, auf die gewartet wird: Das Aendern der PIN
+                 * geht direkt ueber die Managementschnittstelle an die Karte.
+                 * Die Rolle SMC-B_Nutzer muss angemeldet sein (A_24081) —
+                 * dieselbe Voraussetzung wie beim Verifizieren.
+                 */
+                case "pin-aendern" -> {
+                    String sitzung = kopf(ex, "X-Sitzung");
+                    if (!t.sitzungGueltig(sitzung)) {
+                        antworte(ex, 401, "{\"fehler\":\"Keine gültige Sitzung als SMC-B_Nutzer\"}");
+                        return;
+                    }
+                    String koerper = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+                    String handle = jsonWert(koerper, "kartenhandle");
+                    String alt = jsonWert(koerper, "alt");
+                    String neu = jsonWert(koerper, "neu");
+                    if (handle == null || alt == null || neu == null) {
+                        antworte(ex, 400, "{\"fehler\":\"Felder kartenhandle, alt und neu nötig\"}");
+                        return;
+                    }
+                    var karte = t.karte(handle);
+                    if (karte.isEmpty()) {
+                        antworte(ex, 404, "{\"fehler\":\"Karte unbekannt\"}"); return;
+                    }
+                    if (!"SMC-B".equals(karte.get().kartentyp())) {
+                        // A_24080: die Managementschnittstelle ist nur fuer SMC-B zulaessig.
+                        antworte(ex, 403, "{\"fehler\":\"Nur für SMC-B zulässig (A_24080)\"}");
+                        return;
+                    }
+                    boolean ok = karte.get().pinAendern(alt, neu);
+                    antworte(ex, ok ? 200 : 409,
+                            "{\"geaendert\":" + ok + ",\"verbleibendeVersuche\":"
+                            + karte.get().verbleibendeVersuche() + "}");
+                }
                 case "status" -> antworte(ex, 200, """
                         {"id":"%s","name":"%s","modell":"%s","firmware":"%s",
                          "pevimUnterstuetzt":%s,"pevimAktiv":%s,"wartetAufPin":%s,"aktualisierend":%s}

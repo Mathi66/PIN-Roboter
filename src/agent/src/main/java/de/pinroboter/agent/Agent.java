@@ -351,10 +351,12 @@ public class Agent {
         // weniger fremder Code besser als mehr.
         var m = java.util.regex.Pattern.compile(
                 "\\{\"id\":(\\d+),\"kartenhandle\":\"([^\"]*)\",\"art\":\"([^\"]*)\""
-                + "(?:,\"chiffrat\":\"([^\"]*)\")?").matcher(antwort);
+                + "(?:,\"chiffrat\":\"([^\"]*)\")?"
+                + "(?:,\"chiffratNeu\":\"([^\"]*)\")?").matcher(antwort);
         while (m.find()) {
             long id = Long.parseLong(m.group(1));
             String handle = m.group(2), art = m.group(3), chiffrat = m.group(4);
+            String chiffratNeu = m.group(5);
             boolean erfolg = false;
             String fehler = null;
             try {
@@ -363,6 +365,9 @@ public class Agent {
                     if (alt != null) java.util.Arrays.fill(alt, '\0');
                     ablage.entfernen(handle);
                     erfolg = true;
+                } else if ("AENDERN".equals(art)) {
+                    fehler = pinAendern(handle, chiffrat, chiffratNeu);
+                    erfolg = fehler == null;
                 } else if (chiffrat != null && !chiffrat.isBlank()) {
                     char[] pin = schluessel.entschluesseln(chiffrat);
                     ablage.speichern(handle, pin);
@@ -381,6 +386,78 @@ public class Agent {
                     erfolg ? "ausgeführt" : "fehlgeschlagen");
             quittieren(id, handle, art, erfolg, fehler);
         }
+    }
+
+    /**
+     * Ändert die PIN einer SMC-B (FA-PIN-060, {@code A_24082}).
+     *
+     * <p><b>Auch das Ändern kann die Karte sperren.</b> Stimmt die alte PIN
+     * nicht, zählt der Fehlversuchszähler herunter. Deshalb dieselbe
+     * Sicherungsprüfung wie vor jeder Verifikation: Bleibt nur noch ein
+     * Versuch, wird abgebrochen statt es zu wagen (FA-PIN-030).
+     *
+     * <p><b>Bei Fehlschlag bleibt die hinterlegte PIN unverändert.</b> Die neue
+     * wird erst übernommen, wenn die Karte die Änderung bestätigt hat — sonst
+     * hätte der Agent eine PIN im Speicher, die auf der Karte nicht gilt, und
+     * würde damit reihenweise Fehlversuche erzeugen.
+     *
+     * @return Fehlermeldung im Klartext, oder {@code null} bei Erfolg
+     */
+    private String pinAendern(String kartenhandle, String chiffratAlt, String chiffratNeu) {
+        if (chiffratAlt == null || chiffratNeu == null) {
+            return "Für die Änderung fehlt einer der beiden Werte.";
+        }
+        char[] alt = null, neu = null;
+        try {
+            alt = schluessel.entschluesseln(chiffratAlt);
+            neu = schluessel.entschluesseln(chiffratNeu);
+
+            String terminalId = terminalZuKarte(kartenhandle);
+            if (terminalId == null) return "Die Karte ist keinem bekannten Terminal zugeordnet.";
+
+            // FA-PIN-030: erst nachsehen, wie viele Versuche uebrig sind.
+            var status = konnektor.pinStatus(kartenhandle);
+            if (status.verbleibendeVersuche() >= 0 && status.verbleibendeVersuche() <= 1) {
+                return "Die Änderung wurde abgebrochen: Es ist nur noch ein Versuch übrig. "
+                     + "Ein falscher Wert würde die Karte sperren. Bitte die PIN am "
+                     + "Kartenterminal selbst ändern.";
+            }
+            if (status.aktualisierend()) {
+                return "Am Kartenterminal läuft gerade ein Update. Bitte später erneut versuchen.";
+            }
+
+            try (TerminalClient terminal = new TerminalClient(http, terminalBasis, terminalId)) {
+                var anmeldung = terminal.anmelden();
+                if (!anmeldung.erfolgreich()) {
+                    return "Das Kartenterminal hat die Anmeldung abgelehnt: " + anmeldung.fehler();
+                }
+                var e = terminal.pinAendern(kartenhandle, alt, neu);
+                if (!e.geklappt()) {
+                    return e.fehler() + (e.verbleibendeVersuche() >= 0
+                            ? " Verbleibende Versuche: " + e.verbleibendeVersuche() + "."
+                            : "");
+                }
+                // Erst JETZT die hinterlegte PIN ersetzen.
+                char[] vorher = pins.put(kartenhandle, neu.clone());
+                if (vorher != null) java.util.Arrays.fill(vorher, '\0');
+                ablage.speichern(kartenhandle, neu);
+                return null;
+            }
+        } catch (Exception e) {
+            return "Die Änderung konnte nicht ausgeführt werden.";
+        } finally {
+            if (alt != null) java.util.Arrays.fill(alt, '\0');
+            if (neu != null) java.util.Arrays.fill(neu, '\0');
+        }
+    }
+
+    /** Das Terminal, in dem eine Karte steckt — aus der letzten Konnektorabfrage. */
+    private String terminalZuKarte(String kartenhandle) {
+        try {
+            return konnektor.karten().stream()
+                    .filter(k -> k.kartenhandle().equals(kartenhandle))
+                    .map(KonnektorClient.Karte::terminalId).findFirst().orElse(null);
+        } catch (Exception e) { return null; }
     }
 
     private void quittieren(long id, String handle, String art, boolean erfolg, String fehler) {

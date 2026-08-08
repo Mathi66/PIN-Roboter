@@ -782,6 +782,39 @@ final class Bestandsseiten {
 
         if (hinterlegt) {
             s.append("""
+                    <details class="ausklapp"><summary>PIN am Kartenterminal ändern</summary>
+                    <form method="post" action="/bestand/terminal/%d/pin-aendern" class="maske"
+                          id="pinAenderMaske">
+                      <input type="hidden" name="chiffratAlt" id="pinAltChiffrat">
+                      <input type="hidden" name="chiffratNeu" id="pinNeuChiffrat">
+                      <input type="hidden" name="kartenhandle" value="%s">
+                      <div class="feldgruppe">
+                        <label for="pinAlt">Bisherige PIN</label>
+                        <input id="pinAlt" type="password" inputmode="numeric" autocomplete="off"
+                               maxlength="16" aria-describedby="pinAenderHilfe">
+                      </div>
+                      <div class="feldreihe">
+                        <div class="feldgruppe">
+                          <label for="pinNeu">Neue PIN</label>
+                          <input id="pinNeu" type="password" inputmode="numeric"
+                                 autocomplete="off" maxlength="16">
+                        </div>
+                        <div class="feldgruppe">
+                          <label for="pinNeu2">Neue PIN wiederholen</label>
+                          <input id="pinNeu2" type="password" inputmode="numeric"
+                                 autocomplete="off" maxlength="16">
+                        </div>
+                      </div>
+                      <p id="pinAenderHilfe" class="hilfe">
+                        Die PIN wird <strong>auf der Karte selbst</strong> geändert
+                        (gematik A_24082) und danach hier neu hinterlegt. Stimmt die bisherige
+                        PIN nicht, zählt ein Fehlversuch — bei nur noch einem verbleibenden
+                        Versuch bricht der Roboter ab, statt die Sperre zu riskieren.
+                      </p>
+                      <p id="pinAenderMeldung" class="hilfe" role="status" aria-live="polite"></p>
+                      <button class="knopf haupt" type="submit" style="width:auto">PIN ändern</button>
+                    </form></details>
+
                     <form method="post" action="/bestand/terminal/%d/pin-loeschen" class="maske"
                           onsubmit="return confirm('Hinterlegte PIN wirklich löschen? Der Roboter kann diese SMC-B danach nicht mehr verifizieren.')">
                       <input type="hidden" name="kartenhandle" value="%s">
@@ -789,7 +822,7 @@ final class Bestandsseiten {
                     </form>
                     <p class="hilfe">Löschen wirkt sofort in der Anzeige und beim nächsten
                        Durchgang beim Agenten. Der Roboter verifiziert diese Karte danach
-                       nicht mehr.</p>""".formatted(t.id(), esc(smcbHandle)));
+                       nicht mehr.</p>""".formatted(t.id(), esc(smcbHandle), t.id(), esc(smcbHandle)));
         }
 
         s.append("<script>\n").append(pinSkript(schluessel)).append("\n</script>");
@@ -821,22 +854,29 @@ final class Bestandsseiten {
                   var bytes = new Uint8Array(roh.length);
                   for (var i = 0; i < roh.length; i++) bytes[i] = roh.charCodeAt(i);
 
+                  // Verschluesselt einen Klartext fuer den Agenten.
+                  function chiffrieren(klartext) {
+                    return crypto.subtle.importKey('spki', bytes.buffer,
+                        { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+                      .then(function (k) {
+                        return crypto.subtle.encrypt({ name: 'RSA-OAEP' }, k,
+                            new TextEncoder().encode(klartext));
+                      })
+                      .then(function (ch) {
+                        var b = new Uint8Array(ch), s = '';
+                        for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+                        return btoa(s);
+                      });
+                  }
+
                   f.addEventListener('submit', function (e) {
                     if (ziel.value) return;           // zweiter Durchlauf: abschicken
                     e.preventDefault();
                     var pin = feld.value;
                     if (!pin) { meldung.textContent = 'Bitte eine PIN eingeben.'; return; }
                     meldung.textContent = 'Wird verschlüsselt …';
-                    crypto.subtle.importKey('spki', bytes.buffer,
-                        { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
-                      .then(function (k) {
-                        return crypto.subtle.encrypt({ name: 'RSA-OAEP' }, k,
-                            new TextEncoder().encode(pin));
-                      })
-                      .then(function (ch) {
-                        var b = new Uint8Array(ch), t = '';
-                        for (var i = 0; i < b.length; i++) t += String.fromCharCode(b[i]);
-                        ziel.value = btoa(t);
+                    chiffrieren(pin).then(function (c) {
+                        ziel.value = c;
                         feld.value = '';              // Klartext sofort aus dem Feld
                         meldung.textContent = 'Wird übertragen …';
                         f.submit();
@@ -847,6 +887,48 @@ final class Bestandsseiten {
                           + 'Bitte die Seite neu laden und erneut versuchen.';
                       });
                   });
+
+                  /* PIN ändern (FA-PIN-060): drei Felder, zwei Chiffrate.
+                     Die Wiederholung wird HIER geprueft, vor dem Verschluesseln —
+                     danach ginge es nicht mehr: RSA-OAEP ist nicht
+                     deterministisch, zwei Chiffrate desselben Werts sehen
+                     verschieden aus. */
+                  var fa = document.getElementById('pinAenderMaske');
+                  if (fa) {
+                    var alt = document.getElementById('pinAlt');
+                    var neu1 = document.getElementById('pinNeu');
+                    var neu2 = document.getElementById('pinNeu2');
+                    var zAlt = document.getElementById('pinAltChiffrat');
+                    var zNeu = document.getElementById('pinNeuChiffrat');
+                    var mA = document.getElementById('pinAenderMeldung');
+
+                    fa.addEventListener('submit', function (e) {
+                      if (zAlt.value && zNeu.value) return;
+                      e.preventDefault();
+                      if (!alt.value || !neu1.value) {
+                        mA.textContent = 'Bitte die bisherige und die neue PIN eingeben.'; return;
+                      }
+                      if (neu1.value !== neu2.value) {
+                        mA.textContent = 'Die beiden neuen PINs stimmen nicht überein.'; return;
+                      }
+                      if (neu1.value === alt.value) {
+                        mA.textContent = 'Die neue PIN ist dieselbe wie die bisherige.'; return;
+                      }
+                      mA.textContent = 'Wird verschlüsselt …';
+                      Promise.all([chiffrieren(alt.value), chiffrieren(neu1.value)])
+                        .then(function (beide) {
+                          zAlt.value = beide[0];
+                          zNeu.value = beide[1];
+                          alt.value = ''; neu1.value = ''; neu2.value = '';
+                          mA.textContent = 'Wird übertragen …';
+                          fa.submit();
+                        })
+                        .catch(function () {
+                          mA.textContent = 'Die PINs konnten nicht verschlüsselt werden. '
+                            + 'Aus Sicherheitsgründen wurde nichts abgeschickt.';
+                        });
+                    });
+                  }
                 })();""".formatted(schluesselBase64);
     }
 

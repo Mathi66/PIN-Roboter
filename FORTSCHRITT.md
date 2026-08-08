@@ -1711,3 +1711,25 @@ Test-PIN `123456` im Datenbankauszug fand sie in der ICCSN einer Demo-eGK
 beim vierten Mal nicht — und beim vierten Mal stimmt er.
 
 ## Stand: 249 Modultests, 260 Systemnachweise — alle grün
+
+## FA-PIN-060 — PIN ändern, der Haken hinter dem nichts stand
+
+Im Umsetzungsstand stand „PIN löschen ✔". Die Anforderung heißt **PIN ändern**
+über `SICCT MODIFY VERIFICATION DATA`. Gebaut war das Löschen.
+
+Jetzt geht beides. Die Änderung braucht zwei Werte — alte PIN als Nachweis,
+neue als Ersatz —, beide im Browser verschlüsselt. Die Wiederholung wird dort
+geprüft und muss es auch: RSA-OAEP ist nicht deterministisch, zwei Chiffrate
+desselben Werts sehen verschieden aus.
+
+**Der Punkt, an dem man Karten kaputt macht:** Auch das Ändern verbraucht bei
+falscher alter PIN einen Versuch. Drei davon sperren die Karte. Vor jeder
+Änderung läuft deshalb dieselbe Prüfung wie vor jeder Verifikation — bleibt nur
+ein Versuch, bricht der Roboter ab.
+
+Und die neue PIN wird erst hinterlegt, **nachdem** die Karte bestätigt hat.
+Sonst hätte der Agent eine PIN im Speicher, die auf der Karte nicht gilt, und
+würde bei jedem Durchgang einen Fehlversuch erzeugen — nach drei Durchgängen
+wäre die Karte gesperrt, ohne dass jemand etwas falsch gemacht hat.
+
+## Stand: 255 Modultests, 270 Systemnachweise — alle grün

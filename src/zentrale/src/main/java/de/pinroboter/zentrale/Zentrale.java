@@ -716,6 +716,30 @@ public class Zentrale {
             c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
         });
 
+        app.post("/bestand/terminal/{id}/pin-aendern", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Ändern einer PIN")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+
+            String fehler = pins.aendern(t.get().terminalId(),
+                    Anmeldeseiten.feld(c, "kartenhandle"),
+                    Anmeldeseiten.feld(c, "chiffratAlt"), Anmeldeseiten.feld(c, "chiffratNeu"),
+                    angemeldeter(c).anzeigename());
+            if (fehler == null) {
+                // Protokolliert wird DASS geaendert wurde — nie ein Wert,
+                // weder der alte noch der neue (ADR-0009).
+                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                        Ereignisart.PIN_GEAENDERT, true, angemeldeter(c).anzeigename(), null,
+                        "Änderung der SMC-B-PIN in „" + t.get().bezeichnung() + "“ beauftragt",
+                        "Die Änderung erfolgt am Kartenterminal selbst (A_24082). Schlägt sie "
+                        + "fehl, bleibt die bisher hinterlegte PIN unverändert.");
+            }
+            c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
+        });
+
         app.post("/bestand/terminal/{id}/pin-loeschen", c -> {
             if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Löschen einer PIN")) return;
             long id = Long.parseLong(c.pathParam("id"));

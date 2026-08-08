@@ -664,6 +664,19 @@ public class Datenbank implements AutoCloseable {
             ALTER TABLE agent ADD COLUMN protokollversion INTEGER;
             ALTER TABLE agent ADD COLUMN bausteinversion  TEXT;
             """);
+
+        migration(19, """
+            -- PIN ändern (FA-PIN-060, A_24082).
+            --
+            -- Die Aenderung braucht ZWEI Werte: die alte PIN zum Nachweis und
+            -- die neue. Beide werden im Browser verschluesselt; die Zentrale
+            -- kann keinen von beiden lesen (ADR-0009). Das zweite Chiffrat
+            -- wird wie das erste nach der Zustellung geloescht.
+            ALTER TABLE pin_auftrag ADD COLUMN chiffrat_neu TEXT;
+            ALTER TABLE pin_auftrag DROP CONSTRAINT IF EXISTS pin_auftrag_art_check;
+            ALTER TABLE pin_auftrag ADD CONSTRAINT pin_auftrag_art_check
+              CHECK (art IN ('HINTERLEGEN','LOESCHEN','AENDERN'));
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {
