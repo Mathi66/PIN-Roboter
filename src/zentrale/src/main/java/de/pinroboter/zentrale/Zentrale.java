@@ -1473,6 +1473,7 @@ public class Zentrale {
 
         PinStatus vorher = g.pinStatus;
         boolean vorherErreichbar = g.erreichbar;
+        String vorherFirmware = g.firmware;
 
         g.name = str(m, "name", g.name);
         g.modell = str(m, "modell", g.modell);
@@ -1500,6 +1501,20 @@ public class Zentrale {
                     g.erreichbar ? Ereignisart.GERAET_ERREICHBAR : Ereignisart.GERAET_NICHT_ERREICHBAR,
                     g.erreichbar, "Automatik", null,
                     g.erreichbar ? "Gerät wieder erreichbar" : "Gerät nicht erreichbar", null);
+        }
+
+        // FA-UEB-030: Ein Versionswechsel wird protokolliert, UNABHAENGIG
+        // davon, wer ihn ausgeloest hat. Das ist der Punkt: Aktualisiert der
+        // Konnektor ein Terminal ueber seinen KSR-Client, erfaehrt der
+        // Betreiber es sonst nirgends — und eine Firmware, die sich
+        // unbemerkt aendert, macht jede Fehlersuche zum Ratespiel.
+        if (vorherFirmware != null && !vorherFirmware.isBlank()
+                && !vorherFirmware.equals(g.firmware) && g.firmware != null) {
+            protokoll.anfuegen("Praxis", id, Ereignisart.FIRMWARE_GEAENDERT, true,
+                    "Automatik", null,
+                    "Firmware: %s → %s".formatted(vorherFirmware, g.firmware),
+                    "Nach einem Firmware-Wechsel prüft der Roboter Erreichbarkeit und "
+                    + "PIN-Status erneut und stellt den verifizierten Zustand wieder her.");
         }
 
         // Vom Agenten gemeldete Ereignisse übernehmen
@@ -2226,6 +2241,68 @@ public class Zentrale {
         return s.append("</tbody></table></div></div>").toString();
     }
 
+    /**
+     * Die Verteilung der Firmware-Stände je Modell (FA-UEB-030).
+     *
+     * <p>Bei 5.000 Terminals ist die Frage nicht „welche Firmware hat Gerät
+     * X", sondern „wie viele Geräte hängen zurück und welche". Eine Liste
+     * beantwortet das nicht; eine Verteilung schon.
+     *
+     * <p>Der jüngste Stand je Modell gilt als der aktuelle — nicht ein fest
+     * eingetragener Sollstand. Den kennen wir nicht: Die Firmware kommt vom
+     * Hersteller, nicht von uns (ADR-0004).
+     */
+    private String flottenuebersicht() {
+        // Modell -> (Firmware -> Anzahl)
+        var jeModell = new java.util.TreeMap<String, java.util.TreeMap<String, Integer>>();
+        for (var g : geraete.values()) {
+            String modell = nz(g.modell).isBlank() ? "unbekanntes Modell" : g.modell;
+            String fw = nz(g.firmware).isBlank() ? "nicht gemeldet" : g.firmware;
+            jeModell.computeIfAbsent(modell, k -> new java.util.TreeMap<>())
+                    .merge(fw, 1, Integer::sum);
+        }
+        if (jeModell.isEmpty()) return "";
+
+        StringBuilder s = new StringBuilder(
+                "<div class=\"tafel\"><h3>Firmware-Stände <span class=\"zaehler\">"
+                + jeModell.size() + " Modell(e)</span></h3><div class=\"rollbar\"><table>"
+                + "<caption class=\"nurLeser\">Verteilung der Firmware-Stände je Modell</caption>"
+                + "<thead><tr><th scope=\"col\">Modell</th><th scope=\"col\">Stand</th>"
+                + "<th scope=\"col\">Geräte</th><th scope=\"col\">Bewertung</th>"
+                + "</tr></thead><tbody>");
+
+        for (var m : jeModell.entrySet()) {
+            // Der hoechste vorkommende Stand gilt als der aktuelle.
+            String juengster = m.getValue().descendingKeySet().stream()
+                    .filter(f -> !f.equals("nicht gemeldet")).findFirst().orElse(null);
+            boolean erste = true;
+            for (var f : m.getValue().descendingMap().entrySet()) {
+                boolean aktuell = f.getKey().equals(juengster);
+                boolean unbekannt = f.getKey().equals("nicht gemeldet");
+                s.append("<tr><td class=\"geraet\">")
+                 .append(erste ? esc(m.getKey()) : "").append("</td>")
+                 .append("<td><code>").append(esc(f.getKey())).append("</code></td>")
+                 .append("<td style=\"font-variant-numeric:tabular-nums\">")
+                 .append(f.getValue()).append("</td><td>")
+                 .append(unbekannt
+                         ? "<span class=\"marke unbekannt\">kein Stand gemeldet</span>"
+                         : aktuell
+                            ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>aktuellster Stand</span>"
+                            : "<span class=\"marke warnung\">liegt zurück</span>")
+                 .append("</td></tr>");
+                erste = false;
+            }
+        }
+        s.append("</tbody></table></div>");
+        s.append("""
+                <div class="karte-leib" style="padding:.9rem 1.2rem">
+                  <p class="hilfe">Als „aktuellster Stand" gilt die höchste vorkommende Version
+                     je Modell. Einen Sollstand kennt der Roboter nicht — die Firmware kommt vom
+                     Hersteller des Geräts, nicht von uns.</p>
+                </div>""");
+        return s.append("</div>").toString();
+    }
+
     private String geraeteSeite() {
         // Takt von 3 s auf 5 s: Der Zustand aendert sich ohnehin nur im
         // Pruefintervall der Gruppe (im Betrieb 60 s). Haeufiger zu fragen
@@ -2234,7 +2311,30 @@ public class Zentrale {
                 "Zustand aller überwachten Geräte. Aktualisiert sich selbsttätig.", null) + """
                 <div class="tafel"><h3>Geräte <span class="zaehler"><span class="puls"></span> live</span></h3>
                 <div id="geraete" hx-get="/teil/geraete" hx-trigger="load, every 5s" hx-swap="innerHTML">%s</div></div>
-                """.formatted(geraeteTabelle());
+                %s
+                """.formatted(geraeteTabelle(), flottenuebersicht());
+    }
+
+    /**
+     * Was bei einem Zustand mit Handlungsbedarf zu tun ist — direkt in der
+     * Geräteliste (FA-PIN-040).
+     *
+     * <p>Bis zum 08.08.2026 stand die Erklärung nur auf der Lage-Seite. Wer die
+     * Geräteliste filtert — und bei 5.000 Terminals tut man das —, las dort
+     * „Transport-PIN" und war so klug wie zuvor. Der Zustand allein ist keine
+     * Meldung; die Anforderung verlangt ausdrücklich die <b>erforderliche
+     * Handlung</b> dazu.
+     *
+     * <p>Nur bei Handlungsbedarf, nicht bei jedem Zustand: Eine Zeile „alles in
+     * Ordnung, nichts zu tun" unter jedem funktionierenden Gerät macht die
+     * Liste unlesbar.
+     */
+    private static String handlungshinweis(Geraetezustand g) {
+        if (!g.erreichbar || g.aktualisierend) return "";
+        if (!g.pinStatus.handlungsbedarf()) return "";
+        String text = g.handlung != null && !g.handlung.isBlank()
+                ? g.handlung : g.pinStatus.erklaerung();
+        return "<div class=\"handlung\">" + esc(text) + "</div>";
     }
 
     private String geraeteTabelle() {
@@ -2245,10 +2345,10 @@ public class Zentrale {
                 + "<th>Automatik</th><th>Versuche</th><th>geprüft</th></tr></thead><tbody>");
         geraete.values().stream().sorted(Comparator.comparing(g -> g.terminalId)).forEach(g -> s.append("""
                 <tr><td class="geraet">%s<br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
-                <td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td>
+                <td>%s</td><td><code>%s</code></td><td>%s%s</td><td>%s</td>
                 <td style="font-variant-numeric:tabular-nums">%s</td><td class="zeit">%s</td></tr>"""
                 .formatted(esc(anzeigename(g)), esc(g.terminalId), esc(nz(g.modell)), esc(nz(g.firmware)),
-                        marke(g), automatikMarke(g),
+                        marke(g), handlungshinweis(g), automatikMarke(g),
                         g.verbleibendeVersuche < 0 ? "—" : String.valueOf(g.verbleibendeVersuche),
                         g.zuletztGeprueftText())));
         return s.append("</tbody></table></div>").toString();

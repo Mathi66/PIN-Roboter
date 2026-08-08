@@ -1660,3 +1660,24 @@ Liste für die Kalibrierung am Testaufbau. Das ist der Unterschied zwischen
 „abgesichert" und „vermutlich abgesichert".
 
 ## Stand: 249 Modultests, 232 Systemnachweise — alle grün
+
+## FA-PIN-040, FA-UEB-020, FA-UEB-030 — zweimal mehr als ein fehlender Nachweis
+
+Alle drei standen als „nur Modultests" im Umsetzungsstand. Zwei davon hatten
+echte Lücken.
+
+**FA-PIN-040:** Die Zustände wurden erkannt, kein Versuch unternommen — aber
+die *Handlung* stand nur auf der Lage-Seite. Wer die Geräteliste filtert, las
+„Transport-PIN" und war so klug wie zuvor. Die Anforderung verlangt
+ausdrücklich die erforderliche Handlung.
+
+**FA-UEB-030:** `FIRMWARE_GEAENDERT` existierte als Ereignisart und wurde
+nirgends ausgelöst — dieselbe Sorte Lücke wie bei FA-UEB-010. Aktualisiert der
+Konnektor ein Terminal über seinen KSR-Client, erfuhr der Betreiber es
+nirgends. Dazu fehlte die Flottenübersicht: Bei 5.000 Geräten ist die Frage
+nicht „welche Firmware hat Gerät X", sondern „wie viele hängen zurück".
+
+**FA-UEB-020** war tatsächlich in Ordnung. Der neue Nachweis prüft auch das
+Gegenteil: dass bei gleichbleibendem Zustand *nichts* ins Protokoll kommt.
+
+## Stand: 249 Modultests, 246 Systemnachweise — alle grün

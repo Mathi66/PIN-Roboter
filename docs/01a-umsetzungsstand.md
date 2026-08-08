@@ -45,8 +45,8 @@ mit 84 Anforderungen
 | | Anforderung | Stand | Anmerkung |
 |---|---|---|---|
 | ✔ | FA-UEB-010 | PIN-Status überwachen | zyklisch über `GetPinStatus`, **je Gerätegruppe getaktet**. Bis 08.08.2026 hier fälschlich als erfüllt geführt: Der Agent nahm einen globalen Wert, das Gruppenintervall erreichte ihn nie. Jetzt am Simulator gemessen — 4 gegen 0 Abfragen in 40 s. [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md) |
-| ○ | FA-UEB-020 | Erreichbarkeit überwachen | im Durchstich enthalten, kein eigener Nachweis |
-| ○ | FA-UEB-030 | Firmware-Stand erfassen | wird gemeldet und angezeigt |
+| ✔ | FA-UEB-020 | Erreichbarkeit überwachen | Ausfall und Rückkehr protokolliert; nachgewiesen ist auch, dass bei gleichbleibendem Zustand **nichts** dazukommt (38 → 38) — sonst wäre das Protokoll bei 5.000 Terminals wertlos (ADR-0005). [Umsetzung 21](03-umsetzung/21-zustaende-erreichbarkeit-firmware.md) |
+| ✔ | FA-UEB-030 | Firmware-Stand erfassen | Versionswechsel wird protokolliert, unabhängig vom Auslöser — die Ereignisart gab es, ausgelöst wurde sie nie. Dazu neu: Flottenübersicht mit der Verteilung je Modell. [Umsetzung 21](03-umsetzung/21-zustaende-erreichbarkeit-firmware.md) |
 | ✓ | FA-UEB-040 | PEviM-Zustand erkennen | Terminals ohne aktives PEviM werden benannt, mit Handlungsempfehlung |
 | ✔ | FA-UEB-050 | keine Verifikation während eines Updates | Einzelgerät **und** konnektorweiter KSR-Lauf (`gemSpec_Kon 4.3.10`) nachgewiesen: 0 Versuche bei 4 gleichzeitig betroffenen Terminals, Wiederherstellung danach belegt. **Offen an echter Hardware:** ob der KoCo-Konnektor den Zustand im `GetPinStatus` meldet oder nur als Ereignis — zu klären bei der Kalibrierung (ADR-0007). [Umsetzung 20](03-umsetzung/20-ksr-lauf.md) |
 
@@ -57,7 +57,7 @@ mit 84 Anforderungen
 | ✔ | FA-PIN-010 | PIN hinterlegen | Über die Oberfläche, Ende-zu-Ende nach [ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md): Der Browser verschlüsselt mit dem öffentlichen Schlüssel des Agenten (RSA-OAEP 3072), die Zentrale reicht nur das Chiffrat weiter und löscht es nach der Zustellung. Beim Agenten AES-256-GCM. Nachgewiesen — auch, dass weder PIN noch Chiffrat im Protokoll landen. [Umsetzung 15](03-umsetzung/15-pin-hinterlegen.md) |
 | ✓ | FA-PIN-020 | PIN automatisch verifizieren | vollständiger PEviM-Durchstich über Brainpool-TLS |
 | ✓ | FA-PIN-030 | **Falsche PIN löst genau einen Versuch aus** | vor jeder Auslieferung verpflichtend; nachgewiesen: 1 Versuch bei ~10 Gelegenheiten |
-| ○ | FA-PIN-040 | Fehlversuchszähler auswerten | Sicherungsprüfung mit 10 Modultests |
+| ✔ | FA-PIN-040 | Nicht behebbare Zustände melden | Transport-PIN, Leer-PIN, gesperrt und PIN-Schutz aus mit je eigener Meldung **und Handlung** — die stand bisher nur auf der Lage-Seite, nicht in der Geräteliste. Je 0 Verifikationsversuche nachgewiesen. [Umsetzung 21](03-umsetzung/21-zustaende-erreichbarkeit-firmware.md) |
 | ✓ | FA-PIN-050 | Not-Aus | nachgewiesen: 0 Versuche bei aktivem Not-Aus. **Einschränkung:** wirkt instanzweit, nicht je Einrichtung |
 | ✔ | FA-PIN-060 | PIN löschen | Ein Knopf in derselben Maske, mit Rückfrage. Wirkt bis in die Ablage des Agenten durch — nachgewiesen. [Umsetzung 15](03-umsetzung/15-pin-hinterlegen.md) |
 

@@ -1943,6 +1943,90 @@ ergebnis "die Oberflaeche nennt den Zustand waehrend des Laufs" "$KH"
 curl -s -X POST "http://localhost:8480/ksr/ende" >/dev/null
 rm -f /tmp/pr-ksr.html
 
+# ------------------------------------------- FA-PIN-040 / FA-UEB-020 / FA-UEB-030
+hinweis "FA-PIN-040 — nicht behebbare Zustände werden gemeldet, nicht versucht"
+
+# Vier Zustaende, die der Roboter NICHT aufloesen kann. Jeder muss eine eigene
+# Klartextmeldung tragen — und keinen Verifikationsversuch ausloesen.
+V_NB=$(verifikationen)
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/transportpin >/dev/null
+sleep 25
+curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-nb.html
+[ "$(enthaelt /tmp/pr-nb.html "Transport-PIN")" = "ja" ] && PT=ja || PT=nein
+ergebnis "Transport-PIN wird als eigener Zustand angezeigt" "$PT"
+[ "$(enthaelt /tmp/pr-nb.html "am Kartenterminal")" = "ja" ] && PT2=ja || PT2=nein
+ergebnis "die Meldung sagt, was zu tun ist" "$PT2"
+W_NB=$(verifikationen)
+[ $((W_NB-V_NB)) -eq 0 ] && PT3=ja || PT3=nein
+ergebnis "kein Verifikationsversuch bei Transport-PIN (gemessen: $((W_NB-V_NB)))" "$PT3"
+
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/sperren >/dev/null
+sleep 25
+curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-nb2.html
+[ "$(enthaelt /tmp/pr-nb2.html "gesperrt")" = "ja" ] && PB=ja || PB=nein
+ergebnis "gesperrte Karte wird als solche angezeigt" "$PB"
+[ "$(enthaelt /tmp/pr-nb2.html "PUK")" = "ja" ] && PB2=ja || PB2=nein
+ergebnis "die Meldung nennt die PUK als einzigen Weg" "$PB2"
+N_NB=$(verifikationen)
+[ $((N_NB-W_NB)) -eq 0 ] && PB3=ja || PB3=nein
+ergebnis "kein Verifikationsversuch bei gesperrter Karte (gemessen: $((N_NB-W_NB)))" "$PB3"
+curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/zuruecksetzen >/dev/null
+rm -f /tmp/pr-nb.html /tmp/pr-nb2.html
+
+hinweis "FA-UEB-020 — Erreichbarkeitswechsel werden protokolliert"
+curl -s -X POST http://localhost:8480/steuerung/KT-BEHANDLUNG-01/erreichbar/false >/dev/null
+for _ in $(seq 20); do
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_NICHT_ERREICHBAR'")" != "0" ] && break
+  sleep 2
+done
+AUS=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_NICHT_ERREICHBAR'")
+[ "${AUS:-0}" -ge 1 ] && EA=ja || EA=nein
+ergebnis "der Ausfall steht im Fachprotokoll ($AUS)" "$EA"
+
+curl -s -X POST http://localhost:8480/steuerung/KT-BEHANDLUNG-01/erreichbar/true >/dev/null
+for _ in $(seq 20); do
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_ERREICHBAR'")" != "0" ] && break
+  sleep 2
+done
+EIN=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_ERREICHBAR'")
+[ "${EIN:-0}" -ge 1 ] && EE=ja || EE=nein
+ergebnis "die Rueckkehr ebenfalls ($EIN)" "$EE"
+
+# Grundregel ADR-0005: nur Wechsel, nicht jede Abfrage. Sonst waeren es bei
+# 5.000 Terminals im Minutentakt Millionen Eintraege am Tag.
+VOR_E=$(sql "SELECT count(*) FROM fachprotokoll WHERE art IN ('GERAET_ERREICHBAR','GERAET_NICHT_ERREICHBAR')")
+sleep 30
+NACH_E=$(sql "SELECT count(*) FROM fachprotokoll WHERE art IN ('GERAET_ERREICHBAR','GERAET_NICHT_ERREICHBAR')")
+[ "$VOR_E" = "$NACH_E" ] && EK=ja || EK=nein
+ergebnis "bei gleichbleibendem Zustand kommt nichts dazu ($VOR_E -> $NACH_E)" "$EK"
+
+hinweis "FA-UEB-030 — Firmware-Stand erfassen und Wechsel erkennen"
+curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-fw.html
+[ "$(enthaelt /tmp/pr-fw.html "Firmware-Stände")" = "ja" ] && FU=ja || FU=nein
+ergebnis "die Flottenuebersicht zeigt die Verteilung je Modell" "$FU"
+[ "$(enthaelt /tmp/pr-fw.html "aktuellster Stand")" = "ja" ] && FB=ja || FB=nein
+ergebnis "sie bewertet die Staende, statt sie nur aufzuzaehlen" "$FB"
+
+# Ein Versionswechsel muss erkannt werden, egal wer ihn ausgeloest hat.
+VOR_F=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'")
+curl -s -X POST "http://localhost:8480/steuerung/KT-EMPFANG-01/firmware/9.9.9?dauer=2000" >/dev/null
+for _ in $(seq 25); do
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'")" -gt "${VOR_F:-0}" ] && break
+  sleep 2
+done
+NACH_F=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'")
+[ "${NACH_F:-0}" -gt "${VOR_F:-0}" ] && FW=ja || FW=nein
+ergebnis "ein Versionswechsel wird protokolliert ($VOR_F -> $NACH_F)" "$FW"
+TEXT_F=$(sqltext "SELECT text FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'
+                  ORDER BY id DESC LIMIT 1")
+case "$TEXT_F" in *"9.9.9"*) FT=ja ;; *) FT=nein ;; esac
+ergebnis "der Eintrag nennt alten und neuen Stand ($TEXT_F)" "$FT"
+[ "$(enthaelt /tmp/pr-fw.html "9.9.9")" = "nein" ] && true
+curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-fw2.html
+[ "$(enthaelt /tmp/pr-fw2.html "9.9.9")" = "ja" ] && FS=ja || FS=nein
+ergebnis "der neue Stand erscheint in der Uebersicht" "$FS"
+rm -f /tmp/pr-fw.html /tmp/pr-fw2.html
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi
