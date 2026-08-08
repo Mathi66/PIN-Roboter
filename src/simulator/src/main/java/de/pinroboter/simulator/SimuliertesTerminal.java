@@ -141,6 +141,19 @@ public class SimuliertesTerminal {
     public boolean erreichbar() { return erreichbar; }
     public void erreichbarSetzen(boolean e) { this.erreichbar = e; }
     public boolean aktualisierend() { return aktualisierend; }
+
+    /**
+     * Setzt den Zustand „aktualisierend" von außen.
+     *
+     * <p>Für den <b>konnektorweiten</b> KSR-Lauf ({@code [gemSpec_Kon] 4.3.10}):
+     * Dort aktualisiert der Konnektor über seinen KSR-Client mehrere Terminals
+     * nacheinander, und der Kartenterminaldienst meldet währenddessen für die
+     * betroffenen Geräte diesen Zustand. Das ist etwas anderes als ein
+     * einzelnes Firmware-Update über {@link #firmwareEinspielen} — und der
+     * Roboter muss beides gleich behandeln: <b>keine PIN-Verifikation</b>,
+     * sonst belastet er im ungünstigen Fall den Fehlversuchszähler der SMC-B.
+     */
+    public void aktualisierendSetzen(boolean an) { this.aktualisierend = an; }
     public int antwortverzoegerungMs() { return antwortverzoegerungMs; }
     public void antwortverzoegerungSetzen(int ms) { this.antwortverzoegerungMs = ms; }
 }

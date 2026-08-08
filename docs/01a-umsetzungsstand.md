@@ -48,7 +48,7 @@ mit 84 Anforderungen
 | ○ | FA-UEB-020 | Erreichbarkeit überwachen | im Durchstich enthalten, kein eigener Nachweis |
 | ○ | FA-UEB-030 | Firmware-Stand erfassen | wird gemeldet und angezeigt |
 | ✓ | FA-UEB-040 | PEviM-Zustand erkennen | Terminals ohne aktives PEviM werden benannt, mit Handlungsempfehlung |
-| ✓ | FA-UEB-050 | Kein Versuch während Firmware-Update | nachgewiesen: 0 Versuche bei 30 s Update |
+| ✔ | FA-UEB-050 | keine Verifikation während eines Updates | Einzelgerät **und** konnektorweiter KSR-Lauf (`gemSpec_Kon 4.3.10`) nachgewiesen: 0 Versuche bei 4 gleichzeitig betroffenen Terminals, Wiederherstellung danach belegt. **Offen an echter Hardware:** ob der KoCo-Konnektor den Zustand im `GetPinStatus` meldet oder nur als Ereignis — zu klären bei der Kalibrierung (ADR-0007). [Umsetzung 20](03-umsetzung/20-ksr-lauf.md) |
 
 ## A.3 PIN-Verwaltung (FA-PIN)
 

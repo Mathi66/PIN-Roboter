@@ -403,6 +403,11 @@ public class Agent {
         if (karte == null || !t.erreichbar()) {
             meldung.put("pinStatus", PinStatus.UNBEKANNT.name());
             meldung.put("verbleibendeVersuche", -1);
+            // Ausdruecklich zuruecksetzen: Ohne diese Zeile bliebe ein zuvor
+            // gemeldetes „aktualisierend" in der Zentrale stehen, sobald die
+            // Karte verschwindet oder das Geraet ausfaellt — die Oberflaeche
+            // zeigte dann dauerhaft ein Update an, das laengst vorbei ist.
+            meldung.put("aktualisierend", false);
             if (!t.erreichbar()) meldung.put("hinweis", "Das Gerät antwortet nicht.");
             melden(meldung);
             return;

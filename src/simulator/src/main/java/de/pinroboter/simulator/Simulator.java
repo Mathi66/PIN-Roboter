@@ -133,6 +133,49 @@ public class Simulator {
             TerminalVerwaltung.antworte(ex, 200, j.append("]}").toString());
         });
 
+        /*
+         * Der konnektorweite KSR-Lauf ([gemSpec_Kon] 4.3.10).
+         *
+         * Der Konnektor aktualisiert Kartenterminals über seinen KSR-Client
+         * und meldet das mit den Ereignissen KSR/UPDATE/START bis
+         * KSR/UPDATE/END, Target=KT. Betroffen sind dabei MEHRERE Geräte, oft
+         * alle eines Standorts — nicht ein einzelnes wie beim Firmware-Update
+         * über die Steuerung.
+         *
+         *   POST /ksr/start?dauer=<ms>   alle Terminals werden „aktualisierend"
+         *   POST /ksr/ende               Zustand sofort beenden
+         */
+        server.createContext("/ksr/", ex -> {
+            String was = ex.getRequestURI().getPath().replaceFirst("^/ksr/", "");
+            if (was.startsWith("start")) {
+                String q = ex.getRequestURI().getQuery();
+                long dauer = 30_000;
+                if (q != null && q.startsWith("dauer=")) {
+                    try { dauer = Long.parseLong(q.substring(6)); } catch (Exception ignored) { }
+                }
+                final long d = dauer;
+                z.terminals().forEach(t -> t.aktualisierendSetzen(true));
+                Thread.ofVirtual().start(() -> {
+                    try { Thread.sleep(d); } catch (InterruptedException ignored) { }
+                    // Nach einem KSR-Lauf sind die Karten nicht mehr
+                    // verifiziert — der Neustart entzieht ihnen den Zustand.
+                    // Genau das wiederherzustellen ist der Zweck des Produkts.
+                    z.terminals().forEach(t -> {
+                        t.alleKarten().forEach(SimulierteKarte::verifikationEntziehen);
+                        t.aktualisierendSetzen(false);
+                    });
+                });
+                TerminalVerwaltung.antworte(ex, 200,
+                        "{\"ksr\":\"laeuft\",\"terminals\":" + z.terminals().size()
+                        + ",\"dauerMs\":" + d + "}");
+            } else if (was.startsWith("ende")) {
+                z.terminals().forEach(t -> t.aktualisierendSetzen(false));
+                TerminalVerwaltung.antworte(ex, 200, "{\"ksr\":\"beendet\"}");
+            } else {
+                TerminalVerwaltung.antworte(ex, 404, "{\"fehler\":\"unbekannt\"}");
+            }
+        });
+
         // Zählung der Statusabfragen je Karte — Messgrundlage für FA-UEB-010.
         server.createContext("/abfragen", ex -> {
             if ("DELETE".equals(ex.getRequestMethod())) {

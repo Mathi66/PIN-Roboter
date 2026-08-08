@@ -1892,6 +1892,57 @@ else
   ergebnis "die Gruppeneinstellung wirkt sich messbar aus ($N_A > $N_B)" "$UV"
 fi
 
+# ----------------------------------------------- FA-UEB-050 / gemSpec_Kon 4.3.10
+# Der KONNEKTORWEITE KSR-Lauf. Der bisherige Nachweis prueft ein einzelnes
+# Firmware-Update am Terminal. Beim KSR-Lauf aktualisiert der Konnektor
+# mehrere Geraete nacheinander (Ereignisse KSR/UPDATE/START bis
+# KSR/UPDATE/END, Target=KT) — betroffen sind dann ALLE, und ein einziger
+# uebersehener Verifikationsversuch belastet den Fehlversuchszaehler einer
+# SMC-B.
+hinweis "gemSpec_Kon 4.3.10 — während eines KSR-Laufs wird nirgends verifiziert"
+
+# Frischer Stack: Der Nachweis zu FA-PIN-060 loescht zuvor die hinterlegte PIN.
+# Ohne PIN kann der Roboter nach dem KSR-Lauf nichts wiederherstellen, und der
+# Nachweis wuerde eine Funktion als kaputt melden, die in Ordnung ist.
+stack_starten 123456 4
+
+V_KSR=$(verifikationen)
+ANTWORT_KSR=$(curl -s -X POST "http://localhost:8480/ksr/start?dauer=40000")
+BETROFFEN=$(echo "$ANTWORT_KSR" | grep -oE '"terminals":[0-9]+' | grep -oE '[0-9]+$')
+echo "  KSR-Lauf über $BETROFFEN Terminals, 40 s bei 10 s Gruppentakt → ~4 Gelegenheiten"
+[ "${BETROFFEN:-0}" -ge 2 ] && KB=ja || KB=nein
+ergebnis "der KSR-Lauf betrifft mehrere Geraete gleichzeitig ($BETROFFEN)" "$KB"
+
+sleep 35
+W_KSR=$(verifikationen)
+[ $((W_KSR-V_KSR)) -eq 0 ] && KV=ja || KV=nein
+if [ "$KV" = "nein" ]; then
+  echo "    Diagnose: $((W_KSR-V_KSR)) Versuch(e) waehrend des KSR-Laufs. Zeilen:"
+  docker logs pr-agt 2>&1 | grep "starte Verifikation" | tail -3 | sed 's/^/      /'
+fi
+ergebnis "0 Verifikationsversuche waehrend des KSR-Laufs (gemessen: $((W_KSR-V_KSR)))" "$KV"
+
+# Die Karten sind nach dem Lauf nicht mehr verifiziert — der Neustart entzieht
+# ihnen den Zustand. Genau das wiederherzustellen ist der Zweck des Produkts.
+for _ in $(seq 30); do
+  [ $(( $(verifikationen) - W_KSR )) -ge 1 ] && break
+  sleep 2
+done
+N_KSR=$(verifikationen)
+[ $((N_KSR-W_KSR)) -ge 1 ] && KW=ja || KW=nein
+ergebnis "nach dem KSR-Lauf stellt der Roboter den Zustand wieder her ($((N_KSR-W_KSR)))" "$KW"
+
+# Und der Betreiber erfaehrt, was los ist — nicht nur, dass nichts passiert.
+curl -s -X POST "http://localhost:8480/ksr/start?dauer=45000" >/dev/null
+# Der Agent meldet den Zustand erst beim naechsten Durchgang. Bei 10 s
+# Gruppentakt braucht die Oberflaeche bis zu zwei Takte, um ihn zu zeigen.
+sleep 25
+curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-ksr.html
+KH=$(enthaelt /tmp/pr-ksr.html "wird aktualisiert")
+ergebnis "die Oberflaeche nennt den Zustand waehrend des Laufs" "$KH"
+curl -s -X POST "http://localhost:8480/ksr/ende" >/dev/null
+rm -f /tmp/pr-ksr.html
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi

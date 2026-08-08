@@ -1634,3 +1634,29 @@ eine Verifikation. Kein Fehler, sondern die sichtbare Folge einer richtigen
 kleinste zulässige Intervall.
 
 ## Stand: 249 Modultests, 228 Systemnachweise — alle grün
+
+## gemSpec_Kon 4.3.10 — der konnektorweite KSR-Lauf
+
+Der Konnektor aktualisiert Kartenterminals über seinen KSR-Client. Während
+dieser Zeit darf der Roboter keine PIN-Verifikation versuchen — drei
+Fehlversuche sperren die SMC-B.
+
+Die Auswertung gab es schon. Geprüft war aber nur der **Einzelfall**: ein
+Firmware-Update an einem Terminal. Ein KSR-Lauf betrifft mehrere Geräte
+gleichzeitig, oft alle eines Standorts, und ein einziges übersehenes Gerät
+reicht. Der Simulator kann jetzt einen konnektorweiten Lauf auslösen;
+nachgewiesen sind 0 Versuche bei 4 gleichzeitig betroffenen Terminals und die
+Wiederherstellung danach.
+
+**Ein Fehler dabei gefunden:** Im frühen Rückgabepfad — Terminal nicht
+erreichbar oder ohne Karte — wurde `aktualisierend` gar nicht gemeldet. Der
+zuletzt gemeldete Wert blieb in der Zentrale stehen; die Oberfläche hätte
+dauerhaft ein Update angezeigt, das längst vorbei ist.
+
+**Was damit nicht belegt ist:** Der Agent erkennt den Zustand daran, dass der
+Konnektor ihn im `GetPinStatus` mitliefert. Ob ein echter KoCo-Konnektor das
+tut — oder den Lauf nur als Ereignis meldet — ist offen und gehört auf die
+Liste für die Kalibrierung am Testaufbau. Das ist der Unterschied zwischen
+„abgesichert" und „vermutlich abgesichert".
+
+## Stand: 249 Modultests, 232 Systemnachweise — alle grün
