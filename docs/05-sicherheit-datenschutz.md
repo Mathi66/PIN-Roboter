@@ -47,6 +47,7 @@ MDR-Verfahren (Festlegung PO, 06.08.2026).
 | TOTP-Geheimnis | Zentrale | zweiter Faktor | wie oben |
 | Anzeigename im Fachprotokoll | Zentrale, `fachprotokoll.ausloeser` | **Nachvollziehbarkeit**: welche Person hat gehandelt | Art. 6 Abs. 1 lit. f — der Roboter handelt selbsttätig, seine Auslösung muss zurechenbar sein |
 | Sitzungskennung | Zentrale, `sitzung` | Anmeldung aufrechterhalten | Art. 6 Abs. 1 lit. b |
+| E-Mail-Adressen der Empfänger | Zentrale, `mail_regel.empfaenger` | Benachrichtigung bei Alarmen (FA-ALA-020) | Art. 6 Abs. 1 lit. f — berechtigtes Interesse an Betriebssicherheit |
 
 **Nicht** verarbeitet: Patientendaten, Gesundheitsdaten, eGK-Inhalte,
 HBA-Inhalte. eGK und HBA sind technisch ausgeschlossen (`A_24080` erlaubt PEviM
@@ -84,13 +85,25 @@ Frist.
 
 Drei Arten, streng unterschieden:
 
-| | SMC-B-PIN | Geräte-Zugang | Anmeldekennwort |
+| | SMC-B-PIN | Geräte-Zugang | Anmeldekennwort | Mailserver-Kennwort |
+|---|---|---|---|---|
+| Beispiel | PIN.SMC | Konnektor-Anmeldung, Terminal-Admin | Kennwort eines Benutzers | SMTP-Anmeldung |
+| In der Zentrale | **nie** | verschlüsselt (AES-256-GCM) | nur als Argon2id-Hash | verschlüsselt (AES-256-GCM) |
+| Beim Agenten | ja, verschlüsselt | ja (bezogen) | nein | nein |
+| Wiederherstellbar | nur vom Agenten | ja, mit dem Schlüssel | nein, bewusst | ja, mit dem Schlüssel |
+| Begründung | `A_24114`, ADR-0009 | ADR-0008 | Stand der Technik | wie Geräte-Zugang |
+
+Dazu drei Schlüssel, die selbst Geheimnisse sind:
+
+| Schlüssel | Wo | Schützt | Bei Verlust |
 |---|---|---|---|
-| Beispiel | PIN.SMC | Konnektor-Anmeldung, Terminal-Admin | Kennwort eines Benutzers |
-| In der Zentrale | **nie** | verschlüsselt (AES-256-GCM) | nur als Argon2id-Hash |
-| Beim Agenten | ja | ja (bezogen) | nein |
-| Wiederherstellbar | — | ja, mit dem Schlüssel | nein, bewusst |
-| Begründung | `A_24114`, PO 06.08.2026 | ADR-0008 | Stand der Technik |
+| `GEHEIMNIS_SCHLUESSEL` | Umgebung der Zentrale | Geräte-Zugänge, Mailserver-Kennwort | Werte unbrauchbar, neu einzugeben |
+| `PIN_ABLAGE_SCHLUESSEL` | Umgebung des Agenten | hinterlegte SMC-B-PINs | PINs neu zu hinterlegen |
+| privater Schlüssel des Agenten | Volume des Agenten, Datei mit Eigentümerrechten | Entgegennahme der PIN aus dem Browser | PINs neu zu hinterlegen |
+
+**Die beiden ersten sind bewusst getrennt.** Wer den einen erlangt, bekommt
+damit nicht auch den anderen — sie liegen in verschiedenen Containern und
+schützen verschiedene Werte.
 
 **Warum die PIN nie in der Zentrale liegt:** Sie ist der eine Wert, dessen
 Missbrauch die Einrichtung handlungsunfähig macht. Bei zentralem Betrieb für
@@ -102,6 +115,60 @@ Ausführlich: ADR-0002, ADR-0008.
 wieder verwendbar sein muss. Der Schutz richtet sich gegen Sicherungen,
 Datenauszüge und versehentliche Ausgaben — nicht gegen vollen Systemzugriff.
 Auch das steht so in ADR-0008, statt beschönigt zu werden.
+
+### Wie die PIN vom Browser zum Agenten kommt (ADR-0009)
+
+Die PIN wird in der Oberfläche eingegeben — und die läuft in der Zentrale, die
+sie nie sehen darf. Aufgelöst wird der Widerspruch durch
+**Ende-zu-Ende-Verschlüsselung**:
+
+```
+Browser ──[PIN, verschlüsselt mit dem öffentlichen ──► Zentrale
+           Schlüssel DIESES Agenten]                     │ reicht weiter,
+                                                         │ kann nicht lesen,
+                                                         │ löscht nach Zustellung
+                                                         ▼
+                                                       Agent
+                                               entschlüsselt, legt
+                                               verschlüsselt ab (AES-256-GCM)
+```
+
+Der Klartext existiert an genau zwei Stellen: im Browser des Bedieners, für
+Sekundenbruchteile, und im Agenten. **Nirgends dazwischen.**
+
+| Zusage | Wie durchgesetzt | Nachweis |
+|---|---|---|
+| Die Zentrale sieht nie Klartext | RSA-OAEP 3072, privater Teil nur beim Agenten | Systemnachweis: unverschlüsselte Eingabe wird abgewiesen |
+| Kein Chiffrat bleibt liegen | nach Zustellung aus der Datenbank entfernt | `SELECT count(*) … WHERE chiffrat IS NOT NULL` = 0 |
+| Nichts davon im Protokoll | protokolliert wird nur *dass*, für welche Karte, von wem | Suche nach PIN und Chiffrat in Protokoll und Ausgaben |
+| Beim Agenten verschlüsselt | AES-256-GCM, eigener Schlüssel | Ablagedatei gelesen, PIN nicht enthalten |
+| In der Oberfläche nur das Kennzeichen | „PIN hinterlegt", nie der Wert | HTML geprüft |
+
+**Was das nicht leistet:** Wer den Agenten vollständig kontrolliert, kommt an
+die PIN — er muss sie ja verwenden können. Der Gewinn liegt woanders: Bei 1.000
+Standorten liefert ein Angriff auf die Zentrale **keine einzige** PIN.
+
+### Wer die Organisationsstruktur ändern darf (FA-ORG-020)
+
+Der Geltungsbereich eines Benutzers ergibt sich aus dem Baum: seine Einheit und
+alles darunter. **Wer den Baum ändern darf, ändert damit Geltungsbereiche —
+auch seinen eigenen.** Ein Standortadministrator, der eine fremde Praxis unter
+seinen Standort hängen könnte, hätte Zugriff auf deren Geräte, Protokolle und
+Konten, ohne dass an der Mandantentrennung selbst etwas kaputt wäre.
+
+Vier Regeln, jede einzeln nachgewiesen:
+
+1. **Erst ab Standortebene.** Wer eine Praxis betreut, legt keine weiteren an.
+2. **Das Elternteil muss im eigenen Bereich liegen** — sonst ließen sich
+   Geschwister anlegen und der eigene Bereich erweitern.
+3. **Beim Umhängen müssen Einheit *und* Ziel im Bereich liegen.** Nur das Ziel
+   zu prüfen erlaubt die Übernahme fremder Einheiten; nur die Einheit zu prüfen
+   das Wegschieben aus dem Bereich.
+4. **Kein Zyklus** — sonst wird ein Teilbaum abgetrennt und ist für niemanden
+   mehr sichtbar, auch nicht für den Instanzbetreiber.
+
+Umhängen und Löschen sind **Sicherheitsereignisse** im Fachprotokoll, Umbenennen
+ist Routine: protokolliert wird nach Wirkung, nicht nach Vorgang.
 
 ---
 
@@ -129,6 +196,12 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 | **Not-Aus** | hält die Automatik sofort an | Systemnachweis: 0 Versuche bei aktivem Not-Aus |
 | **Kartenschutz** | `LeftTries` wird vor jedem Versuch geprüft; Abbruch statt Wiederholung | `FA-PIN-030`: genau **ein** Versuch bei falscher PIN, verpflichtend vor jeder Auslieferung |
 | **Verfügbarkeit** | Agent arbeitet ohne Zentrale weiter; volles Protokoll hält die Kernfunktion nicht an | Systemnachweise |
+| **PIN-Übergabe Ende-zu-Ende** | Browser verschlüsselt mit dem öffentlichen Schlüssel des Agenten (RSA-OAEP 3072); die Zentrale reicht nur weiter und löscht nach Zustellung | 5 Systemnachweise, 10 Modultests — [ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md) |
+| **PIN-Ablage beim Agenten** | AES-256-GCM, eigener Schlüssel aus der Umgebung; ohne Schlüssel wird nichts auf die Platte geschrieben | Systemnachweis liest die Ablagedatei |
+| **Strukturänderungen begrenzt** | Organisationseinheiten erst ab Standortebene; Umhängen prüft Einheit *und* Ziel; Zyklen abgewehrt | 17 Modultests, davon die Mehrzahl Angriffsversuche |
+| **Kein Verifikationsversuch bei laufendem Update** | Zustand „aktualisierend" wird ausgewertet, auch beim konnektorweiten KSR-Lauf | 0 Versuche bei 4 gleichzeitig betroffenen Terminals ([gemSpec_Kon] 4.3.10) |
+| **Keine Mailflut** | Sammelfenster je Einrichtung, Vorgabe 5 Minuten | 50 Alarme ergeben eine Mail, gegen einen Auffangserver gemessen |
+| **Keine Geheimnisse in Mails** | der Text nennt nur Vorgang, Gerät und Handlung | Systemnachweis durchsucht alle eingegangenen Nachrichten |
 
 ### Offen — ehrlich benannt
 
@@ -193,14 +266,16 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 ```
    Browser ──HTTP──► Zentrale ──JDBC──► PostgreSQL
    (Praxis)          (Praxis/RZ)         (Volumes)
-                          ▲
-                          │ HTTP, Token
-                          │ ausgehend aufgebaut
-                     Standort-Agent  ──TLS 1.2/Brainpool──► Konnektor
-                     (Praxisnetz)                            │
-                          │                                  ▼
-                          └──TLS 1.2/Brainpool────────► Kartenterminal
-                                                        (PEviM, PIN)
+                       │  ▲
+        SMTP (STARTTLS)│  │ HTTP, Token
+                       ▼  │ ausgehend aufgebaut
+                  Mailserver│
+                  (Betreiber)│
+                          Standort-Agent ──TLS 1.2/Brainpool──► Konnektor
+                          (Praxisnetz)                           │
+                             │                                   ▼
+                             └──TLS 1.2/Brainpool───────► Kartenterminal
+                                                           (PEviM, PIN)
 ```
 
 **Was über welche Verbindung geht:**
@@ -212,11 +287,39 @@ Auch das steht so in ADR-0008, statt beschönigt zu werden.
 | Zentrale → Agent | Not-Aus-Zustand (Abruf durch den Agenten) | nein |
 | Agent → Konnektor | Aufrufkontext, Kartenhandle, PIN-Status | Zugangsdaten des Konnektors |
 | Agent → Terminal | PEviM, **PIN** | **ja, die PIN** |
+| Browser → Zentrale (PIN) | **Chiffrat**, im Browser verschlüsselt | nein — die Zentrale kann es nicht lesen (ADR-0009) |
+| Zentrale → Agent (PIN) | dasselbe Chiffrat, danach gelöscht | nein, für die Zentrale unlesbar |
+| **Zentrale → Mailserver** | Alarmtext: Einrichtung, Gerätekennung, Handlungsempfehlung | **nein** — keine PIN, keine Zugangsdaten, keine personenbezogenen Daten |
 
-**Keine Verbindung nach außen.** Der PIN-Roboter ruft keine Dienste im Internet
-auf; es gibt keine Telemetrie, keine Fehlerberichte an Dritte, keine
-Auftragsverarbeitung. Die einzige externe Quelle ist die Container-Registry
-beim Aktualisieren — und die wird bewusst angestoßen.
+**Verbindungen nach außen — vollständig aufgezählt.** Bis zum 08.08.2026 stand
+hier „keine Verbindung nach außen". Mit der Benachrichtigung per E-Mail
+(FA-ALA-020) stimmt das nicht mehr, und das gehört benannt statt
+fortgeschrieben. Es sind genau zwei:
+
+1. **Der Mailserver des Betreibers**, wenn eine Benachrichtigungsregel
+   eingerichtet ist. Ohne Regel wird nichts versendet — die Voreinstellung ist
+   „keine Regel". Wohin gesendet wird, bestimmt allein der Betreiber; der
+   Roboter kennt keine fest eingebaute Adresse.
+2. **Die Container-Registry** beim Aktualisieren, bewusst angestoßen.
+
+Weiterhin gilt: keine Telemetrie, keine Fehlerberichte an Dritte, keine
+Auftragsverarbeitung, keine Verbindung zu uns als Hersteller.
+
+**Was in einer Benachrichtigung steht — und was nicht.** Eine Mail verlässt das
+Haus, läuft über fremde Server und liegt danach in einem Postfach, dessen
+Schutz wir nicht kennen. Sie nennt deshalb nur: was geschehen ist, an welchem
+Gerät, und was zu tun ist. **Keine PIN, kein Chiffrat, keine Zugangsdaten,
+keine personenbezogenen Daten.** Der Text sagt das in seiner letzten Zeile auch
+selbst.
+
+Nachgewiesen wird es gegen einen Auffangserver: Der Systemnachweis durchsucht
+*alle* dort eingegangenen Nachrichten nach den Test-PINs und -Kennwörtern des
+Laufs.
+
+**Verschlüsselung ist Vorgabe**, abschaltbar nur für Mailserver im eigenen Netz,
+die kein STARTTLS anbieten — und die Oberfläche sagt dann, was das bedeutet.
+Der Zertifikatsname wird geprüft; ohne diese Prüfung würde jedes gültige
+Zertifikat angenommen, auch ein fremdes.
 
 ---
 
@@ -236,3 +339,11 @@ Diese Punkte kann die Software nicht für ihn erledigen:
    die Angaben.
 6. **Zugriff auf den Docker-Host beschränken.** Er ist der Punkt, an dem alle
    technischen Maßnahmen dieses Dokuments endeten.
+7. **`PIN_ABLAGE_SCHLUESSEL` erzeugen und sichern** — getrennt vom
+   `GEHEIMNIS_SCHLUESSEL` aufbewahren, sonst ist die Trennung wertlos.
+8. **Empfängeradressen aktuell halten.** Eine Benachrichtigung an ein Postfach,
+   das niemand mehr liest, ist schlimmer als keine: Sie erzeugt das Gefühl,
+   informiert zu sein.
+9. **Prüfen, ob der eigene Mailserver zu einem Anbieter außerhalb der EU
+   gehört.** Der Roboter sendet dorthin, wohin der Betreiber ihn richtet —
+   die Beurteilung des Drittlandtransfers obliegt ihm.
