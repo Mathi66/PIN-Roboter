@@ -1,7 +1,7 @@
 # Umsetzungsstand je Anforderung
 
 **Stand:** 08.08.2026 · Grundlage: [Anforderungskatalog](01-anforderungskatalog.md)
-mit 84 Anforderungen · **255 Modultests, 270 Systemnachweise**
+mit 84 Anforderungen · **261 Modultests, 282 Systemnachweise**
 
 > **Diese Liste wurde am 08.08.2026 neu aus dem Katalog erzeugt.** Die vorige
 > Fassung trug bei 36 von 84 Zeilen eine Beschriftung, die nicht zur Anforderung
@@ -111,8 +111,8 @@ mit 84 Anforderungen · **255 Modultests, 270 Systemnachweise**
 | **✔** | `FA-PRO-020` Keine Geheimnisse im Protokoll <br><span style="opacity:.7">MUSS</span> |  | zentral erzwungen, bei jedem Lauf durchsucht |
 | **✔** | `FA-PRO-030` Protokollansicht mit Filtern <br><span style="opacity:.7">MUSS</span> |  | Filter nach Art, Ergebnis, Gerät; Blättern |
 | **✔** | `FA-PRO-040` Excel-Export <br><span style="opacity:.7">MUSS</span> |  | Excel-Export, mandantengebunden |
-| **◐** | `FA-PRO-050` Geräte-Zeitstrahl <br><span style="opacity:.7">MUSS</span> |  | Ereignisse über den Filter erreichbar. **Offen:** Zeitstrahl je Terminal in einem Klick |
-| **◐** | `FA-PRO-060` Vorgangsansicht <br><span style="opacity:.7">MUSS</span> |  | Vorgangsnummer geführt. **Offen:** eigene Ansicht je Vorgang |
+| **✔** | `FA-PRO-050` Geräte-Zeitstrahl <br><span style="opacity:.7">MUSS</span> |  | Chronologische Sicht je Terminal, aus der Geräteliste in einem Klick. Zeitraum wählbar, Ereignisarten ein- und ausblendbar; der Filter wirkt nachweislich (30 von 99). [Umsetzung 24](03-umsetzung/24-zeitstrahl-und-vorgang.md) |
+| **✔** | `FA-PRO-060` Vorgangsansicht <br><span style="opacity:.7">MUSS</span> |  | Alle Ereignisse einer Vorgangsnummer gemeinsam, mit Fortschritt (Ereignisse, betroffene Geräte, Fehlschläge). Selbsttätige Aktualisierung nur, solange der Vorgang läuft. [Umsetzung 24](03-umsetzung/24-zeitstrahl-und-vorgang.md) |
 | **✔** | `FA-PRO-070` Speicherbudget und Rotation <br><span style="opacity:.7">MUSS</span> |  | Budget, Rotation ab 80 %, Kernfunktion läuft weiter |
 | **✔** | `FA-PRO-080` Aufbewahrungsdauer <br><span style="opacity:.7">MUSS</span> |  | Pseudonymisierung nach Frist statt Löschung |
 

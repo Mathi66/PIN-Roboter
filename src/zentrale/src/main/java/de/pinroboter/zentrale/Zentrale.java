@@ -289,6 +289,43 @@ public class Zentrale {
         app.get("/teil/alarme", c -> c.html(alarmblock(c)));
         app.get("/teil/lage",   c -> c.html(lageblock(c)));
         app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
+
+        /**
+         * Geräte-Zeitstrahl (FA-PRO-050) — aus der Geräteliste in einem Klick.
+         *
+         * <p>Das gefilterte Protokoll leistet das nicht: Dort sucht man
+         * Einträge, hier liest man die Geschichte eines Geräts.
+         */
+        app.get("/geraete/{terminalId}/verlauf", c -> {
+            String id = c.pathParam("terminalId");
+            String zeitraum = c.queryParam("zeitraum");
+            if (zeitraum == null || zeitraum.isBlank()) zeitraum = "7t";
+            var arten = c.queryParams("art");
+            var seite = protokoll.seite(id, arten, null,
+                    Verlaufsseiten.seitFuer(zeitraum), null,
+                    Math.max(1, zahl(c.queryParam("seite"), 1)), 200, bereich(c));
+            var g = geraete.get(id);
+            c.html(seite("geraete", Verlaufsseiten.zeitstrahl(id,
+                    g == null ? id : anzeigename(g), seite, zeitraum, arten),
+                    angemeldeter(c)));
+        });
+
+        /** Vorgangsansicht (FA-PRO-060). */
+        app.get("/vorgang/{nummer}", c -> {
+            String nr = c.pathParam("nummer");
+            var seite = protokoll.seite(null, java.util.List.of(), null, null, nr, 1, 200, bereich(c));
+            c.html(seite("protokoll", Verlaufsseiten.vorgang(nr, seite), angemeldeter(c)));
+        });
+
+        app.get("/teil/vorgang/{nummer}", c -> {
+            String nr = c.pathParam("nummer");
+            var seite = protokoll.seite(null, java.util.List.of(), null, null, nr, 1, 200, bereich(c));
+            // Nur die Verlaufstafel, nicht die ganze Seite — der Kopf mit den
+            // Kennzahlen bleibt stehen (UX-Konzept, Stufe 1).
+            String ganz = Verlaufsseiten.vorgang(nr, seite);
+            int ab = ganz.lastIndexOf("<div class=\"tafel\"");
+            c.html(ab < 0 ? ganz : ganz.substring(ab));
+        });
         app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
 
         // ---------------------------------------------------------- Gruppen
@@ -2338,9 +2375,10 @@ public class Zentrale {
             s.append("<div class=\"rollbar\"><table><thead><tr><th>Gerät</th><th>Zustand</th><th>Was zu tun ist</th></tr></thead><tbody>");
             for (Geraetezustand g : auffaellig) {
                 s.append("""
-                        <tr><td class="geraet">%s<br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
+                        <tr><td class="geraet"><a href="/geraete/%s/verlauf" style="color:inherit">%s</a><br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
                         <td>%s</td><td>%s%s</td></tr>"""
-                        .formatted(esc(anzeigename(g)), esc(g.terminalId), marke(g),
+                        .formatted(esc(g.terminalId), esc(anzeigename(g)), esc(g.terminalId),
+                                marke(g),
                                 esc(g.hinweis != null ? g.hinweis : g.pinStatus.erklaerung()),
                                 g.handlung == null ? "" : "<div class=\"handlung\">" + esc(g.handlung) + "</div>"));
             }
@@ -2504,10 +2542,11 @@ public class Zentrale {
                 + "<th>Gerät</th><th>Modell</th><th>Firmware</th><th>Zustand</th>"
                 + "<th>Automatik</th><th>Versuche</th><th>geprüft</th></tr></thead><tbody>");
         geraete.values().stream().sorted(Comparator.comparing(g -> g.terminalId)).forEach(g -> s.append("""
-                <tr><td class="geraet">%s<br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
+                <tr><td class="geraet"><a href="/geraete/%s/verlauf" style="color:inherit">%s</a><br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
                 <td>%s</td><td><code>%s</code></td><td>%s%s</td><td>%s</td>
                 <td style="font-variant-numeric:tabular-nums">%s</td><td class="zeit">%s</td></tr>"""
-                .formatted(esc(anzeigename(g)), esc(g.terminalId), esc(nz(g.modell)), esc(nz(g.firmware)),
+                .formatted(esc(g.terminalId), esc(anzeigename(g)), esc(g.terminalId),
+                        esc(nz(g.modell)), esc(nz(g.firmware)),
                         marke(g), handlungshinweis(g), automatikMarke(g),
                         g.verbleibendeVersuche < 0 ? "—" : String.valueOf(g.verbleibendeVersuche),
                         g.zuletztGeprueftText())));

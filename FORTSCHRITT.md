@@ -1733,3 +1733,31 @@ würde bei jedem Durchgang einen Fehlversuch erzeugen — nach drei Durchgängen
 wäre die Karte gesperrt, ohne dass jemand etwas falsch gemacht hat.
 
 ## Stand: 255 Modultests, 270 Systemnachweise — alle grün
+
+## FA-PRO-050 und FA-PRO-060 — die vier Sichten sind vollständig
+
+Geräte-Zeitstrahl und Vorgangsansicht stehen. Damit sind die vier Sichten aus
+ADR-0005 komplett. Der Zeitstrahl fragt nach einem Gerät über die Zeit, die
+Vorgangsansicht nach einem Vorgang über die Geräte — im Protokoll sucht man
+Einträge, hier liest man eine Geschichte.
+
+### Ein Fehler von mir, und ein Nachweis, der ihn verdeckte
+
+Ich habe den Link zum Zeitstrahl per Textersetzung in die Gerätetabelle
+eingefügt. Die Ersetzung traf **beide** Tabellen — auch die in der
+Lage-Übersicht, wo die Argumentliste anders ist. Die Startseite antwortete
+danach mit HTTP 500. Genau dieser Griff ist in diesem Projekt schon einmal
+danebengegangen.
+
+Schlimmer: Der Nachweis „jeder Navigationslink führt zu einer Seite" holt seine
+Liste **aus der Startseite**. War die kaputt, fand er null Ziele und meldete
+„0 tot" — bestanden. Ein Nachweis, dessen Prüfmenge aus dem Prüfgegenstand
+stammt, kann bei dessen Totalausfall nicht anschlagen. Er hat jetzt zusätzlich
+eine feste Liste.
+
+Dazu zwei weitere Nachweisfehler: Der Alarmnachweis zählte alle
+„Quittieren"-Knöpfe statt des einen geprüften Alarms, und die
+Datenbank-Hilfsfunktionen waren erst 150 Zeilen nach ihrer ersten Verwendung
+definiert.
+
+## Stand: 261 Modultests, 282 Systemnachweise — alle grün

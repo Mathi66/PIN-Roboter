@@ -41,6 +41,16 @@ ergebnis() {           # ergebnis <name> <bedingung-erfuellt>
 }
 verifikationen() { docker logs pr-agt 2>&1 | grep -c "starte Verifikation"; }
 
+# Datenbankabfragen. Muessen HIER stehen, nicht weiter unten: Bash kennt
+# eine Funktion erst ab ihrer Definition, und der Alarmnachweis nutzt sie
+# rund 150 Zeilen frueher.
+sql() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d ' \n'; }
+# Fuer Textwerte: entfernt NUR den Zeilenumbruch. Ein Modellname wie
+# "CHERRY ST-1506" verliert sonst sein Leerzeichen - genau daran ist der
+# Modellfilter-Nachweis einmal gescheitert, ohne dass am Produkt etwas fehlte.
+sqltext() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d '\r\n'; }
+
+
 datenbank_starten() {
   docker rm -f pr-db >/dev/null 2>&1
   docker volume rm pr-testdaten >/dev/null 2>&1
@@ -328,28 +338,52 @@ anmelden
 
 # ---------------------------------------------------------------- Alarme
 hinweis "FA-ALA-010 — Alarme entstehen und verschwinden von selbst"
-alarmzahl() { curl -s -b "$KEKSE" http://localhost:8090/ | grep -c "Quittieren" || true; }
+
+# Gezaehlt wird GENAU DIESER Alarm, nicht alle sichtbaren. Die frueheren
+# Fassungen zaehlten "Quittieren"-Knoepfe auf der Startseite — mit jedem neuen
+# Alarmtyp im Produkt wurde die Zaehlung unzuverlaessiger, und am 09.08.2026
+# meldete sie eine Alarmflut, wo nur ein zweiter, anderer Alarm dazukam.
+dieser_alarm() {
+  sql "SELECT count(*) FROM alarm WHERE objekt='KT-EMPFANG-01'
+       AND art='GERAET_NICHT_ERREICHBAR' AND behoben_am IS NULL"
+}
 
 curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/erreichbar/false >/dev/null
-sleep 14
-A1=$(alarmzahl)
-[ "$A1" -ge 1 ] && AL=ja || AL=nein
+# Aktiv warten: Seit FA-UEB-010 taktet der Agent je Geraetegruppe (10 s im
+# Nachweislauf). Eine feste Wartezeit war ein Rennen.
+for _ in $(seq 30); do
+  [ "$(dieser_alarm)" -ge 1 ] && break
+  sleep 2
+done
+A1=$(dieser_alarm)
+[ "$A1" = "1" ] && AL=ja || AL=nein
 ergebnis "nicht erreichbares Gerät erzeugt einen Alarm (gefunden: $A1)" "$AL"
 
-curl -s -b "$KEKSE" http://localhost:8090/ -o /tmp/pr-antwort.html
-HE=$(enthaelt /tmp/pr-antwort.html "eingeschaltet und mit dem Netzwerk")
+# Die Handlungsempfehlung steht am Alarm selbst, nicht irgendwo auf der Seite.
+HTEXT=$(sqltext "SELECT coalesce(handlung,'-') FROM alarm WHERE objekt='KT-EMPFANG-01'
+                 AND art='GERAET_NICHT_ERREICHBAR' AND behoben_am IS NULL LIMIT 1")
+case "$HTEXT" in *"eingeschaltet und mit dem Netzwerk"*) HE=ja ;; *) HE=nein ;; esac
+[ "$HE" = "nein" ] && echo "    Diagnose: Handlung war \"$HTEXT\""
 ergebnis "der Alarm nennt eine Handlungsempfehlung" "$HE"
 
-# Derselbe Zustand ueber viele Pruefzyklen darf keine weiteren Alarme erzeugen.
-sleep 20
-A2=$(alarmzahl)
-[ "$A2" = "$A1" ] && DU=ja || DU=nein
+# Und sie muss auch in der Oberflaeche ankommen.
+curl -s -b "$KEKSE" http://localhost:8090/ -o /tmp/pr-antwort.html
+HO=$(enthaelt /tmp/pr-antwort.html "eingeschaltet und mit dem Netzwerk")
+ergebnis "sie erscheint in der Lage-Uebersicht" "$HO"
+
+# Derselbe Zustand ueber viele Pruefzyklen darf keinen ZWEITEN Alarm erzeugen.
+sleep 25
+A2=$(dieser_alarm)
+[ "$A2" = "1" ] && DU=ja || DU=nein
 ergebnis "keine Alarmflut bei andauerndem Zustand ($A1 -> $A2)" "$DU"
 
 curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/erreichbar/true >/dev/null
-sleep 16
-A3=$(alarmzahl)
-[ "$A3" -lt "$A1" ] && BE=ja || BE=nein
+for _ in $(seq 25); do
+  [ "$(dieser_alarm)" = "0" ] && break
+  sleep 2
+done
+A3=$(dieser_alarm)
+[ "$A3" = "0" ] && BE=ja || BE=nein
 ergebnis "behobener Zustand schließt den Alarm selbsttätig ($A1 -> $A3)" "$BE"
 
 # ---------------------------------------------------------------- Erreichbarkeit
@@ -359,8 +393,15 @@ echo "  gebaut, verlinkt - und die Route nie registriert. Der Compiler sieht das
 echo "  nicht: Ein Link ist eine Zeichenkette, kein Aufruf."
 TOT=0
 # Links aus der Navigation der Startseite auslesen und alle aufrufen
-ZIELE=$(curl -s -b "$KEKSE" http://localhost:8090/ \
-        | grep -oE '<a href="/[a-z-]*"' | grep -oE '"/[a-z-]*"' | tr -d '"' | sort -u)
+# Die Liste kommt aus der Startseite UND aus einer festen Aufzaehlung. Nur
+# extrahiert war sie wertlos: Ist die Startseite selbst kaputt, findet der
+# Ausdruck null Ziele — und der Nachweis meldet "0 tot", also bestanden.
+# Genau das ist am 09.08.2026 passiert, waehrend / mit HTTP 500 antwortete.
+ZIELE=$( { curl -s -b "$KEKSE" http://localhost:8090/ \
+             | grep -oE '<a href="/[a-z-]*"' | grep -oE '"/[a-z-]*"' | tr -d '"'
+           printf '%s\n' / /geraete /bestand /gruppen /organisation /benutzer \
+                          /verwaltung /protokoll /benachrichtigung
+         } | sort -u)
 for z in $ZIELE; do
   C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" "http://localhost:8090$z")
   if [ "$C" != "200" ]; then TOT=$((TOT+1)); echo "    $z -> HTTP $C"; fi
@@ -531,11 +572,6 @@ hinweis "Demodatensatz — MVZ-Verbund (Block C)"
 # Der Demodatensatz ist Werkzeug, nicht Beiwerk: An ihm wird die Oberflaeche
 # bei realistischen Stueckzahlen geprueft, bevor echte Bestandsdaten da sind.
 # Fuer Zahlen und Kennungen: entfernt alle Leerzeichen.
-sql() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d ' \n'; }
-# Fuer Textwerte: entfernt NUR den Zeilenumbruch. Ein Modellname wie
-# "CHERRY ST-1506" verliert sonst sein Leerzeichen - genau daran ist der
-# Modellfilter-Nachweis einmal gescheitert, ohne dass am Produkt etwas fehlte.
-sqltext() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" | tr -d '\r\n'; }
 
 curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' -X POST \
   http://localhost:8090/verwaltung/demodaten/anlegen | grep -qE '^(200|302)$' && DA=ja || DA=nein
@@ -2255,6 +2291,92 @@ else
   ergebnis "unverschluesselt uebergebene PINs werden abgewiesen" "$CK"
 
   rm -f /tmp/pr-pub-c.pem /tmp/pr-aend.html /tmp/pr-aend-klar.html
+fi
+
+# --------------------------------------------------- FA-PRO-050 / FA-PRO-060
+hinweis "FA-PRO-050 / FA-PRO-060 — Geräte-Zeitstrahl und Vorgangsansicht"
+
+KT_V=$(sqltext "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 1")
+if [ -z "$KT_V" ]; then
+  echo "  uebersprungen: kein Geraet gemeldet"
+  FEHLER=$((FEHLER+1))
+else
+  # Aus der Geraeteliste in EINEM Klick erreichbar.
+  curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-gl.html
+  [ "$(enthaelt /tmp/pr-gl.html "/geraete/$KT_V/verlauf")" = "ja" ] && ZK=ja || ZK=nein
+  ergebnis "der Zeitstrahl ist aus der Geraeteliste verlinkt" "$ZK"
+
+  CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-zs.html -w '%{http_code}' \
+         "http://localhost:8090/geraete/$KT_V/verlauf")
+  [ "$CODE" = "200" ] && [ "$(enthaelt /tmp/pr-zs.html "Zeitstrahl")" = "ja" ] && ZS=ja || ZS=nein
+  ergebnis "die Zeitstrahl-Seite ist erreichbar (HTTP $CODE)" "$ZS"
+
+  # Er muss die geforderten Ereignisarten tragen.
+  ARTEN=0
+  for a in "PIN-Status geändert" "Gerät wieder erreichbar" "Gerät erkannt"; do
+    [ "$(enthaelt /tmp/pr-zs.html "$a")" = "ja" ] && ARTEN=$((ARTEN+1))
+  done
+  [ "$ARTEN" -ge 2 ] && ZA=ja || ZA=nein
+  ergebnis "er enthaelt Statuswechsel und Erreichbarkeitswechsel ($ARTEN Arten)" "$ZA"
+
+  # Zeitraum waehlbar, Ereignisarten ein- und ausblendbar.
+  [ "$(enthaelt /tmp/pr-zs.html 'name="zeitraum"')" = "ja" ] && ZZ=ja || ZZ=nein
+  ergebnis "der Zeitraum ist waehlbar" "$ZZ"
+  [ "$(enthaelt /tmp/pr-zs.html 'name="art"')" = "ja" ] && ZE=ja || ZE=nein
+  ergebnis "Ereignisarten sind ein- und ausblendbar" "$ZE"
+
+  # Und die Filter wirken wirklich — sonst waeren sie Zierde.
+  ALLE_Z=$(grep -c 'class="eintrag e' /tmp/pr-zs.html || true)
+  curl -s -b "$KEKSE" -o /tmp/pr-zs2.html \
+    "http://localhost:8090/geraete/$KT_V/verlauf?zeitraum=alle&art=GERAET_ERKANNT"
+  GEFILTERT=$(grep -c 'class="eintrag e' /tmp/pr-zs2.html || true)
+  [ "${GEFILTERT:-0}" -lt "${ALLE_Z:-0}" ] && [ "${GEFILTERT:-0}" -ge 1 ] && ZF=ja || ZF=nein
+  ergebnis "der Artenfilter wirkt ($GEFILTERT von $ALLE_Z Eintraegen)" "$ZF"
+
+  # Ein fremdes Geraet darf hier nichts preisgeben.
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8090/geraete/$KT_V/verlauf")
+  [ "$CODE" = "302" ] && ZM=ja || ZM=nein
+  ergebnis "ohne Anmeldung ist der Zeitstrahl nicht erreichbar (HTTP $CODE)" "$ZM"
+
+  # ── Vorgangsansicht
+  VG=$(sqltext "SELECT vorgang FROM fachprotokoll WHERE vorgang IS NOT NULL
+                GROUP BY vorgang ORDER BY count(*) DESC LIMIT 1")
+  if [ -z "$VG" ]; then
+    echo "  uebersprungen: kein Vorgang im Protokoll"
+    FEHLER=$((FEHLER+1))
+  else
+    N_VG=$(sql "SELECT count(*) FROM fachprotokoll WHERE vorgang='$VG'")
+    CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-vg.html -w '%{http_code}' \
+           "http://localhost:8090/vorgang/$VG")
+    [ "$CODE" = "200" ] && VA=ja || VA=nein
+    ergebnis "die Vorgangsansicht ist erreichbar (HTTP $CODE, Vorgang $VG)" "$VA"
+    ANZ_VG=$(grep -c 'class="eintrag e' /tmp/pr-vg.html || true)
+    [ "${ANZ_VG:-0}" = "$N_VG" ] && VB=ja || VB=nein
+    ergebnis "alle Ereignisse des Vorgangs sind gemeinsam abrufbar ($ANZ_VG von $N_VG)" "$VB"
+    [ "$(enthaelt /tmp/pr-vg.html "Betroffene Geräte")" = "ja" ] && VF=ja || VF=nein
+    ergebnis "sie zeigt den Fortschritt (Ereignisse, Geraete, Fehlschlaege)" "$VF"
+    # Ein laufender Vorgang aktualisiert sich selbst, ein abgeschlossener nicht.
+    LAEUFT=$(enthaelt /tmp/pr-vg.html 'hx-trigger="every')
+    ABGESCHLOSSEN=$(enthaelt /tmp/pr-vg.html "abgeschlossen")
+    [ "$LAEUFT" = "ja" ] || [ "$ABGESCHLOSSEN" = "ja" ] && VL=ja || VL=nein
+    ergebnis "laufende Vorgaenge aktualisieren sich, abgeschlossene nicht" "$VL"
+    # Der Zeitstrahl verlinkt auf den Vorgang — pruefbar nur, wenn dieses
+    # Geraet ueberhaupt einen Eintrag MIT Vorgangsnummer hat. Die meisten
+    # Ereignisse haben keine.
+    MIT_VG=$(sql "SELECT count(*) FROM fachprotokoll
+                  WHERE geraet='$KT_V' AND vorgang IS NOT NULL")
+    if [ "${MIT_VG:-0}" -ge 1 ]; then
+      curl -s -b "$KEKSE" -o /tmp/pr-zs3.html \
+        "http://localhost:8090/geraete/$KT_V/verlauf?zeitraum=alle"
+      [ "$(enthaelt /tmp/pr-zs3.html "/vorgang/")" = "ja" ] && VZ=ja || VZ=nein
+      ergebnis "der Zeitstrahl verweist auf den zugehoerigen Vorgang" "$VZ"
+      rm -f /tmp/pr-zs3.html
+    else
+      echo "  uebersprungen: dieses Geraet hat keinen Eintrag mit Vorgangsnummer"
+    fi
+    rm -f /tmp/pr-vg.html
+  fi
+  rm -f /tmp/pr-gl.html /tmp/pr-zs.html /tmp/pr-zs2.html
 fi
 
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht

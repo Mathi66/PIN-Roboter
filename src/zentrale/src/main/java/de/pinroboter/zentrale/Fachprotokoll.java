@@ -135,6 +135,25 @@ public class Fachprotokoll {
      */
     public Seite seite(String geraet, String art, String ergebnis,
                        int seitenNummer, int seitengroesse, Geltungsbereich bereich) {
+        return seite(geraet, art == null || art.isBlank() ? List.of() : List.of(art),
+                ergebnis, null, null, seitenNummer, seitengroesse, bereich);
+    }
+
+    /**
+     * Wie oben, aber mit Zeitraum und mehreren Ereignisarten (FA-PRO-050).
+     *
+     * <p>Der Zeitstrahl eines Geräts braucht beides: „die letzten 7 Tage" und
+     * „ohne Statuswechsel". Ein Filter auf genau eine Art genügt dafür nicht —
+     * wer Verifikationen und Firmware-Wechsel sehen will, aber nicht die
+     * Statuswechsel, kann das sonst nicht ausdrücken.
+     *
+     * @param arten leer heißt: alle
+     * @param seit  {@code null} heißt: ohne Untergrenze
+     * @param vorgang genau ein Vorgang (FA-PRO-060), oder {@code null}
+     */
+    public Seite seite(String geraet, List<String> arten, String ergebnis,
+                       java.time.Instant seit, String vorgang,
+                       int seitenNummer, int seitengroesse, Geltungsbereich bereich) {
         int nr = Math.max(1, seitenNummer);
         // Nach oben begrenzt, damit eine manipulierte Anfrage nicht das
         // gesamte Protokoll zieht - bei 200.000 Eintraegen waere das ein
@@ -154,7 +173,12 @@ public class Fachprotokoll {
         if (!bereich.unbeschraenkt() && !bereich.leer()) werte.add(bereich);
 
         if (geraet != null && !geraet.isBlank())   { wo.append(" AND geraet = ?");  werte.add(geraet); }
-        if (art != null && !art.isBlank())         { wo.append(" AND art = ?");     werte.add(art); }
+        if (vorgang != null && !vorgang.isBlank()) { wo.append(" AND vorgang = ?"); werte.add(vorgang); }
+        if (arten != null && !arten.isEmpty()) {
+            wo.append(" AND art = ANY (?)");
+            werte.add(arten.toArray(new String[0]));
+        }
+        if (seit != null) { wo.append(" AND zeitpunkt >= ?"); werte.add(java.sql.Timestamp.from(seit)); }
         if (ergebnis != null && !ergebnis.isBlank()) {
             wo.append(" AND erfolg = ?"); werte.add("erfolg".equals(ergebnis));
         }
@@ -200,6 +224,10 @@ public class Fachprotokoll {
         int i = 1;
         for (Object w : werte) {
             if (w instanceof Geltungsbereich g) i = g.wertSetzen(p.getConnection(), p, i);
+            // Ein String[] muss als Datenbank-Array uebergeben werden;
+            // setObject reicht es sonst als unbekannten Typ durch und die
+            // Abfrage scheitert zur Laufzeit.
+            else if (w instanceof String[] a) p.setArray(i++, p.getConnection().createArrayOf("text", a));
             else p.setObject(i++, w);
         }
         return i;

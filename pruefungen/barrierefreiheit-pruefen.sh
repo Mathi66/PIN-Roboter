@@ -69,6 +69,17 @@ OID_A=$(curl -s -b "$KEKSE" http://localhost:8090/organisation \
         > "$SEITEN/organisation-detail.html"
 curl -s -b "$KEKSE" http://localhost:8090/organisation/neu      > "$SEITEN/organisation-neu.html"
 curl -s -b "$KEKSE" http://localhost:8090/benachrichtigung      > "$SEITEN/benachrichtigung.html"
+# Zeitstrahl und Vorgangsansicht (FA-PRO-050/060) sind eigene Seiten.
+KT_A=$(curl -s -b "$KEKSE" http://localhost:8090/geraete | grep -oE '/geraete/[A-Z0-9-]+/verlauf' | head -1)
+[ -n "$KT_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$KT_A" > "$SEITEN/zeitstrahl.html"
+# Die Vorgangsnummer aus dem Zeitstrahl holen — die Protokollansicht verlinkt
+# nicht darauf. Eine leere Datei waere ein Befund ohne Seite dahinter.
+VG_A=$(grep -oE '/vorgang/[a-zA-Z0-9-]+' "$SEITEN/zeitstrahl.html" 2>/dev/null | head -1)
+if [ -n "$VG_A" ]; then
+  curl -s -b "$KEKSE" "http://localhost:8090$VG_A" > "$SEITEN/vorgang.html"
+  [ -s "$SEITEN/vorgang.html" ] || rm -f "$SEITEN/vorgang.html"
+fi
+[ -s "$SEITEN/zeitstrahl.html" ] || rm -f "$SEITEN/zeitstrahl.html"
 curl -s -b "$KEKSE" http://localhost:8090/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
 curl -s -b "$KEKSE" http://localhost:8090/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 
