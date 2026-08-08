@@ -1241,6 +1241,31 @@ public class Zentrale {
         app.get("/api/agent/notaus", c -> c.json(Map.of("notAus", notAus)));
 
         /**
+         * FA-UEB-010: Das Prüfintervall je Kartenterminal.
+         *
+         * <p>Bis zum 08.08.2026 kannte der Agent nur einen globalen Wert aus
+         * seiner Umgebung. Die Gerätegruppen trugen zwar ein Intervall, aber
+         * es erreichte ihn nie — die Einstellung war wirkungslos. Bei 5.000
+         * Terminals ist genau das der Hebel, mit dem die Last steuerbar
+         * bleibt: Die Notaufnahme braucht 30 Sekunden, das Archiv kommt mit
+         * fünf Minuten aus.
+         */
+        app.get("/api/agent/intervalle", c -> {
+            var werte = new LinkedHashMap<String, Integer>();
+            try (var p = db.verbindung().prepareStatement("""
+                    SELECT g.terminal_id, gr.pruefintervall_sekunden
+                    FROM geraet g JOIN geraetegruppe gr ON gr.id = g.gruppe_id
+                    WHERE g.aktiv""")) {
+                try (var rs = p.executeQuery()) {
+                    while (rs.next()) werte.put(rs.getString(1), rs.getInt(2));
+                }
+            } catch (java.sql.SQLException e) {
+                System.err.println("Prüfintervalle nicht abrufbar: " + e.getMessage());
+            }
+            c.json(Map.of("intervalle", werte));
+        });
+
+        /**
          * FA-GER-030 / FA-GER-035: Der Agent meldet, was er beim Konnektor
          * vorgefunden hat. Die Zentrale legt den Befund ab und übernimmt
          * <b>nichts</b> davon selbsttätig in den Bestand.

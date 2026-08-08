@@ -123,6 +123,20 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     sleep 1
   done
   anmelden
+
+  # Seit FA-UEB-010 taktet der Agent JE GERAETEGRUPPE. Die Vorgabegruppe steht
+  # auf 60 s — im Betrieb richtig, fuer die Nachweise zu langsam: Ein Nachweis,
+  # der in 20 s eine Verifikation erwartet, liefe sonst ins Leere und wuerde
+  # eine Funktion als kaputt melden, die in Ordnung ist.
+  #
+  # 10 s ist das kleinste zulaessige Intervall (CHECK in der Datenbank, als
+  # Lastschutz gewollt). Die Nachweise takten damit so schnell, wie das Produkt
+  # es ueberhaupt zulaesst.
+  VORGABEGRUPPE=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+      "SELECT id FROM geraetegruppe WHERE ist_vorgabe" 2>/dev/null | tr -d ' \r\n')
+  [ -n "$VORGABEGRUPPE" ] && curl -s -b "$KEKSE" -o /dev/null -X POST \
+      "http://localhost:8090/gruppen/$VORGABEGRUPPE/intervall" --data-urlencode "intervall=10"
+
   # Ab Iteration 6 muss der Agent registriert sein (FA-AGT-010).
   GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis \
     -d "bezeichnung=Pruefagent" | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
@@ -175,7 +189,7 @@ ergebnis "keine TLS-Handshake-Fehler" "$H"
 hinweis "FA-PIN-030 — falsche PIN löst genau EINEN Versuch aus"
 echo "  (vor jeder Auslieferung verpflichtend)"
 stack_starten 999999 4
-sleep 25
+sleep 35
 A=$(verifikationen)
 [ "$A" = "1" ] && P=ja || P=nein
 ergebnis "genau 1 Versuch bei ~10 Gelegenheiten (gemessen: $A)" "$P"
@@ -187,11 +201,11 @@ hinweis "FA-UEB-050 — während eines Firmware-Updates wird nicht verifiziert"
 stack_starten 123456 4
 V=$(verifikationen)
 curl -s -X POST "http://localhost:8480/steuerung/KT-EMPFANG-01/firmware/4.3.0?dauer=30000" >/dev/null
-echo "  Update läuft 30 s bei 4 s Prüfintervall → ~7 Gelegenheiten"
+echo "  Update läuft 30 s bei 10 s Gruppentakt → ~3 Gelegenheiten"
 sleep 26; W=$(verifikationen)
 [ $((W-V)) -eq 0 ] && U=ja || U=nein
 ergebnis "0 Versuche während des Updates (gemessen: $((W-V)))" "$U"
-sleep 20; N=$(verifikationen)
+sleep 35; N=$(verifikationen)
 [ $((N-W)) -ge 1 ] && R=ja || R=nein
 ergebnis "Wiederherstellung nach dem Update (gemessen: $((N-W)))" "$R"
 
@@ -206,7 +220,7 @@ sleep 22; W=$(verifikationen)
 [ $((W-V)) -eq 0 ] && E=ja || E=nein
 ergebnis "0 Versuche bei aktivem Not-Aus (gemessen: $((W-V)))" "$E"
 curl -s -b "$KEKSE" -X POST http://localhost:8090/notaus >/dev/null
-sleep 20; N=$(verifikationen)
+sleep 35; N=$(verifikationen)
 [ $((N-W)) -ge 1 ] && F=ja || F=nein
 ergebnis "Automatik läuft nach Aufhebung wieder (gemessen: $((N-W)))" "$F"
 # Getrennt gefragt: steht es im Protokoll, und steht es in der Ansicht?
@@ -1807,6 +1821,75 @@ if true; then
     "$([ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='BENACHRICHTIGUNG_VERSENDET'")" != "0" ] && echo ja || echo nein)"
 
   rm -f /tmp/pr-mail-*.html
+fi
+
+# ---------------------------------------------------------------- FA-UEB-010
+# Das Pruefintervall je Geraetegruppe. Bis zum 08.08.2026 war nur die
+# GRUPPENPFLEGE nachgewiesen, nicht die WIRKUNG — der Agent kannte einen
+# globalen Wert aus seiner Umgebung, und das Intervall der Gruppe erreichte ihn
+# nie. Gemessen wird deshalb am Simulator: wie oft fragt der Agent wirklich?
+hinweis "FA-UEB-010 — das Prüfintervall je Gerätegruppe wirkt"
+
+# Zwei Gruppen mit deutlich verschiedenen Intervallen.
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+  --data-urlencode "bezeichnung=Nachweis Schnell" --data-urlencode "intervall=10"
+curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+  --data-urlencode "bezeichnung=Nachweis Langsam" --data-urlencode "intervall=120"
+G_SCHNELL=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Schnell'")
+G_LANGSAM=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Langsam'")
+
+# Zwei Terminals des Simulators, die beide eine SMC-B tragen.
+mapfile -t KT_IDS < <(sql "SELECT terminal_id FROM geraet ORDER BY terminal_id" \
+                      | tr -d '\r' | head -2) 2>/dev/null || \
+  KT_IDS=($(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+            "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 2" | tr -d ' \r'))
+
+if [ -z "$G_SCHNELL" ] || [ -z "$G_LANGSAM" ] || [ "${#KT_IDS[@]}" -lt 2 ]; then
+  echo "  uebersprungen: Gruppen oder Geraete fehlen (${#KT_IDS[@]} Geraete)"
+  FEHLER=$((FEHLER+1))
+else
+  KT_A=${KT_IDS[0]}; KT_B=${KT_IDS[1]}
+  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_A/gruppe" \
+    --data-urlencode "gruppe=$G_SCHNELL"
+  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_B/gruppe" \
+    --data-urlencode "gruppe=$G_LANGSAM"
+  echo "  $KT_A -> 10 s,  $KT_B -> 120 s"
+
+  # Der Agent holt die Intervalle im Grundtakt. Warten, bis er sie kennt.
+  curl -s -b "$KEKSE" -o /dev/null "http://localhost:8090/api/agent/intervalle" 2>/dev/null
+  ANTWORT_I=$(docker exec pr-agt sh -c 'echo' 2>/dev/null; \
+              docker logs pr-agt 2>&1 | grep -c "Prüfintervalle aktualisiert" || true)
+  for _ in $(seq 20); do
+    [ "$(docker logs pr-agt 2>&1 | grep -c 'Prüfintervalle aktualisiert')" -gt 0 ] && break
+    sleep 2
+  done
+  [ "$(docker logs pr-agt 2>&1 | grep -c 'Prüfintervalle aktualisiert')" -gt 0 ] && UI=ja || UI=nein
+  ergebnis "der Agent erfaehrt die Pruefintervalle von der Zentrale" "$UI"
+
+  # Jetzt zaehlen: 40 Sekunden lang. Das schnelle Geraet muss deutlich
+  # oefter abgefragt werden als das langsame.
+  curl -s -X DELETE "http://localhost:8480/abfragen" >/dev/null
+  sleep 40
+  ZAEHLER=$(curl -s "http://localhost:8480/abfragen")
+  # Kartenhandle des jeweiligen Terminals ermitteln.
+  H_A=$(sqltext "SELECT kartenhandle FROM ermittelte_karte WHERE terminal_id='$KT_A'
+                 AND kartentyp='SMC-B' LIMIT 1")
+  H_B=$(sqltext "SELECT kartenhandle FROM ermittelte_karte WHERE terminal_id='$KT_B'
+                 AND kartentyp='SMC-B' LIMIT 1")
+  N_A=$(echo "$ZAEHLER" | grep -oE "\"$H_A\":[0-9]+" | grep -oE '[0-9]+$')
+  N_B=$(echo "$ZAEHLER" | grep -oE "\"$H_B\":[0-9]+" | grep -oE '[0-9]+$')
+  N_A=${N_A:-0}; N_B=${N_B:-0}
+  echo "  In 40 s: $KT_A ($H_A) = $N_A Abfragen,  $KT_B ($H_B) = $N_B Abfragen"
+
+  # Bei 10 s Intervall sind in 40 s rund 4 Abfragen zu erwarten, bei 120 s
+  # hoechstens eine (die erste, weil ein Geraet nicht bis zum Ablauf seines
+  # Intervalls unbekannt bleiben soll).
+  [ "$N_A" -ge 3 ] && UA=ja || UA=nein
+  ergebnis "das schnelle Geraet wird im 10-s-Takt abgefragt ($N_A in 40 s)" "$UA"
+  [ "$N_B" -le 1 ] && UB=ja || UB=nein
+  ergebnis "das langsame Geraet wird im 120-s-Takt geschont ($N_B in 40 s)" "$UB"
+  [ "$N_A" -gt "$N_B" ] && UV=ja || UV=nein
+  ergebnis "die Gruppeneinstellung wirkt sich messbar aus ($N_A > $N_B)" "$UV"
 fi
 
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht

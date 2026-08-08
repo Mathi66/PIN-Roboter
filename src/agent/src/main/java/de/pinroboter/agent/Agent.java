@@ -8,6 +8,7 @@ import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.*;
 
 /**
@@ -152,19 +153,52 @@ public class Agent {
     public void pinHinterlegen(String kartenhandle, char[] pin) { pins.put(kartenhandle, pin); }
 
     /** Überwachungsschleife: prüft zyklisch und handelt, wenn nötig. */
-    void ueberwachen(int intervallSekunden) throws Exception {
-        System.out.printf("  Prüfintervall: %d s%n  Zentrale: %s%n%n", intervallSekunden, zentrale);
+    /** Zuletzt geprüft, je Terminal — Grundlage des gruppenweisen Takts. */
+    private final Map<String, Long> zuletztGeprueft = new ConcurrentHashMap<>();
+
+    /** Prüfintervall je Terminal, von der Zentrale gemeldet (FA-UEB-010). */
+    private volatile Map<String, Integer> intervalle = Map.of();
+
+    /**
+     * Der Überwachungslauf.
+     *
+     * <p><b>Jedes Terminal hat seinen eigenen Takt</b> (FA-UEB-010). Bis zum
+     * 08.08.2026 galt ein globaler Wert aus der Umgebung; das Intervall der
+     * Gerätegruppe war wirkungslos. Bei 5.000 Terminals ist es aber der
+     * einzige Hebel, mit dem die Last steuerbar bleibt — die Notaufnahme
+     * braucht 30 Sekunden, das Archiv kommt mit fünf Minuten aus.
+     *
+     * <p>Die Schleife wacht im <b>Grundtakt</b> auf und prüft dann nur die
+     * Geräte, deren Zeit gekommen ist. Der Grundtakt ist der aus der Umgebung;
+     * er ist zugleich die Untergrenze, denn feiner kann kein Gerät geprüft
+     * werden.
+     *
+     * @param grundtaktSekunden Takt der Schleife und Vorgabe für Geräte, für
+     *        die die Zentrale kein Intervall meldet
+     */
+    void ueberwachen(int grundtaktSekunden) throws Exception {
+        System.out.printf("  Grundtakt: %d s%n  Zentrale: %s%n%n", grundtaktSekunden, zentrale);
 
         while (true) {
             try {
                 notAus = notAusAbfragen();
+                intervalleAbrufen();
                 var terminals = konnektor.terminals();
                 var karten = konnektor.karten();
 
                 bestandMelden(terminals, karten);
                 pinAuftraegeAbarbeiten();
 
+                long jetzt = System.currentTimeMillis();
                 for (var t : terminals) {
+                    int fuerDieses = intervalle.getOrDefault(t.id(), grundtaktSekunden);
+                    Long letzte = zuletztGeprueft.get(t.id());
+                    // Beim ersten Durchgang ist "letzte" leer — dann wird
+                    // sofort geprueft. Ein Geraet soll nicht bis zum Ablauf
+                    // seines Intervalls unbekannt bleiben.
+                    if (letzte != null && jetzt - letzte < fuerDieses * 1000L) continue;
+                    zuletztGeprueft.put(t.id(), jetzt);
+
                     var karte = karten.stream()
                             .filter(k -> k.terminalId().equals(t.id()) && "SMC-B".equals(k.kartentyp()))
                             .findFirst().orElse(null);
@@ -173,7 +207,34 @@ public class Agent {
             } catch (Exception e) {
                 System.out.println("  Konnektor nicht erreichbar: " + e.getMessage());
             }
-            Thread.sleep(intervallSekunden * 1000L);
+            Thread.sleep(grundtaktSekunden * 1000L);
+        }
+    }
+
+    /**
+     * Holt die Prüfintervalle von der Zentrale.
+     *
+     * <p>Bleibt die Zentrale stumm, gilt weiter, was zuletzt bekannt war —
+     * ein Ausfall der Zentrale hält die Überwachung nicht an (FA-AGT-030).
+     */
+    private void intervalleAbrufen() {
+        if (agentToken == null) return;
+        try {
+            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/intervalle"))
+                            .header("X-Agent-Token", agentToken)
+                            .timeout(Duration.ofSeconds(10)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (a.statusCode() != 200) return;
+            var neu = new LinkedHashMap<String, Integer>();
+            var m = java.util.regex.Pattern.compile("\"([^\"]+)\"\\s*:\\s*(\\d+)")
+                    .matcher(a.body().replaceFirst("^.*?\"intervalle\"\\s*:\\s*\\{", ""));
+            while (m.find()) neu.put(m.group(1), Integer.parseInt(m.group(2)));
+            if (!neu.isEmpty() && !neu.equals(intervalle)) {
+                System.out.println("  Prüfintervalle aktualisiert: " + neu.size() + " Gerät(e)");
+                intervalle = neu;
+            }
+        } catch (Exception ignored) {
+            // Stumme Zentrale: der zuletzt bekannte Stand gilt weiter.
         }
     }
 

@@ -44,7 +44,7 @@ mit 84 Anforderungen
 
 | | Anforderung | Stand | Anmerkung |
 |---|---|---|---|
-| ✓ | FA-UEB-010 | PIN-Status überwachen | zyklisch über `GetPinStatus` |
+| ✔ | FA-UEB-010 | PIN-Status überwachen | zyklisch über `GetPinStatus`, **je Gerätegruppe getaktet**. Bis 08.08.2026 hier fälschlich als erfüllt geführt: Der Agent nahm einen globalen Wert, das Gruppenintervall erreichte ihn nie. Jetzt am Simulator gemessen — 4 gegen 0 Abfragen in 40 s. [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md) |
 | ○ | FA-UEB-020 | Erreichbarkeit überwachen | im Durchstich enthalten, kein eigener Nachweis |
 | ○ | FA-UEB-030 | Firmware-Stand erfassen | wird gemeldet und angezeigt |
 | ✓ | FA-UEB-040 | PEviM-Zustand erkennen | Terminals ohne aktives PEviM werden benannt, mit Handlungsempfehlung |

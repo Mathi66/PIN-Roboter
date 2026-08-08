@@ -133,6 +133,23 @@ public class Simulator {
             TerminalVerwaltung.antworte(ex, 200, j.append("]}").toString());
         });
 
+        // Zählung der Statusabfragen je Karte — Messgrundlage für FA-UEB-010.
+        server.createContext("/abfragen", ex -> {
+            if ("DELETE".equals(ex.getRequestMethod())) {
+                KonnektorSoap.ABFRAGEN.clear();
+                TerminalVerwaltung.antworte(ex, 200, "{\"geleert\":true}");
+                return;
+            }
+            StringBuilder j = new StringBuilder("{");
+            boolean erst = true;
+            for (var e : KonnektorSoap.ABFRAGEN.entrySet()) {
+                if (!erst) j.append(',');
+                j.append('"').append(e.getKey()).append("\":").append(e.getValue().get());
+                erst = false;
+            }
+            TerminalVerwaltung.antworte(ex, 200, j.append('}').toString());
+        });
+
         server.createContext("/steuerung/", ex -> {
             String[] t = ex.getRequestURI().getPath().split("/");
             // /steuerung/{terminalId}/{aktion}[/{wert}]

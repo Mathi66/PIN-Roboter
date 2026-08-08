@@ -1608,3 +1608,29 @@ auf eine Einrichtung mit Umlaut im Namen; ohne eine solche wird der Nachweis
 mit Begründung übersprungen statt scheinbar zu bestehen.
 
 ## Stand: 249 Modultests, 224 Systemnachweise — alle grün
+
+## FA-UEB-010 — das Prüfintervall wirkte gar nicht
+
+Der Auftrag war, die Wirkung des gruppenweisen Prüfintervalls nachzuweisen.
+Beim Nachsehen: Es gab keine Wirkung nachzuweisen. Der Agent nahm einen
+globalen Wert aus seiner Umgebung; die Spalte `pruefintervall_sekunden` der
+Gerätegruppe wurde gepflegt, gespeichert, in Nachweisen belegt — und erreichte
+den Agenten nie.
+
+Im Umsetzungsstand stand FA-UEB-010 auf „erfüllt". Das war falsch: Belegt war
+die Gruppenpflege, nicht die Überwachung. Die Sorte Lücke, die eine Statuszeile
+nicht zeigt — zwei Teile je für sich fertig, und niemand hat geprüft, ob sie
+verbunden sind.
+
+Jetzt holt der Agent die Intervalle von der Zentrale und führt je Terminal
+einen eigenen Takt. **Gemessen** wird am Simulator, der `GetPinStatus` je Karte
+zählt: In 40 Sekunden 4 Abfragen für das Gerät mit 10-Sekunden-Gruppe, 0 für
+das mit 120 Sekunden.
+
+Der Umbau hat fünf andere Nachweise umgeworfen, alle mit „gemessen: 0" — die
+Vorgabegruppe steht auf 60 Sekunden, und die Nachweise warteten 20 Sekunden auf
+eine Verifikation. Kein Fehler, sondern die sichtbare Folge einer richtigen
+Änderung. Der Nachweislauf setzt die Vorgabegruppe jetzt auf 10 Sekunden, das
+kleinste zulässige Intervall.
+
+## Stand: 249 Modultests, 228 Systemnachweise — alle grün

@@ -24,6 +24,17 @@ import java.util.regex.Pattern;
  */
 public class KonnektorSoap implements HttpHandler {
 
+    /**
+     * Zählt {@code GetPinStatus} je Kartenhandle.
+     *
+     * <p>Nur für die Nachweise: FA-UEB-010 verlangt ein Prüfintervall je
+     * Gerätegruppe. Ob der Agent es einhält, lässt sich nicht an seinem
+     * Quelltext ablesen, sondern nur daran, <b>wie oft er tatsächlich
+     * fragt</b>. Diese Zählung ist die Messung dazu.
+     */
+    public static final java.util.Map<String, java.util.concurrent.atomic.AtomicInteger>
+            ABFRAGEN = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final Zustand zustand;
     private static final Pattern P_CARDHANDLE = Pattern.compile("CardHandle>([^<]+)<");
     private static final Pattern P_PINTYP = Pattern.compile("PinTyp>([^<]+)<");
@@ -84,6 +95,8 @@ public class KonnektorSoap implements HttpHandler {
 
     private String getPinStatus(String anfrage) throws Exception {
         String handle = wert(P_CARDHANDLE, anfrage);
+        ABFRAGEN.computeIfAbsent(handle,
+                k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
         var gefunden = zustand.findeKarte(handle);
         if (gefunden.isEmpty()) return fehler("4209", "Unbekanntes CardHandle: " + handle);
 
