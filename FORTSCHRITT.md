@@ -1785,3 +1785,20 @@ der Internetzugang braucht, ist als Nachweis unbrauchbar — dieselbe Lehre wie
 beim Mailauffang.
 
 ## Stand: 268 Modultests, 295 Systemnachweise — alle grün
+
+## Gerätegruppen je Praxis — und was dabei auffiel
+
+Beim Anlegen von neun Gruppen, eine je Praxis, zeigte sich: Die Oberfläche
+reichte die Einrichtung **hart verdrahtet** als `"Praxis"` durch. Alle Gruppen
+hingen damit an derselben Einrichtung, obwohl FA-GER-050 verlangt, dass eine
+Gruppe innerhalb genau einer Einrichtung liegt.
+
+Bei einer Einzelpraxis fällt das nicht auf. Bei neun Praxen an einer Instanz —
+dem Fall, für den die Mandantenfähigkeit überhaupt gebaut ist — ist es der
+Unterschied zwischen brauchbar und nutzlos: Die Gruppe trägt das Prüfintervall,
+und das soll je Standort verschieden sein können.
+
+Die Einrichtung ist jetzt wählbar, die Übersicht nennt sie je Gruppe, und die
+Gruppe trägt die Kennung der Organisationseinheit.
+
+## Stand: 268 Modultests, 298 Systemnachweise — alle grün

@@ -1622,6 +1622,29 @@ if [ -n "$KT_G" ] && [ -n "$GID" ]; then
   ergebnis "das Geraet existiert nach der Loeschung weiterhin" "$GE"
 fi
 
+# FA-GER-050: "Eine Gruppe liegt innerhalb genau einer Einrichtung." Bis zum
+# 09.08.2026 reichte die Oberflaeche hart "Praxis" durch — bei neun Praxen an
+# einer Instanz waren damit alle Gruppen an dieselbe Einrichtung gebunden.
+E_G=$(sqltext "SELECT bezeichnung FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
+if [ -n "$E_G" ]; then
+  curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+    --data-urlencode "bezeichnung=Nachweis je Praxis" \
+    --data-urlencode "einrichtung=$E_G" --data-urlencode "intervall=45"
+  ORG_G=$(sql "SELECT coalesce(organisation_id::text,'-') FROM geraetegruppe
+               WHERE bezeichnung='Nachweis je Praxis'")
+  EINR_G=$(sqltext "SELECT einrichtung FROM geraetegruppe WHERE bezeichnung='Nachweis je Praxis'")
+  [ "$EINR_G" = "$E_G" ] && GE=ja || GE=nein
+  ergebnis "eine Gruppe laesst sich einer bestimmten Einrichtung zuordnen ($EINR_G)" "$GE"
+  [ "$ORG_G" != "-" ] && GO=ja || GO=nein
+  ergebnis "sie traegt die Kennung der Organisationseinheit ($ORG_G)" "$GO"
+
+  # Und die Uebersicht zeigt Gruppen ALLER Einrichtungen, nicht nur "Praxis".
+  curl -s -b "$KEKSE" http://localhost:8090/gruppen -o /tmp/pr-grp.html
+  [ "$(enthaelt /tmp/pr-grp.html "$E_G")" = "ja" ] && GU=ja || GU=nein
+  ergebnis "die Uebersicht nennt die Einrichtung je Gruppe" "$GU"
+  rm -f /tmp/pr-grp.html
+fi
+
 # Die Vorgabegruppe darf nicht verschwinden - neu erkannte Geraete brauchen
 # eine Gruppe, in der sie landen koennen.
 curl -s -b "$KEKSE" -X POST "http://localhost:8090/gruppen/$VORGABE/loeschen" > /tmp/pr-gruppe-vg.html

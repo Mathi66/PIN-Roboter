@@ -88,3 +88,30 @@ erlaubt, und die Wartezeiten wurden entsprechend verlängert.
 - Die Gruppeneinstellung wirkt sich messbar aus
 
 **249 Modultests, 228 Systemnachweise** — alle grün.
+
+---
+
+## Nachtrag 09.08.2026 — eine Gruppe je Einrichtung
+
+Beim Anlegen von Gruppen für neun Praxen fiel auf: Die Oberfläche reichte die
+Einrichtung **hart verdrahtet** als `"Praxis"` durch.
+
+```java
+String fehler = gruppen.anlegen(bez, "Praxis", intervall);
+```
+
+Damit hingen alle Gruppen an derselben Einrichtung — unabhängig davon, wofür
+sie gedacht waren. FA-GER-050 verlangt aber ausdrücklich:
+
+> Eine Gruppe liegt innerhalb genau einer Einrichtung.
+
+Bei einer Einzelpraxis fällt das nicht auf. Bei neun Praxen an einer Instanz —
+dem Fall, für den die Mandantenfähigkeit gebaut ist — ist es der Unterschied
+zwischen brauchbar und nutzlos: Die Gruppe trägt das Prüfintervall, und das
+soll je Standort verschieden sein können.
+
+Die Maske bietet jetzt die Einrichtungen des eigenen Geltungsbereichs zur
+Auswahl, die Übersicht nennt sie je Gruppe, und die Gruppe trägt die Kennung
+der Organisationseinheit — womit die Mandantengrenze auch hier greift.
+
+Drei zusätzliche Systemnachweise.

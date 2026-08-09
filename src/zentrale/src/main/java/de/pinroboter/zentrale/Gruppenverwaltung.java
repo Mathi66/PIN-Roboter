@@ -31,6 +31,36 @@ public class Gruppenverwaltung {
 
     /** Gruppen im Geltungsbereich. Eine Gruppe trägt Prüfintervalle und später
      *  Rollout-Pläne — wer sie sieht, sieht die Betriebsplanung einer Praxis. */
+    /**
+     * Alle Gruppen im Geltungsbereich, unabhängig von der Einrichtung.
+     *
+     * <p>Bis zum 09.08.2026 gab es nur die Abfrage nach einer festen
+     * Einrichtung — und die Oberfläche reichte dafür hart {@code "Praxis"}
+     * durch. Damit war jede Gruppe an dieselbe Einrichtung gebunden, obwohl
+     * FA-GER-050 verlangt: <i>„Eine Gruppe liegt innerhalb genau einer
+     * Einrichtung."</i> Bei neun Praxen an einer Instanz war das nicht mehr
+     * tragfähig.
+     */
+    public List<Gruppe> alle(Geltungsbereich bereich) {
+        List<Gruppe> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT g.id, g.bezeichnung, g.einrichtung, g.pruefintervall_sekunden,
+                       g.ist_vorgabe, count(t.terminal_id) AS anzahl
+                FROM geraetegruppe g
+                LEFT JOIN geraet t ON t.gruppe_id = g.id
+                WHERE 1=1""" + bereich.bedingung("g.organisation_id")
+                + " GROUP BY g.id ORDER BY g.ist_vorgabe DESC, lower(g.einrichtung),"
+                + " lower(g.bezeichnung)")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) liste.add(lesen(rs));
+            }
+        } catch (SQLException e) {
+            System.err.println("Gerätegruppen nicht lesbar: " + e.getMessage());
+        }
+        return liste;
+    }
+
     public List<Gruppe> alle(String einrichtung, Geltungsbereich bereich) {
         List<Gruppe> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""

@@ -340,11 +340,15 @@ public class Zentrale {
             try { intervall = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
             catch (NumberFormatException e) { intervall = 60; }
             String bez = Anmeldeseiten.feld(c, "bezeichnung");
-            String fehler = gruppen.anlegen(bez, "Praxis", intervall);
+            // FA-GER-050: Die Einrichtung wird gewaehlt, nicht verdrahtet.
+            String einrichtung = Anmeldeseiten.feld(c, "einrichtung");
+            if (einrichtung == null || einrichtung.isBlank()) einrichtung = "Praxis";
+            String fehler = gruppen.anlegen(bez, einrichtung, intervall);
             if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_ANGELEGT, true,
+                protokoll.anfuegen(einrichtung, null, Ereignisart.GRUPPE_ANGELEGT, true,
                         angemeldeter(c).anzeigename(), null,
-                        "Gerätegruppe \"" + bez + "\" angelegt, Prüfintervall " + intervall + " s", null);
+                        "Gerätegruppe \"" + bez + "\" für " + einrichtung
+                        + " angelegt, Prüfintervall " + intervall + " s", null);
             }
             c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
         });
@@ -2362,6 +2366,8 @@ public class Zentrale {
                       <div><label for="bez">Bezeichnung</label>
                         <input id="bez" name="bezeichnung" type="text" required
                                placeholder="z. B. Notaufnahme"></div>
+                      <div><label for="ge">Einrichtung</label>
+                        <select id="ge" name="einrichtung">%s</select></div>
                       <div><label for="iv">Prüfintervall (Sekunden)</label>
                         <input id="iv" name="intervall" type="text" inputmode="numeric"
                                value="60" size="6"></div>
@@ -2373,17 +2379,30 @@ public class Zentrale {
                   <div id="gruppen" hx-get="/teil/gruppen" hx-trigger="every 10s" hx-swap="innerHTML">%s</div>
                 </div>"""
                 .formatted(fehler == null ? "" : Anmeldeseiten.meldung(fehler, "warnend"),
-                           gruppenTabelle(c));
+                           einrichtungsauswahl(c), gruppenTabelle(c));
+    }
+
+    /** Die Einrichtungen im Geltungsbereich, als Auswahlliste (FA-GER-050). */
+    private String einrichtungsauswahl(Context c) {
+        StringBuilder s = new StringBuilder();
+        for (var o : bestand.organisationen(bereich(c))) {
+            s.append("<option value=\"").append(esc(o.bezeichnung())).append("\">")
+             .append(esc(o.bezeichnung())).append("</option>");
+        }
+        // "Praxis" ist die Einrichtung der Vorgabegruppe — bei einer
+        // Einzelpraxis ohne gepflegte Struktur die einzige sinnvolle Wahl.
+        s.append("<option value=\"Praxis\">Praxis (ohne Zuordnung)</option>");
+        return s.toString();
     }
 
     private String gruppenTabelle(Context c) {
-        var liste = gruppen.alle("Praxis", bereich(c));
+        var liste = gruppen.alle(bereich(c));
         StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>"
-                + "<th>Gruppe</th><th>Geräte</th><th>Prüfintervall</th><th></th>"
+                + "<th>Gruppe</th><th>Einrichtung</th><th>Geräte</th><th>Prüfintervall</th><th></th>"
                 + "</tr></thead><tbody>");
         for (var g : liste) {
             s.append("""
-                    <tr><td class="geraet">%s%s</td><td>%d</td>
+                    <tr><td class="geraet">%s%s</td><td>%s</td><td>%d</td>
                     <td><form method="post" action="/gruppen/%d/intervall"
                               style="display:flex;gap:.4rem;align-items:center">
                           <label class="nurLeser" for="iv-%d">Prüfintervall für %s in Sekunden</label>
@@ -2394,7 +2413,7 @@ public class Zentrale {
                     <td>%s</td></tr>"""
                     .formatted(esc(g.bezeichnung()),
                             g.istVorgabe() ? " <span class=\"marke unbekannt\">Vorgabe</span>" : "",
-                            g.geraetezahl(), g.id(),
+                            esc(g.einrichtung()), g.geraetezahl(), g.id(),
                             g.id(), esc(g.bezeichnung()), g.id(), g.pruefintervallSekunden(),
                             g.istVorgabe() ? "" :
                               ("<form method=\"post\" action=\"/gruppen/" + g.id() + "/loeschen\">"

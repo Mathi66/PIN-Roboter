@@ -1,7 +1,7 @@
 # Umsetzungsstand je Anforderung
 
 **Stand:** 08.08.2026 · Grundlage: [Anforderungskatalog](01-anforderungskatalog.md)
-mit 84 Anforderungen · **268 Modultests, 295 Systemnachweise**
+mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 
 > **Diese Liste wurde am 08.08.2026 neu aus dem Katalog erzeugt.** Die vorige
 > Fassung trug bei 36 von 84 Zeilen eine Beschriftung, die nicht zur Anforderung
@@ -48,7 +48,7 @@ mit 84 Anforderungen · **268 Modultests, 295 Systemnachweise**
 | **✔** | `FA-GER-030` Kartenterminals automatisch ermitteln <br><span style="opacity:.7">SOLL</span> |  | Ermittlung über den Konnektor, nichts wird selbsttätig übernommen |
 | **✔** | `FA-GER-035` Informationsmodell des Konnektors auslesen <br><span style="opacity:.7">SOLL</span> |  | Informationsmodell, Aufrufkontext zur Auswahl; optional (NFA-QS-035) |
 | **✔** | `FA-GER-040` Karten erfassen <br><span style="opacity:.7">MUSS</span> |  | alle Karten, eGK und HBA gekennzeichnet und unangetastet |
-| **✔** | `FA-GER-050` Gerätegruppen <br><span style="opacity:.7">MUSS</span> |  | Gruppen mit Intervall; Löschen zieht Geräte in die Vorgabegruppe um |
+| **✔** | `FA-GER-050` Gerätegruppen <br><span style="opacity:.7">MUSS</span> |  | Anlegen, Zuordnen, eigenes Prüfintervall (wirkt nachweislich, FA-UEB-010), Löschen mit Umzug in die Vorgabegruppe. **Seit 09.08.2026 je Einrichtung** — vorher war die Einrichtung hart verdrahtet, alle Gruppen hingen an derselben. [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md) |
 | **✔** | `FA-GER-060` Bestandsübersicht bei großen Stückzahlen <br><span style="opacity:.7">MUSS</span> |  | serverseitige Paginierung, Filter, Massenaktionen; am Lasttest gemessen |
 
 ## A.2 Überwachung (FA-UEB)
