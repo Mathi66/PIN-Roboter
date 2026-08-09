@@ -167,6 +167,7 @@ public class Gruppenverwaltung {
      */
     public boolean geraetSicherstellen(String terminalId, String einrichtung, String bezeichnung) {
         var vorgabe = vorgabegruppe(einrichtung);
+        if (vorgabe.isEmpty()) vorgabe = vorgabegruppeAnlegen(einrichtung);
         if (vorgabe.isEmpty()) return false;
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung)
@@ -177,6 +178,41 @@ public class Gruppenverwaltung {
             p.setString(4, bezeichnung);
             return p.executeUpdate() == 1;
         } catch (SQLException e) { return false; }
+    }
+
+    /**
+     * Legt die Vorgabegruppe einer Einrichtung an, falls sie noch fehlt.
+     *
+     * <p>Migration 6 erzeugt sie nur für die Einrichtung {@code "Praxis"}. Bis
+     * zum 09.08.2026 fiel deshalb jedes Gerät eines Agenten an einem anderen
+     * Standort <b>still durch</b>: {@code geraetSicherstellen} gab {@code false}
+     * zurück, niemand sah hin, und das Terminal tauchte im Protokoll auf, aber
+     * nirgends in der Geräteverwaltung — ohne Gruppe, also auch ohne
+     * Prüfintervall.
+     *
+     * <p>Die Gruppe entsteht deshalb beim ersten Bedarf. Idempotent: Ein
+     * Wettlauf zweier Agenten derselben Einrichtung endet an dem eindeutigen
+     * Index {@code geraetegruppe_vorgabe_idx}, und der Verlierer liest die
+     * inzwischen vorhandene Gruppe.
+     */
+    Optional<Gruppe> vorgabegruppeAnlegen(String einrichtung) {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
+                                           pruefintervall_sekunden, organisation_id)
+                VALUES ('Alle Geräte', ?, TRUE, 60,
+                        (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
+                         AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))
+                ON CONFLICT DO NOTHING""")) {
+            p.setString(1, einrichtung);
+            p.setString(2, einrichtung);
+            p.setString(3, einrichtung);
+            p.executeUpdate();
+        } catch (SQLException e) {
+            // Nicht verschlucken: Ohne Vorgabegruppe wird das Gerät nicht erfasst.
+            System.err.println("Vorgabegruppe für " + einrichtung
+                    + " konnte nicht angelegt werden: " + e.getMessage());
+        }
+        return vorgabegruppe(einrichtung);
     }
 
     public String zuordnen(String terminalId, long gruppeId) {

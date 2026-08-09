@@ -1126,7 +1126,7 @@ public class Zentrale {
         });
 
         // ---------------------------------------------------------- Verwaltung
-        app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null),
+        app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)),
                 angemeldeter(c))));
 
         app.post("/verwaltung/registry", c -> {
@@ -1142,7 +1142,7 @@ public class Zentrale {
                         "Registry-Zugang eingerichtet: " + Anmeldeseiten.feld(c, "abbild"), null);
                 versionen.pruefen();
             }
-            c.html(seite("verwaltung", verwaltungsSeite(fehler, null), angemeldeter(c)));
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)), angemeldeter(c)));
         });
 
         app.post("/verwaltung/registry/pruefen", c -> {
@@ -1229,7 +1229,7 @@ public class Zentrale {
                     "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals, %d Konten"
                             .formatted(weg.organisationen(), weg.konnektoren(),
                                        weg.arbeitsplaetze(), weg.terminals(), weg.benutzer()), null);
-            c.html(seite("verwaltung", verwaltungsSeite(null, null), angemeldeter(c)));
+            c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)), angemeldeter(c)));
         });
 
         // FA-PRO-040: Excel-Export der gefilterten Protokollansicht.
@@ -1445,13 +1445,17 @@ public class Zentrale {
             String geheimnis = kopfWert(c, "X-Registrierung");
             var ergebnis = agenten.registrieren(geheimnis);
             if (ergebnis instanceof Agentenverwaltung.Registrierung.Erfolg e) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERT, true,
+                protokoll.anfuegen(einrichtungVonAgent(e.agentId()), null,
+                        Ereignisart.AGENT_REGISTRIERT, true,
                         "Registrierung", null,
                         "Standort-Agent registriert (Nummer " + e.agentId() + ")", null);
                 c.json(Map.of("token", e.token(), "agentId", e.agentId()));
             } else {
                 var a = (Agentenverwaltung.Registrierung.Abgelehnt) ergebnis;
                 // Fehlversuche werden protokolliert - sie sind ein Angriffshinweis.
+                // Instanzweit abgelegt: Zu einem abgelehnten Versuch gibt es
+                // keine belegte Einrichtung, und ein Angreifer duerfte den
+                // Ablageort nicht ueber sein Geheimnis waehlen koennen.
                 protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERUNG_ABGELEHNT,
                         false, "Registrierung", null, a.grund(),
                         "Falls ein Agent eingerichtet werden soll, bitte ein neues "
@@ -1468,9 +1472,15 @@ public class Zentrale {
                 return;
             }
             String bez = Anmeldeseiten.feld(c, "bezeichnung");
+            // Die Einrichtung gehoert zur Registrierung, nicht zur Meldung:
+            // Ein Agent steht in genau einer Praxis, und alles, was er meldet,
+            // gehoert dorthin. Sie hier zu waehlen ist der einzige Zeitpunkt,
+            // an dem ein Mensch es wissen kann.
+            String einr = Anmeldeseiten.feld(c, "einrichtung");
+            if (einr == null || einr.isBlank()) einr = "Praxis";
             String geheimnis = agenten.geheimnisAnlegen(
-                    bez.isBlank() ? "Standort-Agent" : bez, "Praxis", angemeldet.anzeigename());
-            protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,
+                    bez.isBlank() ? "Standort-Agent" : bez, einr, angemeldet.anzeigename());
+            protokoll.anfuegen(einr, null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,
                     angemeldet.anzeigename(), null,
                     "Registrierungsgeheimnis für \"" + bez + "\" erzeugt", null);
             // Der Klartext erscheint genau einmal - danach ist nur der Hash gespeichert.
@@ -1592,11 +1602,31 @@ public class Zentrale {
         }
 
         String bewertung = de.pinroboter.gemeinsam.Protokollversion.bewertung(version);
-        protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_VERSION, bewertung == null,
+        protokoll.anfuegen(einrichtungVonAgent(agentId), null, Ereignisart.AGENT_VERSION,
+                bewertung == null,
                 "Standort-Agent", null,
                 "Standort-Agent %d meldet Protokoll %d (Baustein %s)"
                         .formatted(agentId, version, bausteinText == null ? "unbekannt" : bausteinText),
                 bewertung);
+    }
+
+    /** Die Einrichtung des Agenten, der gerade meldet. */
+    private String einrichtungDesAgenten(Context c) {
+        var a = (Agentenverwaltung.Agent) c.attribute("agent");
+        return a == null || a.einrichtung() == null || a.einrichtung().isBlank()
+                ? "Praxis" : a.einrichtung();
+    }
+
+    private String einrichtungVonAgent(long agentId) {
+        try (var p = db.verbindung().prepareStatement(
+                "SELECT einrichtung FROM agent WHERE id = ?")) {
+            p.setLong(1, agentId);
+            try (var rs = p.executeQuery()) {
+                if (!rs.next()) return "Praxis";
+                String e = rs.getString(1);
+                return e == null || e.isBlank() ? "Praxis" : e;
+            }
+        } catch (java.sql.SQLException e) { return "Praxis"; }
     }
 
     private Long organisationVon(String terminalId) {
@@ -1623,8 +1653,14 @@ public class Zentrale {
             neu.terminalId = k;
             // Neu erkannte Geräte landen in der Vorgabegruppe (FA-GER-050),
             // damit sie überwacht werden, bevor jemand sie zuordnet.
-            gruppen.geraetSicherstellen(k, "Praxis", String.valueOf(m.get("name")));
-            protokoll.anfuegen("Praxis", k, Ereignisart.GERAET_ERKANNT, true, "Automatik", null,
+            // Schlaegt das fehl, ist das Geraet nirgends erfasst und bekommt kein
+            // Pruefintervall. Das darf nicht still passieren (Stand 09.08.2026).
+            if (!gruppen.geraetSicherstellen(k, einrichtungDesAgenten(c),
+                                             String.valueOf(m.get("name")))) {
+                System.err.println("Geraet " + k + " konnte der Einrichtung "
+                        + einrichtungDesAgenten(c) + " nicht zugeordnet werden.");
+            }
+            protokoll.anfuegen(einrichtungDesAgenten(c), k, Ereignisart.GERAET_ERKANNT, true, "Automatik", null,
                     "Kartenterminal erstmals erkannt", null);
             return neu;
         });
@@ -1632,6 +1668,9 @@ public class Zentrale {
         PinStatus vorher = g.pinStatus;
         boolean vorherErreichbar = g.erreichbar;
         String vorherFirmware = g.firmware;
+        // Aus der Registrierung, nicht aus der Meldung: Ein Agent koennte sonst
+        // Geraete einer fremden Einrichtung unterschieben.
+        g.einrichtung = einrichtungDesAgenten(c);
 
         g.name = str(m, "name", g.name);
         g.modell = str(m, "modell", g.modell);
@@ -1651,11 +1690,11 @@ public class Zentrale {
 
         // Grundregel ADR-0005: nur Zustandsänderungen protokollieren, keine Abfragen.
         if (vorher != g.pinStatus && vorher != null) {
-            protokoll.anfuegen("Praxis", id, Ereignisart.PIN_STATUS_GEAENDERT, true, "Automatik", null,
+            protokoll.anfuegen(g.einrichtung, id, Ereignisart.PIN_STATUS_GEAENDERT, true, "Automatik", null,
                     "Status: %s → %s".formatted(vorher.anzeige(), g.pinStatus.anzeige()), null);
         }
         if (vorherErreichbar != g.erreichbar) {
-            protokoll.anfuegen("Praxis", id,
+            protokoll.anfuegen(g.einrichtung, id,
                     g.erreichbar ? Ereignisart.GERAET_ERREICHBAR : Ereignisart.GERAET_NICHT_ERREICHBAR,
                     g.erreichbar, "Automatik", null,
                     g.erreichbar ? "Gerät wieder erreichbar" : "Gerät nicht erreichbar", null);
@@ -1668,7 +1707,7 @@ public class Zentrale {
         // unbemerkt aendert, macht jede Fehlersuche zum Ratespiel.
         if (vorherFirmware != null && !vorherFirmware.isBlank()
                 && !vorherFirmware.equals(g.firmware) && g.firmware != null) {
-            protokoll.anfuegen("Praxis", id, Ereignisart.FIRMWARE_GEAENDERT, true,
+            protokoll.anfuegen(g.einrichtung, id, Ereignisart.FIRMWARE_GEAENDERT, true,
                     "Automatik", null,
                     "Firmware: %s → %s".formatted(vorherFirmware, g.firmware),
                     "Nach einem Firmware-Wechsel prüft der Roboter Erreichbarkeit und "
@@ -1715,38 +1754,43 @@ public class Zentrale {
     private void alarmzustaendeAbleiten(Geraetezustand g) {
         String o = g.terminalId;
 
-        pruefe(g.automatikAngehalten, o, Alarmverwaltung.Art.AUTOMATIK_ANGEHALTEN,
+        pruefe(g.einrichtung, g.automatikAngehalten, o, Alarmverwaltung.Art.AUTOMATIK_ANGEHALTEN,
                 "Die Automatik wurde für dieses Gerät angehalten.",
                 g.handlung != null ? g.handlung
                         : "Bitte die hinterlegte PIN prüfen und die Automatik wieder freigeben.");
 
-        pruefe(!g.erreichbar, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
+        pruefe(g.einrichtung, !g.erreichbar, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
                 "Das Kartenterminal antwortet nicht.",
                 "Bitte prüfen, ob das Gerät eingeschaltet und mit dem Netzwerk verbunden ist.");
 
-        pruefe(g.pinStatus == de.pinroboter.gemeinsam.PinStatus.BLOCKED, o,
+        pruefe(g.einrichtung, g.pinStatus == de.pinroboter.gemeinsam.PinStatus.BLOCKED, o,
                 Alarmverwaltung.Art.KARTE_GESPERRT,
                 "Die SMC-B ist gesperrt. Der TI-Zugang über dieses Gerät ist unterbrochen.",
                 "Die Karte lässt sich nur mit der PUK entsperren. Ein weiterer PIN-Versuch hilft nicht.");
 
-        pruefe(g.pinStatus.handlungsbedarf()
+        pruefe(g.einrichtung, g.pinStatus.handlungsbedarf()
                         && g.pinStatus != de.pinroboter.gemeinsam.PinStatus.BLOCKED,
                 o, Alarmverwaltung.Art.HANDLUNGSBEDARF_KARTE,
                 g.pinStatus.erklaerung(),
                 "Dieser Zustand lässt sich nur von Hand am Kartenterminal auflösen.");
 
-        pruefe(g.erreichbar && g.pevimUnterstuetzt && !g.pevimAktiv, o,
+        pruefe(g.einrichtung, g.erreichbar && g.pevimUnterstuetzt && !g.pevimAktiv, o,
                 Alarmverwaltung.Art.PEVIM_NICHT_AKTIV,
                 "Die automatische PIN-Eingabe ist an diesem Gerät nicht aktiviert.",
                 "Ein Administrator muss die Funktion direkt am Kartenterminal freischalten. "
                 + "Bis dahin wird das Gerät überwacht, aber nicht automatisch freigeschaltet.");
     }
 
-    private void pruefe(boolean liegtVor, String objekt, Alarmverwaltung.Art art,
-                        String meldung, String handlung) {
+    /**
+     * @param einrichtung Pflichtparameter, kein Vorgabewert. Ein Alarm ohne
+     *        Einrichtung ist für einen Mandanten unsichtbar — und ein
+     *        unsichtbarer Alarm ist schlimmer als keiner.
+     */
+    private void pruefe(String einrichtung, boolean liegtVor, String objekt,
+                        Alarmverwaltung.Art art, String meldung, String handlung) {
         if (liegtVor) {
-            if (alarme.melden("Praxis", objekt, art, meldung, handlung)) {
-                protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_AUSGELOEST, false,
+            if (alarme.melden(einrichtung, objekt, art, meldung, handlung)) {
+                protokoll.anfuegen(einrichtung, objekt, Ereignisart.ALARM_AUSGELOEST, false,
                         "Automatik", null, meldung, handlung);
                 // FA-ALA-020: nur bei NEUEN Alarmen einreihen. Ein
                 // wiederkehrender Alarm desselben Zustands wuerde die Flut
@@ -1754,8 +1798,8 @@ public class Zentrale {
                 benachrichtigung.einreihen(organisationVon(objekt), art.schweregrad().name(),
                         objekt, meldung, handlung);
             }
-        } else if (alarme.beheben("Praxis", objekt, art)) {
-            protokoll.anfuegen("Praxis", objekt, Ereignisart.ALARM_BEHOBEN, true,
+        } else if (alarme.beheben(einrichtung, objekt, art)) {
+            protokoll.anfuegen(einrichtung, objekt, Ereignisart.ALARM_BEHOBEN, true,
                     "Automatik", null, "Zustand behoben: " + art.name(), null);
         }
     }
@@ -1771,6 +1815,7 @@ public class Zentrale {
         var z = speicher.zustand();
 
         if (z.alarmNoetig()) {
+            // Instanzweit: Das Protokoll gehoert keiner Einrichtung.
             alarme.melden("Praxis", null, Alarmverwaltung.Art.SPEICHER_KNAPP,
                     "Das Protokoll belegt %s von %s (%d %%)."
                             .formatted(z.belegtLesbar(), z.budgetLesbar(), z.prozent()),
@@ -2138,7 +2183,47 @@ public class Zentrale {
         } catch (java.sql.SQLException e) { return null; }
     }
 
-    private String agententafel() {
+    /**
+     * Formular zum Einrichten eines Agenten (FA-AGT-010).
+     *
+     * <p>Bis zum 09.08.2026 gab es das nur über die Kommandozeile — in der
+     * Oberfläche fehlte es ganz. Ein Betreiber ohne IT-Personal konnte damit
+     * keinen zweiten Standort anbinden.
+     *
+     * <p><b>Die Einrichtung wird hier gewählt</b>, nicht später vom Agenten
+     * gemeldet. Das ist der einzige Zeitpunkt, an dem ein Mensch weiß, wo das
+     * Gerät steht — und es ist die sichere Richtung: Ein Agent könnte sonst
+     * Geräte einer fremden Einrichtung unterschieben.
+     */
+    private String agentAnlegenFormular(Geltungsbereich bereich) {
+        StringBuilder auswahl = new StringBuilder();
+        for (var o : bestand.organisationen(bereich)) {
+            auswahl.append("<option value=\"").append(esc(o.bezeichnung())).append("\">")
+                   .append(esc(o.bezeichnung())).append("</option>");
+        }
+        auswahl.append("<option value=\"Praxis\">Praxis (ohne Zuordnung)</option>");
+        return """
+                <div class="maske" style="border-top:1px solid var(--rand)">
+                <form method="post" action="/agenten/geheimnis" class="maske" style="padding:0"
+                      hx-post="/agenten/geheimnis" hx-target="#agentGeheimnis" hx-swap="innerHTML">
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="ag-bez">Bezeichnung</label>
+                      <input id="ag-bez" name="bezeichnung" required maxlength="120"
+                             placeholder="z. B. Agent Praxis Nord"></div>
+                    <div class="feldgruppe"><label for="ag-einr">Einrichtung</label>
+                      <select id="ag-einr" name="einrichtung" aria-describedby="ag-hilfe">%s</select></div>
+                    <div class="feldgruppe"><label for="ag-k" class="nurLeser">Erzeugen</label>
+                      <button id="ag-k" class="knopf haupt" type="submit">Zugangscode erzeugen</button></div>
+                  </div>
+                  <p id="ag-hilfe" class="hilfe">Alles, was dieser Agent meldet — Geräte, Alarme,
+                     Protokolleinträge — gehört zu dieser Einrichtung. Sie lässt sich später nicht
+                     ändern; ein Agent steht in genau einer Praxis.</p>
+                </form>
+                <div id="agentGeheimnis"></div>
+                </div>""".formatted(auswahl);
+    }
+
+    private String agententafel(Geltungsbereich bereich) {
         var liste = agenten.alle();
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Standort-Agenten "
                 + "<span class=\"zaehler\">" + liste.size() + "</span></h3>");
@@ -2173,6 +2258,7 @@ public class Zentrale {
              .append("</td></tr>");
         }
         s.append("</tbody></table></div>");
+        s.append(agentAnlegenFormular(bereich));
         s.append("""
                 <div class="karte-leib" style="padding:.9rem 1.2rem">
                   <p class="hilfe">Die Zentrale unterstützt die Protokollversionen %d bis %d.
@@ -2215,13 +2301,18 @@ public class Zentrale {
     }
 
     private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten) {
+        return verwaltungsSeite(fehler, neueKonten, Geltungsbereich.alles());
+    }
+
+    private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten,
+                                    Geltungsbereich bereich) {
         var b = demodaten.bestand();
         StringBuilder s = new StringBuilder(seitenkopf("Instanz",
                 "Werkzeuge für den Betreiber dieser Instanz.", null));
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
 
         s.append(versionstafel());
-        s.append(agententafel());
+        s.append(agententafel(bereich));
         s.append(fehlendePinsTafel());
         s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"anmeldeinhalt\">");
         if (b.vorhanden()) {

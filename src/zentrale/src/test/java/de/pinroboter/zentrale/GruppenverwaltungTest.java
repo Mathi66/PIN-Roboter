@@ -122,4 +122,36 @@ class GruppenverwaltungTest {
                 .filter(g -> g.id() == id).findFirst().orElseThrow().pruefintervallSekunden());
         assertNotNull(gv.intervallSetzen(id, 3));
     }
+
+    @Test
+    @DisplayName("Eine unbekannte Einrichtung bekommt ihre Vorgabegruppe beim ersten Gerät")
+    void vorgabegruppeEntstehtBeiBedarf() {
+        // Migration 6 legt die Vorgabegruppe nur für "Praxis" an. Bis zum
+        // 09.08.2026 fiel deshalb jedes Gerät eines Agenten an einem anderen
+        // Standort still durch — es stand im Protokoll, aber in keiner Gruppe,
+        // hatte also auch kein Prüfintervall.
+        String einrichtung = "Standort-" + UUID.randomUUID().toString().substring(0, 8);
+        assertTrue(gv.vorgabegruppe(einrichtung).isEmpty(), "Vorbedingung: Einrichtung ist neu");
+
+        String terminal = "KT-" + UUID.randomUUID().toString().substring(0, 8);
+        assertTrue(gv.geraetSicherstellen(terminal, einrichtung, "Terminal"),
+                "Das Gerät muss erfasst werden, auch wenn die Einrichtung neu ist");
+
+        var v = gv.vorgabegruppe(einrichtung);
+        assertTrue(v.isPresent());
+        assertTrue(v.get().istVorgabe());
+        // Und das Gerät hängt daran — sonst hätte es kein Prüfintervall.
+        assertEquals(v.get().id(), gv.gruppeVon(terminal).orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Zweimal anlegen erzeugt keine zweite Vorgabegruppe")
+    void vorgabegruppeBleibtEinmalig() {
+        String einrichtung = "Standort-" + UUID.randomUUID().toString().substring(0, 8);
+        long ersteId = gv.vorgabegruppeAnlegen(einrichtung).orElseThrow().id();
+        // Idempotenz zählt: Zwei Agenten derselben Einrichtung melden sich
+        // gleichzeitig, und der eindeutige Index darf nicht zum Abbruch führen.
+        assertEquals(ersteId, gv.vorgabegruppeAnlegen(einrichtung).orElseThrow().id());
+        assertEquals(1, gv.alle(einrichtung, ALLES).stream().filter(Gruppenverwaltung.Gruppe::istVorgabe).count());
+    }
 }

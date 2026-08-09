@@ -115,3 +115,121 @@ Auswahl, die Übersicht nennt sie je Gruppe, und die Gruppe trägt die Kennung
 der Organisationseinheit — womit die Mandantengrenze auch hier greift.
 
 Drei zusätzliche Systemnachweise.
+
+---
+
+## Nachtrag 09.08.2026 — der Agent kennt seine Einrichtung
+
+Der Nachtrag oben behob die Verdrahtung in der Oberfläche. Eine Ebene tiefer
+saß dieselbe Sorte Fehler noch einmal, und dort wog sie schwerer.
+
+### Was falsch war
+
+Der Standort-Agent meldete seine Geräte hart unter `"Praxis"`:
+
+```java
+gruppen.geraetSicherstellen(id, "Praxis", name);
+protokoll.anfuegen("Praxis", id, Ereignisart.GERAET_ERKANNT, …);
+```
+
+Folge: Egal an welchem Standort ein Agent lief — seine Terminals, Alarme und
+Protokolleinträge landeten unter demselben Namen. In der Einzelpraxis richtig,
+im Klinikverbund falsch. Konkret hieß das:
+
+- Alle Geräte fielen in **eine** Vorgabegruppe. Die neun eben angelegten
+  Praxis-Gruppen blieben leer, und das Prüfintervall je Standort (FA-UEB-010)
+  hatte nichts zu steuern.
+- **Die Mandantengrenze griff für Geräte nicht.** Ein Administrator der
+  Kardiologie hätte die Terminals der Zahnarztpraxis gesehen — sie trugen ja
+  seine Einrichtung. Genau der Fehler, vor dem CLAUDE.md warnt: „die häufigste
+  schwere Sicherheitslücke in mandantenfähigen Anwendungen".
+
+### Woher die Einrichtung jetzt kommt
+
+**Aus der Registrierung, nicht aus der Meldung.** Das ist die entscheidende
+Richtung. Ein Agent *könnte* seine Einrichtung selbst mitschicken — dann würde
+ein übernommener oder nachgebauter Agent Geräte in einer fremden Einrichtung
+unterschieben. Der Administrator legt sie stattdessen beim Erzeugen des
+Registrierungscodes fest; das ist der einzige Zeitpunkt, an dem ein Mensch
+weiß, wo das Gerät steht.
+
+```java
+private String einrichtungDesAgenten(Context c) {
+    var a = (Agentenverwaltung.Agent) c.attribute("agent");
+    return a == null || a.einrichtung() == null || a.einrichtung().isBlank()
+            ? "Praxis" : a.einrichtung();
+}
+```
+
+Damit sie nicht wieder an einer Stelle vergessen wird, hat `pruefe()` — der
+gemeinsame Weg aller Geräte­alarme — die Einrichtung als **Pflichtparameter**
+bekommen. Ein vergessener Aufruf übersetzt jetzt nicht mehr; das erledigt der
+Compiler statt der Sorgfalt.
+
+Zwei Stellen bleiben bewusst instanzweit und tragen einen Kommentar:
+
+| Stelle | Warum |
+|---|---|
+| Speicherplatz-Alarm | betrifft die Instanz, nicht einen Standort |
+| abgelehnte Registrierung | es gibt keine belegte Einrichtung — und ein Angreifer darf den Ablageort nicht über sein Geheimnis wählen |
+
+### Die Oberfläche dazu
+
+Das Registrierungsgeheimnis ließ sich bisher **nur über die Kommandozeile**
+erzeugen; in der Oberfläche fehlte die Maske ganz. Ein Betreiber ohne
+IT-Personal konnte damit keinen zweiten Standort anbinden — für ein Produkt,
+das ausdrücklich für Praxen ohne DevOps gebaut wird, ein Auslieferungsmangel.
+
+Die Agententafel trägt jetzt ein Formular mit Bezeichnung und
+Einrichtungsauswahl. Die Auswahl kommt aus dem Geltungsbereich des Aufrufers —
+ein Standortadministrator sieht nur seine eigenen Einrichtungen.
+
+### Nachweise
+
+Vier zusätzliche Systemnachweise, die den ganzen Weg gehen: Geheimnis mit
+Einrichtung → Token → Gerätemeldung → Ablage. Der wichtigste davon prüft die
+Angriffsrichtung: Die Meldung behauptet ausdrücklich eine **fremde**
+Einrichtung, und der Nachweis verlangt, dass davon nichts ankommt.
+
+### Was der Umbau freigelegt hat
+
+Der Nachweis fiel beim ersten Lauf um — und zwar zu Recht. Migration 6 legt die
+Vorgabegruppe **nur für die Einrichtung `"Praxis"`** an. Meldete ein Agent an
+einem anderen Standort ein Gerät, fand `geraetSicherstellen` keine Gruppe:
+
+```java
+var vorgabe = vorgabegruppe(einrichtung);
+if (vorgabe.isEmpty()) return false;      // und niemand sah hin
+```
+
+Folge: Das Terminal stand im Fachprotokoll, aber **in keiner Gerätetabelle** —
+nicht in der Geräteverwaltung sichtbar, keiner Gruppe zugeordnet, also ohne
+Prüfintervall. Ein lautloser Ausfall genau der Kernfunktion.
+
+Solange alle Agenten „Praxis" meldeten, konnte das nicht auffallen. Der Umbau
+hat den Fehler nicht verursacht, sondern sichtbar gemacht.
+
+Zwei Änderungen:
+
+- Die **Vorgabegruppe entsteht beim ersten Bedarf** (`vorgabegruppeAnlegen`),
+  idempotent über `ON CONFLICT DO NOTHING`. Melden sich zwei Agenten derselben
+  Einrichtung gleichzeitig, endet der Wettlauf am eindeutigen Index
+  `geraetegruppe_vorgabe_idx`, und der Verlierer liest die inzwischen
+  vorhandene Gruppe.
+- Der stille `return false` **meldet sich**. Ein Gerät, das nicht zugeordnet
+  werden kann, darf kein wortloser Ausfall bleiben.
+
+### Ein zweiter Fund in den Nachweisen selbst
+
+Zwei bestehende Nachweise fielen um, sobald es mehr als eine Einrichtung gab:
+
+```bash
+VORGABE=$(sql "SELECT id FROM geraetegruppe WHERE ist_vorgabe")
+```
+
+Sie nahmen an, es gebe **genau eine** Vorgabegruppe im System. Das war nie
+richtig — die Mandantenfähigkeit sieht eine je Einrichtung vor —, es hielt nur
+zufällig, solange alles „Praxis" hieß. Die Abfrage lieferte plötzlich zwei
+Zeilen, und der Vergleich scheiterte an einer mehrzeiligen Variablen statt an
+einem Fehler im Produkt. Beide fragen jetzt nach der Vorgabegruppe **des
+betreffenden Geräts**.

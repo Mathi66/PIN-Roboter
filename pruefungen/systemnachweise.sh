@@ -558,6 +558,49 @@ DB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
 [ "${DB:-0}" -gt 0 ] && PR=ja || PR=nein
 ergebnis "abgelehnte Registrierungen stehen im Fachprotokoll ($DB Eintraege)" "$PR"
 
+# Die Einrichtung eines Agenten stammt aus seiner Registrierung, nicht aus
+# seiner Meldung. Bis zum 09.08.2026 stand ueberall fest "Praxis" — damit trugen
+# Geraete, Alarme und Protokolleintraege aller Standorte denselben Namen, und
+# die Mandantengrenze griff fuer sie nicht. Der Nachweis geht den ganzen Weg:
+# Geheimnis mit Einrichtung -> Token -> Geraetemeldung -> Ablage.
+EINR="Zahnarztpraxis Sued"
+G3=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis \
+     --data-urlencode "bezeichnung=Agent Sued" --data-urlencode "einrichtung=$EINR" \
+     | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
+TOK3=$(curl -s -X POST -H "X-Registrierung: $G3" http://localhost:8090/api/registrieren \
+       | grep -oE '"token" *: *"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/')
+[ -n "$TOK3" ] && TR=ja || TR=nein
+ergebnis "Registrierung mit gewaehlter Einrichtung liefert ein Token" "$TR"
+
+# Ein Geraet melden — und in der Meldung ausdruecklich eine FREMDE Einrichtung
+# behaupten. Die Zentrale muss sie verwerfen.
+curl -s -X POST -H "X-Agent-Token: $TOK3" -H "Content-Type: application/json" \
+     -d '{"terminalId":"KT-SUED-1","name":"Terminal Sued","einrichtung":"Kardiologie Nord",
+          "erreichbar":true,"pinStatus":"VERIFIED","modell":"Testgeraet","firmware":"1.0"}' \
+     http://localhost:8090/api/agent/melden -o /dev/null
+
+GEB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+      "SELECT einrichtung FROM fachprotokoll WHERE geraet='KT-SUED-1' AND art='GERAET_ERKANNT' LIMIT 1" \
+      | tr -d '\n')
+[ "$GEB" = "$EINR" ] && GE=ja || GE=nein
+ergebnis "gemeldetes Geraet wird unter der Einrichtung der Registrierung abgelegt (\"$GEB\")" "$GE"
+
+# Dieselbe Frage aus der Gegenrichtung: Die in der Meldung behauptete fremde
+# Einrichtung darf nirgends angekommen sein.
+FREMD=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+        "SELECT count(*) FROM fachprotokoll WHERE geraet='KT-SUED-1' AND einrichtung<>'$EINR'" \
+        | tr -d ' \n')
+[ "${FREMD:-1}" = "0" ] && FE=ja || FE=nein
+ergebnis "vom Agenten behauptete Fremdeinrichtung wird verworfen ($FREMD Eintraege)" "$FE"
+
+# Und die Gerategruppe: Ein neu erkanntes Geraet landet in der Vorgabegruppe
+# SEINER Einrichtung (FA-GER-050) — sonst waeren alle Standorte in einem Topf.
+GRP=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+      "SELECT gg.einrichtung FROM geraet ge JOIN geraetegruppe gg ON gg.id=ge.gruppe_id
+       WHERE ge.terminal_id='KT-SUED-1'" | tr -d '\n')
+[ "$GRP" = "$EINR" ] && GR=ja || GR=nein
+ergebnis "neues Geraet landet in der Vorgabegruppe seiner Einrichtung (\"$GRP\")" "$GR"
+
 curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll -o /tmp/pr-antwort.html
 PA=$(enthaelt /tmp/pr-antwort.html "Registrierung abgelehnt")
 if [ "$PA" = "nein" ] && [ "${DB:-0}" -gt 0 ]; then
@@ -1603,8 +1646,18 @@ ergebnis "ein unzulaessig kurzes Intervall wird nicht uebernommen" "$GK"
 
 # Geraet zuordnen und die Gruppe loeschen: Kein Geraet darf aus der
 # Ueberwachung fallen.
-KT_G=$(sqltext "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 1")
-VORGABE=$(sql "SELECT id FROM geraetegruppe WHERE ist_vorgabe")
+# Ausdruecklich ein Geraet des Simulators, nicht irgendeines: Die
+# Agentennachweise legen vorher Geraete anderer Einrichtungen an, und die
+# Zuordnung ueber Einrichtungsgrenzen hinweg waere ein anderer Test.
+KT_G=$(sqltext "SELECT terminal_id FROM geraet WHERE einrichtung='Praxis'
+                ORDER BY terminal_id LIMIT 1")
+# Die Vorgabegruppe DES GERAETS, nicht "die eine im System": Seit jede
+# Einrichtung eine eigene bekommt (09.08.2026), liefert eine Abfrage ohne
+# Einrichtung mehrere Zeilen — und der Vergleich unten scheiterte an einer
+# mehrzeiligen Variablen statt an einem Fehler im Produkt.
+VORGABE=$(sql "SELECT gg.id FROM geraetegruppe gg
+               JOIN geraet ge ON ge.einrichtung = gg.einrichtung
+               WHERE gg.ist_vorgabe AND ge.terminal_id='$KT_G'")
 if [ -n "$KT_G" ] && [ -n "$GID" ]; then
   curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_G/gruppe" \
     --data-urlencode "gruppe=$GID"

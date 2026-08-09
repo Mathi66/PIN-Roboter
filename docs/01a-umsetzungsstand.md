@@ -48,7 +48,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-GER-030` Kartenterminals automatisch ermitteln <br><span style="opacity:.7">SOLL</span> |  | Ermittlung über den Konnektor, nichts wird selbsttätig übernommen |
 | **✔** | `FA-GER-035` Informationsmodell des Konnektors auslesen <br><span style="opacity:.7">SOLL</span> |  | Informationsmodell, Aufrufkontext zur Auswahl; optional (NFA-QS-035) |
 | **✔** | `FA-GER-040` Karten erfassen <br><span style="opacity:.7">MUSS</span> |  | alle Karten, eGK und HBA gekennzeichnet und unangetastet |
-| **✔** | `FA-GER-050` Gerätegruppen <br><span style="opacity:.7">MUSS</span> |  | Anlegen, Zuordnen, eigenes Prüfintervall (wirkt nachweislich, FA-UEB-010), Löschen mit Umzug in die Vorgabegruppe. **Seit 09.08.2026 je Einrichtung** — vorher war die Einrichtung hart verdrahtet, alle Gruppen hingen an derselben. [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md) |
+| **✔** | `FA-GER-050` Gerätegruppen <br><span style="opacity:.7">MUSS</span> |  | Anlegen, Zuordnen, eigenes Prüfintervall (wirkt nachweislich, FA-UEB-010), Löschen mit Umzug in die Vorgabegruppe. **Seit 09.08.2026 je Einrichtung** — vorher war die Einrichtung hart verdrahtet, alle Gruppen hingen an derselben; ebenso meldete der Agent seine Geräte hart unter „Praxis", womit die Mandantengrenze für Geräte nicht griff. [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md) |
 | **✔** | `FA-GER-060` Bestandsübersicht bei großen Stückzahlen <br><span style="opacity:.7">MUSS</span> |  | serverseitige Paginierung, Filter, Massenaktionen; am Lasttest gemessen |
 
 ## A.2 Überwachung (FA-UEB)
@@ -144,7 +144,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 
 | | Anforderung | | Stand |
 |---|---|---|---|
-| **✔** | `FA-AGT-010` Registrierung <br><span style="opacity:.7">MUSS</span> |  | einmaliges Geheimnis gegen dauerhaftes Token |
+| **✔** | `FA-AGT-010` Registrierung <br><span style="opacity:.7">MUSS</span> |  | einmaliges Geheimnis gegen dauerhaftes Token. **Seit 09.08.2026 in der Oberfläche** (vorher nur über die Kommandozeile) und mit **Wahl der Einrichtung** — sie stammt aus der Registrierung, nicht aus der Meldung des Agenten. [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md) |
 | **✔** | `FA-AGT-020` Verbindung <br><span style="opacity:.7">MUSS</span> |  | ausgehend aufgebaut, Token-authentisiert |
 | **✔** | `FA-AGT-030` Autonomer Weiterbetrieb <br><span style="opacity:.7">MUSS</span> |  | Agent arbeitet ohne Zentrale weiter |
 | **✔** | `FA-AGT-040` Versionsunterschiede <br><span style="opacity:.7">MUSS</span> |  | Protokollversion gemeldet, bewertet, angezeigt; kein Abweisen |

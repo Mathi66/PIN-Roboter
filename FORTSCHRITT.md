@@ -1802,3 +1802,57 @@ Die Einrichtung ist jetzt wählbar, die Übersicht nennt sie je Gruppe, und die
 Gruppe trägt die Kennung der Organisationseinheit.
 
 ## Stand: 268 Modultests, 298 Systemnachweise — alle grün
+
+## Der Agent kennt seine Einrichtung
+
+Eine Ebene unter den Gruppen saß derselbe Fehler noch einmal, und dort wog er
+schwerer: Der Standort-Agent meldete seine Geräte hart unter `"Praxis"`.
+
+Egal an welchem Standort ein Agent lief — seine Terminals, Alarme und
+Protokolleinträge trugen denselben Namen. Zwei Folgen:
+
+- Alle Geräte fielen in **eine** Vorgabegruppe. Die neun eben angelegten
+  Praxis-Gruppen blieben leer, das Prüfintervall je Standort hatte nichts zu
+  steuern.
+- **Die Mandantengrenze griff für Geräte nicht.** Ein Administrator der
+  Kardiologie hätte die Terminals der Zahnarztpraxis gesehen. Genau der Fehler,
+  vor dem CLAUDE.md warnt.
+
+Die Einrichtung kommt jetzt **aus der Registrierung, nicht aus der Meldung**.
+Das ist die sichere Richtung: Schickte der Agent sie mit, könnte ein
+übernommener Agent Geräte in einer fremden Einrichtung unterschieben. Der
+Administrator legt sie beim Erzeugen des Registrierungscodes fest — der einzige
+Zeitpunkt, an dem ein Mensch weiß, wo das Gerät steht.
+
+Damit es nicht wieder an einer Stelle vergessen wird, hat `pruefe()` — der
+gemeinsame Weg aller Gerätealarme — die Einrichtung als **Pflichtparameter**
+bekommen. Das erledigt jetzt der Compiler statt der Sorgfalt.
+
+Dabei fiel ein Auslieferungsmangel auf: Das Registrierungsgeheimnis ließ sich
+**nur über die Kommandozeile** erzeugen, in der Oberfläche fehlte die Maske
+ganz. Ein Betreiber ohne IT-Personal konnte keinen zweiten Standort anbinden.
+Die Agententafel trägt jetzt ein Formular mit Einrichtungsauswahl aus dem
+eigenen Geltungsbereich.
+
+### Was der Umbau freigelegt hat
+
+Der erste Nachweislauf fiel um — zu Recht. Migration 6 legt die Vorgabegruppe
+nur für die Einrichtung „Praxis" an. Meldete ein Agent an einem anderen
+Standort ein Gerät, fand die Zentrale keine Gruppe dafür und **verwarf es
+still**: Das Terminal stand im Protokoll, aber in keiner Gerätetabelle — nicht
+sichtbar, ohne Gruppe, ohne Prüfintervall. Ein lautloser Ausfall der
+Kernfunktion, den man nicht sehen konnte, solange alles „Praxis" hieß.
+
+Die Vorgabegruppe entsteht jetzt beim ersten Bedarf, idempotent, und der stille
+Fehlschlag meldet sich.
+
+Zwei bestehende Nachweise fielen ebenfalls um, sobald es mehr als eine
+Einrichtung gab: Sie fragten `WHERE ist_vorgabe` ohne Einrichtung und nahmen
+damit an, es gebe genau eine im System. Auch das war nie richtig, es hielt nur
+zufällig.
+
+## Stand: 264 Modultests, 302 Systemnachweise — alle grün
+
+Die Testzahl ist diesmal **gemessen**, nicht fortgeschrieben: 25 Testklassen,
+264 Testläufe, keine übersprungen. Die zuvor geführte Zahl 268 lässt sich nicht
+belegen und war offenbar mitgeschleppt.
