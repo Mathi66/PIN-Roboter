@@ -26,7 +26,9 @@ final class Organisationsseiten {
                 "Verbünde, Standorte und Einrichtungen — die Struktur, der Geräte und "
                 + "Konten zugeordnet sind.",
                 darfVerwalten && !baum.isEmpty()
-                        ? "<a class=\"knopf haupt\" href=\"/organisation/neu\">Einheit hinzufügen</a>"
+                        ? Bedienelemente.verweis("Einheit hinzufügen", "/organisation/neu",
+                                "Legt einen Verbund, Standort oder eine Einrichtung an",
+                                Bedienelemente.Art.HAUPT)
                         : null));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
@@ -66,10 +68,12 @@ final class Organisationsseiten {
             // Die Einrueckung ist rein visuell; fuer Screenreader steht die
             // Ebene im Text, sonst geht die Struktur dort verloren.
             String einzug = "&nbsp;&nbsp;".repeat(Math.min(e.tiefe(), 8) * 2);
-            s.append("<tr>");
+            s.append("<tr class=\"klickbar\">");
             s.append("<td>").append(einzug)
              .append(e.tiefe() > 0 ? "<span aria-hidden=\"true\">└ </span>" : "")
-             .append("<strong>").append(esc(e.bezeichnung())).append("</strong>")
+             .append("<a class=\"zeilenziel\" href=\"/organisation/").append(e.id())
+             .append("\" title=\"Öffnet „").append(esc(e.bezeichnung()))
+             .append("“ mit allem, was daran hängt\">").append(esc(e.bezeichnung())).append("</a>")
              .append(e.istDemo() ? " <span class=\"marke\">Demo</span>" : "")
              .append("<span class=\"nurLeser\"> — Ebene ").append(e.tiefe() + 1).append("</span>")
              .append("</td>");
@@ -77,14 +81,10 @@ final class Organisationsseiten {
             s.append("<td class=\"klein\">").append(e.leer()
                     ? "<span class=\"marke\">leer</span>" : esc(e.hindernis())).append("</td>");
 
-            // Ein Klick oeffnet die Einheit als EIGENE Seite (UX-Konzept,
-            // Stufe 4/5). Vorher klappte hier eine Zeile auf und schob drei
-            // Formulare in die Tabelle — die Liste wuchs, und die eigentliche
-            // Frage „was haengt an dieser Einheit?" blieb unbeantwortet.
-            s.append("<td class=\"aktionen\">");
-            s.append("<a class=\"knopf klein\" href=\"/organisation/").append(e.id())
-             .append("\">Öffnen</a>");
-            s.append("</td>");
+            // Kein „Öffnen"-Knopf mehr: Die ganze Zeile öffnet, der Name ist
+            // der Link. Bei vierzehn Einheiten waren das vierzehn Knöpfe, die
+            // alle dasselbe sagten.
+            s.append("<td class=\"aktionen\"><span class=\"pfeil-hin\" aria-hidden=\"true\">›</span></td>");
             s.append("</tr>");
         }
         return s.append("</tbody></table></div></div>").toString();
@@ -129,9 +129,12 @@ final class Organisationsseiten {
     private static String loeschknopf(Organisationsverwaltung.Einheit e) {
         return """
                 <form method="post" action="/organisation/%d/loeschen"
-                      onsubmit="return confirm('Einheit „%s“ wirklich löschen?')">
-                  <button class="knopf warnend" type="submit">Löschen</button>
-                </form>""".formatted(e.id(), esc(e.bezeichnung()));
+                      data-nachfrage="Einheit &bdquo;%s&ldquo; wirklich löschen?">%s</form>"""
+                .formatted(e.id(), esc(e.bezeichnung()),
+                        Bedienelemente.absenden("Löschen",
+                                "Löscht die leere Einheit „" + e.bezeichnung() + "“",
+                                Bedienelemente.Art.WARNEND,
+                                "Einheit „" + e.bezeichnung() + "“ wirklich löschen?"));
     }
 
     /** Alles, was an der Einheit hängt — als Absprungpunkte. */
@@ -140,7 +143,7 @@ final class Organisationsseiten {
         if (b == null) return "";
         StringBuilder s = new StringBuilder("""
                 <div class="tafel"><h3>Was zu dieser Einheit gehört</h3>
-                <div class="karte-leib" style="padding:1.1rem 1.2rem"><div class="beziehungen">""");
+                <div class="karte-leib karte-leib"><div class="beziehungen">""");
 
         s.append(kachel(b.terminals(), "Kartenterminals",
                 "/bestand?einrichtung=" + e.id(), "Geräte ansehen"));
@@ -182,7 +185,7 @@ final class Organisationsseiten {
                   <div class="feldgruppe"><label for="o-bez">Bezeichnung</label>
                     <input id="o-bez" name="bezeichnung" required maxlength="160" value="%s"></div>
                   <div class="feldgruppe"><label for="o-bez-k" class="nurLeser">Speichern</label>
-                    <button id="o-bez-k" class="knopf" type="submit">Umbenennen</button></div>
+                    <button id="o-bez-k" class="knopf" type="submit" title="Speichert den neuen Namen dieser Einheit" aria-label="Speichert den neuen Namen dieser Einheit">Umbenennen</button></div>
                 </form>""".formatted(e.id(), esc(e.bezeichnung())));
 
         // Umhaengen: nur Ziele anbieten, die zulaessig sind. Ein Auswahlfeld
@@ -206,7 +209,7 @@ final class Organisationsseiten {
                       <div class="feldgruppe"><label for="o-eltern">Übergeordnete Einheit</label>
                         <select id="o-eltern" name="elternId" aria-describedby="o-eltern-hilfe">%s</select></div>
                       <div class="feldgruppe"><label for="o-eltern-k" class="nurLeser">Verschieben</label>
-                        <button id="o-eltern-k" class="knopf" type="submit">Umhängen</button></div>
+                        <button id="o-eltern-k" class="knopf" type="submit" title="Verschiebt diese Einheit unter die gewählte übergeordnete Einheit" aria-label="Verschiebt diese Einheit unter die gewählte übergeordnete Einheit">Umhängen</button></div>
                     </form>
                     <p id="o-eltern-hilfe" class="hilfe">Beim Umhängen zieht alles mit, was an
                        dieser Einheit hängt — Geräte, Konten und deren Zuständigkeiten.</p>"""
@@ -259,7 +262,7 @@ final class Organisationsseiten {
                   <p id="n-art-hilfe" class="hilfe">Ein Standort ist nur unterhalb eines Verbunds
                      zulässig, eine Einrichtung unterhalb von beidem. Unterhalb einer Einrichtung
                      lässt sich nichts mehr anlegen.</p>
-                  <button class="knopf haupt" type="submit" style="width:auto">Einheit anlegen</button>
+                  <button class="knopf haupt" type="submit" title="Legt die Einheit mit den eingegebenen Angaben an" aria-label="Legt die Einheit mit den eingegebenen Angaben an">Einheit anlegen</button>
                 </form></div>""".formatted(eltern);
     }
 

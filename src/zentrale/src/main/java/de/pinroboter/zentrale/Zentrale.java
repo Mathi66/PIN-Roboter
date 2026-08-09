@@ -273,7 +273,7 @@ public class Zentrale {
                 c.html(Anmeldeseiten.rahmen("Einrichtung abgeschlossen", """
                         <div class="hinweis"><strong>Der zweite Faktor ist eingerichtet.</strong>
                         Sie können sich jetzt anmelden.</div>
-                        <a class="knopf haupt" href="/anmelden">Zur Anmeldung</a>"""));
+                        <a class="knopf haupt" href="/anmelden" title="Öffnet die Anmeldeseite" aria-label="Öffnet die Anmeldeseite">Zur Anmeldung</a>"""));
             } else {
                 c.html(Anmeldeseiten.rahmen("Einrichtung", Anmeldeseiten.meldung(
                         "Der Code stimmt nicht. Bitte prüfen Sie die Uhrzeit Ihres Telefons "
@@ -1918,7 +1918,10 @@ public class Zentrale {
                                 ansicht.absteigend(), seitenNummer, Bestandsseiten.SEITENGROESSE,
                                 bereich(c)),
                         bestand.organisationen(bereich(c)), ansicht,
-                        bestand.zugangsdatenMoeglich(), meldung, istFehler);
+                        bestand.zugangsdatenMoeglich(), meldung, istFehler,
+                        param(c, "ksuche"),
+                        param(c, "ksortier").isBlank() ? "bezeichnung" : param(c, "ksortier"),
+                        "ab".equals(param(c, "krichtung")));
     }
 
     /**
@@ -2141,7 +2144,7 @@ public class Zentrale {
 
         s.append("""
                 <div class="maske" style="border-top:1px solid var(--rand)">
-                <form method="post" action="/verwaltung/registry" class="maske" style="padding:0">
+                <form method="post" action="/verwaltung/registry" class="maske karte-blank">
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="rg-host">Registry</label>
                       <input id="rg-host" name="registry" required maxlength="200" value="%s"
@@ -2162,12 +2165,12 @@ public class Zentrale {
                      Token unverändert. Der Roboter <strong>liest nur</strong> — er braucht
                      keinen Zugriff auf den Docker-Dienst und führt kein Update selbst aus
                      (ADR-0001).</p>
-                  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                    <button class="knopf haupt" type="submit" style="width:auto">Zugang speichern</button>
+                  <div class="reihe-frei">
+                    <button class="knopf haupt" type="submit" style="width:auto" title="Speichert die Registry-Zugangsdaten verschlüsselt" aria-label="Speichert die Registry-Zugangsdaten verschlüsselt">Zugang speichern</button>
                   </div>
                 </form>
-                <form method="post" action="/verwaltung/registry/pruefen" style="margin-top:.6rem">
-                  <button class="knopf" type="submit">Jetzt auf neue Versionen prüfen</button>
+                <form method="post" action="/verwaltung/registry/pruefen" class="abstand-oben">
+                  <button class="knopf" type="submit" title="Fragt die Registry sofort ab, statt auf die tägliche Prüfung zu warten" aria-label="Fragt die Registry sofort ab, statt auf die tägliche Prüfung zu warten">Jetzt auf neue Versionen prüfen</button>
                 </form>
                 </div>""".formatted(esc(nz(registryFeld("registry"))), esc(nz(registryFeld("abbild"))),
                         esc(nz(registryFeld("benutzer"))),
@@ -2204,7 +2207,7 @@ public class Zentrale {
         auswahl.append("<option value=\"Praxis\">Praxis (ohne Zuordnung)</option>");
         return """
                 <div class="maske" style="border-top:1px solid var(--rand)">
-                <form method="post" action="/agenten/geheimnis" class="maske" style="padding:0"
+                <form method="post" action="/agenten/geheimnis" class="maske karte-blank"
                       hx-post="/agenten/geheimnis" hx-target="#agentGeheimnis" hx-swap="innerHTML">
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="ag-bez">Bezeichnung</label>
@@ -2213,7 +2216,7 @@ public class Zentrale {
                     <div class="feldgruppe"><label for="ag-einr">Einrichtung</label>
                       <select id="ag-einr" name="einrichtung" aria-describedby="ag-hilfe">%s</select></div>
                     <div class="feldgruppe"><label for="ag-k" class="nurLeser">Erzeugen</label>
-                      <button id="ag-k" class="knopf haupt" type="submit">Zugangscode erzeugen</button></div>
+                      <button id="ag-k" class="knopf haupt" type="submit" title="Erzeugt einen einmaligen Code, mit dem sich ein Standort-Agent anmeldet" aria-label="Erzeugt einen einmaligen Code, mit dem sich ein Standort-Agent anmeldet">Zugangscode erzeugen</button></div>
                   </div>
                   <p id="ag-hilfe" class="hilfe">Alles, was dieser Agent meldet — Geräte, Alarme,
                      Protokolleinträge — gehört zu dieser Einrichtung. Sie lässt sich später nicht
@@ -2260,7 +2263,7 @@ public class Zentrale {
         s.append("</tbody></table></div>");
         s.append(agentAnlegenFormular(bereich));
         s.append("""
-                <div class="karte-leib" style="padding:.9rem 1.2rem">
+                <div class="karte-leib karte-leib">
                   <p class="hilfe">Die Zentrale unterstützt die Protokollversionen %d bis %d.
                      Ein Agent außerhalb dieser Spanne wird <strong>nicht abgewiesen</strong> —
                      das hieße: keine PIN-Verifikation an diesem Standort. Er arbeitet weiter,
@@ -2333,7 +2336,7 @@ public class Zentrale {
                     </div>
                     <form method="post" action="/verwaltung/demodaten/loeschen"
                           onsubmit="return confirm('Demodatensatz entfernen?\\n\\n%d Organisationseinheiten, %d Konnektoren, %d Kartenterminals und %d Benutzerkonten werden gelöscht.\\n\\nEchte Daten sind nicht betroffen.')">
-                      <button class="knopf warnend" type="submit">Demodatensatz entfernen</button>
+                      <button class="knopf warnend" type="submit" title="Löscht alle Demodaten samt Konten, Organisationen und Geräten" aria-label="Löscht alle Demodaten samt Konten, Organisationen und Geräten">Demodatensatz entfernen</button>
                     </form>"""
                     .formatted(b.organisationen(), b.konnektoren(), b.arbeitsplaetze(),
                                b.terminals(), b.terminalsMitSmcb(), b.benutzer(),
@@ -2370,10 +2373,10 @@ public class Zentrale {
                   <div class="hinweis">Alle erzeugten Datensätze sind als Demo gekennzeichnet
                      und lassen sich rückstandsfrei entfernen. Echte Bestandsdaten bleiben
                      unberührt.</div>
-                  <div class="reihe" style="display:flex;gap:.6rem;flex-wrap:wrap">
+                  <div class="reihe reihe-frei">
                     <form method="post" action="/verwaltung/lasttest/anlegen">
                       <input type="hidden" name="anzahl" value="%d">
-                      <button class="knopf" type="submit">%d Testgeräte anlegen</button>
+                      <button class="knopf" type="submit" title="Legt die angegebene Zahl an Testgeräten an, um das Verhalten unter Last zu messen" aria-label="Testgeräte anlegen">%d Testgeräte anlegen</button>
                     </form>
                     %s
                   </div>
@@ -2384,7 +2387,7 @@ public class Zentrale {
                         Lasterzeuger.TERMINALS_ZIEL,
                         lastVorhanden == 0 ? "" : """
                         <form method="post" action="/verwaltung/lasttest/entfernen">
-                          <button class="knopf warnend" type="submit">Testbestand entfernen</button>
+                          <button class="knopf warnend" type="submit" title="Löscht die für den Lasttest angelegten Testgeräte" aria-label="Löscht die für den Lasttest angelegten Testgeräte">Testbestand entfernen</button>
                         </form>"""));
 
         if (neueKonten != null && !neueKonten.isEmpty()) {
@@ -2453,24 +2456,34 @@ public class Zentrale {
                 <div class="tafel">
                   <h3>Neue Gruppe</h3>
                   <div class="filter">
-                    <form method="post" action="/gruppen" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end">
-                      <div><label for="bez">Bezeichnung</label>
+                    <form method="post" action="/gruppen" class="reihe-enden">
+                      <div class="feldgruppe"><label for="bez">Bezeichnung</label>
                         <input id="bez" name="bezeichnung" type="text" required
                                placeholder="z. B. Notaufnahme"></div>
-                      <div><label for="ge">Einrichtung</label>
+                      <div class="feldgruppe"><label for="ge">Einrichtung</label>
                         <select id="ge" name="einrichtung">%s</select></div>
-                      <div><label for="iv">Prüfintervall (Sekunden)</label>
+                      <div class="feldgruppe"><label for="iv">Prüfintervall (Sekunden)</label>
                         <input id="iv" name="intervall" type="text" inputmode="numeric"
                                value="60" size="6"></div>
-                      <button class="knopf" type="submit">Anlegen</button>
+                      <div class="knopfreihe">%s</div>
                     </form>
                   </div>
                 </div>
-                <div class="tafel"><h3>Gruppen</h3>
-                  <div id="gruppen" hx-get="/teil/gruppen" hx-trigger="every 10s" hx-swap="innerHTML">%s</div>
+                <div class="tafel"><h3>Gruppen <span class="zaehler">%d</span></h3>
+                  %s
+                  <div id="gruppen">%s</div>
                 </div>"""
                 .formatted(fehler == null ? "" : Anmeldeseiten.meldung(fehler, "warnend"),
-                           einrichtungsauswahl(c), gruppenTabelle(c));
+                           einrichtungsauswahl(c),
+                           Bedienelemente.absenden("Gruppe anlegen",
+                                   "Legt eine neue Gerätegruppe mit diesem Prüfintervall an",
+                                   Bedienelemente.Art.HAUPT, null),
+                           gruppen.alle(bereich(c)).size(),
+                           Bedienelemente.suchleiste("/teil/gruppen", "#gruppen",
+                                   param(c, "suche"),
+                                   "Gruppe oder Einrichtung", "Gruppen durchsuchen",
+                                   sortierfelder(c)),
+                           gruppenTabelle(c));
     }
 
     /** Die Einrichtungen im Geltungsbereich, als Auswahlliste (FA-GER-050). */
@@ -2486,31 +2499,149 @@ public class Zentrale {
         return s.toString();
     }
 
+    /**
+     * Sortier- und Suchzustand als versteckte Felder.
+     *
+     * <p>Sie hängen in der Suchleiste, damit {@code hx-include} sie bei jeder
+     * Tastatureingabe mitschickt. Ohne das würde die Suche die Sortierung
+     * zurücksetzen — ein Verhalten, das man erst bemerkt, wenn man beides
+     * zugleich benutzt.
+     */
+    /**
+     * Ein Wert aus der Adresszeile oder dem Formular.
+     *
+     * <p>Beides ist nötig: Sortierlinks und die HTMX-Live-Suche schicken per
+     * {@code GET}, gewöhnliche Masken per {@code POST}. Bis zum 09.08.2026 las
+     * die Gruppensuche nur Formularfelder — sie lief fehlerfrei und filterte
+     * nichts.
+     */
+    private static String param(Context c, String name) {
+        String v = c.queryParam(name);
+        if (v == null || v.isBlank()) v = c.formParam(name);
+        return v == null ? "" : v.trim();
+    }
+
+    private String sortierfelder(Context c) {
+        return """
+                <input type="hidden" name="sortier" value="%s">
+                <input type="hidden" name="richtung" value="%s">"""
+                .formatted(esc(sortierSchluessel(c)), sortierAb(c) ? "ab" : "auf");
+    }
+
+    private String sortierSchluessel(Context c) {
+        String s = param(c, "sortier");
+        return s == null || s.isBlank() ? "gruppe" : s;
+    }
+
+    private boolean sortierAb(Context c) {
+        return "ab".equals(param(c, "richtung"));
+    }
+
+    /**
+     * Die Gruppenliste.
+     *
+     * <p>Drei Dinge sind am 09.08.2026 verschwunden, und jedes aus einem Grund:
+     *
+     * <ul>
+     *   <li><b>Der „Speichern"-Knopf je Zeile.</b> Bei zehn Gruppen waren das
+     *       zehn Knöpfe, die alle dasselbe taten. Das Intervallfeld speichert
+     *       jetzt, sobald es den Fokus verlässt.</li>
+     *   <li><b>Die Selbstaktualisierung alle 10 s.</b> Eine Verwaltungsliste,
+     *       die sich unter der Hand austauscht, verliert Tastaturfokus und
+     *       halb getippte Eingaben. Gruppen ändern sich ohnehin nur durch eine
+     *       Handlung — und danach wird die Liste ohnehin neu geladen.</li>
+     *   <li><b>Der stumme Zeilenanfang.</b> Der Gruppenname ist jetzt ein Link
+     *       auf die Geräte dieser Gruppe, und die ganze Zeile folgt ihm.</li>
+     * </ul>
+     *
+     * <p>Sortiert wird im Speicher, nicht in der Datenbank. Das ist hier
+     * ehrlich, weil die Liste vollständig angezeigt wird: Es gibt keine
+     * Blätterung, die eine Sortierung über nur die sichtbaren Zeilen zur Lüge
+     * machen könnte. Bei den Geräten (5.000) ist das anders — dort sortiert
+     * die Datenbank.
+     */
     private String gruppenTabelle(Context c) {
-        var liste = gruppen.alle(bereich(c));
-        StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>"
-                + "<th>Gruppe</th><th>Einrichtung</th><th>Geräte</th><th>Prüfintervall</th><th></th>"
-                + "</tr></thead><tbody>");
+        String suche = param(c, "suche");
+        String nach = sortierSchluessel(c);
+        boolean ab = sortierAb(c);
+
+        var liste = new java.util.ArrayList<>(gruppen.alle(bereich(c)));
+        if (suche != null && !suche.isBlank()) {
+            String s = suche.trim().toLowerCase();
+            liste.removeIf(g -> !g.bezeichnung().toLowerCase().contains(s)
+                             && !g.einrichtung().toLowerCase().contains(s));
+        }
+        java.util.Comparator<Gruppenverwaltung.Gruppe> ord = switch (nach) {
+            case "einrichtung" -> java.util.Comparator.comparing(
+                    Gruppenverwaltung.Gruppe::einrichtung, String.CASE_INSENSITIVE_ORDER);
+            case "geraete"  -> java.util.Comparator.comparingInt(Gruppenverwaltung.Gruppe::geraetezahl);
+            case "takt"     -> java.util.Comparator.comparingInt(
+                    Gruppenverwaltung.Gruppe::pruefintervallSekunden);
+            default -> java.util.Comparator.comparing(
+                    Gruppenverwaltung.Gruppe::bezeichnung, String.CASE_INSENSITIVE_ORDER);
+        };
+        liste.sort(ab ? ord.reversed() : ord);
+
+        String basis = "/teil/gruppen?suche=" + urlKodiert(suche) + "&";
+        StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>");
+        s.append(Bedienelemente.sortkopf("Gruppe", "gruppe", nach, ab, basis));
+        s.append(Bedienelemente.sortkopf("Einrichtung", "einrichtung", nach, ab, basis));
+        s.append(Bedienelemente.sortkopf("Geräte", "geraete", nach, ab, basis));
+        s.append(Bedienelemente.sortkopf("Prüfintervall", "takt", nach, ab, basis));
+        s.append("<th scope=\"col\"><span class=\"nurLeser\">Aktionen</span></th>");
+        s.append("</tr></thead><tbody>");
+
+        if (liste.isEmpty()) {
+            s.append("<tr><td colspan=\"5\" class=\"leer\">")
+             .append(suche == null || suche.isBlank()
+                     ? "Noch keine Gruppe angelegt."
+                     : "Keine Gruppe passt zu „" + esc(suche) + "“.")
+             .append("</td></tr>");
+        }
         for (var g : liste) {
+            s.append("<tr class=\"klickbar\">");
+            s.append(Bedienelemente.zeilenziel(g.bezeichnung(), "/bestand?gruppe=" + g.id(),
+                    "Zeigt die Geräte der Gruppe „" + g.bezeichnung() + "“"));
+            if (g.istVorgabe()) {
+                // Die Marke steht IN der Namenszelle, nicht in einer eigenen
+                // Spalte: Eine Spalte, die bei neun von zehn Zeilen leer ist,
+                // kostet Breite und trägt nichts.
+                s.setLength(s.length() - "</td>".length());
+                s.append(" <span class=\"marke unbekannt\" title=\"Neu erkannte Geräte "
+                       + "dieser Einrichtung landen hier\">Vorgabe</span></td>");
+            }
             s.append("""
-                    <tr><td class="geraet">%s%s</td><td>%s</td><td>%d</td>
-                    <td><form method="post" action="/gruppen/%d/intervall"
-                              style="display:flex;gap:.4rem;align-items:center">
+                    <td>%s</td><td class="zahl-zelle">%d</td>
+                    <td><form method="post" action="/gruppen/%d/intervall" class="reihe-eng">
                           <label class="nurLeser" for="iv-%d">Prüfintervall für %s in Sekunden</label>
                           <input id="iv-%d" name="intervall" type="text" inputmode="numeric"
-                                 size="5" value="%d">
+                                 size="5" value="%d"
+                                 title="Wie oft der Agent die Geräte dieser Gruppe prüft. Nach der Eingabe wird automatisch gespeichert."
+                                 hx-post="/gruppen/%d/intervall" hx-trigger="change"
+                                 hx-target="#gruppen" hx-select="#gruppen" hx-swap="outerHTML">
                           <span class="feldhinweis" aria-hidden="true">s</span>
-                          <button class="knopf" type="submit">Speichern</button></form></td>
-                    <td>%s</td></tr>"""
-                    .formatted(esc(g.bezeichnung()),
-                            g.istVorgabe() ? " <span class=\"marke unbekannt\">Vorgabe</span>" : "",
-                            esc(g.einrichtung()), g.geraetezahl(), g.id(),
+                          <noscript><button class="knopf klein" type="submit" title="Übernimmt die Eingaben" aria-label="Übernimmt die Eingaben">Speichern</button></noscript>
+                        </form></td>
+                    <td class="aktionen">%s</td></tr>"""
+                    .formatted(esc(g.einrichtung()), g.geraetezahl(), g.id(),
                             g.id(), esc(g.bezeichnung()), g.id(), g.pruefintervallSekunden(),
+                            g.id(),
                             g.istVorgabe() ? "" :
-                              ("<form method=\"post\" action=\"/gruppen/" + g.id() + "/loeschen\">"
-                               + "<button class=\"knopf warnend\" type=\"submit\">Löschen</button></form>")));
+                              ("<form method=\"post\" action=\"/gruppen/" + g.id() + "/loeschen\" "
+                               + "data-nachfrage=\"Gruppe &bdquo;" + esc(g.bezeichnung())
+                               + "&ldquo; wirklich löschen? Die Geräte ziehen in die Vorgabegruppe um.\">"
+                               + Bedienelemente.absenden("Löschen",
+                                   "Löscht die Gruppe „" + g.bezeichnung()
+                                   + "“; ihre Geräte ziehen in die Vorgabegruppe um",
+                                   Bedienelemente.Art.KLEIN, null)
+                                 .replace("class=\"knopf klein\"", "class=\"knopf klein warnend\"")
+                               + "</form>")));
         }
         return s.append("</tbody></table></div>").toString();
+    }
+
+    private static String urlKodiert(String s) {
+        return s == null ? "" : java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private static String kopfWert(Context c, String name) {
@@ -2743,7 +2874,7 @@ public class Zentrale {
         }
         s.append("</tbody></table></div>");
         s.append("""
-                <div class="karte-leib" style="padding:.9rem 1.2rem">
+                <div class="karte-leib karte-leib">
                   <p class="hilfe">Als „aktuellster Stand" gilt die höchste vorkommende Version
                      je Modell. Einen Sollstand kennt der Roboter nicht — die Firmware kommt vom
                      Hersteller des Geräts, nicht von uns.</p>
@@ -2818,15 +2949,41 @@ public class Zentrale {
                     <select id="f-erg" name="ergebnis" hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter">
                       <option value="">alle Ergebnisse</option><option value="erfolg">erfolgreich</option>
                       <option value="fehler">fehlgeschlagen</option></select>
-                    <button class="knopf" hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter">Aktualisieren</button>
-                    <a class="knopf" href="/protokoll/export" download>Als Excel herunterladen</a>
+                    <button class="knopf" hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter" title="Lädt die Ansicht mit dem aktuellen Stand neu" aria-label="Lädt die Ansicht mit dem aktuellen Stand neu">Aktualisieren</button>
+                    <a class="knopf" href="/protokoll/export" download title="Exportiert die gefilterten Protokolleinträge als Excel-Datei" aria-label="Exportiert die gefilterten Protokolleinträge als Excel-Datei">Als Excel herunterladen</a>
                     <!-- Traegt die Seitennummer durch jede Abfrage. Ohne sie
                          wuerde die Auffrischung alle 5 s auf Seite 1
                          zurueckspringen, sobald jemand zurueckblaettert. -->
                     <input type="hidden" id="f-seite" name="seite" value="1">
                   </div>
+                  <!-- Gesucht wird ueber die GERAETEKENNUNG, nicht ueber den
+                       Beschreibungstext. Das ist eine bewusste Grenze: Auf
+                       geraet liegt ein Index (fachprotokoll_geraet_idx), auf
+                       text nicht. Eine Volltextsuche ueber Millionen Zeilen
+                       ohne Index waere ein Suchfeld, das die Oberflaeche
+                       anhaelt — angeboten, aber unbenutzbar. -->
+                  <div class="filter filter-suche">
+                    <div class="suchfeld">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                           aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+                      <label class="nurLeser" for="f-geraet">Nach Gerätekennung filtern</label>
+                      <input id="f-geraet" type="search" name="geraet" value="%s"
+                             placeholder="Gerätekennung, z. B. KT-001"
+                             title="Zeigt nur Einträge zu diesem Kartenterminal"
+                             hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter"
+                             hx-trigger="input changed delay:250ms, search">
+                    </div>
+                    <label class="nurLeser" for="f-richtung">Zeitliche Reihenfolge</label>
+                    <select id="f-richtung" name="richtung" title="Neueste zuerst oder älteste zuerst"
+                            hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter">
+                      <option value="ab">neueste zuerst</option>
+                      <option value="auf"%s>älteste zuerst</option>
+                    </select>
+                  </div>
                   <div id="protokoll" hx-get="/teil/protokoll" hx-trigger="every 5s" hx-include=".filter" hx-swap="innerHTML">%s</div>
-                </div>""".formatted(arten, protokollTabelle(c));
+                </div>""".formatted(arten, esc(param(c, "geraet")),
+                        "auf".equals(param(c, "richtung")) ? " selected" : "",
+                        protokollTabelle(c));
     }
 
     /** Wie viele Protokollzeilen eine Seite zeigt (ADR-0005, Blättern). */
@@ -2840,7 +2997,8 @@ public class Zentrale {
         } catch (NumberFormatException ignored) { }
 
         var seite = protokoll.seite(c.queryParam("geraet"), c.queryParam("art"),
-                c.queryParam("ergebnis"), nr, PROTOKOLL_SEITENGROESSE, bereich(c));
+                c.queryParam("ergebnis"), nr, PROTOKOLL_SEITENGROESSE, bereich(c),
+                "auf".equals(param(c, "richtung")));
 
         // Hinter das Ende geblaettert - etwa weil ein Filter enger wurde.
         // Statt einer leeren Seite die letzte vorhandene zeigen.
@@ -2883,7 +3041,7 @@ public class Zentrale {
      */
     private String protokollBlaetterleiste(Fachprotokoll.Seite seite) {
         String knopf = """
-                <button class="knopf %s" %s
+                <button class="knopf %s" %s title="%s" aria-label="%s"
                   hx-get="/teil/protokoll" hx-target="#protokoll" hx-include=".filter"
                   onclick="document.getElementById('f-seite').value=%d">%s</button>""";
         return """
@@ -2894,16 +3052,22 @@ public class Zentrale {
                 </nav>"""
                 .formatted(
                         seite.hatVorherige()
-                                ? knopf.formatted("", "", seite.seitenNummer() - 1, "Neuere")
-                                : knopf.formatted("gesperrt", "disabled", 1, "Neuere"),
+                                ? knopf.formatted("", "", "Zeigt die nächstneueren Einträge",
+                                        "Neuere Einträge anzeigen", seite.seitenNummer() - 1, "Neuere")
+                                : knopf.formatted("gesperrt", "disabled",
+                                        "Sie sehen bereits die neuesten Einträge",
+                                        "Keine neueren Einträge vorhanden", 1, "Neuere"),
                         seite.von(), seite.bis(), seite.gesamt(),
                         seite.seitenNummer(), seite.seitenZahl(),
                         seite.seitenNummer() > 1
                                 ? " · neue Einträge erscheinen auf Seite 1" : "",
                         seite.hatNaechste()
-                                ? knopf.formatted("", "", seite.seitenNummer() + 1, "Ältere")
+                                ? knopf.formatted("", "", "Zeigt die nächstälteren Einträge",
+                                        "Ältere Einträge anzeigen", seite.seitenNummer() + 1, "Ältere")
                                 : knopf.formatted("gesperrt", "disabled",
-                                                  seite.seitenNummer(), "Ältere"));
+                                        "Sie sehen bereits die ältesten vorhandenen Einträge",
+                                        "Keine älteren Einträge vorhanden",
+                                        seite.seitenNummer(), "Ältere"));
     }
 
     // ---------------------------------------------------------------- Rahmen
@@ -2917,7 +3081,8 @@ public class Zentrale {
                 <!doctype html><html lang="de"><head><meta charset="utf-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
                 <title>PIN-Roboter</title><link rel="stylesheet" href="/statisch/stil.css">
-                <script src="/statisch/htmx.min.js" defer></script></head><body>
+                <script src="/statisch/htmx.min.js" defer></script>
+                <script src="/statisch/oberflaeche.js" defer></script></head><body>
                 <div class="schein" aria-hidden="true"></div>
                 <a href="#inhalt" class="nurLeser">Zum Inhalt springen</a>
                 <div class="rahmen">
@@ -3033,7 +3198,9 @@ public class Zentrale {
                       <div class="konto-kreis" aria-hidden="true">%s</div>
                       <div class="konto-text"><b>%s</b><span>%s</span></div>
                     </div>
-                    <button class="knopf-leiste" hx-post="/abmelden">
+                    <button class="knopf-leiste" hx-post="/abmelden"
+                        title="Beendet die Sitzung; für die nächste Anmeldung sind Kennwort und Einmalcode nötig"
+                        aria-label="Abmelden">
                       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
                         <path d="M12.5 6V4a1 1 0 0 0-1-1H4.5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-2"/>
                         <path d="M8 10h8.5M14 7.5 16.5 10 14 12.5"/>

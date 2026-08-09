@@ -135,8 +135,21 @@ public class Fachprotokoll {
      */
     public Seite seite(String geraet, String art, String ergebnis,
                        int seitenNummer, int seitengroesse, Geltungsbereich bereich) {
+        return seite(geraet, art, ergebnis, seitenNummer, seitengroesse, bereich, false);
+    }
+
+    /**
+     * @param aelteste zuerst die ältesten Einträge statt der neuesten
+     *
+     * <p>Beide Richtungen laufen über {@code fachprotokoll_zeit_idx}: Ein
+     * Btree-Index ist in beide Richtungen lesbar, ein zweiter Index wäre
+     * verschwendeter Platz.
+     */
+    public Seite seite(String geraet, String art, String ergebnis,
+                       int seitenNummer, int seitengroesse, Geltungsbereich bereich,
+                       boolean aelteste) {
         return seite(geraet, art == null || art.isBlank() ? List.of() : List.of(art),
-                ergebnis, null, null, seitenNummer, seitengroesse, bereich);
+                ergebnis, null, null, seitenNummer, seitengroesse, bereich, aelteste);
     }
 
     /**
@@ -154,6 +167,14 @@ public class Fachprotokoll {
     public Seite seite(String geraet, List<String> arten, String ergebnis,
                        java.time.Instant seit, String vorgang,
                        int seitenNummer, int seitengroesse, Geltungsbereich bereich) {
+        return seite(geraet, arten, ergebnis, seit, vorgang, seitenNummer, seitengroesse,
+                bereich, false);
+    }
+
+    public Seite seite(String geraet, List<String> arten, String ergebnis,
+                       java.time.Instant seit, String vorgang,
+                       int seitenNummer, int seitengroesse, Geltungsbereich bereich,
+                       boolean aelteste) {
         int nr = Math.max(1, seitenNummer);
         // Nach oben begrenzt, damit eine manipulierte Anfrage nicht das
         // gesamte Protokoll zieht - bei 200.000 Eintraegen waere das ein
@@ -196,7 +217,9 @@ public class Fachprotokoll {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT id, zeitpunkt, einrichtung, geraet, art, erfolg, ausloeser, vorgang, text, handlung
                 FROM fachprotokoll""" + wo
-                + " ORDER BY zeitpunkt DESC, id DESC LIMIT ? OFFSET ?")) {
+                + (aelteste ? " ORDER BY zeitpunkt ASC, id ASC"
+                            : " ORDER BY zeitpunkt DESC, id DESC")
+                + " LIMIT ? OFFSET ?")) {
             int i = fuellen(p, werte);
             p.setInt(i++, gr);
             p.setLong(i, (long) (nr - 1) * gr);

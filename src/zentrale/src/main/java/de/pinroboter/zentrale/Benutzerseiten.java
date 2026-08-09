@@ -91,7 +91,7 @@ final class Benutzerseiten {
                       <option value="ohne-totp"%s>zweiter Faktor fehlt</option>
                     </select>
                   </div>
-                  <a class="knopf" href="/benutzer">Zurücksetzen</a>
+                  <a class="knopf" href="/benutzer" title="Verwirft Suche und Filter und zeigt wieder alle Konten" aria-label="Suche und Filter zurücksetzen">Zurücksetzen</a>
                 </form>"""
                 .formatted(esc(nz(a.suche())),
                         "ADMINISTRATOR".equals(a.rolle()) ? " selected" : "",
@@ -102,8 +102,7 @@ final class Benutzerseiten {
 
         // Nur dieser Bereich wird beim Tippen ausgetauscht (hx-select oben).
         s.append("<div id=\"kontenliste\" class=\"traegt\">");
-        s.append("<p class=\"suchstand\" id=\"b-treffer\" role=\"status\" aria-live=\"polite\" "
-                + "style=\"padding:.5rem 1.2rem 0;margin:0\">").append(gesamt).append(" Treffer</p>");
+        s.append("<p class=\"suchstand treffer\" id=\"b-treffer\" role=\"status\" aria-live=\"polite\">").append(gesamt).append(" Treffer</p>");
         if (konten.isEmpty()) {
             s.append("<p class=\"leer\">Keine Konten für diese Auswahl.</p>");
         } else {
@@ -123,13 +122,15 @@ final class Benutzerseiten {
                           <td>%s</td><td>%s</td>
                           <td class="aktionen">
                             <form method="post" action="/benutzer/%d/totp-zuruecksetzen" class="reihe"
-                                  onsubmit="return confirm('Zweiten Faktor für „%s“ zurücksetzen?\\n\\nDie Person richtet ihn bei der nächsten Anmeldung neu ein.')">
-                              <button class="knopf klein" type="submit">Zweiten Faktor zurücksetzen</button>
+                                  data-nachfrage="Zweiten Faktor für &bdquo;%s&ldquo; zurücksetzen? Die Person richtet ihn bei der nächsten Anmeldung neu ein.">
+                              <button class="knopf klein" type="submit"
+                                      title="Löscht den zweiten Faktor; die Person richtet ihn bei der nächsten Anmeldung neu ein"
+                                      aria-label="Zweiten Faktor zurücksetzen">Zweiter Faktor</button>
                             </form>
                             <form method="post" action="/benutzer/%d/aktiv" class="reihe"
-                                  onsubmit="return confirm('Konto „%s“ %s?')">
+                                  data-nachfrage="Konto &bdquo;%s&ldquo; %s?">
                               <input type="hidden" name="aktiv" value="%s">
-                              <button class="knopf klein %s" type="submit">%s</button>
+                              <button class="knopf klein %s" type="submit" title="%s" aria-label="%s">%s</button>
                             </form>
                           </td>
                         </tr>"""
@@ -149,6 +150,11 @@ final class Benutzerseiten {
                                 b.aktiv() ? "deaktivieren" : "aktivieren",
                                 b.aktiv() ? "nein" : "ja",
                                 b.aktiv() ? "warnend" : "",
+                                b.aktiv()
+                                    ? "Sperrt die Anmeldung für „" + esc(b.anzeigename())
+                                      + "“; das Konto bleibt mit seiner Historie erhalten"
+                                    : "Erlaubt „" + esc(b.anzeigename()) + "“ wieder die Anmeldung",
+                                b.aktiv() ? "Konto deaktivieren" : "Konto aktivieren",
                                 b.aktiv() ? "Deaktivieren" : "Aktivieren"));
             }
             s.append("</tbody></table></div>");
@@ -179,7 +185,7 @@ final class Benutzerseiten {
                             !darfVerwalten ? "—" : """
                             <form method="post" action="/benutzer/einladung/zurueckziehen" class="reihe">
                               <input type="hidden" name="benutzername" value="%s">
-                              <button class="knopf klein warnend" type="submit">Zurückziehen</button>
+                              <button class="knopf klein warnend" type="submit" title="Macht diesen Einladungslink sofort ungültig" aria-label="Einladung zurückziehen">Zurückziehen</button>
                             </form>""".formatted(esc(e.benutzername()))));
         }
         return s.append("</tbody></table></div></div>").toString();
@@ -220,7 +226,7 @@ final class Benutzerseiten {
                     <div class="feldgruppe"><label for="n-org">Zuständig für</label>
                       <select id="n-org" name="organisationId" required>%s</select></div>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto">Einladung erzeugen</button>
+                  <button class="knopf haupt" type="submit" title="Erzeugt einen einmaligen Einladungslink für dieses Konto" aria-label="Einladung erzeugen">Einladung erzeugen</button>
                 </form></details></div>""".formatted(opt);
     }
 
@@ -239,7 +245,7 @@ final class Benutzerseiten {
                   <p id="e-pw-hilfe" class="hilfe">Mindestens 12 Zeichen. Eine Folge mehrerer
                      Wörter ist leichter zu merken und schwerer zu raten als ein kurzes
                      Kennwort mit Sonderzeichen.</p>
-                  <button class="knopf haupt" type="submit">Kennwort setzen</button>
+                  <button class="knopf haupt" type="submit" title="Speichert das Kennwort und schließt die Einrichtung ab" aria-label="Kennwort setzen und Einrichtung abschließen">Kennwort setzen</button>
                 </form>""".formatted(Anmeldeseiten.meldung(fehler, "warnend"),
                         esc(nz(geheimnis))));
     }
@@ -258,12 +264,16 @@ final class Benutzerseiten {
                 </nav>"""
                 .formatted(
                         a.seite() > 1
-                                ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (a.seite() - 1) + "\">Vorherige</a>"
-                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\">Vorherige</span>",
+                                ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (a.seite() - 1)
+                                  + "\" title=\"Zeigt die vorherige Seite der Kontenliste\">Vorherige</a>"
+                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\""
+                                  + " title=\"Sie sind auf der ersten Seite\">Vorherige</span>",
                         von, bis, gesamt, a.seite(), seiten,
                         a.seite() < seiten
-                                ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (a.seite() + 1) + "\">Nächste</a>"
-                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\">Nächste</span>");
+                                ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (a.seite() + 1)
+                                  + "\" title=\"Zeigt die nächste Seite der Kontenliste\">Nächste</a>"
+                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\""
+                                  + " title=\"Sie sind auf der letzten Seite\">Nächste</span>");
     }
 
     private static String zeit(java.time.Instant i) {

@@ -38,12 +38,14 @@ final class Bestandsseiten {
     static String seite(List<Bestandsverwaltung.Konnektor> konnektoren,
                         Bestandsverwaltung.Seite<Bestandsverwaltung.Terminal> terminals,
                         List<Organisationsauswahl> organisationen, Ansicht ansicht,
-                        boolean zugangsdatenMoeglich, String meldung, boolean meldungIstFehler) {
+                        boolean zugangsdatenMoeglich, String meldung, boolean meldungIstFehler,
+                        String konnektorSuche, String konnektorSortierung, boolean konnektorAb) {
         StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Bestand",
                 "Konnektoren und Kartenterminals erfassen und pflegen.",
                 """
-                <a class="knopf" href="/bestand/konnektor/neu">Konnektor hinzufügen</a>
-                <a class="knopf haupt" href="/bestand/terminal/neu">Kartenterminal hinzufügen</a>"""));
+                <a class="knopf" href="/bestand/ermittelt" title="Zeigt die Geräte, die die Konnektoren melden, und lässt sie in den Bestand übernehmen" aria-label="Ermittelte Geräte ansehen">Ermittelte Geräte</a>
+                <a class="knopf" href="/bestand/konnektor/neu" title="Legt einen Konnektor oder Highspeed-Konnektor an" aria-label="Konnektor hinzufügen">Konnektor hinzufügen</a>
+                <a class="knopf haupt" href="/bestand/terminal/neu" title="Legt ein Kartenterminal von Hand an, statt es ermitteln zu lassen" aria-label="Kartenterminal hinzufügen">Kartenterminal hinzufügen</a>"""));
         if (meldung != null) {
             s.append(Anmeldeseiten.meldung(meldung, meldungIstFehler ? "warnend" : "gut"));
         }
@@ -54,11 +56,9 @@ final class Bestandsseiten {
                     + "gespeichert werden. Ohne hinterlegtes Kennwort kann der Roboter sich "
                     + "später nicht selbsttätig anmelden.", "warnend"));
         }
-        s.append("""
-                <p class="unterzeile">
-                  <a class="knopf" href="/bestand/ermittelt">Ermittelte Geräte des Konnektors ansehen</a>
-                </p>""");
-        s.append(konnektorTafel(konnektoren, organisationen, ansicht.aufrufkontext()));
+
+        s.append(konnektorTafel(konnektoren, organisationen, ansicht.aufrufkontext(),
+                konnektorSuche, konnektorSortierung, konnektorAb));
         s.append(terminalTafel(terminals, konnektoren, ansicht));
         return s.toString();
     }
@@ -68,50 +68,107 @@ final class Bestandsseiten {
 
     // ------------------------------------------------------------ Konnektoren
 
+    /**
+     * Die Konnektorliste — seit dem 09.08.2026 durchsuchbar und sortierbar.
+     *
+     * <p>Vorher war sie eine feste Reihenfolge ohne Suchfeld. Bei einer
+     * Einzelpraxis mit einem Konnektor fällt das nicht auf; das Mengengerüst
+     * nennt aber <b>bis zu 1.000 HSK-Instanzen</b>, und dort ist eine
+     * ungeordnete Liste unbenutzbar.
+     *
+     * <p><b>Offen und bewusst so belassen:</b> Gefiltert und sortiert wird im
+     * Speicher, weil die Liste ohnehin vollständig geladen wird. Bei 1.000
+     * Konnektoren ist nicht die Sortierung das Problem, sondern die fehlende
+     * Blätterung — die Seite überträgt dann 1.000 Zeilen. Das ist im
+     * Umsetzungsstand vermerkt, statt es hier halb zu lösen.
+     */
     private static String konnektorTafel(List<Bestandsverwaltung.Konnektor> liste,
                                          List<Organisationsauswahl> organisationen,
-                                         Ermittlung.Auswahl kontext) {
-        StringBuilder s = new StringBuilder();
-        s.append("<div class=\"tafel\"><h3>Konnektoren und Highspeed-Konnektoren <span class=\"zaehler\">")
-         .append(liste.size()).append("</span></h3>");
+                                         Ermittlung.Auswahl kontext,
+                                         String suche, String nach, boolean ab) {
+        var gefiltert = new java.util.ArrayList<>(liste);
+        if (suche != null && !suche.isBlank()) {
+            String q = suche.trim().toLowerCase();
+            gefiltert.removeIf(k -> !k.bezeichnung().toLowerCase().contains(q)
+                                 && !k.organisation().toLowerCase().contains(q)
+                                 && !k.adresse().toLowerCase().contains(q));
+        }
+        java.util.Comparator<Bestandsverwaltung.Konnektor> ord = switch (nach) {
+            case "einrichtung" -> java.util.Comparator.comparing(
+                    Bestandsverwaltung.Konnektor::organisation, String.CASE_INSENSITIVE_ORDER);
+            case "adresse" -> java.util.Comparator.comparing(
+                    Bestandsverwaltung.Konnektor::adresse, String.CASE_INSENSITIVE_ORDER);
+            case "terminals" -> java.util.Comparator.comparingInt(
+                    Bestandsverwaltung.Konnektor::terminalzahl);
+            default -> java.util.Comparator.comparing(
+                    Bestandsverwaltung.Konnektor::bezeichnung, String.CASE_INSENSITIVE_ORDER);
+        };
+        gefiltert.sort(ab ? ord.reversed() : ord);
+        String basis = "/bestand?ksuche=" + java.net.URLEncoder.encode(
+                suche == null ? "" : suche, java.nio.charset.StandardCharsets.UTF_8) + "&k";
 
-        if (liste.isEmpty()) {
-            s.append("<p class=\"leer\">Noch kein Konnektor erfasst. "
-                    + "Beginnen Sie mit dem Konnektor — die Kartenterminals werden ihm zugeordnet.</p>");
+        StringBuilder s = new StringBuilder();
+        s.append("<div class=\"tafel\" id=\"konnektoren\"><h3>Konnektoren und Highspeed-Konnektoren <span class=\"zaehler\">")
+         .append(gefiltert.size()).append("</span></h3>");
+        if (!liste.isEmpty()) {
+            s.append(Bedienelemente.suchleiste("/bestand", "#konnektoren", suche,
+                    "Bezeichnung, Einrichtung oder Adresse", "Konnektoren durchsuchen",
+                    "<input type=\"hidden\" name=\"ksortier\" value=\"" + esc(nach) + "\">"
+                    + "<input type=\"hidden\" name=\"krichtung\" value=\"" + (ab ? "ab" : "auf") + "\">")
+                    .replace("name=\"suche\"", "name=\"ksuche\""));
+        }
+
+        if (gefiltert.isEmpty()) {
+            s.append("<p class=\"leer\">").append(liste.isEmpty()
+                    ? "Noch kein Konnektor erfasst. Beginnen Sie mit dem Konnektor — "
+                      + "die Kartenterminals werden ihm zugeordnet."
+                    : "Kein Konnektor passt zu „" + esc(suche) + "“.").append("</p>");
         } else {
             s.append("""
                     <div class="rollbar"><table>
                     <caption class="nurLeser">Erfasste Konnektoren</caption>
-                    <thead><tr>
-                      <th scope="col">Bezeichnung</th><th scope="col">Einrichtung</th>
-                      <th scope="col">Adresse</th><th scope="col">Aufrufkontext</th>
-                      <th scope="col">Zugang</th><th scope="col">Erreichbarkeit</th>
-                      <th scope="col">Terminals</th><th scope="col">Aktionen</th>
-                    </tr></thead><tbody>""");
-            for (var k : liste) {
+                    <thead><tr>%s%s%s
+                      <th scope="col">Aufrufkontext</th>
+                      <th scope="col">Zugang</th><th scope="col">Erreichbarkeit</th>%s
+                      <th scope="col"><span class="nurLeser">Aktionen</span></th>
+                    </tr></thead><tbody>"""
+                    .formatted(
+                        Bedienelemente.sortkopf("Bezeichnung", "bezeichnung", nach, ab, basis),
+                        Bedienelemente.sortkopf("Einrichtung", "einrichtung", nach, ab, basis),
+                        Bedienelemente.sortkopf("Adresse", "adresse", nach, ab, basis),
+                        Bedienelemente.sortkopf("Terminals", "terminals", nach, ab, basis)));
+            for (var k : gefiltert) {
                 s.append("""
-                        <tr%s>
-                          <td><a href="/bestand/konnektor/%d">%s</a>%s</td>
+                        <tr class="klickbar%s">
+                          <td><a class="zeilenziel" href="/bestand/konnektor/%d"
+                                 title="Öffnet Adresse, Aufrufkontext und Zugang dieses Konnektors">%s</a>%s</td>
                           <td>%s</td>
                           <td><code>%s</code></td>
-                          <td class="klein"><code>%s</code> / <code>%s</code> / <code>%s</code></td>
+                          <td class="klein einzeilig"
+                              title="Mandant: %s · Clientsystem: %s · Arbeitsplatz: %s"><code>%s</code></td>
                           <td>%s</td>
                           <td>%s</td>
                           <td>%d</td>
                           <td class="aktionen">
                             <button class="knopf klein" hx-post="/bestand/konnektor/%d/pruefen"
-                                    hx-target="#bestandsmeldung" hx-swap="innerHTML">Erreichbarkeit prüfen</button>
+                                    hx-target="#bestandsmeldung" hx-swap="innerHTML"
+                                    title="Baut jetzt eine Verbindung zum Konnektor auf und meldet das Ergebnis"
+                                    aria-label="Erreichbarkeit des Konnektors prüfen">Prüfen</button>
                             <form method="post" action="/bestand/konnektor/%d/loeschen" class="reihe"
-                                  onsubmit="return confirm('Konnektor „%s“ löschen?')">
-                              <button class="knopf klein warnend" type="submit">Löschen</button>
+                                  data-nachfrage="Konnektor &bdquo;%s&ldquo; löschen? Seine Kartenterminals verlieren die Zuordnung.">
+                              <button class="knopf klein warnend" type="submit"
+                                      title="Entfernt den Konnektor; seine Kartenterminals verlieren die Zuordnung"
+                                      aria-label="Konnektor löschen">Löschen</button>
                             </form>
                           </td>
                         </tr>"""
-                        .formatted(k.aktiv() ? "" : " class=\"stillgelegt\"",
+                        .formatted(k.aktiv() ? "" : " stillgelegt",
                                 k.id(), esc(k.bezeichnung()),
                                 k.aktiv() ? "" : " <span class=\"marke\">deaktiviert</span>",
                                 esc(k.organisation()), esc(k.adresse()),
                                 esc(k.mandantId()), esc(k.clientsystemId()), esc(k.arbeitsplatzId()),
+                                esc(k.mandantId() + " / " + k.clientsystemId()
+                                    + " / " + k.arbeitsplatzId()),
                                 zugangsMarke(k.benutzerName(), k.passwortHinterlegt()),
                                 erreichbarkeitsMarke(k.zuletztErreichbar(), k.zuletztGeprueft(), k.pruefhinweis()),
                                 k.terminalzahl(),
@@ -184,7 +241,7 @@ final class Bestandsseiten {
                   </div>
                   <input type="hidden" name="sortierung" value="%s">
                   <input type="hidden" name="richtung" value="%s">
-                  <a class="knopf" href="/bestand">Zurücksetzen</a>
+                  <a class="knopf" href="/bestand" title="Verwirft alle Filter und zeigt wieder den vollständigen Bestand" aria-label="Filter zurücksetzen">Zurücksetzen</a>
                 </form>"""
                 .formatted(esc(suche == null ? "" : suche),
                         konnektorOptionen(konnektoren, filterKonnektor),
@@ -232,10 +289,11 @@ final class Bestandsseiten {
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.ERREICHBARKEIT)));
             for (var t : seite.eintraege()) {
                 s.append("""
-                        <tr%s>
+                        <tr class="klickbar%s">
                           <td class="wahl"><input type="checkbox" name="geraet" value="%d"
                             form="massenform" aria-label="%s auswählen"></td>
-                          <td><a href="/bestand/terminal/%d">%s</a>%s</td>
+                          <td><a class="zeilenziel" href="/bestand/terminal/%d"
+                                 title="Öffnet Stammdaten, Zugang und PIN dieses Kartenterminals">%s</a>%s</td>
                           <td><code>%s</code></td>
                           <td>%s</td>
                           <td>%s</td>
@@ -245,14 +303,18 @@ final class Bestandsseiten {
                           <td>%s</td>
                           <td class="aktionen">
                             <button class="knopf klein" hx-post="/bestand/terminal/%d/pruefen"
-                                    hx-target="#bestandsmeldung" hx-swap="innerHTML">Prüfen</button>
+                                    hx-target="#bestandsmeldung" hx-swap="innerHTML"
+                                    title="Fragt das Terminal jetzt ab, ohne auf das Prüfintervall zu warten"
+                                    aria-label="Erreichbarkeit jetzt prüfen">Prüfen</button>
                             <form method="post" action="/bestand/terminal/%d/loeschen" class="reihe"
-                                  onsubmit="return confirm('Kartenterminal „%s“ löschen?')">
-                              <button class="knopf klein warnend" type="submit">Löschen</button>
+                                  data-nachfrage="Kartenterminal &bdquo;%s&ldquo; aus dem Bestand löschen?">
+                              <button class="knopf klein warnend" type="submit"
+                                      title="Entfernt das Terminal aus dem Bestand; hinterlegte Zugangsdaten und die PIN werden gelöscht"
+                                      aria-label="Kartenterminal löschen">Löschen</button>
                             </form>
                           </td>
                         </tr>"""
-                        .formatted(t.aktiv() ? "" : " class=\"stillgelegt\"",
+                        .formatted(t.aktiv() ? "" : " stillgelegt",
                                 t.id(), esc(t.bezeichnung()),
                                 t.id(), esc(t.bezeichnung()),
                                 t.aktiv() ? "" : " <span class=\"marke\">deaktiviert</span>",
@@ -371,7 +433,7 @@ final class Bestandsseiten {
                         <label for="s-konnektor">Konnektor für alle</label>
                         <select id="s-konnektor" name="konnektorId">%s</select>
                       </div>
-                      <button class="knopf haupt" type="submit">Auswahl übernehmen</button>
+                      <button class="knopf haupt" type="submit" title="Übernimmt die angekreuzten Geräte in den Bestand" aria-label="Ausgewählte Geräte übernehmen">Auswahl übernehmen</button>
                       <p class="hilfe">Die Adressen der Geräte bleiben dabei leer und sind
                          danach je Gerät nachzutragen — der Konnektor liefert sie nicht mit.</p>
                     </form>
@@ -406,7 +468,8 @@ final class Bestandsseiten {
         if (f.lage() != Ermittlung.Lage.NEU) {
             return f.bestandsId() == null ? "—"
                     : "<a class=\"knopf klein\" href=\"/bestand/terminal/" + f.bestandsId()
-                      + "\">Im Bestand ansehen</a>";
+                      + "\" title=\"Öffnet den bereits erfassten Eintrag dieses Geräts\""
+                      + " aria-label=\"Im Bestand ansehen\">Im Bestand ansehen</a>";
         }
         if (konnektoren.isEmpty()) {
             return "<span class=\"klein\">Erst einen Konnektor erfassen</span>";
@@ -417,7 +480,7 @@ final class Bestandsseiten {
                   <select id="u-k-%d" name="konnektorId">%s</select>
                   <label class="nurLeser" for="u-a-%d">Adresse für %s</label>
                   <input id="u-a-%d" name="adresse" placeholder="Adresse (optional)" maxlength="200">
-                  <button class="knopf klein haupt" type="submit">Übernehmen</button>
+                  <button class="knopf klein haupt" type="submit" title="Übernimmt dieses ermittelte Gerät in den Bestand" aria-label="Gerät übernehmen">Übernehmen</button>
                 </form>"""
                 .formatted(f.id(), f.id(), esc(f.terminalId()), f.id(),
                         konnektorOptionen(konnektoren, null),
@@ -528,7 +591,7 @@ final class Bestandsseiten {
                     <input id="b-aktiv" name="aktiv" type="checkbox" value="ja" %s>
                     <label for="b-aktiv">Aktiv — der Roboter darf diesen Konnektor ansprechen</label>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto">Änderungen speichern</button>
+                  <button class="knopf haupt" type="submit" style="width:auto" title="Übernimmt die geänderten Angaben in den Bestand" aria-label="Änderungen speichern">Änderungen speichern</button>
                 </form></div>"""
                 .formatted(k.id(), esc(k.bezeichnung()), esc(k.adresse()), esc(nz(k.modell())),
                         aufrufkontextFelder(kontext, "b", k.mandantId(), k.clientsystemId(),
@@ -546,7 +609,7 @@ final class Bestandsseiten {
                        mehr selbsttätig anmelden.</p>
                     <form method="post" action="/bestand/konnektor/%d/kennwort-entfernen"
                           onsubmit="return confirm('Hinterlegtes Kennwort entfernen?')">
-                      <button class="knopf warnend" type="submit">Kennwort entfernen</button>
+                      <button class="knopf warnend" type="submit" title="Löscht das gespeicherte Terminal-Kennwort; die Verwaltung über die Managementschnittstelle ist danach nicht mehr möglich" aria-label="Terminal-Kennwort entfernen">Kennwort entfernen</button>
                     </form></div>""".formatted(k.id()));
         }
         return s.toString();
@@ -682,7 +745,7 @@ final class Bestandsseiten {
                     <input id="m-aktiv" name="aktiv" type="checkbox" value="ja" %s>
                     <label for="m-aktiv">Aktiv — dieses Gerät wird überwacht</label>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto">Änderungen speichern</button>
+                  <button class="knopf haupt" type="submit" style="width:auto" title="Übernimmt die geänderten Angaben in den Bestand" aria-label="Änderungen speichern">Änderungen speichern</button>
                 </form></div>"""
                 .formatted(t.id(), esc(t.bezeichnung()), esc(nz(t.standortangabe())),
                         esc(nz(t.adresse())), esc(nz(t.modell())), esc(nz(t.seriennummer())),
@@ -812,13 +875,13 @@ final class Bestandsseiten {
                         Versuch bricht der Roboter ab, statt die Sperre zu riskieren.
                       </p>
                       <p id="pinAenderMeldung" class="hilfe" role="status" aria-live="polite"></p>
-                      <button class="knopf haupt" type="submit" style="width:auto">PIN ändern</button>
+                      <button class="knopf haupt" type="submit" style="width:auto" title="Setzt eine neue PIN auf der Karte; die Zentrale sieht dabei weder alte noch neue PIN" aria-label="PIN ändern">PIN ändern</button>
                     </form></details>
 
                     <form method="post" action="/bestand/terminal/%d/pin-loeschen" class="maske"
                           onsubmit="return confirm('Hinterlegte PIN wirklich löschen? Der Roboter kann diese SMC-B danach nicht mehr verifizieren.')">
                       <input type="hidden" name="kartenhandle" value="%s">
-                      <button class="knopf" type="submit" style="width:auto">PIN löschen</button>
+                      <button class="knopf" type="submit" style="width:auto" title="Entfernt die hinterlegte PIN aus der Ablage; die Karte selbst bleibt unverändert" aria-label="Hinterlegte PIN löschen">PIN löschen</button>
                     </form>
                     <p class="hilfe">Löschen wirkt sofort in der Anzeige und beim nächsten
                        Durchgang beim Agenten. Der Roboter verifiziert diese Karte danach
@@ -998,7 +1061,7 @@ final class Bestandsseiten {
                     <label for="m-gruppe">Gerätegruppe</label>
                     <select id="m-gruppe" name="gruppeId">%s</select>
                   </div>
-                  <button class="knopf" type="submit" name="aktion" value="gruppe">Gruppe zuweisen</button>
+                  <button class="knopf" type="submit" name="aktion" value="gruppe" title="Verschiebt die ausgewählten Geräte in die gewählte Gruppe" aria-label="Ausgewählte Geräte in Gruppe verschieben">Gruppe zuweisen</button>
                 """.formatted(gruppen);
 
         return """
@@ -1007,9 +1070,10 @@ final class Bestandsseiten {
                      <output id="m-zahl" for="massenform">0</output>.
                      Aktionen wirken auf alle ausgewählten Geräte dieser Seite.</p>
                   %s
-                  <button class="knopf" type="submit" name="aktion" value="aktivieren">Aktivieren</button>
+                  <button class="knopf" type="submit" name="aktion" value="aktivieren" title="Nimmt das stillgelegte Gerät wieder in die Überwachung auf" aria-label="Gerät wieder aktivieren">Aktivieren</button>
                   <button class="knopf warnend" type="submit" name="aktion" value="deaktivieren"
-                          >Deaktivieren</button>
+                          title="Nimmt das Gerät aus der Überwachung; die Daten bleiben erhalten"
+                          aria-label="Gerät deaktivieren">Deaktivieren</button>
                   <input type="hidden" name="zurueck" value="%s">
                 </div>
                 <script>
@@ -1148,8 +1212,9 @@ final class Bestandsseiten {
                         seite.seitenNummer(), seite.seitenZahl(), seite.gesamt(),
                         seite.hatNaechste()
                                 ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (seite.seitenNummer() + 1)
-                                  + "#terminals\" rel=\"next\">Nächste</a>"
-                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\">Nächste</span>");
+                                  + "#terminals\" rel=\"next\" title=\"Zeigt die nächste Seite der Geräteliste\">Nächste</a>"
+                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\""
+                                  + " title=\"Sie sind auf der letzten Seite\">Nächste</span>");
     }
 
     private static String smcbMarke(Bestandsverwaltung.Terminal t) {
@@ -1267,7 +1332,7 @@ final class Bestandsseiten {
                     <p id="k-web-hilfe" class="hilfe">Herstellerspezifisch und immer optional.
                        Ohne sie bleibt alles von Hand erfassbar.</p>
                   </fieldset>
-                  <button class="knopf haupt" type="submit" style="width:auto">Konnektor speichern</button>
+                  <button class="knopf haupt" type="submit" style="width:auto" title="Legt den Konnektor mit diesen Angaben an" aria-label="Konnektor speichern">Konnektor speichern</button>
                 </form></div>""".formatted(organisationsOptionen(organisationen, null),
                         aufrufkontextFelder(kontext, "k", null, null, null));
     }
@@ -1332,7 +1397,7 @@ final class Bestandsseiten {
                        (gematik A_24080). Für Terminals ohne SMC-B bleibt sie abgewählt —
                        diese Geräte werden erfasst und überwacht, aber nie verifiziert.</p>
                   </fieldset>
-                  <button class="knopf haupt" type="submit" style="width:auto">Kartenterminal speichern</button>
+                  <button class="knopf haupt" type="submit" style="width:auto" title="Legt das Kartenterminal mit diesen Angaben an" aria-label="Kartenterminal speichern">Kartenterminal speichern</button>
                 </form></div>""".formatted(konnektorOptionen(konnektoren, null));
     }
 }

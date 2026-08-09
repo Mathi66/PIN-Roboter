@@ -45,7 +45,7 @@ final class Benachrichtigungsseiten {
 
         if (!darf) {
             return s.append("""
-                    <div class="karte-leib" style="padding:1.1rem 1.2rem">
+                    <div class="karte-leib karte-leib">
                     <div class="hinweis">Den Mailserver richtet der Betreiber dieser Instanz ein.
                       Sie können darunter festlegen, wer in Ihrem Bereich benachrichtigt wird.</div>
                     </div></div>""").toString();
@@ -88,7 +88,7 @@ final class Benachrichtigungsseiten {
                      keine Verschlüsselung anbieten. Die Nachricht wäre auf dem Weg mitlesbar —
                      vertretbar nur, wenn der Server im eigenen Netz steht.</p>
 
-                  <button class="knopf haupt" type="submit" style="width:auto">Mailserver speichern</button>
+                  <button class="knopf haupt" type="submit" style="width:auto" title="Speichert die Zugangsdaten verschlüsselt; das Kennwort erscheint nie im Protokoll" aria-label="Mailserver speichern">Mailserver speichern</button>
                 </form>"""
                 .formatted(e == null ? "" : esc(e.host()),
                         e == null ? "587" : String.valueOf(e.port()),
@@ -106,7 +106,7 @@ final class Benachrichtigungsseiten {
                           <input id="m-test" name="testempfaenger" required maxlength="200"
                                  placeholder="ihre.adresse@praxis.de"></div>
                         <div class="feldgruppe"><label for="m-test-k" class="nurLeser">Senden</label>
-                          <button id="m-test-k" class="knopf" type="submit">Testnachricht senden</button></div>
+                          <button id="m-test-k" class="knopf" type="submit" title="Sendet sofort eine Probemail an die eingetragenen Empfänger" aria-label="Testnachricht senden">Testnachricht senden</button></div>
                       </form>
                       <p class="hilfe">Ohne Testversand merken Sie erst beim ersten echten Alarm,
                          ob die Einstellung stimmt — also genau dann, wenn die Nachricht
@@ -141,7 +141,7 @@ final class Benachrichtigungsseiten {
                         <td>%s</td><td>%s</td>
                         <td class="aktionen"><form method="post" action="/benachrichtigung/regel/%d/loeschen"
                               onsubmit="return confirm('Benachrichtigung für „%s“ entfernen?')">
-                          <button class="knopf klein warnend" type="submit">Entfernen</button>
+                          <button class="knopf klein warnend" type="submit" title="Löscht diese Benachrichtigungsregel" aria-label="Regel entfernen">Entfernen</button>
                         </form></td></tr>"""
                         .formatted(esc(r.organisation()), esc(r.empfaenger()),
                                 esc(schwelleAnzeige(r.schwelle())),
@@ -164,7 +164,7 @@ final class Benachrichtigungsseiten {
 
         s.append("""
                 <div class="maske" style="border-top:1px solid var(--rand)">
-                <form method="post" action="/benachrichtigung/regel" class="maske" style="padding:0">
+                <form method="post" action="/benachrichtigung/regel" class="maske karte-blank">
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="r-org">Einrichtung</label>
                       <select id="r-org" name="organisationId" required>%s</select></div>
@@ -196,7 +196,7 @@ final class Benachrichtigungsseiten {
                     <input id="r-aktiv" name="aktiv" type="checkbox" value="ja" checked>
                     <label for="r-aktiv">Aktiv</label>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto">Regel speichern</button>
+                  <button class="knopf haupt" type="submit" style="width:auto" title="Legt fest, wer ab welchem Schweregrad benachrichtigt wird" aria-label="Benachrichtigungsregel speichern">Regel speichern</button>
                 </form></div>""".formatted(auswahl));
 
         return s.append("</div>").toString();

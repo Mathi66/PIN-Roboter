@@ -42,6 +42,29 @@
   --akzent-hg:   #e3e9f8;
   --auf-akzent:  #ffffff;
 
+  /* ── Abstandsraster ───────────────────────────────────────────────────
+     Vor dem 09.08.2026 standen hier 37 verschiedene Abstandswerte, jeder
+     einzeln nach Augenmaß gesetzt. Das Ergebnis waren Kacheln, die
+     nebeneinander unterschiedlich weit atmeten — sichtbar unruhig, ohne dass
+     man den Grund benennen konnte.
+
+     Jetzt gilt eine Vierer-Reihe (4/8/12/16/24/32 px). Sie ist nicht schöner
+     als andere Werte, aber sie ist EINE, und Gleichmaß entsteht nur aus
+     Wiederholung. Neue Abstände werden aus dieser Reihe genommen, nicht
+     erfunden. */
+  --r1: .25rem;   /*  4px — innerhalb einer Zeile, Symbol zu Text */
+  --r2: .5rem;    /*  8px — zwischen Geschwistern, Knopf zu Knopf */
+  --r3: .75rem;   /* 12px — innerhalb einer Gruppe */
+  --r4: 1rem;     /* 16px — Standardinnenabstand, Zellen, Kartenrand */
+  --r5: 1.5rem;   /* 24px — zwischen Kacheln und Tafeln */
+  --r6: 2rem;     /* 32px — großzügige Leerzustände */
+
+  /* Kartenrandwerte, die überall gleich sein müssen: Kopf, Leib, Zelle.
+     Sie hängen am Raster, damit eine Änderung alle Flächen zugleich trifft. */
+  --karte-x:  var(--r5);   /* waagerechter Innenabstand jeder Karte */
+  --karte-y:  var(--r4);   /* senkrechter Innenabstand von Kopf und Fuß */
+  --zelle-y:  var(--r3);   /* Zeilenhöhe der Tabellen */
+
   --radius:       18px;
   --radius-klein: 10px;
   --schatten:
@@ -135,17 +158,17 @@ a { color: var(--akzent); }
 .rahmen {
   position: relative; z-index: 1;
   display: grid; grid-template-columns: 15.5rem 1fr;
-  gap: 1.25rem; padding: 1.25rem;
+  gap:var(--r4); padding:var(--r4);
   max-width: 1500px; margin: 0 auto; min-height: 100vh;
 }
 
 .leiste {
-  position: sticky; top: 1.25rem; align-self: start;
-  max-height: calc(100vh - 2.5rem);
-  display: flex; flex-direction: column; padding: 1.1rem .8rem;
+  position: sticky; top: var(--r4); align-self: start;
+  max-height: calc(100vh - 2 * var(--r4));
+  display: flex; flex-direction: column; padding:var(--r4) var(--r3);
   overflow-y: auto;
 }
-.marke-kopf { display:flex; align-items:center; gap:.65rem; padding:.1rem .5rem 1.1rem; }
+.marke-kopf { display:flex; align-items:center; gap:var(--r3); padding:var(--r1) var(--r2) var(--r4); }
 .marke-zeichen {
   width:2.1rem; height:2.1rem; border-radius:9px; flex:none; display:grid; place-items:center;
   background:var(--akzent); color:var(--auf-akzent); font-weight:700; font-size:.82rem;
@@ -157,14 +180,14 @@ a { color: var(--akzent); }
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 
-nav.bereiche { display:flex; flex-direction:column; gap:.12rem; }
+nav.bereiche { display:flex; flex-direction:column; gap:var(--r1); }
 .bereich-titel {
   font-size:.68rem; text-transform:uppercase; letter-spacing:.09em;
-  color:var(--gedaempft); font-weight:600; padding:1rem .7rem .35rem;
+  color:var(--gedaempft); font-weight:600; padding:var(--r4) var(--r3) var(--r1);
 }
 nav.bereiche a, .leiste .knopf-leiste {
-  display:flex; align-items:center; gap:.6rem; width:100%;
-  padding:.52rem .7rem; border:0; border-radius:var(--radius-klein);
+  display:flex; align-items:center; gap:var(--r2); width:100%;
+  padding:var(--r2) var(--r3); border:0; border-radius:var(--radius-klein);
   background:transparent; color:var(--gedaempft); text-decoration:none;
   font:inherit; font-weight:520; font-size:.92rem; text-align:left; cursor:pointer;
   transition: background .16s, color .16s;
@@ -174,11 +197,11 @@ nav.bereiche a[aria-current="page"] { background:var(--akzent-hg); color:var(--a
 nav.bereiche svg, .leiste .knopf-leiste svg { flex:none; width:1.05rem; height:1.05rem; }
 .zahl-bereich {
   margin-left:auto; font:600 .74rem/1 var(--maschine);
-  padding:.22rem .4rem; border-radius:5px; background:var(--fehler-hg); color:var(--fehler);
+  padding:var(--r1) var(--r2); border-radius:5px; background:var(--fehler-hg); color:var(--fehler);
 }
 
-.leiste-fuss { margin-top:auto; padding-top:.9rem; border-top:1px solid var(--rand); }
-.angemeldet { display:flex; align-items:center; gap:.55rem; padding:.35rem .55rem; min-width:0; }
+.leiste-fuss { margin-top:auto; padding-top:var(--r4); border-top:1px solid var(--rand); }
+.angemeldet { display:flex; align-items:center; gap:var(--r2); padding:var(--r1) var(--r2); min-width:0; }
 .konto-kreis {
   width:1.9rem; height:1.9rem; border-radius:50%; flex:none; display:grid; place-items:center;
   background:var(--akzent-hg); color:var(--akzent); font-weight:660; font-size:.76rem;
@@ -187,29 +210,39 @@ nav.bereiche svg, .leiste .knopf-leiste svg { flex:none; width:1.05rem; height:1
 .konto-text b { font-weight:600; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .konto-text span { color:var(--gedaempft); font-size:.76rem; }
 
-main { min-width:0; display:flex; flex-direction:column; gap:1.25rem; }
+main { min-width:0; display:flex; flex-direction:column; gap:var(--r4); }
 
-.seitenkopf { display:flex; align-items:flex-start; gap:1rem; padding:1.15rem 1.35rem; flex-wrap:wrap; }
+.seitenkopf { display:flex; align-items:flex-start; gap:var(--r4); padding:var(--karte-y) var(--karte-x); flex-wrap:wrap; }
 .seitenkopf h2 { margin:0; font-size:1.32rem; font-weight:680; letter-spacing:-.025em; text-wrap:balance; }
-.seitenkopf .unterzeile { margin:.18rem 0 0; }
-.kopf-rechts { margin-left:auto; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+.seitenkopf .unterzeile { margin:var(--r1) 0 0; }
+.kopf-rechts { margin-left:auto; display:flex; gap:var(--r2); align-items:center; flex-wrap:wrap; }
 
-h2 { font-size:1.32rem; margin:0 0 .3rem; letter-spacing:-.025em; font-weight:680; }
+h2 { font-size:1.32rem; margin:0 0 var(--r1); letter-spacing:-.025em; font-weight:680; }
 h2:focus { outline:none; }   /* bekommt beim Seitenwechsel den Fokus, ist aber kein Bedienelement */
 .unterzeile { color:var(--gedaempft); margin:0; font-size:.9rem; }
 
 .zurueck {
-  display:inline-flex; align-items:center; gap:.35rem; color:var(--akzent);
-  text-decoration:none; font-size:.86rem; font-weight:560; margin-bottom:.3rem;
+  display:inline-flex; align-items:center; gap:var(--r1); color:var(--akzent);
+  text-decoration:none; font-size:.86rem; font-weight:560; margin-bottom:var(--r1);
 }
 .zurueck:hover { text-decoration:underline; }
 
 /* ─────────────────────────────────────────────────────────────── Kennzahlen */
 
-.lage { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr)); gap:1.25rem; }
+/* Alle Kacheln gleich hoch, und die Zahlen auf EINER Linie.
+   Vorher richtete sich jede Kachel nach ihrem eigenen Inhalt: „Brauchen
+   Aufmerksamkeit" braucht zwei Zeilen Überschrift, „Handlungsbedarf" eine —
+   also standen die Zahlen nebeneinander auf verschiedener Höhe. Das ist die
+   Unregelmäßigkeit, die man sieht, ohne sie benennen zu können.
+   grid-auto-rows:1fr gibt allen dieselbe Höhe, margin-top:auto schiebt die
+   Zahl in jeder Kachel an dieselbe Stelle. */
+.lage { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
+        gap:var(--r4); grid-auto-rows:1fr; }
+.kachel { display:flex; flex-direction:column; }
+.kachel .zahl { margin-top:auto; }
 .kachel {
   background:var(--karte); border:1px solid var(--rand); border-radius:var(--radius);
-  padding:1.05rem 1.2rem; box-shadow:var(--schatten); display:block;
+  padding:var(--karte-y) var(--karte-x); box-shadow:var(--schatten);
   text-decoration:none; color:inherit; transition: border-color .15s, transform .12s;
 }
 @supports (backdrop-filter: blur(1px)) {
@@ -226,16 +259,16 @@ a.kachel:hover { border-color:var(--akzent); transform:translateY(-1px); }
 }
 .kachel .bez {
   font-size:.74rem; text-transform:uppercase; letter-spacing:.07em;
-  color:var(--gedaempft); font-weight:620; margin-bottom:.15rem;
+  color:var(--gedaempft); font-weight:620; margin-bottom:var(--r1);
 }
-.kachel .fuss { font-size:.8rem; color:var(--gedaempft); margin-top:.25rem; display:block; }
+.kachel .fuss { font-size:.8rem; color:var(--gedaempft); margin-top:var(--r1); display:block; }
 .kachel.ok .zahl { color:var(--ok); }
 .kachel.warnung .zahl { color:var(--warnung); }
 .kachel.fehler .zahl { color:var(--fehler); }
 .kachel.unbekannt .zahl { color:var(--unbekannt); }
 
 /* Verlaufsbalken: „34 verifiziert" sagt weniger als „34 von 36, 1 gesperrt". */
-.balken { display:flex; height:6px; border-radius:3px; overflow:hidden; margin-top:.55rem; gap:2px; }
+.balken { display:flex; height:6px; border-radius:3px; overflow:hidden; margin-top:var(--r2); gap:2px; }
 .balken i { display:block; }
 .balken .b-ok { background:var(--ok); }
 .balken .b-warn { background:var(--warnung); }
@@ -246,17 +279,17 @@ a.kachel:hover { border-color:var(--akzent); transform:translateY(-1px); }
 
 .tafel { overflow:hidden; }
 .tafel > h3 {
-  margin:0; padding:.95rem 1.2rem; border-bottom:1px solid var(--rand);
+  margin:0; padding:var(--karte-y) var(--karte-x); border-bottom:1px solid var(--rand);
   font-size:1rem; font-weight:650; letter-spacing:-.015em;
-  display:flex; align-items:center; gap:.7rem; flex-wrap:wrap;
+  display:flex; align-items:center; gap:var(--r3); flex-wrap:wrap;
 }
 .tafel > h3 .zaehler {
-  font:600 .74rem/1 var(--maschine); padding:.25rem .45rem; border-radius:5px;
+  font:600 .74rem/1 var(--maschine); padding:var(--r1) var(--r2); border-radius:5px;
   background:var(--akzent-hg); color:var(--akzent);
 }
-.tafel > h3 .rechts { margin-left:auto; display:flex; gap:.5rem; align-items:center; }
+.tafel > h3 .rechts { margin-left:auto; display:flex; gap:var(--r2); align-items:center; }
 
-.zweispaltig { display:grid; grid-template-columns:1.55fr 1fr; gap:1.25rem; align-items:start; }
+.zweispaltig { display:grid; grid-template-columns:1.55fr 1fr; gap:var(--r4); align-items:start; }
 .zweispaltig > * { min-width:0; }
 @media (max-width:1100px) { .zweispaltig { grid-template-columns:1fr; } }
 
@@ -266,13 +299,32 @@ a.kachel:hover { border-color:var(--akzent); transform:translateY(-1px); }
 table { width:100%; border-collapse:collapse; font-size:.89rem; }
 th {
   text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.07em;
-  color:var(--gedaempft); font-weight:620; padding:.55rem 1.2rem; white-space:nowrap;
+  color:var(--gedaempft); font-weight:620; padding:var(--r2) var(--karte-x); white-space:nowrap;
   border-bottom:1px solid var(--rand);
 }
-td { padding:.62rem 1.2rem; border-bottom:1px solid var(--rand); vertical-align:middle; }
+td { padding:var(--zelle-y) var(--karte-x); border-bottom:1px solid var(--rand); vertical-align:middle; }
 tbody tr:last-child td { border-bottom:none; }
 tbody tr { transition: background .13s; }
 tbody tr:hover { background:var(--akzent-hg); }
+/* ── Klickbare Zeilen ─────────────────────────────────────────────────────
+   Bis zum 09.08.2026 trug jede Zeile einen eigenen „Öffnen"-Knopf. Bei
+   25 Zeilen sind das 25 Knöpfe, die alle dasselbe sagen — Lärm, der das
+   Auge von den Daten abzieht, und ein zusätzliches Ziel, das getroffen
+   werden will.
+
+   Jetzt öffnet die ganze Zeile. Barrierefrei bleibt das nur mit einem
+   ECHTEN Link in der ersten Zelle: Er trägt den Namen, ist mit der Tastatur
+   erreichbar, und ein Screenreader liest „Link: Kardiologie Nord" statt
+   einer stummen Fläche. Der Zeilenklick ist reine Mausbequemlichkeit
+   obendrauf (siehe zeilenklick in oberflaeche.js) — fällt JavaScript aus,
+   funktioniert die Liste unverändert. */
+tr.klickbar { cursor:pointer; }
+tr.klickbar a.zeilenziel { color:inherit; text-decoration:none; font-weight:600; }
+tr.klickbar:hover a.zeilenziel { color:var(--akzent); text-decoration:underline; }
+/* Sichtbarer Zeilenfokus: Wer mit der Tastatur navigiert, muss sehen,
+   welche Zeile das Enter treffen würde — nicht nur welcher Link. */
+tr.klickbar:focus-within { background:var(--akzent-hg); box-shadow:inset 3px 0 0 var(--akzent); }
+
 td.zeit { white-space:nowrap; color:var(--gedaempft); font-variant-numeric:tabular-nums; font-family:var(--maschine); font-size:.82rem; }
 td.geraet { font-weight:570; }
 tr.quittiert { opacity:.62; }
@@ -281,8 +333,8 @@ tr.stillgelegt { opacity:.6; }
 /* ─────────────────────────────────────────────────────────────── Zustandsmarken */
 
 .marke {
-  display:inline-flex; align-items:center; gap:.35rem;
-  padding:.2rem .55rem; border-radius:999px;
+  display:inline-flex; align-items:center; gap:var(--r1);
+  padding:var(--r1) var(--r2); border-radius:999px;
   font-size:.78rem; font-weight:600; white-space:nowrap;
 }
 .marke .sym { font-weight:800; }
@@ -292,25 +344,25 @@ tr.stillgelegt { opacity:.6; }
 .marke.unbekannt { background:var(--unbekannt-hg); color:var(--unbekannt); }
 
 .handlung {
-  margin-top:.3rem; font-size:.84rem; color:var(--gedaempft);
-  border-left:3px solid var(--warnung); padding-left:.6rem;
+  margin-top:var(--r1); font-size:.84rem; color:var(--gedaempft);
+  border-left:3px solid var(--warnung); padding-left:var(--r2);
 }
-.leer { padding:2.2rem 1.2rem; text-align:center; color:var(--gedaempft); font-size:.9rem; }
+.leer { padding:var(--r6) var(--r4); text-align:center; color:var(--gedaempft); font-size:.9rem; }
 
 /* ─────────────────────────────────────────────────────────────── Bedienelemente */
 
 select, input[type=search], input[type=text], input[type=password], input:not([type]) {
-  padding:.5rem .7rem; border:1px solid var(--rand-bedien); border-radius:var(--radius-klein);
+  padding:var(--r2) var(--r3); border:1px solid var(--rand-bedien); border-radius:var(--radius-klein);
   background:var(--karte); color:var(--text); font:inherit; font-size:.9rem;
 }
 input::placeholder { color:var(--gedaempft); }
 select:focus, input:focus { border-color:var(--akzent); }
 
 .knopf {
-  padding:.48rem .85rem; border:1px solid var(--rand-bedien); border-radius:var(--radius-klein);
+  padding:var(--r2) var(--r3); border:1px solid var(--rand-bedien); border-radius:var(--radius-klein);
   background:var(--karte); color:var(--text); font:inherit; font-size:.88rem;
   font-weight:560; cursor:pointer; transition: border-color .16s, color .16s, transform .1s;
-  text-decoration:none; display:inline-flex; align-items:center; gap:.35rem;
+  text-decoration:none; display:inline-flex; align-items:center; gap:var(--r1);
 }
 .knopf:hover { border-color:var(--akzent); color:var(--akzent); }
 .knopf:active { transform:translateY(1px); }
@@ -318,24 +370,24 @@ select:focus, input:focus { border-color:var(--akzent); }
 .knopf.warnend:hover { background:var(--fehler-hg); color:var(--fehler); }
 .knopf.gesperrt { opacity:.45; cursor:default; }
 .knopf.gesperrt:hover { border-color:var(--rand-bedien); color:var(--text); }
-.knopf.klein { padding:.3rem .6rem; font-size:.82rem; }
+.knopf.klein { padding:var(--r1) var(--r2); font-size:.82rem; }
 .knopf.haupt {
   background:var(--akzent); color:var(--auf-akzent); border-color:var(--akzent); font-weight:620;
 }
 .knopf.haupt:hover { filter:brightness(1.12); color:var(--auf-akzent); border-color:var(--akzent); }
 
 .hinweis {
-  display:flex; gap:.6rem; padding:.85rem 1rem; border-radius:var(--radius-klein);
+  display:flex; gap:var(--r2); padding:var(--r3) var(--r4); border-radius:var(--radius-klein);
   background:var(--akzent-hg); font-size:.87rem; line-height:1.55;
   border:1px solid color-mix(in oklab, var(--akzent) 22%, transparent);
 }
-.hinweis strong { display:block; margin-bottom:.15rem; }
+.hinweis strong { display:block; margin-bottom:var(--r1); }
 .hinweis.warnend { background:var(--warnung-hg); border-color:color-mix(in oklab, var(--warnung) 30%, transparent); }
 .hinweis.gut { background:var(--ok-hg); border-color:color-mix(in oklab, var(--ok) 30%, transparent); }
 
 code {
   font-family:var(--maschine); font-size:.86em; font-variant-numeric:tabular-nums;
-  background:var(--unbekannt-hg); padding:.1rem .35rem; border-radius:4px;
+  background:var(--unbekannt-hg); padding:var(--r1) var(--r1); border-radius:4px;
 }
 .kennung { font:.82rem/1.4 var(--maschine); color:var(--gedaempft); font-variant-numeric:tabular-nums; }
 
@@ -347,8 +399,8 @@ code {
 /* ─────────────────────────────────────────────────────────────── Live-Suche */
 
 .suchleiste {
-  display:flex; gap:.75rem; align-items:center; flex-wrap:wrap;
-  padding:.85rem 1.2rem; border-bottom:1px solid var(--rand);
+  display:flex; gap:var(--r3); align-items:center; flex-wrap:wrap;
+  padding:var(--r3) var(--r4); border-bottom:1px solid var(--rand);
 }
 .suchfeld { position:relative; flex:1 1 16rem; min-width:12rem; max-width:26rem; }
 .suchfeld svg {
@@ -363,58 +415,77 @@ code {
 
 /* ─────────────────────────────────────────────────────────────── Formulare */
 
-.maske { padding:1.2rem; display:flex; flex-direction:column; gap:1.1rem; }
-.feldgruppe { display:flex; flex-direction:column; gap:.32rem; flex:1 1 14rem; min-width:0; }
+.maske { padding:var(--r4); display:flex; flex-direction:column; gap:var(--r4); }
+.feldgruppe { display:flex; flex-direction:column; gap:var(--r1); flex:1 1 14rem; min-width:0; }
 .feldgruppe label { font-size:.81rem; font-weight:600; }
-.feldreihe { display:flex; gap:1rem; flex-wrap:wrap; }
+.feldreihe { display:flex; gap:var(--r4); flex-wrap:wrap; }
 .maske input, .maske select { width:100%; }
 .maske input[readonly] { background:var(--unbekannt-hg); color:var(--gedaempft); }
 .maske fieldset {
-  border:1px solid var(--rand); border-radius:var(--radius-klein); padding:1rem 1.1rem;
-  display:flex; flex-direction:column; gap:.9rem; margin:0;
+  border:1px solid var(--rand); border-radius:var(--radius-klein); padding:var(--r4) var(--r4);
+  display:flex; flex-direction:column; gap:var(--r4); margin:0;
 }
-.maske legend { font-size:.84rem; font-weight:640; padding:0 .4rem; }
+.maske legend { font-size:.84rem; font-weight:640; padding:0 var(--r2); }
 .hilfe { margin:0; font-size:.82rem; color:var(--gedaempft); line-height:1.5; }
 .optional { font-weight:400; color:var(--gedaempft); }
-.ankreuz { display:flex; align-items:flex-start; gap:.6rem; }
-.ankreuz input { width:1.15rem; height:1.15rem; margin:.15rem 0 0; flex:none; }
+.ankreuz { display:flex; align-items:flex-start; gap:var(--r2); }
+.ankreuz input { width:1.15rem; height:1.15rem; margin:var(--r1) 0 0; flex:none; }
 .ankreuz label { font-size:.9rem; font-weight:500; }
 
-form label { display:block; margin:.9rem 0 .3rem; font-weight:560; font-size:.9rem; }
-.feldhinweis { color:var(--gedaempft); font-size:.84rem; margin:.4rem 0 0; }
+form label { display:block; margin:var(--r4) 0 var(--r1); font-weight:560; font-size:.9rem; }
+.feldhinweis { color:var(--gedaempft); font-size:.84rem; margin:var(--r2) 0 0; }
 
 .filter, .filterleiste {
-  display:flex; gap:.9rem; align-items:flex-end; flex-wrap:wrap;
-  padding:.9rem 1.2rem; border-bottom:1px solid var(--rand);
+  display:flex; gap:var(--r4); align-items:flex-end; flex-wrap:wrap;
+  padding:var(--karte-y) var(--karte-x); border-bottom:1px solid var(--rand);
 }
 .filterleiste .feldgruppe { flex:0 1 15rem; }
 .filterleiste .knopf { height:2.35rem; }
 
 .ausklapp { border-top:1px solid var(--rand); }
 .ausklapp > summary {
-  padding:.85rem 1.2rem; cursor:pointer; font-weight:600; font-size:.9rem;
+  padding:var(--r3) var(--r4); cursor:pointer; font-weight:600; font-size:.9rem;
   color:var(--akzent); list-style-position:inside;
 }
 .ausklapp > summary:hover { background:var(--akzent-hg); }
 .ausklapp[open] > summary { border-bottom:1px solid var(--rand); }
 
 .blaettern {
-  display:flex; align-items:center; justify-content:space-between; gap:1rem;
-  padding:.85rem 1.2rem; border-top:1px solid var(--rand); font-size:.86rem;
+  display:flex; align-items:center; justify-content:space-between; gap:var(--r4);
+  padding:var(--r3) var(--r4); border-top:1px solid var(--rand); font-size:.86rem;
   color:var(--gedaempft); flex-wrap:wrap;
 }
 
-td.aktionen { display:flex; gap:.45rem; flex-wrap:wrap; align-items:center; }
+td.aktionen { display:flex; gap:var(--r2); flex-wrap:wrap; align-items:center; }
 td.aktionen .reihe { display:inline; margin:0; }
 td.klein, .klein { font-size:.84rem; color:var(--gedaempft); }
+
+/* ── Knopfanordnung ───────────────────────────────────────────────────────
+   Eine Regel, damit Knöpfe nicht auf jeder Seite woanders stehen:
+
+     • Die Haupthandlung steht RECHTS am Ende der Reihe — dort endet die
+       Lesebewegung, und dort erwartet sie jedes andere Programm auch.
+     • Nebenhandlungen stehen links davon, in der Reihenfolge ihrer
+       Häufigkeit.
+     • Destruktives wird ABGESETZT (margin-left:auto in der Zeilenaktion),
+       damit „Löschen" nicht direkt neben „Speichern" liegt. Der häufigste
+       Fehlgriff in Oberflächen ist der Nachbarknopf.
+
+   Zahlenspalten laufen rechtsbündig mit Tabellenziffern: Nur so lassen sich
+   Größenordnungen im Vorbeischauen vergleichen. */
+.reihe-enden { display:flex; gap:var(--r3); flex-wrap:wrap; align-items:flex-end; }
+.reihe-eng   { display:flex; gap:var(--r1); align-items:center; }
+.knopfreihe  { display:flex; gap:var(--r2); align-items:center; margin-left:auto; }
+td.zahl-zelle, th.zahl-zelle { text-align:right; font-variant-numeric:tabular-nums; }
+td.aktionen { justify-content:flex-end; }
 
 /* ─────────────────────────────────────────────────────────────── Beziehungen */
 
 .beziehungen {
-  display:grid; grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr)); gap:.75rem;
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr)); gap:var(--r3);
 }
 .beziehung {
-  display:flex; flex-direction:column; gap:.1rem; padding:.8rem .9rem;
+  display:flex; flex-direction:column; gap:var(--r1); padding:var(--r3) var(--r4);
   border:1px solid var(--rand); border-radius:var(--radius-klein);
   background:transparent; color:inherit; font:inherit; text-align:left;
   text-decoration:none; cursor:pointer;
@@ -423,14 +494,14 @@ td.klein, .klein { font-size:.84rem; color:var(--gedaempft); }
 .beziehung:hover { border-color:var(--akzent); background:var(--akzent-hg); transform:translateY(-1px); }
 .beziehung .zahl { font:700 1.5rem/1.15 var(--schrift); letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
 .beziehung .was { font-size:.8rem; color:var(--gedaempft); font-weight:550; }
-.beziehung .hin { font-size:.74rem; color:var(--akzent); font-weight:600; margin-top:.3rem; }
+.beziehung .hin { font-size:.74rem; color:var(--akzent); font-weight:600; margin-top:var(--r1); }
 
 /* ─────────────────────────────────────────────────────────────── Baum */
 
 .baum { display:flex; flex-direction:column; }
 .ast {
-  display:flex; align-items:center; gap:.7rem; width:100%;
-  padding:.62rem 1.2rem; border:0; border-bottom:1px solid var(--rand);
+  display:flex; align-items:center; gap:var(--r3); width:100%;
+  padding:var(--r2) var(--r4); border:0; border-bottom:1px solid var(--rand);
   background:transparent; color:var(--text); font:inherit; text-align:left;
   text-decoration:none; cursor:pointer; transition: background .13s;
 }
@@ -438,13 +509,13 @@ td.klein, .klein { font-size:.84rem; color:var(--gedaempft); }
 .ast:hover { background:var(--akzent-hg); }
 .ast-name { font-weight:570; }
 .ast-art { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--gedaempft); font-weight:620; }
-.ast-zahlen { margin-left:auto; display:flex; gap:.9rem; font-size:.8rem; color:var(--gedaempft); flex-wrap:wrap; }
+.ast-zahlen { margin-left:auto; display:flex; gap:var(--r4); font-size:.8rem; color:var(--gedaempft); flex-wrap:wrap; }
 .ast-zahlen span { font-variant-numeric:tabular-nums; }
 .ast-pfeil { color:var(--gedaempft); flex:none; }
 
 /* ─────────────────────────────────────────────────────────────── Verlauf */
 
-.eintrag { display:flex; gap:.8rem; padding:.85rem 1.2rem; border-bottom:1px solid var(--rand); align-items:flex-start; }
+.eintrag { display:flex; gap:var(--r3); padding:var(--r3) var(--r4); border-bottom:1px solid var(--rand); align-items:flex-start; }
 .eintrag:last-child { border-bottom:none; }
 .eintrag-streifen { width:3px; border-radius:2px; align-self:stretch; flex:none; background:var(--unbekannt); opacity:.4; }
 .eintrag.e-fehler .eintrag-streifen { background:var(--fehler); opacity:1; }
@@ -452,20 +523,20 @@ td.klein, .klein { font-size:.84rem; color:var(--gedaempft); }
 .eintrag.e-ok .eintrag-streifen { background:var(--ok); opacity:1; }
 .eintrag-text { min-width:0; flex:1; }
 .eintrag-text b { display:block; font-weight:600; font-size:.91rem; }
-.eintrag-text .wann { font:.76rem/1 var(--maschine); color:var(--gedaempft); margin-top:.35rem; display:block; }
+.eintrag-text .wann { font:.76rem/1 var(--maschine); color:var(--gedaempft); margin-top:var(--r1); display:block; }
 
 /* ─────────────────────────────────────────────────────────────── Anmeldung */
 
-body.anmeldeseite { display:grid; place-items:center; min-height:100vh; padding:1.5rem; }
+body.anmeldeseite { display:grid; place-items:center; min-height:100vh; padding:var(--r5); }
 body.anmeldeseite main { width:100%; max-width:480px; }
 main.anmeldung { width:100%; max-width:480px; }
-.anmeldeinhalt { padding:1.4rem; }
-.anmeldeinhalt .unterzeile { margin-bottom:1.2rem; }
+.anmeldeinhalt { padding:var(--r5); }
+.anmeldeinhalt .unterzeile { margin-bottom:var(--r4); }
 .anmeldeinhalt form input { width:100%; }
-.anmeldeinhalt .knopf.haupt { margin-top:1.3rem; width:100%; justify-content:center; padding:.65rem 1rem; }
-.schritte { padding-left:1.3rem; margin:1rem 0; }
-.schritte li { margin-bottom:1rem; }
-.geheimnis { margin:.6rem 0; padding:.75rem .9rem; background:var(--unbekannt-hg); border-radius:var(--radius-klein); text-align:center; }
+.anmeldeinhalt .knopf.haupt { margin-top:var(--r5); width:100%; justify-content:center; padding:var(--r3) var(--r4); }
+.schritte { padding-left:var(--r5); margin:var(--r4) 0; }
+.schritte li { margin-bottom:var(--r4); }
+.geheimnis { margin:var(--r2) 0; padding:var(--r3) var(--r4); background:var(--unbekannt-hg); border-radius:var(--radius-klein); text-align:center; }
 .geheimnis code {
   font-size:1.05rem; letter-spacing:.08em; background:none; padding:0;
   user-select:all;   /* ein Klick markiert alles — es wird abgetippt */
@@ -473,11 +544,11 @@ main.anmeldung { width:100%; max-width:480px; }
 
 /* ─────────────────────────────────────────────────────────────── Sonstiges */
 
-.uebernahme { display:flex; gap:.4rem; align-items:center; flex-wrap:wrap; margin:0; }
-.uebernahme select, .uebernahme input { font-size:.84rem; padding:.3rem .5rem; max-width:11rem; }
+.uebernahme { display:flex; gap:var(--r2); align-items:center; flex-wrap:wrap; margin:0; }
+.uebernahme select, .uebernahme input { font-size:.84rem; padding:var(--r1) var(--r2); max-width:11rem; }
 pre.modell {
   background:var(--unbekannt-hg); border:1px solid var(--rand); border-radius:var(--radius-klein);
-  padding:.9rem 1rem; overflow-x:auto; font-size:.82rem; line-height:1.5; margin:.6rem 0 0;
+  padding:var(--r4) var(--r4); overflow-x:auto; font-size:.82rem; line-height:1.5; margin:var(--r2) 0 0;
   white-space:pre-wrap; word-break:break-word;
 }
 
@@ -488,17 +559,47 @@ a.sortlink:hover { color:var(--akzent); text-decoration:underline; }
 th[aria-sort="ascending"] a.sortlink, th[aria-sort="descending"] a.sortlink { color:var(--akzent); font-weight:700; }
 
 .massenleiste {
-  display:flex; gap:.9rem; align-items:flex-end; flex-wrap:wrap;
-  padding:.9rem 1.2rem; border-top:1px solid var(--rand); background:var(--unbekannt-hg);
+  display:flex; gap:var(--r4); align-items:flex-end; flex-wrap:wrap;
+  padding:var(--karte-y) var(--karte-x); border-top:1px solid var(--rand); background:var(--unbekannt-hg);
 }
 .massenleiste .hilfe { flex:1 1 100%; margin:0; }
 .massenleiste .feldgruppe { flex:0 1 18rem; }
 .massenleiste output { font-weight:700; color:var(--akzent); }
 
 @media (max-width:860px) {
-  .rahmen { grid-template-columns:1fr; padding:.8rem; }
+  .rahmen { grid-template-columns:1fr; padding:var(--r3); }
   .leiste { position:static; max-height:none; }
   nav.bereiche { display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr)); }
   .bereich-titel { grid-column:1 / -1; }
-  th, td { padding:.6rem .8rem; }
+  th, td { padding:var(--r2) var(--r3); }
 }
+
+/* Der Hinweispfeil am Zeilenende einer klickbaren Zeile. Er ersetzt den
+   früheren „Öffnen"-Knopf: Er sagt dasselbe, kostet aber kein Ziel, keinen
+   Fokusstopp und keine Screenreader-Ansage (aria-hidden). */
+.pfeil-hin { color:var(--gedaempft); font-size:1.1rem; line-height:1; }
+tr.klickbar:hover .pfeil-hin { color:var(--akzent); }
+.suchstand.treffer { padding:var(--r2) var(--karte-x) 0; margin:0; }
+
+/* Einzeilige Zellen mit Auslassungszeichen. Der vollständige Wert steht im
+   title — sichtbar beim Verweilen, ohne dass er jede Zeile dreimal so hoch
+   macht. Betrifft den Aufrufkontext des Konnektors: drei Kennungen, die man
+   selten liest, aber gelegentlich vollständig braucht. */
+td.einzeilig { max-width:16rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ── Ersatz für frühere Inline-Styles ─────────────────────────────────────
+   Zwölf Stellen im Java-Code trugen ihren Abstand direkt im style-Attribut.
+   Sie umgingen damit das Raster und waren von außen nicht auffindbar — genau
+   so sind die 37 Einzelwerte entstanden. Hier stehen sie als benannte
+   Klassen, damit eine Änderung wieder an einer Stelle greift. */
+.karte-leib  { padding:var(--karte-y) var(--karte-x); }
+.karte-eng   { padding:var(--r3) var(--karte-x); }
+.karte-blank { padding:0; }
+.reihe-frei  { display:flex; gap:var(--r3); flex-wrap:wrap; }
+.abstand-oben { margin-top:var(--r3); }
+.zeile-schmal { padding:var(--r2) 0; }
+/* Die zweite Filterzeile des Protokolls: Suche und Reihenfolge, getrennt von
+   den Auswahlfeldern darüber. Zwei Zeilen sind hier richtiger als eine lange:
+   Die obere filtert WAS, die untere WELCHES GERÄT und in welcher Ordnung. */
+.filter-suche { border-bottom:1px solid var(--rand); }
+.filter-suche .suchfeld { flex:1 1 18rem; }

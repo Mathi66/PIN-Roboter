@@ -125,11 +125,11 @@ final class Verlaufsseiten {
                     <label for="v-zeit">Zeitraum</label>
                     <select id="v-zeit" name="zeitraum">%s</select>
                   </div>
-                  <button class="knopf" type="submit">Anwenden</button>
-                  <a class="knopf" href="/geraete/%s/verlauf">Zurücksetzen</a>
+                  <button class="knopf" type="submit" title="Wendet Zeitraum und Ereignisarten auf den Zeitstrahl an" aria-label="Filter anwenden">Anwenden</button>
+                  <a class="knopf" href="/geraete/%s/verlauf" title="Verwirft die Filter und zeigt wieder den vollständigen Zeitstrahl" aria-label="Filter zurücksetzen">Zurücksetzen</a>
                   <details class="ausklapp" style="flex:1 1 100%%;border:0">
-                    <summary style="padding:.4rem 0">Ereignisarten ein- und ausblenden</summary>
-                    <div style="padding:.5rem 0">%s</div>
+                    <summary class="zeile-schmal">Ereignisarten ein- und ausblenden</summary>
+                    <div class="zeile-schmal">%s</div>
                   </details>
                 </form>""".formatted(esc(terminalId), z, esc(terminalId), a);
     }

@@ -2528,6 +2528,12 @@ rm -f /tmp/pr-reg*.html
 if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi
 ergebnis "Barrierefreiheitspruefung ohne Befund (WCAG 2.2 AA, maschinell pruefbarer Teil)" "$A11Y"
 
+# UX-Vorgaben aus CLAUDE.md Abschnitt 4. Ausgelagert wie die
+# Barrierefreiheit, weil es eine eigene Pruefart ist: Sie misst nicht, ob
+# eine Funktion arbeitet, sondern ob die Oberflaeche einheitlich bleibt.
+if bash pruefungen/oberflaeche-pruefen.sh "$KEKSE"; then UX=ja; else UX=nein; fi
+ergebnis "Oberflaeche einheitlich (Kurzhinweise, klickbare Zeilen, Raster)" "$UX"
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"

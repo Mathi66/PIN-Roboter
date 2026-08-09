@@ -1851,8 +1851,46 @@ Einrichtung gab: Sie fragten `WHERE ist_vorgabe` ohne Einrichtung und nahmen
 damit an, es gebe genau eine im System. Auch das war nie richtig, es hielt nur
 zufällig.
 
-## Stand: 264 Modultests, 302 Systemnachweise — alle grün
+## Stand: 264 Modultests, 320 Systemnachweise — alle grün
 
 Die Testzahl ist diesmal **gemessen**, nicht fortgeschrieben: 25 Testklassen,
 264 Testläufe, keine übersprungen. Die zuvor geführte Zahl 268 lässt sich nicht
 belegen und war offenbar mitgeschleppt.
+
+## UX-Refactoring — Einheitlichkeit erzwingen statt pflegen
+
+Der PO hat die Oberfläche kritisiert: unregelmäßige Abstände, überflüssige
+Knöpfe neben klickbaren Zeilen, fehlende Sortierung und Suche, fehlende
+Kurzhinweise. Der erste Schritt war nicht Umbauen, sondern Zählen:
+
+| | vorher | nachher |
+|---|---:|---:|
+| Bedienelemente ohne Kurzhinweis | 142 von 154 | **0 von 141** |
+| klickbare Tabellenzeilen | 0 von 97 | **57** |
+| verschiedene Abstandswerte | 37 | **6** (ein Raster) |
+| Abstände in Inline-Styles | 12 | **0** |
+
+**Die Ursache war nicht Nachlässigkeit.** 142 fehlende Hinweise entstehen nicht
+durch 142-mal Unaufmerksamkeit, sondern weil es keinen gemeinsamen Baustein
+gab: Jede Seite baute ihre Knöpfe selbst, also wich jede ab. Einheitlichkeit,
+die von Sorgfalt abhängt, zerfällt mit jeder neuen Seite.
+
+Deshalb war die Antwort nicht, 142 Attribute nachzutragen, sondern
+`Bedienelemente.java` einzuführen — mit dem **Kurzhinweis als
+Pflichtparameter**. Ein Knopf ohne Erklärung lässt sich damit nicht bauen. Das
+erledigt der Compiler statt der Sorgfalt.
+
+Der sichtbarste Einzelfehler war ein anderer: Die Kachel „Brauchen
+Aufmerksamkeit" hat eine zweizeilige Überschrift, ihre Nachbarn eine einzeilige
+— also stand ihre Zahl tiefer. Jetzt liegen alle Zahlen auf einer Linie.
+
+Neu: `pruefungen/oberflaeche-pruefen.sh` mit 17 Prüfpunkten, im Hauptlauf. Er
+prüft nicht, ob Sortierung *angeboten* wird, sondern ob sie die Reihenfolge
+*ändert*; nicht ob ein Suchfeld da ist, sondern ob es filtert.
+
+Der neue Nachweis hat sofort etwas gefunden, das der manuelle Durchgang
+übersehen hatte: Der Knopf „Im Bestand ansehen" auf der Ermittlungsseite trug
+keinen Kurzhinweis. Er erscheint nur, wenn bereits Geräte übernommen wurden —
+beim Durchsehen von Hand war die Liste leer.
+
+## Stand: 264 Modultests, 320 Systemnachweise — alle grün
