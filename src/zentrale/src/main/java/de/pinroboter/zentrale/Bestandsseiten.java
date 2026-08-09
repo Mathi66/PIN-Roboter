@@ -128,7 +128,6 @@ final class Bestandsseiten {
                     <div class="rollbar"><table>
                     <caption class="nurLeser">Erfasste Konnektoren</caption>
                     <thead><tr>%s%s%s
-                      <th scope="col">Aufrufkontext</th>
                       <th scope="col">Zugang</th><th scope="col">Erreichbarkeit</th>%s
                       <th scope="col"><span class="nurLeser">Aktionen</span></th>
                     </tr></thead><tbody>"""
@@ -143,9 +142,7 @@ final class Bestandsseiten {
                           <td><a class="zeilenziel" href="/bestand/konnektor/%d"
                                  title="Öffnet Adresse, Aufrufkontext und Zugang dieses Konnektors">%s</a>%s</td>
                           <td>%s</td>
-                          <td><code>%s</code></td>
-                          <td class="klein einzeilig"
-                              title="Mandant: %s · Clientsystem: %s · Arbeitsplatz: %s"><code>%s</code></td>
+                          <td class="kennung">%s</td>
                           <td>%s</td>
                           <td>%s</td>
                           <td>%d</td>
@@ -165,10 +162,11 @@ final class Bestandsseiten {
                         .formatted(k.aktiv() ? "" : " stillgelegt",
                                 k.id(), esc(k.bezeichnung()),
                                 k.aktiv() ? "" : " <span class=\"marke\">deaktiviert</span>",
-                                esc(k.organisation()), esc(k.adresse()),
-                                esc(k.mandantId()), esc(k.clientsystemId()), esc(k.arbeitsplatzId()),
-                                esc(k.mandantId() + " / " + k.clientsystemId()
-                                    + " / " + k.arbeitsplatzId()),
+                                esc(k.organisation()),
+                                "<span title=\"" + esc(k.adresse()) + " · Aufrufkontext: "
+                                    + esc(k.mandantId() + " / " + k.clientsystemId()
+                                          + " / " + k.arbeitsplatzId())
+                                    + "\">" + esc(kurzeAdresse(k.adresse())) + "</span>",
                                 zugangsMarke(k.benutzerName(), k.passwortHinterlegt()),
                                 erreichbarkeitsMarke(k.zuletztErreichbar(), k.zuletztGeprueft(), k.pruefhinweis()),
                                 k.terminalzahl(),
@@ -461,6 +459,20 @@ final class Bestandsseiten {
         }
         s.append("</div>");
         return s.append(modellTafel(modell)).toString();
+    }
+
+    /**
+     * Adresse verkürzt für die Übersicht.
+     *
+     * <p>{@code https://} und der abschließende Schrägstrich sind bei jedem
+     * Konnektor gleich. In einer Spalte, die um Platz kämpft, sind sie reine
+     * Wiederholung — der vollständige Wert steht im {@code title} und auf der
+     * Detailseite.
+     */
+    private static String kurzeAdresse(String adresse) {
+        if (adresse == null) return "";
+        String k = adresse.replaceFirst("^https?://", "");
+        return k.endsWith("/") ? k.substring(0, k.length() - 1) : k;
     }
 
     private static String uebernahmeKnopf(Ermittlung.Fund f,

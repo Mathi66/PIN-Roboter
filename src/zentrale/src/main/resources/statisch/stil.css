@@ -211,6 +211,13 @@ nav.bereiche svg, .leiste .knopf-leiste svg { flex:none; width:1.05rem; height:1
 .konto-text span { color:var(--gedaempft); font-size:.76rem; }
 
 main { min-width:0; display:flex; flex-direction:column; gap:var(--r4); }
+/* Ein Einschub, der mehrere Karten enthaelt, muss seinen Abstand selbst
+   herstellen: main verteilt nur zwischen seinen direkten Kindern.
+   AUSDRUECKLICH nur die beiden HTMX-Einschuebe der Lage-Seite — ein
+   allgemeines "main > div" traf auch den Seitenkopf und legte dessen
+   Zeilenaufbau auf Spalten um. */
+#alarme, #lage { display:flex; flex-direction:column; gap:var(--r4); }
+#alarme:empty, #lage:empty { display:none; }
 
 .seitenkopf { display:flex; align-items:flex-start; gap:var(--r4); padding:var(--karte-y) var(--karte-x); flex-wrap:wrap; }
 .seitenkopf h2 { margin:0; font-size:1.32rem; font-weight:680; letter-spacing:-.025em; text-wrap:balance; }
@@ -295,7 +302,19 @@ a.kachel:hover { border-color:var(--akzent); transform:translateY(-1px); }
 
 /* ─────────────────────────────────────────────────────────────── Tabellen */
 
-.rollbar { overflow-x:auto; }
+.rollbar {
+  overflow-x:auto;
+  /* Zwei Verläufe, die nur erscheinen, wenn tatsächlich etwas außerhalb liegt:
+     Der weiße Deckverlauf sitzt fest am Rand, der graue Schatten scrollt mit
+     und wird vom weißen verdeckt, sobald man am Ende angekommen ist. So sieht
+     man, dass rechts mehr steht — ohne Rollbalken, den macOS ausblendet. */
+  background:
+    linear-gradient(to right, var(--karte) 30%, transparent) left / 2.5rem 100% no-repeat,
+    linear-gradient(to left,  var(--karte) 30%, transparent) right / 2.5rem 100% no-repeat,
+    radial-gradient(farthest-side at 0    50%, rgba(16,22,35,.14), transparent) left / .7rem 100% no-repeat,
+    radial-gradient(farthest-side at 100% 50%, rgba(16,22,35,.14), transparent) right / .7rem 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
 table { width:100%; border-collapse:collapse; font-size:.89rem; }
 th {
   text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.07em;
@@ -456,8 +475,10 @@ form label { display:block; margin:var(--r4) 0 var(--r1); font-weight:560; font-
   color:var(--gedaempft); flex-wrap:wrap;
 }
 
-td.aktionen { display:flex; gap:var(--r2); flex-wrap:wrap; align-items:center; }
-td.aktionen .reihe { display:inline; margin:0; }
+td.aktionen { text-align:right; white-space:nowrap; }
+td.aktionen > * { display:inline-flex; vertical-align:middle; margin:0 0 0 var(--r2); }
+td.aktionen > *:first-child { margin-left:0; }
+td.aktionen .reihe { margin:0 0 0 var(--r2); }
 td.klein, .klein { font-size:.84rem; color:var(--gedaempft); }
 
 /* ── Knopfanordnung ───────────────────────────────────────────────────────
@@ -477,7 +498,7 @@ td.klein, .klein { font-size:.84rem; color:var(--gedaempft); }
 .reihe-eng   { display:flex; gap:var(--r1); align-items:center; }
 .knopfreihe  { display:flex; gap:var(--r2); align-items:center; margin-left:auto; }
 td.zahl-zelle, th.zahl-zelle { text-align:right; font-variant-numeric:tabular-nums; }
-td.aktionen { justify-content:flex-end; }
+
 
 /* ─────────────────────────────────────────────────────────────── Beziehungen */
 
@@ -585,7 +606,7 @@ tr.klickbar:hover .pfeil-hin { color:var(--akzent); }
    title — sichtbar beim Verweilen, ohne dass er jede Zeile dreimal so hoch
    macht. Betrifft den Aufrufkontext des Konnektors: drei Kennungen, die man
    selten liest, aber gelegentlich vollständig braucht. */
-td.einzeilig { max-width:16rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+td.einzeilig { max-width:11rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* ── Ersatz für frühere Inline-Styles ─────────────────────────────────────
    Zwölf Stellen im Java-Code trugen ihren Abstand direkt im style-Attribut.
@@ -603,3 +624,8 @@ td.einzeilig { max-width:16rem; overflow:hidden; text-overflow:ellipsis; white-s
    Die obere filtert WAS, die untere WELCHES GERÄT und in welcher Ordnung. */
 .filter-suche { border-bottom:1px solid var(--rand); }
 .filter-suche .suchfeld { flex:1 1 18rem; }
+
+/* Die erste Spalte einer Liste traegt den Namen. Ohne Mindestbreite bricht
+   „Konnektor Allgemeinmedizin Mitte" auf drei Zeilen und macht die ganze
+   Zeile dreimal so hoch — bei zehn Zeilen kostet das den halben Bildschirm. */
+td.geraet, th:first-child { min-width:11rem; }

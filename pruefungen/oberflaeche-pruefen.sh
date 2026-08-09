@@ -21,7 +21,7 @@
 set -uo pipefail
 
 KEKSE="${1:?Keksdatei mit angemeldeter Sitzung erwartet}"
-BASIS="${PR_BASIS:-http://localhost:8090}"
+BASIS="${PR_BASIS:-$BASIS}"
 ABLAGE=$(mktemp -d)
 trap 'rm -rf "$ABLAGE"' EXIT
 
@@ -154,6 +154,39 @@ INLINE=$(grep -ohE 'style="[^"]*"' src/zentrale/src/main/java/de/pinroboter/zent
          | grep -cE "(padding|gap|margin)" || true)
 [ "${INLINE:-9}" -le 3 ] && I=ja || I=nein
 ergebnis "kaum Abstaende in Inline-Styles ($INLINE, hoechstens 3 geduldet)" "$I"
+
+# ── 6b. Tabellenzellen bleiben Tabellenzellen ─────────────────────────────
+# display:flex auf einem <td> nimmt die Zelle aus dem Tabellenlayout: Die
+# Trennlinie der Zeile bricht ab, und der Inhalt rutscht neben die Tabelle.
+# Genau das hat der PO am 09.08.2026 in der Gruppenliste gesehen. Ausrichten
+# laesst sich der Zelleninhalt ueber text-align und inline-flex der Kinder.
+FLEXZELLE=$(grep -oE "(td|th)[a-z.#-]*[^{]*\{[^}]*display: *flex" "$CSS" | wc -l | tr -d ' ')
+[ "${FLEXZELLE:-1}" = "0" ] && FZ=ja || FZ=nein
+ergebnis "keine Tabellenzelle mit display:flex ($FLEXZELLE)" "$FZ"
+
+# Und die Gegenprobe am ausgelieferten HTML: Jede Zeile einer Liste muss
+# gleich viele Zellen haben wie ihr Kopf. Eine fehlende Zelle ist der andere
+# Weg, auf dem eine Tabelle ausfranst.
+SPALTEN=$(python3 - "$ABLAGE" <<'PY2'
+import re, sys, glob, os
+fehler = 0
+for f in glob.glob(os.path.join(sys.argv[1], "*.html")):
+    h = open(f, encoding="utf-8").read()
+    for tab in re.findall(r'<table\b.*?</table>', h, re.S):
+        kopf = re.search(r'<thead\b.*?</thead>', tab, re.S)
+        if not kopf: continue
+        n = len(re.findall(r'<th\b', kopf.group(0)))
+        koerper = re.search(r'<tbody\b.*?</tbody>', tab, re.S)
+        if not koerper: continue
+        for zeile in re.findall(r'<tr\b.*?</tr>', koerper.group(0), re.S):
+            if 'colspan' in zeile: continue
+            z = len(re.findall(r'<td\b', zeile))
+            if z and z != n: fehler += 1
+print(fehler)
+PY2
+)
+[ "${SPALTEN:-1}" = "0" ] && SP=ja || SP=nein
+ergebnis "jede Tabellenzeile hat so viele Zellen wie ihr Kopf ($SPALTEN Abweichungen)" "$SP"
 
 # ── 7. Destruktives ist bestaetigungspflichtig ────────────────────────────
 # UX-Vorgabe 2: jede destruktive Aktion ist bestaetigungspflichtig.

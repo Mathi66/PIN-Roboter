@@ -10,6 +10,8 @@
 #
 # Aufruf:  pruefungen/barrierefreiheit-pruefen.sh
 set -uo pipefail
+
+BASIS="${PR_BASIS:-$BASIS}"
 cd "$(dirname "$0")/.."
 
 KEKSE=${1:-/tmp/pr-kekse.txt}
@@ -48,40 +50,40 @@ fi
 
 hinweis "Struktur (axe-core gegen die ausgelieferten Seiten)"
 rm -rf "$SEITEN"; mkdir -p "$SEITEN"
-curl -s http://localhost:8090/anmelden  > "$SEITEN/anmelden.html"
-curl -s http://localhost:8090/einladung > "$SEITEN/einladung.html"
+curl -s $BASIS/anmelden  > "$SEITEN/anmelden.html"
+curl -s $BASIS/einladung > "$SEITEN/einladung.html"
 for paar in "uebersicht:/" "geraete:/geraete" "bestand:/bestand" "gruppen:/gruppen" \
             "benutzer:/benutzer" "verwaltung:/verwaltung" "protokoll:/protokoll" \
             "ermittelt:/bestand/ermittelt" "organisation:/organisation"; do
-  curl -s -b "$KEKSE" "http://localhost:8090${paar#*:}" > "$SEITEN/${paar%%:*}.html"
+  curl -s -b "$KEKSE" "$BASIS${paar#*:}" > "$SEITEN/${paar%%:*}.html"
 done
 # Zwei Zustaende, die im Grundaufruf nicht entstehen und deshalb sonst
 # ungeprueft blieben: die Terminalmaske mit PIN-Formular (FA-PIN-010) und die
 # aufgeklappte Bearbeitungszeile der Organisation (FA-ORG-020).
-TID_A=$(curl -s -b "$KEKSE" http://localhost:8090/bestand \
+TID_A=$(curl -s -b "$KEKSE" $BASIS/bestand \
         | grep -oE '/bestand/terminal/[0-9]+' | head -1)
-[ -n "$TID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$TID_A" > "$SEITEN/terminalmaske.html"
+[ -n "$TID_A" ] && curl -s -b "$KEKSE" "$BASIS$TID_A" > "$SEITEN/terminalmaske.html"
 # Die Detailseite einer Organisationseinheit und die Anlegemasken sind eigene
 # Seiten (UX-Konzept Stufe 4/5) und muessen einzeln geprueft werden.
-OID_A=$(curl -s -b "$KEKSE" http://localhost:8090/organisation \
+OID_A=$(curl -s -b "$KEKSE" $BASIS/organisation \
         | grep -oE '/organisation/[0-9]+' | head -1)
-[ -n "$OID_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$OID_A" \
+[ -n "$OID_A" ] && curl -s -b "$KEKSE" "$BASIS$OID_A" \
         > "$SEITEN/organisation-detail.html"
-curl -s -b "$KEKSE" http://localhost:8090/organisation/neu      > "$SEITEN/organisation-neu.html"
-curl -s -b "$KEKSE" http://localhost:8090/benachrichtigung      > "$SEITEN/benachrichtigung.html"
+curl -s -b "$KEKSE" $BASIS/organisation/neu      > "$SEITEN/organisation-neu.html"
+curl -s -b "$KEKSE" $BASIS/benachrichtigung      > "$SEITEN/benachrichtigung.html"
 # Zeitstrahl und Vorgangsansicht (FA-PRO-050/060) sind eigene Seiten.
-KT_A=$(curl -s -b "$KEKSE" http://localhost:8090/geraete | grep -oE '/geraete/[A-Z0-9-]+/verlauf' | head -1)
-[ -n "$KT_A" ] && curl -s -b "$KEKSE" "http://localhost:8090$KT_A" > "$SEITEN/zeitstrahl.html"
+KT_A=$(curl -s -b "$KEKSE" $BASIS/geraete | grep -oE '/geraete/[A-Z0-9-]+/verlauf' | head -1)
+[ -n "$KT_A" ] && curl -s -b "$KEKSE" "$BASIS$KT_A" > "$SEITEN/zeitstrahl.html"
 # Die Vorgangsnummer aus dem Zeitstrahl holen — die Protokollansicht verlinkt
 # nicht darauf. Eine leere Datei waere ein Befund ohne Seite dahinter.
 VG_A=$(grep -oE '/vorgang/[a-zA-Z0-9-]+' "$SEITEN/zeitstrahl.html" 2>/dev/null | head -1)
 if [ -n "$VG_A" ]; then
-  curl -s -b "$KEKSE" "http://localhost:8090$VG_A" > "$SEITEN/vorgang.html"
+  curl -s -b "$KEKSE" "$BASIS$VG_A" > "$SEITEN/vorgang.html"
   [ -s "$SEITEN/vorgang.html" ] || rm -f "$SEITEN/vorgang.html"
 fi
 [ -s "$SEITEN/zeitstrahl.html" ] || rm -f "$SEITEN/zeitstrahl.html"
-curl -s -b "$KEKSE" http://localhost:8090/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
-curl -s -b "$KEKSE" http://localhost:8090/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
+curl -s -b "$KEKSE" $BASIS/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
+curl -s -b "$KEKSE" $BASIS/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 
 ANZ=$(ls "$SEITEN" | wc -l | tr -d ' ')
 

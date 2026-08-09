@@ -7,6 +7,15 @@
 #
 # Aufruf:  pruefungen/systemnachweise.sh
 set -uo pipefail
+
+# Eigene Ports, damit der Nachweislauf NEBEN dem Entwicklungsstack laufen kann.
+# Frueher teilten sich beide 8090/8480; also musste der Stack vorher weichen —
+# mitsamt Datenvolumen und Administratorkonto. Ueberschreibbar, falls auch
+# diese Ports belegt sind.
+PR_PORT="${PR_PORT:-8190}"
+PR_SIMPORT="${PR_SIMPORT:-8580}"
+BASIS="http://localhost:$PR_PORT"
+SIMBASIS="http://localhost:$PR_SIMPORT"
 cd "$(dirname "$0")/.."
 
 NETZ=pinroboter-test
@@ -83,18 +92,18 @@ ADMIN_PW=RichtigPferdBatterieKlammer
 # erneute Anmeldung ist also fast nie noetig.
 anmelden() {
   if [ -f "$KEKSE" ] && \
-     [ "$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/geraete)" = "200" ]; then
+     [ "$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' $BASIS/geraete)" = "200" ]; then
     return 0
   fi
   rm -f "$KEKSE"
 
-  curl -s http://localhost:8090/ersteinrichtung -o /tmp/pr-erst.html
+  curl -s $BASIS/ersteinrichtung -o /tmp/pr-erst.html
   if [ "$(enthaelt /tmp/pr-erst.html "Administratorkonto")" = "ja" ]; then
-    A=$(curl -s -X POST http://localhost:8090/ersteinrichtung \
+    A=$(curl -s -X POST $BASIS/ersteinrichtung \
         -d "benutzer=pruefadmin&anzeigename=Pruefung&passwort=$ADMIN_PW")
     echo "$A" | grep -oE '<code>[A-Z2-7 ]+</code>' | sed 's/<[^>]*>//g' | tr -d ' ' > /tmp/pr-totp.txt
     BID=$(echo "$A" | grep -oE 'name="benutzerId" value="[0-9]+"' | grep -oE '[0-9]+')
-    curl -s -o /dev/null -X POST http://localhost:8090/totp-bestaetigen \
+    curl -s -o /dev/null -X POST $BASIS/totp-bestaetigen \
       -d "benutzerId=$BID&code=$(python3 pruefungen/totp.py "$(cat /tmp/pr-totp.txt)")"
     # Die Bestaetigung hat den Code dieses Fensters verbraucht.
     sleep 31
@@ -102,9 +111,9 @@ anmelden() {
   TOTP_GEHEIMNIS=$(cat /tmp/pr-totp.txt)
 
   for versuch in 1 2 3; do
-    curl -s -c "$KEKSE" -o /dev/null -X POST http://localhost:8090/anmelden \
+    curl -s -c "$KEKSE" -o /dev/null -X POST $BASIS/anmelden \
       -d "benutzer=pruefadmin&passwort=$ADMIN_PW&code=$(python3 pruefungen/totp.py "$TOTP_GEHEIMNIS")"
-    if [ "$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/geraete)" = "200" ]; then
+    if [ "$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' $BASIS/geraete)" = "200" ]; then
       return 0
     fi
     sleep 31   # naechstes Zeitfenster abwarten
@@ -119,17 +128,17 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
   docker network create $NETZ >/dev/null 2>&1
   docker ps -q -f name=pr-db | grep -q . || datenbank_starten
   docker run -d --name pr-sim --network $NETZ --network-alias simulator \
-    -v "$PWD/src/simulator/target/simulator.jar":/app.jar -v "$SEC":/sec:ro -p 8480:8480 \
+    -v "$PWD/src/simulator/target/simulator.jar":/app.jar -v "$SEC":/sec:ro -p $PR_SIMPORT:8480 \
     $JRE java $JOPT -jar /app.jar >/dev/null
   docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
-    -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
+    -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p $PR_PORT:8090 \
     -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
     -e DB_USER=pinroboter -e DB_PASSWORD=test \
     -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
     $JRE java -jar /app.jar >/dev/null
   for _ in $(seq 40); do
-    curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break
-    curl -sf -o /dev/null http://localhost:8090/ersteinrichtung 2>/dev/null && break
+    curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break
+    curl -sf -o /dev/null $BASIS/ersteinrichtung 2>/dev/null && break
     sleep 1
   done
   anmelden
@@ -145,10 +154,10 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
   VORGABEGRUPPE=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
       "SELECT id FROM geraetegruppe WHERE ist_vorgabe" 2>/dev/null | tr -d ' \r\n')
   [ -n "$VORGABEGRUPPE" ] && curl -s -b "$KEKSE" -o /dev/null -X POST \
-      "http://localhost:8090/gruppen/$VORGABEGRUPPE/intervall" --data-urlencode "intervall=10"
+      "$BASIS/gruppen/$VORGABEGRUPPE/intervall" --data-urlencode "intervall=10"
 
   # Ab Iteration 6 muss der Agent registriert sein (FA-AGT-010).
-  GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis \
+  GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
     -d "bezeichnung=Pruefagent" | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
   docker volume rm pr-agentdaten >/dev/null 2>&1
   docker run -d --name pr-agt --network $NETZ \
@@ -210,7 +219,7 @@ ergebnis "verbleibende Versuche werden in Klartext gemeldet" "$L"
 hinweis "FA-UEB-050 — während eines Firmware-Updates wird nicht verifiziert"
 stack_starten 123456 4
 V=$(verifikationen)
-curl -s -X POST "http://localhost:8480/steuerung/KT-EMPFANG-01/firmware/4.3.0?dauer=30000" >/dev/null
+curl -s -X POST "$SIMBASIS/steuerung/KT-EMPFANG-01/firmware/4.3.0?dauer=30000" >/dev/null
 echo "  Update läuft 30 s bei 10 s Gruppentakt → ~3 Gelegenheiten"
 sleep 26; W=$(verifikationen)
 [ $((W-V)) -eq 0 ] && U=ja || U=nein
@@ -222,14 +231,14 @@ ergebnis "Wiederherstellung nach dem Update (gemessen: $((N-W)))" "$R"
 # ---------------------------------------------------------------- FA-PIN-050
 hinweis "FA-PIN-050 — Not-Aus hält die Automatik an"
 anmelden   # frische Sitzung, damit der Nachweis nicht an der Sitzungshistorie haengt
-C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" -X POST http://localhost:8090/notaus)
+C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" -X POST $BASIS/notaus)
 echo "  POST /notaus -> HTTP $C"
 sleep 5; V=$(verifikationen)
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/entziehen >/dev/null
 sleep 22; W=$(verifikationen)
 [ $((W-V)) -eq 0 ] && E=ja || E=nein
 ergebnis "0 Versuche bei aktivem Not-Aus (gemessen: $((W-V)))" "$E"
-curl -s -b "$KEKSE" -X POST http://localhost:8090/notaus >/dev/null
+curl -s -b "$KEKSE" -X POST $BASIS/notaus >/dev/null
 sleep 35; N=$(verifikationen)
 [ $((N-W)) -ge 1 ] && F=ja || F=nein
 ergebnis "Automatik läuft nach Aufhebung wieder (gemessen: $((N-W)))" "$F"
@@ -240,7 +249,7 @@ DB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
 [ "${DB:-0}" -ge 2 ] && G=ja || G=nein
 ergebnis "Not-Aus und Aufhebung stehen im Fachprotokoll ($DB von 2)" "$G"
 
-ANTWORT=$(curl -s -b "$KEKSE" -w '\n%{http_code}' http://localhost:8090/teil/protokoll)
+ANTWORT=$(curl -s -b "$KEKSE" -w '\n%{http_code}' $BASIS/teil/protokoll)
 STATUS=$(echo "$ANTWORT" | tail -1)
 GA=$(enthaelt "$ANTWORT" "Not-Aus")
 if [ "$GA" = "nein" ]; then
@@ -259,7 +268,7 @@ hinweis "FA-PRO-020 — keine Geheimnisse in Protokollen"
 GEHEIM=0
 for w in 123456 999999 654321; do
   docker logs pr-agt 2>&1 | grep -q "$w" && GEHEIM=$((GEHEIM+1))
-  curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll -o /tmp/pr-prot-suche.html
+  curl -s -b "$KEKSE" $BASIS/teil/protokoll -o /tmp/pr-prot-suche.html
   [ "$(enthaelt /tmp/pr-prot-suche.html "$w")" = "ja" ] && GEHEIM=$((GEHEIM+1))
 done
 [ $GEHEIM -eq 0 ] && S=ja || S=nein
@@ -270,11 +279,11 @@ hinweis "NFA-BET-020 / FA-PRO-010 — Persistenz und Unveränderlichkeit"
 VOR=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc "SELECT count(*) FROM fachprotokoll")
 docker rm -f pr-zen >/dev/null 2>&1
 docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
-  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
+  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p $PR_PORT:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
   $JRE java -jar /app.jar >/dev/null
-for _ in $(seq 40); do curl -sf http://localhost:8090/api/notaus >/dev/null 2>&1 && break; sleep 1; done
+for _ in $(seq 40); do curl -sf $BASIS/api/notaus >/dev/null 2>&1 && break; sleep 1; done
 NACH=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc "SELECT count(*) FROM fachprotokoll")
 [ "$NACH" -ge "$VOR" ] && [ "$VOR" -gt 0 ] && B=ja || B=nein
 ergebnis "Protokoll überlebt den Containeraustausch ($VOR -> $NACH)" "$B"
@@ -296,8 +305,8 @@ echo "  wochenlang ungestylt, weil das Stylesheet mit 404 beantwortet wurde -"
 echo "  kein einziger Nachweis hatte je hingesehen."
 FEHLT=0
 for d in stil.css htmx.min.js; do
-  C=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090/statisch/$d")
-  G=$(curl -s -o /dev/null -w "%{size_download}" "http://localhost:8090/statisch/$d")
+  C=$(curl -s -o /dev/null -w "%{http_code}" "$BASIS/statisch/$d")
+  G=$(curl -s -o /dev/null -w "%{size_download}" "$BASIS/statisch/$d")
   [ "$C" = "200" ] && [ "$G" -gt 1000 ] || { FEHLT=$((FEHLT+1)); echo "    $d: HTTP $C, $G Bytes"; }
 done
 [ $FEHLT -eq 0 ] && ST=ja || ST=nein
@@ -305,7 +314,7 @@ ergebnis "Stylesheet und HTMX werden ausgeliefert (fehlend: $FEHLT von 2)" "$ST"
 
 # Die Anmeldeseite muss das Stylesheet auch einbinden - eine ausgelieferte
 # Datei nuetzt nichts, wenn die Seite sie nicht anfordert.
-curl -s http://localhost:8090/anmelden -o /tmp/pr-antwort.html
+curl -s $BASIS/anmelden -o /tmp/pr-antwort.html
 EB=$(enthaelt /tmp/pr-antwort.html 'href="/statisch/stil.css"')
 ergebnis "die Anmeldeseite bindet das Stylesheet ein" "$EB"
 
@@ -318,20 +327,20 @@ ergebnis "keine Warnungen zur Ressourcenkonfiguration beim Start" "$SW"
 hinweis "FA-BEN-020 / NFA-SIC-050 — ohne Anmeldung kein Zugriff"
 OFFEN=0
 for pfad in / /geraete /protokoll /teil/geraete /teil/protokoll; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090$pfad")
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASIS$pfad")
   [ "$CODE" = "200" ] && OFFEN=$((OFFEN+1))
 done
 [ $OFFEN -eq 0 ] && Z=ja || Z=nein
 ergebnis "keine Oberflaechenseite ohne Sitzung erreichbar (offen: $OFFEN von 5)" "$Z"
 
-VORHER=$(curl -s -b "$KEKSE" http://localhost:8090/api/notaus)
-curl -s -o /dev/null -X POST http://localhost:8090/notaus     # ohne Sitzung
-NACHHER=$(curl -s -b "$KEKSE" http://localhost:8090/api/notaus)
+VORHER=$(curl -s -b "$KEKSE" $BASIS/api/notaus)
+curl -s -o /dev/null -X POST $BASIS/notaus     # ohne Sitzung
+NACHHER=$(curl -s -b "$KEKSE" $BASIS/api/notaus)
 [ "$VORHER" = "$NACHHER" ] && K=ja || K=nein
 ergebnis "Not-Aus lässt sich ohne Anmeldung nicht auslösen" "$K"
 
-curl -s -b "$KEKSE" -o /dev/null -w "" -X POST http://localhost:8090/abmelden
-CODE=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" http://localhost:8090/geraete)
+curl -s -b "$KEKSE" -o /dev/null -w "" -X POST $BASIS/abmelden
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" $BASIS/geraete)
 [ "$CODE" != "200" ] && AB=ja || AB=nein
 ergebnis "nach dem Abmelden ist die Sitzung serverseitig ungültig" "$AB"
 anmelden
@@ -348,7 +357,7 @@ dieser_alarm() {
        AND art='GERAET_NICHT_ERREICHBAR' AND behoben_am IS NULL"
 }
 
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/erreichbar/false >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/erreichbar/false >/dev/null
 # Aktiv warten: Seit FA-UEB-010 taktet der Agent je Geraetegruppe (10 s im
 # Nachweislauf). Eine feste Wartezeit war ein Rennen.
 for _ in $(seq 30); do
@@ -367,7 +376,7 @@ case "$HTEXT" in *"eingeschaltet und mit dem Netzwerk"*) HE=ja ;; *) HE=nein ;; 
 ergebnis "der Alarm nennt eine Handlungsempfehlung" "$HE"
 
 # Und sie muss auch in der Oberflaeche ankommen.
-curl -s -b "$KEKSE" http://localhost:8090/ -o /tmp/pr-antwort.html
+curl -s -b "$KEKSE" $BASIS/ -o /tmp/pr-antwort.html
 HO=$(enthaelt /tmp/pr-antwort.html "eingeschaltet und mit dem Netzwerk")
 ergebnis "sie erscheint in der Lage-Uebersicht" "$HO"
 
@@ -377,7 +386,7 @@ A2=$(dieser_alarm)
 [ "$A2" = "1" ] && DU=ja || DU=nein
 ergebnis "keine Alarmflut bei andauerndem Zustand ($A1 -> $A2)" "$DU"
 
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/erreichbar/true >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/erreichbar/true >/dev/null
 for _ in $(seq 25); do
   [ "$(dieser_alarm)" = "0" ] && break
   sleep 2
@@ -397,13 +406,13 @@ TOT=0
 # extrahiert war sie wertlos: Ist die Startseite selbst kaputt, findet der
 # Ausdruck null Ziele — und der Nachweis meldet "0 tot", also bestanden.
 # Genau das ist am 09.08.2026 passiert, waehrend / mit HTTP 500 antwortete.
-ZIELE=$( { curl -s -b "$KEKSE" http://localhost:8090/ \
+ZIELE=$( { curl -s -b "$KEKSE" $BASIS/ \
              | grep -oE '<a href="/[a-z-]*"' | grep -oE '"/[a-z-]*"' | tr -d '"'
            printf '%s\n' / /geraete /bestand /gruppen /organisation /benutzer \
                           /verwaltung /protokoll /benachrichtigung
          } | sort -u)
 for z in $ZIELE; do
-  C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" "http://localhost:8090$z")
+  C=$(curl -s -b "$KEKSE" -o /dev/null -w "%{http_code}" "$BASIS$z")
   if [ "$C" != "200" ]; then TOT=$((TOT+1)); echo "    $z -> HTTP $C"; fi
 done
 ANZ=$(echo "$ZIELE" | wc -w | tr -d ' ')
@@ -415,18 +424,18 @@ hinweis "FA-PRO-070 — volles Protokoll haelt die Kernfunktion nicht an"
 echo "  Zentrale mit 400 KB Protokollbudget neu starten (normal: 2 GB)"
 docker rm -f pr-zen >/dev/null 2>&1
 docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
-  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
+  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p $PR_PORT:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e PROTOKOLL_BUDGET=400KB \
   -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
   $JRE java -jar /app.jar >/dev/null
-for _ in $(seq 40); do curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1; done
+for _ in $(seq 40); do curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break; sleep 1; done
 anmelden
 
 V=$(verifikationen)
 # Karte wiederholt entziehen: erzeugt Verifikationen UND Protokolleintraege
 for i in 1 2 3 4 5 6; do
-  curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+  curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/entziehen >/dev/null
   sleep 11
 done
 N=$(verifikationen)
@@ -448,17 +457,17 @@ ergebnis "sicherheitsrelevante Eintraege ueberleben die Rotation ($SICHER vorhan
 # Zentrale wieder mit normalem Budget
 docker rm -f pr-zen >/dev/null 2>&1
 docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
-  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p 8090:8090 \
+  -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p $PR_PORT:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
   $JRE java -jar /app.jar >/dev/null
-for _ in $(seq 40); do curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1; done
+for _ in $(seq 40); do curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break; sleep 1; done
 anmelden
 
 # ---------------------------------------------------------------- Excel-Export
 hinweis "FA-PRO-040 — Excel-Export"
 XLSX=/tmp/pr-export.xlsx
-CODE=$(curl -s -b "$KEKSE" -o "$XLSX" -w "%{http_code}" http://localhost:8090/protokoll/export)
+CODE=$(curl -s -b "$KEKSE" -o "$XLSX" -w "%{http_code}" $BASIS/protokoll/export)
 [ "$CODE" = "200" ] && [ -s "$XLSX" ] && EX=ja || EX=nein
 ergebnis "Export liefert eine Datei (HTTP $CODE, $(wc -c < "$XLSX" 2>/dev/null || echo 0) Bytes)" "$EX"
 
@@ -478,7 +487,7 @@ DB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
 [ "${DB:-0}" -gt 0 ] && PE=ja || PE=nein
 ergebnis "der Export steht im Fachprotokoll ($DB Eintraege)" "$PE"
 
-curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll -o /tmp/pr-antwort.html
+curl -s -b "$KEKSE" $BASIS/teil/protokoll -o /tmp/pr-antwort.html
 PA=$(enthaelt /tmp/pr-antwort.html "Protokoll exportiert")
 if [ "$PA" = "nein" ]; then
   GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
@@ -493,7 +502,7 @@ ergebnis "der Export erscheint in der Protokollansicht" "$PA"
 # von gestern nachvollziehen wollte, musste exportieren.
 GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
       "SELECT count(*) FROM fachprotokoll" | tr -d ' \n')
-S1=$(curl -s -b "$KEKSE" "http://localhost:8090/teil/protokoll?seite=1")
+S1=$(curl -s -b "$KEKSE" "$BASIS/teil/protokoll?seite=1")
 BL=$(enthaelt "$S1" "Seite 1 von")
 ergebnis "die Protokollansicht zeigt eine Blaetterleiste ($GES Eintraege)" "$BL"
 
@@ -502,7 +511,7 @@ Z1=$(echo "$S1" | grep -c "<tr>")
 ergebnis "eine Seite zeigt hoechstens 50 Zeilen (gezaehlt: $Z1)" "$BG"
 
 if [ "${GES:-0}" -gt 50 ]; then
-  S2=$(curl -s -b "$KEKSE" "http://localhost:8090/teil/protokoll?seite=2")
+  S2=$(curl -s -b "$KEKSE" "$BASIS/teil/protokoll?seite=2")
   B2=$(enthaelt "$S2" "Seite 2 von")
   ergebnis "die zweite Seite laesst sich abrufen" "$B2"
 
@@ -519,7 +528,7 @@ else
 fi
 
 # Hinter das Ende geblaettert: Statt einer leeren Seite die letzte vorhandene.
-curl -s -b "$KEKSE" "http://localhost:8090/teil/protokoll?seite=9999" -o /tmp/pr-antwort.html
+curl -s -b "$KEKSE" "$BASIS/teil/protokoll?seite=9999" -o /tmp/pr-antwort.html
 BE=$(enthaelt /tmp/pr-antwort.html "Seite [0-9]* von")
 ergebnis "eine Seitennummer hinter dem Ende fuehrt nicht ins Leere" "$BE"
 rm -f "$XLSX"
@@ -528,25 +537,25 @@ rm -f "$XLSX"
 hinweis "FA-AGT-010 / FA-AGT-020 — Agent-Registrierung und Token"
 OFFEN=0
 for pfad in /api/agent/melden /api/agent/notaus; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8090$pfad")
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASIS$pfad")
   [ "$CODE" != "401" ] && OFFEN=$((OFFEN+1))
 done
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "X-Agent-Token: erfunden" \
-       http://localhost:8090/api/agent/notaus)
+       $BASIS/api/agent/notaus)
 [ "$CODE" != "401" ] && OFFEN=$((OFFEN+1))
 [ $OFFEN -eq 0 ] && AG=ja || AG=nein
 ergebnis "Agent-Schnittstellen ohne gültiges Token gesperrt (offen: $OFFEN von 3)" "$AG"
 
-curl -s -X POST -H "X-Registrierung: erfunden" http://localhost:8090/api/registrieren -o /tmp/pr-antwort.html
+curl -s -X POST -H "X-Registrierung: erfunden" $BASIS/api/registrieren -o /tmp/pr-antwort.html
 RG=$(enthaelt /tmp/pr-antwort.html "Unbekanntes")
 ergebnis "erfundenes Registrierungsgeheimnis wird abgewiesen" "$RG"
 
-G2=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis -d "bezeichnung=Einmaltest" \
+G2=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis -d "bezeichnung=Einmaltest" \
      | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
-curl -s -X POST -H "X-Registrierung: $G2" http://localhost:8090/api/registrieren -o /tmp/pr-antwort.html
+curl -s -X POST -H "X-Registrierung: $G2" $BASIS/api/registrieren -o /tmp/pr-antwort.html
 E1=$(enthaelt /tmp/pr-antwort.html "token")
 ergebnis "gültiges Geheimnis lässt sich einlösen" "$E1"
-curl -s -X POST -H "X-Registrierung: $G2" http://localhost:8090/api/registrieren -o /tmp/pr-antwort.html
+curl -s -X POST -H "X-Registrierung: $G2" $BASIS/api/registrieren -o /tmp/pr-antwort.html
 E2=$(enthaelt /tmp/pr-antwort.html "bereits verwendet")
 ergebnis "dasselbe Geheimnis ein zweites Mal wird abgewiesen" "$E2"
 
@@ -564,10 +573,10 @@ ergebnis "abgelehnte Registrierungen stehen im Fachprotokoll ($DB Eintraege)" "$
 # die Mandantengrenze griff fuer sie nicht. Der Nachweis geht den ganzen Weg:
 # Geheimnis mit Einrichtung -> Token -> Geraetemeldung -> Ablage.
 EINR="Zahnarztpraxis Sued"
-G3=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/agenten/geheimnis \
+G3=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
      --data-urlencode "bezeichnung=Agent Sued" --data-urlencode "einrichtung=$EINR" \
      | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
-TOK3=$(curl -s -X POST -H "X-Registrierung: $G3" http://localhost:8090/api/registrieren \
+TOK3=$(curl -s -X POST -H "X-Registrierung: $G3" $BASIS/api/registrieren \
        | grep -oE '"token" *: *"[^"]+"' | sed 's/.*"\([^"]*\)"$/\1/')
 [ -n "$TOK3" ] && TR=ja || TR=nein
 ergebnis "Registrierung mit gewaehlter Einrichtung liefert ein Token" "$TR"
@@ -577,7 +586,7 @@ ergebnis "Registrierung mit gewaehlter Einrichtung liefert ein Token" "$TR"
 curl -s -X POST -H "X-Agent-Token: $TOK3" -H "Content-Type: application/json" \
      -d '{"terminalId":"KT-SUED-1","name":"Terminal Sued","einrichtung":"Kardiologie Nord",
           "erreichbar":true,"pinStatus":"VERIFIED","modell":"Testgeraet","firmware":"1.0"}' \
-     http://localhost:8090/api/agent/melden -o /dev/null
+     $BASIS/api/agent/melden -o /dev/null
 
 GEB=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
       "SELECT einrichtung FROM fachprotokoll WHERE geraet='KT-SUED-1' AND art='GERAET_ERKANNT' LIMIT 1" \
@@ -601,7 +610,7 @@ GRP=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
 [ "$GRP" = "$EINR" ] && GR=ja || GR=nein
 ergebnis "neues Geraet landet in der Vorgabegruppe seiner Einrichtung (\"$GRP\")" "$GR"
 
-curl -s -b "$KEKSE" http://localhost:8090/teil/protokoll -o /tmp/pr-antwort.html
+curl -s -b "$KEKSE" $BASIS/teil/protokoll -o /tmp/pr-antwort.html
 PA=$(enthaelt /tmp/pr-antwort.html "Registrierung abgelehnt")
 if [ "$PA" = "nein" ] && [ "${DB:-0}" -gt 0 ]; then
   GES=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
@@ -617,7 +626,7 @@ hinweis "Demodatensatz — MVZ-Verbund (Block C)"
 # Fuer Zahlen und Kennungen: entfernt alle Leerzeichen.
 
 curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' -X POST \
-  http://localhost:8090/verwaltung/demodaten/anlegen | grep -qE '^(200|302)$' && DA=ja || DA=nein
+  $BASIS/verwaltung/demodaten/anlegen | grep -qE '^(200|302)$' && DA=ja || DA=nein
 ergebnis "Demodatensatz laesst sich auf Knopfdruck anlegen" "$DA"
 
 for paar in "organisation:13" "konnektor:9" "arbeitsplatz:36" "kartenterminal:36"; do
@@ -649,7 +658,7 @@ IST=$(sql "SELECT count(DISTINCT o.art) FROM benutzer b JOIN organisation o ON o
 [ "$IST" = "3" ] && R=ja || R=nein
 ergebnis "Benutzer auf allen drei Berechtigungsebenen ($IST von 3)" "$R"
 
-curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-antwort.html
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-antwort.html
 VA=$(enthaelt /tmp/pr-antwort.html "Arbeitsplätze")
 ergebnis "Verwaltungsseite zeigt den Bestand einschliesslich Arbeitsplaetzen" "$VA"
 
@@ -657,7 +666,7 @@ ergebnis "Verwaltungsseite zeigt den Bestand einschliesslich Arbeitsplaetzen" "$
 # mitnehmen, waere der Knopf eine Falle statt eines Werkzeugs.
 docker exec pr-db psql -U pinroboter -d pinroboter -c \
   "INSERT INTO organisation (bezeichnung, art, ist_demo) VALUES ('Nachweis Echtdaten','VERBUND',FALSE)" >/dev/null 2>&1
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/demodaten/loeschen
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/loeschen
 IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
 [ "$IST" = "0" ] && R=ja || R=nein
 ergebnis "Loeschen entfernt alle Demodaten (Rest: $IST)" "$R"
@@ -665,7 +674,7 @@ IST=$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='Nachweis Echtdat
 [ "$IST" = "1" ] && R=ja || R=nein
 ergebnis "Loeschen laesst Daten ohne Demo-Kennzeichen unberuehrt" "$R"
 
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/demodaten/anlegen
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/anlegen
 IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
 [ "$IST" = "36" ] && R=ja || R=nein
 ergebnis "Demodatensatz laesst sich wiederherstellen ($IST von 36)" "$R"
@@ -679,7 +688,7 @@ ORG=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT
 # Anlegen ueber die Maske, mit absichtlich unerreichbarer Adresse.
 # 192.0.2.0/24 ist nach RFC 5737 fuer Dokumentation reserviert und wird
 # nirgends geroutet - ein verlaesslicher Nichterreichbarkeitsfall.
-ANTWORT=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/konnektor \
+ANTWORT=$(curl -s -b "$KEKSE" -X POST $BASIS/bestand/konnektor \
   --data-urlencode "organisationId=$ORG" \
   --data-urlencode "bezeichnung=Nachweiskonnektor" \
   --data-urlencode "adresse=192.0.2.77:443" \
@@ -700,14 +709,14 @@ ergebnis "das Kennwort liegt verschluesselt in der Datenbank" "$KC"
 
 TREFFER=0
 for pfad in "/bestand" "/bestand/konnektor/$KID"; do
-  curl -s -b "$KEKSE" "http://localhost:8090$pfad" -o /tmp/pr-kw-suche.html
+  curl -s -b "$KEKSE" "$BASIS$pfad" -o /tmp/pr-kw-suche.html
   [ "$(enthaelt /tmp/pr-kw-suche.html "NachweisKennwortXY")" = "ja" ] && TREFFER=$((TREFFER+1))
 done
 [ $TREFFER -eq 0 ] && KO=ja || KO=nein
 ergebnis "das Kennwort erscheint auf keiner Oberflaechenseite (Treffer: $TREFFER)" "$KO"
 
 # A_24080: PEviM ist ausschliesslich fuer SMC-B zulaessig.
-ANTWORT_PV=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+ANTWORT_PV=$(curl -s -b "$KEKSE" -X POST $BASIS/bestand/terminal \
   --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
   --data-urlencode "bezeichnung=Behandlung" --data-urlencode "adresse=192.0.2.90" \
   --data-urlencode "pevimAktiv=ja")
@@ -721,7 +730,7 @@ IST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01
 [ "$IST" = "0" ] && PN=ja || PN=nein
 ergebnis "das abgelehnte Terminal wurde auch nicht angelegt" "$PN"
 
-curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+curl -s -b "$KEKSE" -X POST $BASIS/bestand/terminal \
   --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
   --data-urlencode "bezeichnung=Empfang Nachweis" --data-urlencode "adresse=192.0.2.90" \
   --data-urlencode "adminPasswort=TerminalKennwortXY" \
@@ -730,7 +739,7 @@ IST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01
 [ "$IST" = "1" ] && TA=ja || TA=nein
 ergebnis "Terminal mit SMC-B und PIN-Automatik laesst sich anlegen" "$TA"
 
-curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/terminal \
+curl -s -b "$KEKSE" -X POST $BASIS/bestand/terminal \
   --data-urlencode "konnektorId=$KID" --data-urlencode "terminalId=KT-NACHWEIS-01" \
   --data-urlencode "bezeichnung=Doppelt" --data-urlencode "adresse=192.0.2.91" -o /tmp/pr-antwort.html
 TD=$(enthaelt /tmp/pr-antwort.html "bereits vergeben")
@@ -738,7 +747,7 @@ ergebnis "eine doppelte Kennung wird verstaendlich abgewiesen" "$TD"
 
 # Ein Konnektor mit Terminals darf nicht stillschweigend einen halben
 # Standort mitreissen - das Schema wuerde per CASCADE genau das tun.
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/konnektor/$KID/loeschen" \
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/konnektor/$KID/loeschen" \
   -o /tmp/pr-konn-loesch.html
 grep -q "zugeordnet" /tmp/pr-konn-loesch.html && LS=ja || LS=nein
 if [ "$LS" = "nein" ]; then
@@ -753,8 +762,8 @@ IST=$(sql "SELECT count(*) FROM konnektor WHERE id=$KID")
 ergebnis "der Konnektor ist nach dem Loeschversuch noch da" "$LB"
 
 TID=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01'")
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID/loeschen" >/dev/null
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/konnektor/$KID/loeschen" >/dev/null
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID/loeschen" >/dev/null
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/konnektor/$KID/loeschen" >/dev/null
 IST=$(sql "SELECT count(*) FROM konnektor WHERE id=$KID")
 [ "$IST" = "0" ] && LN=ja || LN=nein
 ergebnis "nach dem Entfernen der Terminals laesst er sich loeschen" "$LN"
@@ -795,7 +804,7 @@ IST=$(sql "SELECT count(*) FROM ermitteltes_modell m
 [ "${IST:-0}" -ge 1 ] && EM=ja || EM=nein
 ergebnis "das Informationsmodell des Konnektors wurde gelesen" "$EM"
 
-curl -s -b "$KEKSE" http://localhost:8090/bestand/ermittelt > /tmp/pr-erm.html
+curl -s -b "$KEKSE" $BASIS/bestand/ermittelt > /tmp/pr-erm.html
 grep -q "Mandant-1" /tmp/pr-erm.html && EZ=ja || EZ=nein
 ergebnis "der Aufrufkontext steht in der Oberflaeche zur Auswahl" "$EZ"
 
@@ -810,14 +819,14 @@ ergebnis "kein ermitteltes Geraet wurde selbsttaetig in den Bestand uebernommen"
 
 # Uebernahme nach Bestaetigung
 ORG2=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/bestand/konnektor \
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/bestand/konnektor \
   --data-urlencode "organisationId=$ORG2" --data-urlencode "bezeichnung=Konnektor Uebernahme" \
   --data-urlencode "adresse=simulator:8443" --data-urlencode "mandantId=Mandant-1" \
   --data-urlencode "clientsystemId=CS-ROBOTER" --data-urlencode "arbeitsplatzId=AP-EMPFANG"
 KID2=$(sql "SELECT id FROM konnektor WHERE bezeichnung='Konnektor Uebernahme'")
 FID=$(sql "SELECT e.id FROM ermittelt_terminal e JOIN agent a ON a.id = e.agent_id AND a.aktiv
            WHERE e.terminal_id='KT-EMPFANG-01' ORDER BY e.gesehen DESC LIMIT 1")
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/ermittelt/$FID/uebernehmen" \
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/ermittelt/$FID/uebernehmen" \
   --data-urlencode "konnektorId=$KID2" --data-urlencode "adresse=192.0.2.51:443" -o /tmp/pr-antwort.html
 UE=$(enthaelt /tmp/pr-antwort.html "übernommen")
 ergebnis "ein Geraet laesst sich nach Bestaetigung uebernehmen" "$UE"
@@ -834,15 +843,15 @@ case "$IST" in
 esac
 ergebnis "Modell und Firmware werden mit uebernommen ($IST)" "$UM"
 
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/ermittelt/$FID/uebernehmen" \
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/ermittelt/$FID/uebernehmen" \
   --data-urlencode "konnektorId=$KID2" -o /tmp/pr-antwort.html
 UD=$(enthaelt /tmp/pr-antwort.html "bereits erfasst")
 ergebnis "eine zweite Uebernahme desselben Geraets wird abgewiesen" "$UD"
 
 # Abweichung: PEviM am Geraet abschalten, Bestand darf sich NICHT aendern
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/pevim/false >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/pevim/false >/dev/null
 sleep 16
-curl -s -b "$KEKSE" http://localhost:8090/bestand/ermittelt > /tmp/pr-erm2.html
+curl -s -b "$KEKSE" $BASIS/bestand/ermittelt > /tmp/pr-erm2.html
 grep -q "weicht ab" /tmp/pr-erm2.html && AW=ja || AW=nein
 ergebnis "eine Abweichung zwischen Geraet und Bestand wird erkannt" "$AW"
 grep -q "PIN-Automatik: erfasst" /tmp/pr-erm2.html && AB=ja || AB=nein
@@ -856,27 +865,27 @@ IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art IN ('BESTAND_ERMITTELT',
 [ "${IST:-0}" -ge 2 ] && EP=ja || EP=nein
 ergebnis "Ermittlung und Uebernahme sind protokolliert ($IST Eintraege)" "$EP"
 
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/pevim/true >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/pevim/true >/dev/null
 rm -f /tmp/pr-erm.html /tmp/pr-erm2.html
 
 hinweis "FA-GER-060 — Sortierung, Filter und Massenaktionen"
-curl -s -b "$KEKSE" "http://localhost:8090/bestand" > /tmp/pr-best.html
+curl -s -b "$KEKSE" "$BASIS/bestand" > /tmp/pr-best.html
 [ "$(grep -c 'class="sortlink"' /tmp/pr-best.html)" -ge 5 ] && SO=ja || SO=nein
 ergebnis "die Geraeteliste hat sortierbare Spalten" "$SO"
 
-curl -s -b "$KEKSE" "http://localhost:8090/bestand?sortierung=modell&richtung=ab" -o /tmp/pr-antwort.html
+curl -s -b "$KEKSE" "$BASIS/bestand?sortierung=modell&richtung=ab" -o /tmp/pr-antwort.html
 SR=$(enthaelt /tmp/pr-antwort.html 'aria-sort="descending"')
 ergebnis "die Sortierrichtung ist in der Kopfzeile ausgezeichnet (Screenreader)" "$SR"
 
 # Der Sortierwert kommt aus der URL und geht in die Abfrage ein. Ohne
 # Weissliste waere das eine SQL-Einschleusung.
 CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' \
-       "http://localhost:8090/bestand?sortierung=bezeichnung%3B+DROP+TABLE+kartenterminal")
+       "$BASIS/bestand?sortierung=bezeichnung%3B+DROP+TABLE+kartenterminal")
 BEST=$(sql "SELECT count(*) FROM kartenterminal")
 [ "$CODE" = "200" ] && [ "${BEST:-0}" -gt 0 ] && SI=ja || SI=nein
 ergebnis "ein manipuliertes Sortierfeld richtet nichts an (HTTP $CODE, $BEST Geraete)" "$SI"
 
-zaehler() { curl -s -b "$KEKSE" "http://localhost:8090/bestand$1" \
+zaehler() { curl -s -b "$KEKSE" "$BASIS/bestand$1" \
   | grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' | grep -oE '[0-9]+$'; }
 OHNE=$(zaehler "")
 AKTIV=$(zaehler "?status=aktiv")
@@ -897,7 +906,7 @@ for i in $IDS; do MARGS+=(--data-urlencode "geraet=$i"); done
 # die ersten drei Kennungen koennen dabei sein. Geprueft wird, dass so viele
 # geaendert wurden wie ausgewaehlt - das ist die eigentliche Zusage.
 ANZ_AUSGEWAEHLT=$(echo "$IDS" | wc -w | tr -d ' ')
-ANTWORT_MA=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+ANTWORT_MA=$(curl -s -b "$KEKSE" -X POST $BASIS/bestand/massenaktion \
   "${MARGS[@]}" --data-urlencode "aktion=deaktivieren")
 GEAENDERT=$(echo "$ANTWORT_MA" | grep -oE '[0-9]+ Kartenterminal\(s\) deaktiviert' | grep -oE '^[0-9]+')
 [ "${GEAENDERT:-0}" = "$ANZ_AUSGEWAEHLT" ] && MA=ja || MA=nein
@@ -907,7 +916,7 @@ ergebnis "der Statusfilter zeigt die deaktivierten Geraete" "$MI"
 
 # Ein nicht mehr vorhandenes Geraet darf nicht stillschweigend uebergangen
 # werden - "Aktion ausgefuehrt" bei 3 von 4 waere eine Falschmeldung.
-ANTWORT_MU=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+ANTWORT_MU=$(curl -s -b "$KEKSE" -X POST $BASIS/bestand/massenaktion \
   "${MARGS[@]}" --data-urlencode "geraet=999999999" --data-urlencode "aktion=aktivieren")
 # Geprueft wird die Zusage, nicht der genaue Wortlaut: Es muss GENAU EIN Geraet
 # als uebersprungen gemeldet werden - das erfundene.
@@ -919,7 +928,7 @@ if [ "$MU" = "nein" ]; then
 fi
 ergebnis "uebersprungene Geraete werden gezaehlt, nicht verschwiegen ($UEBERSPRUNGEN)" "$MU"
 
-curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/massenaktion \
+curl -s -b "$KEKSE" -X POST $BASIS/bestand/massenaktion \
   --data-urlencode "aktion=deaktivieren" -o /tmp/pr-antwort.html
 ML=$(enthaelt /tmp/pr-antwort.html "kein Gerät")
 ergebnis "eine leere Auswahl aendert nichts und sagt das" "$ML"
@@ -929,7 +938,7 @@ IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE text LIKE '%Kartenterminal(s
 ergebnis "Massenaktionen sind protokolliert ($IST Eintraege)" "$MP"
 
 # FA-GER-030: Uebernahme "einzeln oder als Auswahl"
-curl -s -b "$KEKSE" http://localhost:8090/bestand/ermittelt > /tmp/pr-erm3.html
+curl -s -b "$KEKSE" $BASIS/bestand/ermittelt > /tmp/pr-erm3.html
 grep -q 'name="fund"' /tmp/pr-erm3.html && SA=ja || SA=nein
 ergebnis "die Ermittlungsliste erlaubt Mehrfachauswahl" "$SA"
 
@@ -939,7 +948,7 @@ if [ -n "$FUNDE" ]; then
   SARGS=()
   for i in $FUNDE; do SARGS+=(--data-urlencode "fund=$i"); done
   ANZ=$(echo "$FUNDE" | wc -w | tr -d ' ')
-  curl -s -b "$KEKSE" -X POST http://localhost:8090/bestand/ermittelt/uebernehmen \
+  curl -s -b "$KEKSE" -X POST $BASIS/bestand/ermittelt/uebernehmen \
     "${SARGS[@]}" --data-urlencode "konnektorId=$KID3" -o /tmp/pr-antwort.html
 SU=$(enthaelt /tmp/pr-antwort.html "von $ANZ")
   ergebnis "mehrere Geraete lassen sich in einem Schritt uebernehmen ($ANZ)" "$SU"
@@ -953,7 +962,7 @@ hinweis "NFA-LEI-010 — Antwortzeiten am Mengengeruest"
 # bleibt kurz. Die volle Messung mit 5.000 Terminals und 5 Mio
 # Protokolleintraegen steht in docs/00-referenzen/messung-leistung-mengengeruest.md
 # und wird von Hand wiederholt.
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/lasttest/anlegen \
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/lasttest/anlegen \
   --data-urlencode "anzahl=1000"
 LAST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-%'")
 [ "${LAST:-0}" = "1000" ] && LE=ja || LE=nein
@@ -962,10 +971,10 @@ ergebnis "Lasttestbestand angelegt ($LAST Geraete)" "$LE"
 # Gemessen wird die HTTP-Gesamtzeit. Erst ein Aufruf zum Warmlaufen, damit
 # nicht der Verbindungsaufbau in die Messung faellt.
 zeitms() {
-  curl -s -b "$KEKSE" -o /dev/null "http://localhost:8090$1"
+  curl -s -b "$KEKSE" -o /dev/null "$BASIS$1"
   local ges=0
   for _ in 1 2 3; do
-    local ms=$(curl -s -b "$KEKSE" -o /dev/null -w '%{time_total}' "http://localhost:8090$1" \
+    local ms=$(curl -s -b "$KEKSE" -o /dev/null -w '%{time_total}' "$BASIS$1" \
                | awk '{printf "%d", $1*1000}')
     ges=$((ges+ms))
   done
@@ -983,7 +992,7 @@ for paar in "Bestandsliste, erste Seite:/bestand" \
   ergebnis "$NAME unter 1 s (gemessen: ${MS} ms)" "$LR"
 done
 
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/lasttest/entfernen
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/lasttest/entfernen
 REST=$(sql "SELECT count(*) FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-%'")
 [ "${REST:-1}" = "0" ] && LX=ja || LX=nein
 ergebnis "Lasttestbestand rueckstandsfrei entfernt (Rest: $REST)" "$LX"
@@ -991,7 +1000,7 @@ ergebnis "Lasttestbestand rueckstandsfrei entfernt (Rest: $REST)" "$LX"
 hinweis "FA-GER-035 — Aufrufkontext aus dem Informationsmodell zur Auswahl"
 # Die Konnektor-Anlegemaske ist seit dem UX-Umbau eine eigene Seite
 # (ADR-0010, Stufe 4) — dort steht der Aufrufkontext.
-curl -s -b "$KEKSE" http://localhost:8090/bestand/konnektor/neu > /tmp/pr-kontext.html
+curl -s -b "$KEKSE" $BASIS/bestand/konnektor/neu > /tmp/pr-kontext.html
 # Ohne Modell muessen Freitextfelder erscheinen (NFA-QS-035), mit Modell
 # Vorschlagslisten. Der Agent hat das Modell in diesem Lauf schon gemeldet.
 LISTEN=$(grep -c '<datalist' /tmp/pr-kontext.html)
@@ -1052,9 +1061,9 @@ ergebnis "verschluesselte Zugangsdaten unveraendert wiederhergestellt" "$WC"
 # Anwendung nicht mehr startet, ist kein Restore.
 docker restart pr-zen >/dev/null 2>&1
 for _ in $(seq 40); do
-  curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1
+  curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break; sleep 1
 done
-CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/bestand)
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' $BASIS/bestand)
 [ "$CODE" = "200" ] && WZ=ja || WZ=nein
 ergebnis "die Zentrale ist nach der Wiederherstellung bedienbar (HTTP $CODE)" "$WZ"
 rm -f /tmp/pr-sicherung.dump
@@ -1062,8 +1071,8 @@ rm -f /tmp/pr-sicherung.dump
 hinweis "Mandantentrennung — Block A"
 # Der Pruefadmin ist Instanzbetreiber (keine Organisation zugeordnet) und sieht
 # alles. Ein Benutzer einer einzelnen Praxis darf nur deren Geraete sehen.
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/verwaltung/demodaten/anlegen
-ALLE=$(curl -s -b "$KEKSE" http://localhost:8090/bestand \
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/anlegen
+ALLE=$(curl -s -b "$KEKSE" $BASIS/bestand \
        | grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' | grep -oE '[0-9]+$')
 [ "${ALLE:-0}" -ge 36 ] && MI=ja || MI=nein
 ergebnis "der Instanzbetreiber sieht den gesamten Bestand ($ALLE Geraete)" "$MI"
@@ -1084,16 +1093,16 @@ DEMO_PW=$(grep -oE 'DEMO_KENNWORT *= *"[^"]+"' src/zentrale/src/main/java/de/pin
           | head -1 | sed 's/.*"\(.*\)"/\1/')
 if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
   for versuch in 1 2 3; do
-    curl -s -c "$DEMO_KEKSE" -o /dev/null -X POST http://localhost:8090/anmelden \
+    curl -s -c "$DEMO_KEKSE" -o /dev/null -X POST $BASIS/anmelden \
       -d "benutzer=$PRAXIS&passwort=$DEMO_PW&code=$(python3 pruefungen/totp.py "$DEMO_TOTP")"
-    [ "$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/bestand)" = "200" ] && break
+    [ "$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' $BASIS/bestand)" = "200" ] && break
     sleep 31
   done
-  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/bestand)
+  CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' $BASIS/bestand)
   [ "$CODE" = "200" ] && MA=ja || MA=nein
   ergebnis "Anmeldung als Praxisbenutzer moeglich (HTTP $CODE)" "$MA"
 
-  SICHT=$(curl -s -b "$DEMO_KEKSE" http://localhost:8090/bestand \
+  SICHT=$(curl -s -b "$DEMO_KEKSE" $BASIS/bestand \
           | grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' | grep -oE '[0-9]+$')
   [ "$SICHT" = "$SOLL" ] && MS=ja || MS=nein
   ergebnis "der Praxisbenutzer sieht NUR seine eigenen Geraete ($SICHT von $ALLE)" "$MS"
@@ -1101,33 +1110,33 @@ if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
   # Der Angriff: eine fremde Geraetekennung direkt aufrufen.
   FREMD=$(sql "SELECT id FROM kartenterminal WHERE organisation_id <> $ORGID ORDER BY id LIMIT 1")
   CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
-         "http://localhost:8090/bestand/terminal/$FREMD")
+         "$BASIS/bestand/terminal/$FREMD")
   [ "$CODE" = "404" ] && MF=ja || MF=nein
   ergebnis "ein fremdes Geraet ist ueber seine Kennung nicht erreichbar (HTTP $CODE)" "$MF"
 
   # Und es laesst sich auch nicht loeschen.
-  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST "http://localhost:8090/bestand/terminal/$FREMD/loeschen"
+  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST "$BASIS/bestand/terminal/$FREMD/loeschen"
   NOCHDA=$(sql "SELECT count(*) FROM kartenterminal WHERE id = $FREMD")
   [ "$NOCHDA" = "1" ] && ML=ja || ML=nein
   ergebnis "ein fremdes Geraet laesst sich nicht loeschen" "$ML"
 
   # Massenaktion mit einer fremden Kennung
-  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST http://localhost:8090/bestand/massenaktion \
+  curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST $BASIS/bestand/massenaktion \
     --data-urlencode "geraet=$FREMD" --data-urlencode "aktion=deaktivieren"
   AKTIV=$(sql "SELECT aktiv FROM kartenterminal WHERE id = $FREMD")
   [ "$AKTIV" = "t" ] && MM=ja || MM=nein
   ergebnis "eine Massenaktion greift nicht auf fremde Geraete durch" "$MM"
   # Zweite Haelfte der Mandantentrennung: Protokoll, Alarme, Gruppen, Benutzer
   PROT_ALLE=$(sql "SELECT count(*) FROM fachprotokoll")
-  PROT_SICHT=$(curl -s -b "$DEMO_KEKSE" "http://localhost:8090/teil/protokoll" \
+  PROT_SICHT=$(curl -s -b "$DEMO_KEKSE" "$BASIS/teil/protokoll" \
                | grep -oE 'von [0-9]+' | head -1 | grep -oE '[0-9]+')
   [ -n "$PROT_SICHT" ] && [ "${PROT_SICHT:-0}" -lt "${PROT_ALLE:-0}" ] && MP=ja || MP=nein
   ergebnis "der Praxisbenutzer sieht nur einen Teil des Protokolls ($PROT_SICHT von $PROT_ALLE)" "$MP"
 
   # Der Export darf nicht mehr enthalten als die Ansicht.
-  curl -s -b "$DEMO_KEKSE" -o /tmp/pr-export-praxis.xlsx http://localhost:8090/protokoll/export
+  curl -s -b "$DEMO_KEKSE" -o /tmp/pr-export-praxis.xlsx $BASIS/protokoll/export
   GROESSE_PRAXIS=$(wc -c < /tmp/pr-export-praxis.xlsx | tr -d ' ')
-  curl -s -b "$KEKSE" -o /tmp/pr-export-admin.xlsx http://localhost:8090/protokoll/export
+  curl -s -b "$KEKSE" -o /tmp/pr-export-admin.xlsx $BASIS/protokoll/export
   GROESSE_ADMIN=$(wc -c < /tmp/pr-export-admin.xlsx | tr -d ' ')
   [ "${GROESSE_PRAXIS:-0}" -lt "${GROESSE_ADMIN:-0}" ] && MX=ja || MX=nein
   ergebnis "der Excel-Export des Praxisbenutzers ist kleiner als der des Betreibers ($GROESSE_PRAXIS < $GROESSE_ADMIN Bytes)" "$MX"
@@ -1136,14 +1145,14 @@ if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
   # Fremde Protokolleintraege duerfen auch ueber einen Geraetefilter nicht kommen.
   FREMD_KT=$(sqltext "SELECT terminal_id FROM kartenterminal WHERE organisation_id <> $ORGID
                       ORDER BY id LIMIT 1")
-  TREFFER=$(curl -s -b "$DEMO_KEKSE" "http://localhost:8090/teil/protokoll?geraet=$FREMD_KT" \
+  TREFFER=$(curl -s -b "$DEMO_KEKSE" "$BASIS/teil/protokoll?geraet=$FREMD_KT" \
             | grep -c "<tr>")
   [ "${TREFFER:-1}" = "0" ] && MG=ja || MG=nein
   ergebnis "ein Filter auf ein fremdes Geraet liefert keine Protokolleintraege ($TREFFER)" "$MG"
 
   # Rechte je Ebene: Der Demo-Benutzer ist Ebene 1 (Praxis).
   CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
-         -X POST http://localhost:8090/verwaltung/demodaten/loeschen)
+         -X POST $BASIS/verwaltung/demodaten/loeschen)
   [ "$CODE" = "403" ] && RD=ja || RD=nein
   ergebnis "ein Praxisbenutzer kann den Demodatensatz nicht loeschen (HTTP $CODE)" "$RD"
   IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
@@ -1151,19 +1160,19 @@ if [ -n "$DEMO_TOTP" ] && [ -n "$DEMO_PW" ]; then
   ergebnis "der Demodatensatz ist nach dem Versuch noch da ($IST Geraete)" "$RD2"
 
   CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
-         -X POST http://localhost:8090/verwaltung/lasttest/anlegen --data-urlencode "anzahl=10")
+         -X POST $BASIS/verwaltung/lasttest/anlegen --data-urlencode "anzahl=10")
   [ "$CODE" = "403" ] && RL=ja || RL=nein
   ergebnis "ein Praxisbenutzer kann keinen Lasttestbestand anlegen (HTTP $CODE)" "$RL"
 
   # Die Meldung muss sagen, WAS fehlt - nicht nur, dass etwas fehlt.
-  curl -s -b "$DEMO_KEKSE" -X POST http://localhost:8090/verwaltung/demodaten/anlegen -o /tmp/pr-antwort.html
+  curl -s -b "$DEMO_KEKSE" -X POST $BASIS/verwaltung/demodaten/anlegen -o /tmp/pr-antwort.html
 RM=$(enthaelt /tmp/pr-antwort.html "Ihre Berechtigung")
   ergebnis "die Abweisung nennt die eigene Berechtigung" "$RM"
 
   # FA-ORG-020: Struktur aendern erst ab Standortebene. Ein Praxisbenutzer
   # koennte sonst seinen eigenen Zustaendigkeitsbereich erweitern.
   CODE=$(curl -s -b "$DEMO_KEKSE" -o /dev/null -w '%{http_code}' \
-         -X POST http://localhost:8090/organisation \
+         -X POST $BASIS/organisation \
          --data-urlencode "bezeichnung=Praxis Eindringling" --data-urlencode "art=EINRICHTUNG" \
          --data-urlencode "elternId=$ORGID")
   [ "$CODE" = "403" ] && RO=ja || RO=nein
@@ -1173,7 +1182,7 @@ RM=$(enthaelt /tmp/pr-antwort.html "Ihre Berechtigung")
   ergebnis "nach dem Versuch existiert keine neue Einheit" "$RO2"
 
   # Und die Oberflaeche bietet ihm keinen Knopf an, den es nicht gibt.
-  curl -s -b "$DEMO_KEKSE" http://localhost:8090/organisation > /tmp/pr-org-praxis.html
+  curl -s -b "$DEMO_KEKSE" $BASIS/organisation > /tmp/pr-org-praxis.html
   grep -q "Einheit hinzufügen" /tmp/pr-org-praxis.html && RO3=nein || RO3=ja
   ergebnis "die Organisationsseite zeigt ihm kein Anlegeformular" "$RO3"
   grep -q "ab der Standortebene" /tmp/pr-org-praxis.html && RO4=ja || RO4=nein
@@ -1183,7 +1192,7 @@ RM=$(enthaelt /tmp/pr-antwort.html "Ihre Berechtigung")
   FREMD_ORG=$(sql "SELECT id FROM organisation WHERE id <> $ORGID AND art='EINRICHTUNG'
                    ORDER BY id LIMIT 1")
   curl -s -b "$DEMO_KEKSE" -o /dev/null -X POST \
-    "http://localhost:8090/organisation/$FREMD_ORG/umbenennen" \
+    "$BASIS/organisation/$FREMD_ORG/umbenennen" \
     --data-urlencode "bezeichnung=Uebernommen"
   [ "$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='Uebernommen'")" = "0" ] \
     && RO5=ja || RO5=nein
@@ -1196,7 +1205,7 @@ fi
 
 hinweis "Block B — Benutzerverwaltung und Einladungen"
 ORG_B=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
-ANTWORT_EIN=$(curl -s -b "$KEKSE" -X POST http://localhost:8090/benutzer/einladen \
+ANTWORT_EIN=$(curl -s -b "$KEKSE" -X POST $BASIS/benutzer/einladen \
   --data-urlencode "benutzername=nachweis.person" --data-urlencode "anzeigename=Nachweis Person" \
   --data-urlencode "rolle=BENUTZER" --data-urlencode "organisationId=$ORG_B")
 CODE_EIN=$(echo "$ANTWORT_EIN" | grep -A3 'class="geheimnis"' \
@@ -1222,12 +1231,12 @@ ergebnis "eine Einladung ist noch kein Konto" "$BK"
 
 # Ein schwaches Kennwort darf die Einladung nicht verbrauchen - sonst waere sie
 # durch einen Tippfehler unbrauchbar.
-curl -s -X POST http://localhost:8090/einladung \
+curl -s -X POST $BASIS/einladung \
   --data-urlencode "geheimnis=$CODE_EIN" --data-urlencode "kennwort=kurz" -o /tmp/pr-antwort.html
 BS=$(enthaelt /tmp/pr-antwort.html "mindestens 12 Zeichen")
 ergebnis "ein schwaches Kennwort wird mit Begruendung abgelehnt" "$BS"
 
-curl -s -X POST http://localhost:8090/einladung \
+curl -s -X POST $BASIS/einladung \
   --data-urlencode "geheimnis=$CODE_EIN" --data-urlencode "kennwort=EinLangesUnverdaechtigesWort42" -o /tmp/pr-antwort.html
 BL=$(enthaelt /tmp/pr-antwort.html "Einmalkennwort")
 ergebnis "nach dem Kennwort folgt die Einrichtung des zweiten Faktors" "$BL"
@@ -1236,14 +1245,14 @@ IST=$(sql "SELECT organisation_id FROM benutzer WHERE benutzername='nachweis.per
 [ "$IST" = "$ORG_B" ] && BO=ja || BO=nein
 ergebnis "das Konto landet in der eingeladenen Einrichtung ($IST)" "$BO"
 
-curl -s -X POST http://localhost:8090/einladung \
+curl -s -X POST $BASIS/einladung \
   --data-urlencode "geheimnis=$CODE_EIN" --data-urlencode "kennwort=EinLangesUnverdaechtigesWort42" -o /tmp/pr-antwort.html
 BZ=$(enthaelt /tmp/pr-antwort.html "bereits verwendet")
 ergebnis "derselbe Zugangscode ein zweites Mal wird abgewiesen" "$BZ"
 
 # Zweiten Faktor zuruecksetzen - der haeufigste Supportfall.
 NID=$(sql "SELECT id FROM benutzer WHERE benutzername='nachweis.person'")
-curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/benutzer/$NID/totp-zuruecksetzen"
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/benutzer/$NID/totp-zuruecksetzen"
 IST=$(sql "SELECT coalesce(totp_geheimnis,'-') FROM benutzer WHERE id=$NID")
 [ "$IST" = "-" ] && BT=ja || BT=nein
 ergebnis "der zweite Faktor laesst sich zuruecksetzen" "$BT"
@@ -1252,7 +1261,7 @@ IST=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='TOTP_ZURUECKGESETZT'")
 ergebnis "das Zuruecksetzen ist protokolliert" "$BTP"
 
 # Deaktivieren statt Loeschen
-curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/benutzer/$NID/aktiv" \
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/benutzer/$NID/aktiv" \
   --data-urlencode "aktiv=nein"
 IST=$(sql "SELECT aktiv FROM benutzer WHERE id=$NID")
 [ "$IST" = "f" ] && BD=ja || BD=nein
@@ -1278,7 +1287,7 @@ done
 VERBLEIBEND=$(sql "SELECT count(*) FROM benutzer WHERE aktiv AND rolle='ADMINISTRATOR'")
 echo "  Ausgangslage: $VERBLEIBEND aktiver Administrator"
 
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/benutzer/$AID/aktiv" \
+curl -s -b "$KEKSE" -X POST "$BASIS/benutzer/$AID/aktiv" \
   --data-urlencode "aktiv=nein" -o /tmp/pr-antwort.html
 BA=$(enthaelt /tmp/pr-antwort.html "letzte handlungsfähige")
 ergebnis "der letzte Administrator laesst sich nicht deaktivieren" "$BA"
@@ -1297,7 +1306,7 @@ hinweis "NFA-SIC — Anmeldebremse und Pseudonymisierung"
 # aussichtsreicheren Angriff: viele Konten mit je einem naheliegenden Kennwort.
 VORHER=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ANMELDUNG_GEBREMST'")
 for i in 1 2 3 4 5 6 7 8; do
-  curl -s -o /dev/null -X POST http://localhost:8090/anmelden \
+  curl -s -o /dev/null -X POST $BASIS/anmelden \
     -d "benutzer=gibtesnicht$i&passwort=FalschesKennwortXY&code=000000"
 done
 NACHHER=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ANMELDUNG_GEBREMST'")
@@ -1320,7 +1329,7 @@ ergebnis "keine Absenderadresse im Protokoll (Treffer: $IST)" "$AA"
 # waere die schlechtere Wahl.
 rm -f "$KEKSE"
 anmelden
-CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' http://localhost:8090/geraete)
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' $BASIS/geraete)
 [ "$CODE" = "200" ] && AN=ja || AN=nein
 ergebnis "eine richtige Anmeldung bleibt trotz Bremse moeglich (HTTP $CODE)" "$AN"
 
@@ -1339,7 +1348,7 @@ echo "  $ALT Eintraege aelter als 183 Tage vorbereitet"
 # holt Versaeumtes sofort nach.
 docker restart pr-zen >/dev/null 2>&1
 for _ in $(seq 60); do
-  curl -sf -o /dev/null http://localhost:8090/anmelden 2>/dev/null && break; sleep 1
+  curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break; sleep 1
 done
 sleep 35
 NOCH=$(sql "SELECT count(*) FROM fachprotokoll
@@ -1396,7 +1405,7 @@ ergebnis "der Roboter fasst eGK und HBA nicht an ($VERSUCHE Erwaehnungen)" "$KN"
 TID_K=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='KT-EMPFANG-01' AND NOT ist_demo
              ORDER BY id LIMIT 1")
 if [ -n "$TID_K" ]; then
-  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_K" > /tmp/pr-karten.html
+  curl -s -b "$KEKSE" "$BASIS/bestand/terminal/$TID_K" > /tmp/pr-karten.html
   grep -q "A_24080" /tmp/pr-karten.html && KX=ja || KX=nein
   ergebnis "die Oberflaeche erklaert, warum eGK und HBA nicht verwaltet werden" "$KX"
   grep -q "Gesundheitskarte" /tmp/pr-karten.html && KT=ja || KT=nein
@@ -1438,7 +1447,7 @@ if [ -z "$TID_P" ] || [ -z "$PUBB64" ]; then
   echo "    Diagnose: TID_P='$TID_P' HANDLE='$HANDLE' Schluessel vorhanden: $PS"
   FEHLER=$((FEHLER+1))
 else
-  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_P" > /tmp/pr-pin.html
+  curl -s -b "$KEKSE" "$BASIS/bestand/terminal/$TID_P" > /tmp/pr-pin.html
 
   # Die Maske sagt ausdruecklich, dass sie JavaScript braucht (ADR-0009).
   grep -q "Diese Maske braucht JavaScript" /tmp/pr-pin.html && PJ=ja || PJ=nein
@@ -1450,7 +1459,7 @@ else
   ergebnis "das PIN-Eingabefeld wird nicht mitgeschickt (kein name-Attribut)" "$PF"
 
   # Klartext statt Chiffrat wird abgewiesen - die Notbremse aus Pinverwaltung.
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_P/pin" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_P/pin" \
     -d "kartenhandle=$HANDLE" -d "chiffrat=$PIN_NEU" > /tmp/pr-pin-klartext.html
   grep -q "nicht nach einer verschlüsselten PIN" /tmp/pr-pin-klartext.html && PK=ja || PK=nein
   ergebnis "eine unverschluesselt uebergebene PIN wird abgewiesen" "$PK"
@@ -1467,7 +1476,7 @@ else
   [ -n "$CHIFFRAT" ] && PC=ja || PC=nein
   ergebnis "der gemeldete Schluessel ist als SPKI verwendbar (RSA-OAEP/SHA-256)" "$PC"
 
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_P/pin" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_P/pin" \
     -d "kartenhandle=$HANDLE" --data-urlencode "chiffrat=$CHIFFRAT" > /tmp/pr-pin-neu.html
 
   # Der Agent holt den Auftrag beim naechsten Durchgang ab.
@@ -1510,7 +1519,7 @@ else
   ergebnis "die PIN liegt beim Agenten verschluesselt in der Ablage" "$PA"
 
   # Die Oberflaeche zeigt das Kennzeichen, nie den Wert.
-  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_P" > /tmp/pr-pin2.html
+  curl -s -b "$KEKSE" "$BASIS/bestand/terminal/$TID_P" > /tmp/pr-pin2.html
   grep -q "PIN hinterlegt" /tmp/pr-pin2.html && ! grep -qF "$PIN_NEU" /tmp/pr-pin2.html \
     && PM=ja || PM=nein
   ergebnis "die Oberflaeche zeigt nur das Kennzeichen, nie den Wert" "$PM"
@@ -1522,7 +1531,7 @@ else
    echo "  Loeschen nicht pruefbar: es war keine PIN hinterlegt."
    FEHLER=$((FEHLER+1))
   else
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_P/pin-loeschen" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_P/pin-loeschen" \
     -d "kartenhandle=$HANDLE" > /dev/null
   for _ in $(seq 60); do
     [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")" = "0" ] && break
@@ -1544,7 +1553,7 @@ fi
 # ---------------------------------------------------------------- FA-ORG-020
 hinweis "FA-ORG-020 — Organisationseinheiten über die Oberfläche verwalten"
 
-curl -s -b "$KEKSE" http://localhost:8090/organisation > /tmp/pr-org.html
+curl -s -b "$KEKSE" $BASIS/organisation > /tmp/pr-org.html
 grep -qE "<h2[^>]*>Organisation</h2>" /tmp/pr-org.html && OB=ja || OB=nein
 ergebnis "die Organisationsseite ist erreichbar" "$OB"
 grep -q "Einheit hinzufügen" /tmp/pr-org.html && OF=ja || OF=nein
@@ -1557,7 +1566,7 @@ if [ -z "$STANDORT" ] || [ -z "$VERBUND" ]; then
   echo "  uebersprungen: kein Standort/Verbund im Demodatensatz"
   FEHLER=$((FEHLER+1))
 else
-  curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/organisation \
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/organisation \
     --data-urlencode "bezeichnung=Nachweis Praxis" --data-urlencode "art=EINRICHTUNG" \
     --data-urlencode "elternId=$STANDORT"
   NEU=$(sql "SELECT id FROM organisation WHERE bezeichnung='Nachweis Praxis'")
@@ -1569,14 +1578,14 @@ else
 
   if [ -n "$NEU" ]; then
     # Umbenennen
-    curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/organisation/$NEU/umbenennen" \
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$NEU/umbenennen" \
       --data-urlencode "bezeichnung=Nachweis Praxis Nord"
     [ "$(sqltext "SELECT bezeichnung FROM organisation WHERE id=$NEU")" = "Nachweis Praxis Nord" ] \
       && OU=ja || OU=nein
     ergebnis "eine Einheit laesst sich umbenennen" "$OU"
 
     # Umhaengen an den Verbund
-    curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/organisation/$NEU/umhaengen" \
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$NEU/umhaengen" \
       --data-urlencode "elternId=$VERBUND"
     [ "$(sql "SELECT eltern_id FROM organisation WHERE id=$NEU")" = "$VERBUND" ] && OH=ja || OH=nein
     ergebnis "eine Einheit laesst sich umhaengen" "$OH"
@@ -1585,13 +1594,13 @@ else
     ergebnis "das Umhaengen steht im Fachprotokoll (Sicherheitsstufe)" "$OHP"
 
     # Zyklus: den Verbund unter seine eigene neue Einrichtung haengen.
-    curl -s -b "$KEKSE" -X POST "http://localhost:8090/organisation/$VERBUND/umhaengen" \
+    curl -s -b "$KEKSE" -X POST "$BASIS/organisation/$VERBUND/umhaengen" \
       --data-urlencode "elternId=$NEU" > /tmp/pr-org-zyklus.html
     [ -z "$(sql "SELECT eltern_id FROM organisation WHERE id=$VERBUND")" ] && OZ=ja || OZ=nein
     ergebnis "ein Zyklus wird abgelehnt und der Baum bleibt heil" "$OZ"
 
     # Loeschen: die leere neue Einheit geht.
-    curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/organisation/$NEU/loeschen"
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$NEU/loeschen"
     [ "$(sql "SELECT count(*) FROM organisation WHERE id=$NEU")" = "0" ] && OL=ja || OL=nein
     ergebnis "eine leere Einheit laesst sich loeschen" "$OL"
   fi
@@ -1603,7 +1612,7 @@ else
               ORDER BY o.id LIMIT 1")
   if [ -n "$VOLL" ]; then
     VORHER_KT=$(sql "SELECT count(*) FROM kartenterminal WHERE organisation_id = $VOLL")
-    curl -s -b "$KEKSE" -X POST "http://localhost:8090/organisation/$VOLL/loeschen" \
+    curl -s -b "$KEKSE" -X POST "$BASIS/organisation/$VOLL/loeschen" \
       > /tmp/pr-org-voll.html
     NACHHER_KT=$(sql "SELECT count(*) FROM kartenterminal WHERE organisation_id = $VOLL")
     [ "$VORHER_KT" = "$NACHHER_KT" ] && [ "$(sql "SELECT count(*) FROM organisation WHERE id=$VOLL")" = "1" ] \
@@ -1623,11 +1632,11 @@ rm -f /tmp/pr-org.html
 # Protokoll und Datenbank.
 hinweis "FA-GER-050 — Gerätegruppen anlegen, zuordnen, löschen"
 
-curl -s -b "$KEKSE" http://localhost:8090/gruppen > /tmp/pr-gruppen.html
+curl -s -b "$KEKSE" $BASIS/gruppen > /tmp/pr-gruppen.html
 grep -q "Nicht zugeordnet" /tmp/pr-gruppen.html && GV=ja || GV=nein
 ergebnis "die Vorgabegruppe existiert und ist sichtbar" "$GV"
 
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
   --data-urlencode "bezeichnung=Nachweis Notaufnahme" --data-urlencode "intervall=30"
 GID=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Notaufnahme'")
 [ -n "$GID" ] && GA=ja || GA=nein
@@ -1639,7 +1648,7 @@ ergebnis "das Anlegen steht im Fachprotokoll" "$GP"
 
 # Ein zu kurzes Intervall muss abgelehnt werden - 5 Sekunden mal 5.000 Geraete
 # waeren 1.000 Abfragen pro Sekunde.
-curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/gruppen/$GID/intervall" \
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/gruppen/$GID/intervall" \
   --data-urlencode "intervall=1"
 [ "$(sql "SELECT pruefintervall_sekunden FROM geraetegruppe WHERE id=$GID")" = "30" ] && GK=ja || GK=nein
 ergebnis "ein unzulaessig kurzes Intervall wird nicht uebernommen" "$GK"
@@ -1659,12 +1668,12 @@ VORGABE=$(sql "SELECT gg.id FROM geraetegruppe gg
                JOIN geraet ge ON ge.einrichtung = gg.einrichtung
                WHERE gg.ist_vorgabe AND ge.terminal_id='$KT_G'")
 if [ -n "$KT_G" ] && [ -n "$GID" ]; then
-  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_G/gruppe" \
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/geraete/$KT_G/gruppe" \
     --data-urlencode "gruppe=$GID"
   [ "$(sql "SELECT gruppe_id FROM geraet WHERE terminal_id='$KT_G'")" = "$GID" ] && GZ=ja || GZ=nein
   ergebnis "ein Geraet laesst sich einer Gruppe zuordnen" "$GZ"
 
-  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/gruppen/$GID/loeschen"
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/gruppen/$GID/loeschen"
   [ "$(sql "SELECT count(*) FROM geraetegruppe WHERE id=$GID")" = "0" ] && GL=ja || GL=nein
   ergebnis "die Gruppe laesst sich loeschen" "$GL"
   # Der entscheidende Punkt: Das Geraet ist umgezogen, nicht verschwunden.
@@ -1680,7 +1689,7 @@ fi
 # einer Instanz waren damit alle Gruppen an dieselbe Einrichtung gebunden.
 E_G=$(sqltext "SELECT bezeichnung FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
 if [ -n "$E_G" ]; then
-  curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
     --data-urlencode "bezeichnung=Nachweis je Praxis" \
     --data-urlencode "einrichtung=$E_G" --data-urlencode "intervall=45"
   ORG_G=$(sql "SELECT coalesce(organisation_id::text,'-') FROM geraetegruppe
@@ -1692,7 +1701,7 @@ if [ -n "$E_G" ]; then
   ergebnis "sie traegt die Kennung der Organisationseinheit ($ORG_G)" "$GO"
 
   # Und die Uebersicht zeigt Gruppen ALLER Einrichtungen, nicht nur "Praxis".
-  curl -s -b "$KEKSE" http://localhost:8090/gruppen -o /tmp/pr-grp.html
+  curl -s -b "$KEKSE" $BASIS/gruppen -o /tmp/pr-grp.html
   [ "$(enthaelt /tmp/pr-grp.html "$E_G")" = "ja" ] && GU=ja || GU=nein
   ergebnis "die Uebersicht nennt die Einrichtung je Gruppe" "$GU"
   rm -f /tmp/pr-grp.html
@@ -1700,7 +1709,7 @@ fi
 
 # Die Vorgabegruppe darf nicht verschwinden - neu erkannte Geraete brauchen
 # eine Gruppe, in der sie landen koennen.
-curl -s -b "$KEKSE" -X POST "http://localhost:8090/gruppen/$VORGABE/loeschen" > /tmp/pr-gruppe-vg.html
+curl -s -b "$KEKSE" -X POST "$BASIS/gruppen/$VORGABE/loeschen" > /tmp/pr-gruppe-vg.html
 [ "$(sql "SELECT count(*) FROM geraetegruppe WHERE id=$VORGABE")" = "1" ] && GD=ja || GD=nein
 ergebnis "die Vorgabegruppe laesst sich nicht loeschen" "$GD"
 grep -q "Vorgabegruppe" /tmp/pr-gruppe-vg.html && GDM=ja || GDM=nein
@@ -1718,7 +1727,7 @@ ALARM=$(sql "SELECT id FROM alarm WHERE quittiert_von IS NULL AND behoben_am IS 
 if [ -z "$ALARM" ]; then
   echo "  uebersprungen: derzeit kein offener Alarm im System"
 else
-  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/alarme/$ALARM/quittieren"
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/alarme/$ALARM/quittieren"
   QUITT=$(sqltext "SELECT coalesce(quittiert_von,'-') FROM alarm WHERE id=$ALARM")
   [ "$QUITT" != "-" ] && AQ=ja || AQ=nein
   ergebnis "ein offener Alarm laesst sich quittieren (durch: $QUITT)" "$AQ"
@@ -1734,7 +1743,7 @@ else
   ergebnis "das Quittieren behebt den Alarm NICHT" "$AB"
 
   # Und die Oberflaeche bietet keinen zweiten Quittierknopf an.
-  curl -s -b "$KEKSE" http://localhost:8090/teil/uebersicht > /tmp/pr-alarme.html
+  curl -s -b "$KEKSE" $BASIS/teil/uebersicht > /tmp/pr-alarme.html
   QK=$(grep -c "/alarme/$ALARM/quittieren" /tmp/pr-alarme.html || true)
   [ "${QK:-1}" = "0" ] && AK=ja || AK=nein
   ergebnis "ein quittierter Alarm bietet keinen zweiten Quittierknopf ($QK)" "$AK"
@@ -1746,8 +1755,8 @@ hinweis "UX-Stufe 4/5 — Detailseiten statt Aufklapper, Beziehungen zum Durchkl
 
 # Kein "details"-Aufklapper mehr in Bestand und Organisation: Die Seite soll
 # nicht laenger werden, sondern eine neue aufgehen.
-curl -s -b "$KEKSE" http://localhost:8090/bestand      -o /tmp/pr-ux-bestand.html
-curl -s -b "$KEKSE" http://localhost:8090/organisation -o /tmp/pr-ux-org.html
+curl -s -b "$KEKSE" $BASIS/bestand      -o /tmp/pr-ux-bestand.html
+curl -s -b "$KEKSE" $BASIS/organisation -o /tmp/pr-ux-org.html
 AUF=$(( $(grep -c 'class="ausklapp"' /tmp/pr-ux-bestand.html || true) \
       + $(grep -c 'class="ausklapp"' /tmp/pr-ux-org.html || true) ))
 [ "$AUF" = "0" ] && UA=ja || UA=nein
@@ -1757,7 +1766,7 @@ for paar in "/bestand/konnektor/neu:Konnektor hinzufügen" \
             "/bestand/terminal/neu:Kartenterminal hinzufügen" \
             "/organisation/neu:Einheit hinzufügen"; do
   PFAD=${paar%%:*}; TITEL=${paar#*:}
-  CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-ux-neu.html -w '%{http_code}' "http://localhost:8090$PFAD")
+  CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-ux-neu.html -w '%{http_code}' "$BASIS$PFAD")
   UN=nein
   if [ "$CODE" = "200" ] && [ "$(enthaelt /tmp/pr-ux-neu.html "$TITEL")" = "ja" ] \
      && [ "$(enthaelt /tmp/pr-ux-neu.html 'class="zurueck"')" = "ja" ]; then UN=ja; fi
@@ -1775,7 +1784,7 @@ if [ -z "$ORG_D" ]; then
   FEHLER=$((FEHLER+1))
 else
   CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-ux-detail.html -w '%{http_code}' \
-         "http://localhost:8090/organisation/$ORG_D")
+         "$BASIS/organisation/$ORG_D")
   [ "$CODE" = "200" ] && UD=ja || UD=nein
   ergebnis "die Organisationseinheit hat eine eigene Adresse (HTTP $CODE)" "$UD"
 
@@ -1790,7 +1799,7 @@ else
 
   # Der Absprung muss wirklich filtern - eine Kachel, die auf eine ungefilterte
   # Liste fuehrt, ist eine Luege.
-  curl -s -b "$KEKSE" "http://localhost:8090/bestand?einrichtung=$ORG_D" -o /tmp/pr-ux-abs.html
+  curl -s -b "$KEKSE" "$BASIS/bestand?einrichtung=$ORG_D" -o /tmp/pr-ux-abs.html
   IST_ABS=$(grep -oE 'Kartenterminals <span class="zaehler">[0-9]+' /tmp/pr-ux-abs.html \
             | grep -oE '[0-9]+$')
   ALLE_KT=$(sql "SELECT count(*) FROM kartenterminal")
@@ -1803,7 +1812,7 @@ else
   FREMD_ORG=$(sql "SELECT id FROM organisation WHERE id <> $ORG_D AND art='EINRICHTUNG'
                    ORDER BY id LIMIT 1")
   CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-         "http://localhost:8090/organisation/$FREMD_ORG")
+         "$BASIS/organisation/$FREMD_ORG")
   [ "$CODE" = "302" ] && UM=ja || UM=nein
   ergebnis "die Detailseite ist ohne Anmeldung nicht erreichbar (HTTP $CODE)" "$UM"
 
@@ -1820,13 +1829,13 @@ hinweis "FA-ALA-020 — Benachrichtigung per E-Mail"
 # Der Auffangserver laeuft im Simulator (Port 1025) — kein zusaetzliches Image.
 # Der erste Anlauf verwendete MailHog; der Lauf blieb beim Ziehen des Images
 # stehen, und ein Nachweis, der Internetzugang braucht, ist unbrauchbar.
-curl -s -X DELETE "http://localhost:8480/mail" >/dev/null 2>&1
+curl -s -X DELETE "$SIMBASIS/mail" >/dev/null 2>&1
 if true; then
-  mails() { curl -s "http://localhost:8480/mail"; }
+  mails() { curl -s "$SIMBASIS/mail"; }
   mailzahl() { mails | grep -oE '"anzahl":[0-9]+' | head -1 | grep -oE '[0-9]+$'; }
 
   # Mailserver einrichten
-  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/server \
+  curl -s -b "$KEKSE" -X POST $BASIS/benachrichtigung/server \
     --data-urlencode "host=simulator" --data-urlencode "port=1025" \
     --data-urlencode "absender=pin-roboter@praxis.example" \
     -o /tmp/pr-mail-srv.html
@@ -1836,7 +1845,7 @@ if true; then
   # Testversand — ohne ihn merkt der Betreiber erst beim ersten echten Alarm,
   # dass die Einstellung nicht stimmt.
   VOR=$(mailzahl)
-  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/test \
+  curl -s -b "$KEKSE" -X POST $BASIS/benachrichtigung/test \
     --data-urlencode "testempfaenger=leitung@praxis.example" -o /tmp/pr-mail-test.html
   sleep 2
   NACH=$(mailzahl)
@@ -1858,7 +1867,7 @@ if true; then
                  WHERE EXISTS (SELECT 1 FROM kartenterminal t WHERE t.organisation_id = o.id)
                  ORDER BY o.id LIMIT 1")
   fi
-  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/regel \
+  curl -s -b "$KEKSE" -X POST $BASIS/benachrichtigung/regel \
     --data-urlencode "organisationId=$ORG_M" \
     --data-urlencode "empfaenger=leitung@praxis.example" \
     --data-urlencode "schwelle=WARNUNG" --data-urlencode "fenster=0" \
@@ -1909,7 +1918,7 @@ if true; then
   ergebnis "keine Geheimnisse im Mailverkehr (Treffer: $TREFFER)" "$MG"
 
   # Das Mailserver-Kennwort liegt verschluesselt, nicht im Klartext.
-  curl -s -b "$KEKSE" -X POST http://localhost:8090/benachrichtigung/server \
+  curl -s -b "$KEKSE" -X POST $BASIS/benachrichtigung/server \
     --data-urlencode "host=simulator" --data-urlencode "port=1025" \
     --data-urlencode "absender=pin-roboter@praxis.example" \
     --data-urlencode "benutzer=postmaster" --data-urlencode "kennwort=MailKennwortXY" \
@@ -1920,7 +1929,7 @@ if true; then
   KLAR=$(sql "SELECT count(*) FROM mail_server WHERE kennwort_chiffrat LIKE '%MailKennwortXY%'")
   [ "${KLAR:-1}" = "0" ] && MK2=ja || MK2=nein
   ergebnis "es steht nirgends im Klartext" "$MK2"
-  curl -s -b "$KEKSE" http://localhost:8090/benachrichtigung -o /tmp/pr-mail-seite.html
+  curl -s -b "$KEKSE" $BASIS/benachrichtigung -o /tmp/pr-mail-seite.html
   [ "$(enthaelt /tmp/pr-mail-seite.html "MailKennwortXY")" = "nein" ] && MK3=ja || MK3=nein
   ergebnis "und erscheint nicht auf der Oberflaeche" "$MK3"
   [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE coalesce(text,'') LIKE '%MailKennwortXY%'")" = "0" ] \
@@ -1943,9 +1952,9 @@ fi
 hinweis "FA-UEB-010 — das Prüfintervall je Gerätegruppe wirkt"
 
 # Zwei Gruppen mit deutlich verschiedenen Intervallen.
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
   --data-urlencode "bezeichnung=Nachweis Schnell" --data-urlencode "intervall=10"
-curl -s -b "$KEKSE" -o /dev/null -X POST http://localhost:8090/gruppen \
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
   --data-urlencode "bezeichnung=Nachweis Langsam" --data-urlencode "intervall=120"
 G_SCHNELL=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Schnell'")
 G_LANGSAM=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Langsam'")
@@ -1961,14 +1970,14 @@ if [ -z "$G_SCHNELL" ] || [ -z "$G_LANGSAM" ] || [ "${#KT_IDS[@]}" -lt 2 ]; then
   FEHLER=$((FEHLER+1))
 else
   KT_A=${KT_IDS[0]}; KT_B=${KT_IDS[1]}
-  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_A/gruppe" \
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/geraete/$KT_A/gruppe" \
     --data-urlencode "gruppe=$G_SCHNELL"
-  curl -s -b "$KEKSE" -o /dev/null -X POST "http://localhost:8090/geraete/$KT_B/gruppe" \
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/geraete/$KT_B/gruppe" \
     --data-urlencode "gruppe=$G_LANGSAM"
   echo "  $KT_A -> 10 s,  $KT_B -> 120 s"
 
   # Der Agent holt die Intervalle im Grundtakt. Warten, bis er sie kennt.
-  curl -s -b "$KEKSE" -o /dev/null "http://localhost:8090/api/agent/intervalle" 2>/dev/null
+  curl -s -b "$KEKSE" -o /dev/null "$BASIS/api/agent/intervalle" 2>/dev/null
   ANTWORT_I=$(docker exec pr-agt sh -c 'echo' 2>/dev/null; \
               docker logs pr-agt 2>&1 | grep -c "Prüfintervalle aktualisiert" || true)
   for _ in $(seq 20); do
@@ -1980,9 +1989,9 @@ else
 
   # Jetzt zaehlen: 40 Sekunden lang. Das schnelle Geraet muss deutlich
   # oefter abgefragt werden als das langsame.
-  curl -s -X DELETE "http://localhost:8480/abfragen" >/dev/null
+  curl -s -X DELETE "$SIMBASIS/abfragen" >/dev/null
   sleep 40
-  ZAEHLER=$(curl -s "http://localhost:8480/abfragen")
+  ZAEHLER=$(curl -s "$SIMBASIS/abfragen")
   # Kartenhandle des jeweiligen Terminals ermitteln.
   H_A=$(sqltext "SELECT kartenhandle FROM ermittelte_karte WHERE terminal_id='$KT_A'
                  AND kartentyp='SMC-B' LIMIT 1")
@@ -2019,7 +2028,7 @@ hinweis "gemSpec_Kon 4.3.10 — während eines KSR-Laufs wird nirgends verifizie
 stack_starten 123456 4
 
 V_KSR=$(verifikationen)
-ANTWORT_KSR=$(curl -s -X POST "http://localhost:8480/ksr/start?dauer=40000")
+ANTWORT_KSR=$(curl -s -X POST "$SIMBASIS/ksr/start?dauer=40000")
 BETROFFEN=$(echo "$ANTWORT_KSR" | grep -oE '"terminals":[0-9]+' | grep -oE '[0-9]+$')
 echo "  KSR-Lauf über $BETROFFEN Terminals, 40 s bei 10 s Gruppentakt → ~4 Gelegenheiten"
 [ "${BETROFFEN:-0}" -ge 2 ] && KB=ja || KB=nein
@@ -2045,14 +2054,14 @@ N_KSR=$(verifikationen)
 ergebnis "nach dem KSR-Lauf stellt der Roboter den Zustand wieder her ($((N_KSR-W_KSR)))" "$KW"
 
 # Und der Betreiber erfaehrt, was los ist — nicht nur, dass nichts passiert.
-curl -s -X POST "http://localhost:8480/ksr/start?dauer=45000" >/dev/null
+curl -s -X POST "$SIMBASIS/ksr/start?dauer=45000" >/dev/null
 # Der Agent meldet den Zustand erst beim naechsten Durchgang. Bei 10 s
 # Gruppentakt braucht die Oberflaeche bis zu zwei Takte, um ihn zu zeigen.
 sleep 25
-curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-ksr.html
+curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-ksr.html
 KH=$(enthaelt /tmp/pr-ksr.html "wird aktualisiert")
 ergebnis "die Oberflaeche nennt den Zustand waehrend des Laufs" "$KH"
-curl -s -X POST "http://localhost:8480/ksr/ende" >/dev/null
+curl -s -X POST "$SIMBASIS/ksr/ende" >/dev/null
 rm -f /tmp/pr-ksr.html
 
 # ------------------------------------------- FA-PIN-040 / FA-UEB-020 / FA-UEB-030
@@ -2061,9 +2070,9 @@ hinweis "FA-PIN-040 — nicht behebbare Zustände werden gemeldet, nicht versuch
 # Vier Zustaende, die der Roboter NICHT aufloesen kann. Jeder muss eine eigene
 # Klartextmeldung tragen — und keinen Verifikationsversuch ausloesen.
 V_NB=$(verifikationen)
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/transportpin >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/transportpin >/dev/null
 sleep 25
-curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-nb.html
+curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-nb.html
 [ "$(enthaelt /tmp/pr-nb.html "Transport-PIN")" = "ja" ] && PT=ja || PT=nein
 ergebnis "Transport-PIN wird als eigener Zustand angezeigt" "$PT"
 [ "$(enthaelt /tmp/pr-nb.html "am Kartenterminal")" = "ja" ] && PT2=ja || PT2=nein
@@ -2072,9 +2081,9 @@ W_NB=$(verifikationen)
 [ $((W_NB-V_NB)) -eq 0 ] && PT3=ja || PT3=nein
 ergebnis "kein Verifikationsversuch bei Transport-PIN (gemessen: $((W_NB-V_NB)))" "$PT3"
 
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/sperren >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/sperren >/dev/null
 sleep 25
-curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-nb2.html
+curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-nb2.html
 [ "$(enthaelt /tmp/pr-nb2.html "gesperrt")" = "ja" ] && PB=ja || PB=nein
 ergebnis "gesperrte Karte wird als solche angezeigt" "$PB"
 [ "$(enthaelt /tmp/pr-nb2.html "PUK")" = "ja" ] && PB2=ja || PB2=nein
@@ -2082,11 +2091,11 @@ ergebnis "die Meldung nennt die PUK als einzigen Weg" "$PB2"
 N_NB=$(verifikationen)
 [ $((N_NB-W_NB)) -eq 0 ] && PB3=ja || PB3=nein
 ergebnis "kein Verifikationsversuch bei gesperrter Karte (gemessen: $((N_NB-W_NB)))" "$PB3"
-curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/zuruecksetzen >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/zuruecksetzen >/dev/null
 rm -f /tmp/pr-nb.html /tmp/pr-nb2.html
 
 hinweis "FA-UEB-020 — Erreichbarkeitswechsel werden protokolliert"
-curl -s -X POST http://localhost:8480/steuerung/KT-BEHANDLUNG-01/erreichbar/false >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-BEHANDLUNG-01/erreichbar/false >/dev/null
 for _ in $(seq 20); do
   [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_NICHT_ERREICHBAR'")" != "0" ] && break
   sleep 2
@@ -2095,7 +2104,7 @@ AUS=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_NICHT_ERREICHBAR
 [ "${AUS:-0}" -ge 1 ] && EA=ja || EA=nein
 ergebnis "der Ausfall steht im Fachprotokoll ($AUS)" "$EA"
 
-curl -s -X POST http://localhost:8480/steuerung/KT-BEHANDLUNG-01/erreichbar/true >/dev/null
+curl -s -X POST $SIMBASIS/steuerung/KT-BEHANDLUNG-01/erreichbar/true >/dev/null
 for _ in $(seq 20); do
   [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='GERAET_ERREICHBAR'")" != "0" ] && break
   sleep 2
@@ -2113,7 +2122,7 @@ NACH_E=$(sql "SELECT count(*) FROM fachprotokoll WHERE art IN ('GERAET_ERREICHBA
 ergebnis "bei gleichbleibendem Zustand kommt nichts dazu ($VOR_E -> $NACH_E)" "$EK"
 
 hinweis "FA-UEB-030 — Firmware-Stand erfassen und Wechsel erkennen"
-curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-fw.html
+curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-fw.html
 [ "$(enthaelt /tmp/pr-fw.html "Firmware-Stände")" = "ja" ] && FU=ja || FU=nein
 ergebnis "die Flottenuebersicht zeigt die Verteilung je Modell" "$FU"
 [ "$(enthaelt /tmp/pr-fw.html "aktuellster Stand")" = "ja" ] && FB=ja || FB=nein
@@ -2121,7 +2130,7 @@ ergebnis "sie bewertet die Staende, statt sie nur aufzuzaehlen" "$FB"
 
 # Ein Versionswechsel muss erkannt werden, egal wer ihn ausgeloest hat.
 VOR_F=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'")
-curl -s -X POST "http://localhost:8480/steuerung/KT-EMPFANG-01/firmware/9.9.9?dauer=2000" >/dev/null
+curl -s -X POST "$SIMBASIS/steuerung/KT-EMPFANG-01/firmware/9.9.9?dauer=2000" >/dev/null
 for _ in $(seq 25); do
   [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'")" -gt "${VOR_F:-0}" ] && break
   sleep 2
@@ -2134,7 +2143,7 @@ TEXT_F=$(sqltext "SELECT text FROM fachprotokoll WHERE art='FIRMWARE_GEAENDERT'
 case "$TEXT_F" in *"9.9.9"*) FT=ja ;; *) FT=nein ;; esac
 ergebnis "der Eintrag nennt alten und neuen Stand ($TEXT_F)" "$FT"
 [ "$(enthaelt /tmp/pr-fw.html "9.9.9")" = "nein" ] && true
-curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-fw2.html
+curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-fw2.html
 [ "$(enthaelt /tmp/pr-fw2.html "9.9.9")" = "ja" ] && FS=ja || FS=nein
 ergebnis "der neue Stand erscheint in der Uebersicht" "$FS"
 rm -f /tmp/pr-fw.html /tmp/pr-fw2.html
@@ -2157,7 +2166,7 @@ NACH_V=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_VERSION'")
 [ "$VOR_V" = "$NACH_V" ] && AW=ja || AW=nein
 ergebnis "bei gleicher Version kommt nichts dazu ($VOR_V -> $NACH_V)" "$AW"
 
-curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-agt-v.html
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-agt-v.html
 [ "$(enthaelt /tmp/pr-agt-v.html "Standort-Agenten")" = "ja" ] && AT=ja || AT=nein
 ergebnis "die Oberflaeche zeigt die Agenten mit ihrer Version" "$AT"
 [ "$(enthaelt /tmp/pr-agt-v.html "nicht abgewiesen")" = "ja" ] && AS=ja || AS=nein
@@ -2173,7 +2182,7 @@ AID=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
 GESEHEN_VOR=$(sqltext "SELECT coalesce(zuletzt_gesehen::text,'-') FROM agent WHERE id = $AID")
 docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
   "UPDATE agent SET protokollversion = 99 WHERE id = $AID" >/dev/null
-curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-agt-v2.html
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-agt-v2.html
 [ "$(enthaelt /tmp/pr-agt-v2.html "neuer als die Zentrale")" = "ja" ] && AU=ja || AU=nein
 ergebnis "eine nicht unterstuetzte Version wird erkannt und erklaert" "$AU"
 sleep 25
@@ -2194,7 +2203,7 @@ docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
    VALUES ($AID2, 'card-nachweis-restore', now() - interval '1 hour')
    ON CONFLICT DO NOTHING;
    UPDATE agent SET schluessel_gemeldet = now() WHERE id = $AID2" >/dev/null
-curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-restore.html
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-restore.html
 [ "$(enthaelt /tmp/pr-restore.html "card-nachweis-restore")" = "ja" ] && RN=ja || RN=nein
 ergebnis "die fehlende PIN wird namentlich genannt" "$RN"
 [ "$(enthaelt /tmp/pr-restore.html "neuen Schlüssel")" = "ja" ] && RE=ja || RE=nein
@@ -2204,7 +2213,7 @@ ergebnis "und sagt, was zu tun ist" "$RH"
 
 docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
   "DELETE FROM pin_hinterlegt WHERE kartenhandle='card-nachweis-restore'" >/dev/null
-curl -s -b "$KEKSE" http://localhost:8090/verwaltung -o /tmp/pr-restore2.html
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-restore2.html
 [ "$(enthaelt /tmp/pr-restore2.html "PINs neu zu hinterlegen")" = "nein" ] && RW=ja || RW=nein
 ergebnis "ohne fehlende PIN erscheint die Tafel gar nicht" "$RW"
 rm -f /tmp/pr-restore.html /tmp/pr-restore2.html
@@ -2272,7 +2281,7 @@ else
   }
 
   # Zuerst die PIN hinterlegen, sonst gibt es nichts zu aendern.
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_C/pin" \
     -d "kartenhandle=$H_C" --data-urlencode "chiffrat=$(chiffre 123456)" -o /dev/null
   for _ in $(seq 30); do
     [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle='$H_C'")" = "1" ] && break
@@ -2280,7 +2289,7 @@ else
   done
 
   # Die Maske muss drei Felder anbieten: alt, neu, Wiederholung.
-  curl -s -b "$KEKSE" "http://localhost:8090/bestand/terminal/$TID_C" -o /tmp/pr-aend.html
+  curl -s -b "$KEKSE" "$BASIS/bestand/terminal/$TID_C" -o /tmp/pr-aend.html
   DREI=0
   for f in 'id="pinAlt"' 'id="pinNeu"' 'id="pinNeu2"'; do
     [ "$(enthaelt /tmp/pr-aend.html "$f")" = "ja" ] && DREI=$((DREI+1))
@@ -2291,7 +2300,7 @@ else
   ergebnis "sie nennt die Grundlage der Aenderung (A_24082)" "$CQ"
 
   # Der eigentliche Weg: 123456 -> 424242
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin-aendern" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_C/pin-aendern" \
     -d "kartenhandle=$H_C" \
     --data-urlencode "chiffratAlt=$(chiffre 123456)" \
     --data-urlencode "chiffratNeu=$(chiffre 424242)" -o /dev/null
@@ -2307,7 +2316,7 @@ else
 
   # Auf der KARTE muss jetzt die neue PIN gelten. Beweis: Der Roboter
   # verifiziert weiter erfolgreich, nachdem die Verifikation entzogen wurde.
-  curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+  curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/entziehen >/dev/null
   V_C=$(verifikationen)
   for _ in $(seq 30); do
     [ $(( $(verifikationen) - V_C )) -ge 1 ] && break
@@ -2336,7 +2345,7 @@ else
   # Schlaegt die Aenderung fehl, bleibt die hinterlegte PIN unveraendert —
   # sonst haette der Agent eine PIN im Speicher, die auf der Karte nicht gilt,
   # und wuerde reihenweise Fehlversuche erzeugen.
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin-aendern" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_C/pin-aendern" \
     -d "kartenhandle=$H_C" \
     --data-urlencode "chiffratAlt=$(chiffre 999999)" \
     --data-urlencode "chiffratNeu=$(chiffre 111111)" -o /dev/null
@@ -2349,7 +2358,7 @@ else
   [ "$MELDUNG_C" != "-" ] && CE=ja || CE=nein
   ergebnis "eine falsche alte PIN wird abgelehnt und gemeldet" "$CE"
 
-  curl -s -X POST http://localhost:8480/steuerung/KT-EMPFANG-01/entziehen >/dev/null
+  curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/entziehen >/dev/null
   V_D=$(verifikationen)
   for _ in $(seq 30); do
     [ $(( $(verifikationen) - V_D )) -ge 1 ] && break
@@ -2360,7 +2369,7 @@ else
   ergebnis "nach dem Fehlschlag gilt weiter die zuletzt gueltige PIN" "$CU"
 
   # Und die Notbremse: Klartext statt Chiffrat wird abgewiesen.
-  curl -s -b "$KEKSE" -X POST "http://localhost:8090/bestand/terminal/$TID_C/pin-aendern" \
+  curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_C/pin-aendern" \
     -d "kartenhandle=$H_C" -d "chiffratAlt=123456" -d "chiffratNeu=424242" \
     -o /tmp/pr-aend-klar.html
   [ "$(enthaelt /tmp/pr-aend-klar.html "keine verschlüsselten PINs")" = "ja" ] && CK=ja || CK=nein
@@ -2378,12 +2387,12 @@ if [ -z "$KT_V" ]; then
   FEHLER=$((FEHLER+1))
 else
   # Aus der Geraeteliste in EINEM Klick erreichbar.
-  curl -s -b "$KEKSE" http://localhost:8090/geraete -o /tmp/pr-gl.html
+  curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-gl.html
   [ "$(enthaelt /tmp/pr-gl.html "/geraete/$KT_V/verlauf")" = "ja" ] && ZK=ja || ZK=nein
   ergebnis "der Zeitstrahl ist aus der Geraeteliste verlinkt" "$ZK"
 
   CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-zs.html -w '%{http_code}' \
-         "http://localhost:8090/geraete/$KT_V/verlauf")
+         "$BASIS/geraete/$KT_V/verlauf")
   [ "$CODE" = "200" ] && [ "$(enthaelt /tmp/pr-zs.html "Zeitstrahl")" = "ja" ] && ZS=ja || ZS=nein
   ergebnis "die Zeitstrahl-Seite ist erreichbar (HTTP $CODE)" "$ZS"
 
@@ -2404,13 +2413,13 @@ else
   # Und die Filter wirken wirklich — sonst waeren sie Zierde.
   ALLE_Z=$(grep -c 'class="eintrag e' /tmp/pr-zs.html || true)
   curl -s -b "$KEKSE" -o /tmp/pr-zs2.html \
-    "http://localhost:8090/geraete/$KT_V/verlauf?zeitraum=alle&art=GERAET_ERKANNT"
+    "$BASIS/geraete/$KT_V/verlauf?zeitraum=alle&art=GERAET_ERKANNT"
   GEFILTERT=$(grep -c 'class="eintrag e' /tmp/pr-zs2.html || true)
   [ "${GEFILTERT:-0}" -lt "${ALLE_Z:-0}" ] && [ "${GEFILTERT:-0}" -ge 1 ] && ZF=ja || ZF=nein
   ergebnis "der Artenfilter wirkt ($GEFILTERT von $ALLE_Z Eintraegen)" "$ZF"
 
   # Ein fremdes Geraet darf hier nichts preisgeben.
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8090/geraete/$KT_V/verlauf")
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' "$BASIS/geraete/$KT_V/verlauf")
   [ "$CODE" = "302" ] && ZM=ja || ZM=nein
   ergebnis "ohne Anmeldung ist der Zeitstrahl nicht erreichbar (HTTP $CODE)" "$ZM"
 
@@ -2423,7 +2432,7 @@ else
   else
     N_VG=$(sql "SELECT count(*) FROM fachprotokoll WHERE vorgang='$VG'")
     CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-vg.html -w '%{http_code}' \
-           "http://localhost:8090/vorgang/$VG")
+           "$BASIS/vorgang/$VG")
     [ "$CODE" = "200" ] && VA=ja || VA=nein
     ergebnis "die Vorgangsansicht ist erreichbar (HTTP $CODE, Vorgang $VG)" "$VA"
     ANZ_VG=$(grep -c 'class="eintrag e' /tmp/pr-vg.html || true)
@@ -2443,7 +2452,7 @@ else
                   WHERE geraet='$KT_V' AND vorgang IS NOT NULL")
     if [ "${MIT_VG:-0}" -ge 1 ]; then
       curl -s -b "$KEKSE" -o /tmp/pr-zs3.html \
-        "http://localhost:8090/geraete/$KT_V/verlauf?zeitraum=alle"
+        "$BASIS/geraete/$KT_V/verlauf?zeitraum=alle"
       [ "$(enthaelt /tmp/pr-zs3.html "/vorgang/")" = "ja" ] && VZ=ja || VZ=nein
       ergebnis "der Zeitstrahl verweist auf den zugehoerigen Vorgang" "$VZ"
       rm -f /tmp/pr-zs3.html
@@ -2461,7 +2470,7 @@ fi
 hinweis "FA-UPD-010 — neue Versionen erkennen"
 
 # Zugang mit GUELTIGEM Token einrichten.
-curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry \
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry \
   --data-urlencode "registry=http://simulator:8480/registry" \
   --data-urlencode "abbild=nieting/pin-roboter" \
   --data-urlencode "benutzer=pin-roboter" \
@@ -2469,7 +2478,7 @@ curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry \
 UZ=$(enthaelt /tmp/pr-reg.html "Produktversion")
 ergebnis "der Registry-Zugang laesst sich einrichten" "$UZ"
 
-curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry/pruefen -o /tmp/pr-reg2.html
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/pruefen -o /tmp/pr-reg2.html
 [ "$(enthaelt /tmp/pr-reg2.html "1.1.0")" = "ja" ] && UV=ja || UV=nein
 ergebnis "verfuegbare Versionen werden angezeigt" "$UV"
 [ "$(enthaelt /tmp/pr-reg2.html "latest")" = "nein" ] && UL=ja || UL=nein
@@ -2487,8 +2496,8 @@ ergebnis "es hebt sich sichtbar von einer Verbesserung ab" "$US2"
 
 # Der Kern der Anforderung: abgelaufene Zugangsdaten als SICHTBARER
 # Fehlerzustand, nicht als ausbleibende Meldung.
-curl -s -X POST "http://localhost:8480/registry/abgelaufen" >/dev/null
-curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry/pruefen -o /tmp/pr-reg3.html
+curl -s -X POST "$SIMBASIS/registry/abgelaufen" >/dev/null
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/pruefen -o /tmp/pr-reg3.html
 [ "$(enthaelt /tmp/pr-reg3.html "Zugangsdaten abgelehnt")" = "ja" ] && UF=ja || UF=nein
 ergebnis "abgelaufene Zugangsdaten erscheinen als sichtbarer Fehlerzustand" "$UF"
 [ "$(enthaelt /tmp/pr-reg3.html "abgelaufen oder")" = "ja" ] && UF2=ja || UF2=nein
@@ -2498,8 +2507,8 @@ case "$FEHL_DB" in *abgelehnt*) UF3=ja ;; *) UF3=nein ;; esac
 ergebnis "der Fehler wird gespeichert, nicht nur geloggt" "$UF3"
 
 # Und er verschwindet, sobald es wieder geht.
-curl -s -X POST "http://localhost:8480/registry/abgelaufen?nein" >/dev/null
-curl -s -b "$KEKSE" -X POST http://localhost:8090/verwaltung/registry/pruefen -o /tmp/pr-reg4.html
+curl -s -X POST "$SIMBASIS/registry/abgelaufen?nein" >/dev/null
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/pruefen -o /tmp/pr-reg4.html
 [ "$(enthaelt /tmp/pr-reg4.html "Zugangsdaten abgelehnt")" = "nein" ] && UG=ja || UG=nein
 ergebnis "nach erfolgreicher Abfrage ist der Fehlerzustand weg" "$UG"
 
@@ -2516,22 +2525,124 @@ case "$CH_R" in v1:*) UC=ja ;; *) UC=nein ;; esac
 ergebnis "es liegt verschluesselt in der Datenbank" "$UC"
 
 # Ein Praxisbenutzer darf die Registry nicht umstellen.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8090/verwaltung/registry \
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST $BASIS/verwaltung/registry \
        --data-urlencode "registry=http://boese.example" --data-urlencode "abbild=x/y")
 [ "$CODE" = "302" ] && UR=ja || UR=nein
 ergebnis "ohne Anmeldung laesst sich die Registry nicht umstellen (HTTP $CODE)" "$UR"
 
 rm -f /tmp/pr-reg*.html
 
+# ---------------------------------------------------------------- FA-BEN-035
+hinweis "FA-BEN-035 — Administratorkonto aus der Konfiguration"
+
+# Der Beweis, auf den es ankommt: Zugang UEBERLEBT vollstaendigen Datenverlust.
+# Am 09.08.2026 hat sich der PO dreimal ausgesperrt, weil jeder Neuaufbau ein
+# neues TOTP-Geheimnis erzeugte und sein Eintrag in der Authenticator-App
+# damit tot war. In einer Praxis ohne IT-Personal waere das ein Ausfall.
+SK_PW='Startkonto-Nachweis-2026!q'
+SK_TOTP='MZXW6YTBOI7EWQ2CN5ZGSZLOMRSXE43P'
+docker rm -f pr-sk pr-skdb >/dev/null 2>&1
+docker volume rm pr-skdaten >/dev/null 2>&1
+docker run -d --name pr-skdb --network $NETZ --network-alias skdb \
+  -e POSTGRES_DB=pinroboter -e POSTGRES_USER=pinroboter -e POSTGRES_PASSWORD=test \
+  -v pr-skdaten:/var/lib/postgresql/data postgres:17-alpine >/dev/null
+for _ in $(seq 40); do
+  docker exec pr-skdb pg_isready -U pinroboter >/dev/null 2>&1 && break; sleep 1
+done
+
+starte_startkonto() {
+  docker rm -f pr-sk >/dev/null 2>&1
+  docker run -d --name pr-sk --network $NETZ -p $((PR_PORT + 1)):8090 \
+    -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar \
+    -e DB_URL=jdbc:postgresql://skdb:5432/pinroboter \
+    -e DB_USER=pinroboter -e DB_PASSWORD=test \
+    -e START_ADMIN_BENUTZER=startadmin -e START_ADMIN_NAME="Nachweis Startkonto" \
+    -e START_ADMIN_PASSWORT="$SK_PW" -e START_ADMIN_TOTP="$SK_TOTP" \
+    $JRE java -jar /app.jar >/dev/null
+  for _ in $(seq 40); do
+    curl -sf -o /dev/null http://localhost:$((PR_PORT + 1))/anmelden 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
+anmelden_startkonto() {
+  # Auf ein frisches TOTP-Fenster warten: Ein verbrauchter Code wird
+  # abgewiesen und zaehlt als Fehlversuch - genau die Falle, in die der PO
+  # gelaufen ist.
+  python3 -c "
+import time
+f = int(time.time()) // 30
+while int(time.time()) // 30 == f: time.sleep(0.5)
+time.sleep(1)"
+  rm -f /tmp/pr-sk-kekse
+  curl -s -c /tmp/pr-sk-kekse -o /dev/null -X POST http://localhost:$((PR_PORT + 1))/anmelden \
+    -d "benutzer=startadmin" --data-urlencode "passwort=$SK_PW" \
+    -d "code=$(python3 pruefungen/totp.py "$SK_TOTP")"
+  curl -s -b /tmp/pr-sk-kekse -o /dev/null -w '%{http_code}' http://localhost:$((PR_PORT + 1))/geraete
+}
+
+if starte_startkonto; then SK1=ja; else SK1=nein; fi
+ergebnis "die Zentrale startet mit konfiguriertem Startkonto" "$SK1"
+
+ERST=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$((PR_PORT + 1))/ersteinrichtung)
+# Es gibt bereits ein Konto, also darf die Ersteinrichtung nicht mehr greifen.
+[ "$ERST" = "302" ] && SK2=ja || SK2=nein
+ergebnis "die Ersteinrichtung entfaellt, weil das Konto schon steht (HTTP $ERST)" "$SK2"
+
+CODE=$(anmelden_startkonto)
+[ "$CODE" = "200" ] && SK3=ja || SK3=nein
+ergebnis "Anmeldung mit dem vorgegebenen zweiten Faktor (HTTP $CODE)" "$SK3"
+
+# Der eigentliche Punkt: Volume weg, alles weg - und der Zugang gilt weiter.
+docker rm -f pr-sk pr-skdb >/dev/null 2>&1
+docker volume rm pr-skdaten >/dev/null 2>&1
+docker run -d --name pr-skdb --network $NETZ --network-alias skdb \
+  -e POSTGRES_DB=pinroboter -e POSTGRES_USER=pinroboter -e POSTGRES_PASSWORD=test \
+  -v pr-skdaten:/var/lib/postgresql/data postgres:17-alpine >/dev/null
+for _ in $(seq 40); do
+  docker exec pr-skdb pg_isready -U pinroboter >/dev/null 2>&1 && break; sleep 1
+done
+starte_startkonto
+CODE=$(anmelden_startkonto)
+[ "$CODE" = "200" ] && SK4=ja || SK4=nein
+ergebnis "derselbe Zugang gilt nach vollstaendigem Datenverlust (HTTP $CODE)" "$SK4"
+
+# Weder Passwort noch Geheimnis duerfen im Betriebsprotokoll auftauchen.
+GEHEIM=$(docker logs pr-sk 2>&1 | grep -c "$SK_PW\|$SK_TOTP" || true)
+[ "${GEHEIM:-1}" = "0" ] && SK5=ja || SK5=nein
+ergebnis "weder Passwort noch TOTP-Geheimnis stehen im Protokoll ($GEHEIM Treffer)" "$SK5"
+
+# Aber die Warnung muss da sein: Ein Administrator ist entstanden, ohne dass
+# ihn jemand angelegt hat. Das darf nicht unbemerkt bleiben.
+WARN=$(docker logs pr-sk 2>&1 | grep -c "Startkonto" || true)
+[ "${WARN:-0}" -gt 0 ] && SK6=ja || SK6=nein
+ergebnis "das Anlegen wird deutlich gemeldet ($WARN Meldungen)" "$SK6"
+
+# Ein vorhandenes Konto wird nicht angetastet: Sonst koennte ein Angreifer mit
+# Schreibzugriff auf die Compose-Datei sich per Neustart immer wieder Zutritt
+# verschaffen, auch nachdem man ihn ausgesperrt hat.
+docker exec pr-skdb psql -U pinroboter -d pinroboter -tAc \
+  "UPDATE benutzer SET aktiv = FALSE WHERE benutzername = 'startadmin'" >/dev/null
+starte_startkonto
+AKTIV=$(docker exec pr-skdb psql -U pinroboter -d pinroboter -tAc \
+        "SELECT aktiv FROM benutzer WHERE benutzername='startadmin'" | tr -d ' \n')
+[ "$AKTIV" = "f" ] && SK7=ja || SK7=nein
+ergebnis "ein vorhandenes Konto wird beim Neustart nicht zurueckgesetzt" "$SK7"
+
+docker rm -f pr-sk pr-skdb >/dev/null 2>&1
+docker volume rm pr-skdaten >/dev/null 2>&1
+rm -f /tmp/pr-sk-kekse
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
-if bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi
+if PR_BASIS="$BASIS" bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi
 ergebnis "Barrierefreiheitspruefung ohne Befund (WCAG 2.2 AA, maschinell pruefbarer Teil)" "$A11Y"
 
 # UX-Vorgaben aus CLAUDE.md Abschnitt 4. Ausgelagert wie die
 # Barrierefreiheit, weil es eine eigene Pruefart ist: Sie misst nicht, ob
 # eine Funktion arbeitet, sondern ob die Oberflaeche einheitlich bleibt.
-if bash pruefungen/oberflaeche-pruefen.sh "$KEKSE"; then UX=ja; else UX=nein; fi
+if PR_BASIS="$BASIS" bash pruefungen/oberflaeche-pruefen.sh "$KEKSE"; then UX=ja; else UX=nein; fi
 ergebnis "Oberflaeche einheitlich (Kurzhinweise, klickbare Zeilen, Raster)" "$UX"
 
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1

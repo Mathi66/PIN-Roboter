@@ -74,7 +74,11 @@ public class Zentrale {
                 env("PROTOKOLL_BUDGET", null), 2L * 1024 * 1024 * 1024);   // 2 GB
 
         Datenbank db = Datenbank.verbinden(url, nutz, kenn, 30);
-        new Zentrale(db, budget).starten(port);
+        Zentrale z = new Zentrale(db, budget);
+        // Nach den Migrationen, vor dem Zuhoeren: Das Konto muss stehen, bevor
+        // sich jemand anmelden kann (FA-BEN-035).
+        Startkonto.anlegenFallsNoetig(db, z.benutzer, z.protokoll);
+        z.starten(port);
     }
 
     Zentrale(Datenbank db, long protokollBudgetBytes) {

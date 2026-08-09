@@ -64,6 +64,30 @@ services:
       # werden. Er gehoert in die Sicherung, aber NICHT in dieselbe Datei wie
       # der Datenbankauszug - sonst schuetzt die Verschluesselung vor nichts.
       GEHEIMNIS_SCHLUESSEL: ${GEHEIMNIS_SCHLUESSEL:-}
+
+      # ── Administratorkonto aus der Konfiguration (FA-BEN-035) ────────────
+      # Ohne diese Angaben entsteht der erste Administrator einmalig ueber die
+      # Ersteinrichtung im Browser - mit einem TOTP-Geheimnis, das nur dabei
+      # angezeigt wird. Geht das Datenvolumen verloren, ist der Zugang weg:
+      # Bei der naechsten Ersteinrichtung entsteht ein ANDERES Geheimnis, und
+      # der Eintrag in der Authenticator-App passt nicht mehr.
+      #
+      # Sind diese Variablen gesetzt, legt die Zentrale das Konto beim Start
+      # an, FALLS ES FEHLT. Ein vorhandenes Konto wird nie veraendert.
+      #
+      # SICHERHEITSVORBEHALT: Wer diese Datei lesen kann, kennt beide
+      # Faktoren - der zweite ist dann keiner mehr. Das ist ein bewusster
+      # Tausch zugunsten der Wiederherstellbarkeit. Zwei Gegenmassnahmen:
+      #   1. Passwort ueber START_ADMIN_PASSWORT_DATEI aus einem Docker-Secret
+      #      lesen statt hier einzutragen (erscheint dann nicht in
+      #      "docker inspect" und nicht in der Prozessliste).
+      #   2. Nach der Einrichtung die Variablen wieder entfernen.
+      # TOTP-Geheimnis erzeugen:  openssl rand -base64 20 | base32 | tr -d '=' | head -c 32
+      START_ADMIN_BENUTZER: ${START_ADMIN_BENUTZER:-}
+      START_ADMIN_NAME: ${START_ADMIN_NAME:-}
+      START_ADMIN_PASSWORT: ${START_ADMIN_PASSWORT:-}
+      START_ADMIN_PASSWORT_DATEI: ${START_ADMIN_PASSWORT_DATEI:-}
+      START_ADMIN_TOTP: ${START_ADMIN_TOTP:-}
     ports:
       - "8090:8090"
     depends_on:
