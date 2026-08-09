@@ -1,6 +1,6 @@
 # Sicherheit und Datenschutz
 
-**Stand:** 07.08.2026 · Grundlage: CLAUDE.md (Sicherheitsleitplanke),
+**Stand:** 10.08.2026 · Grundlage: CLAUDE.md (Sicherheitsleitplanke),
 [ADR-0002](adr/0002-betriebsmodell-und-systemtopologie.md),
 [ADR-0008](adr/0008-ablage-von-geraete-zugangsdaten.md)
 
@@ -202,11 +202,22 @@ ist Routine: protokolliert wird nach Wirkung, nicht nach Vorgang.
 | **Kein Verifikationsversuch bei laufendem Update** | Zustand „aktualisierend" wird ausgewertet, auch beim konnektorweiten KSR-Lauf | 0 Versuche bei 4 gleichzeitig betroffenen Terminals ([gemSpec_Kon] 4.3.10) |
 | **Keine Mailflut** | Sammelfenster je Einrichtung, Vorgabe 5 Minuten | 50 Alarme ergeben eine Mail, gegen einen Auffangserver gemessen |
 | **Keine Geheimnisse in Mails** | der Text nennt nur Vorgang, Gerät und Handlung | Systemnachweis durchsucht alle eingegangenen Nachrichten |
+| **Einrichtung aus der Registrierung** | Der Agent kann seine Einrichtung nicht selbst behaupten — sie stammt aus dem Registrierungscode, den ein Administrator erzeugt hat. Ein übernommener Agent kann keine Geräte in eine fremde Einrichtung unterschieben | Systemnachweis meldet ausdrücklich eine fremde Einrichtung; es kommt nichts davon an |
+| **Startkonto verändert nichts** | Ein per Konfiguration vorgegebenes Administratorkonto entsteht nur, wenn es fehlt. Ein vorhandenes Konto wird nie zurückgesetzt — sonst verschaffte sich jemand mit Schreibzugriff auf die Konfiguration per Neustart erneut Zutritt | Systemnachweis: deaktiviertes Konto bleibt nach Neustart deaktiviert |
+| **Keine Geheimnisse aus der Konfiguration im Protokoll** | Passwort und TOTP-Geheimnis des Startkontos erscheinen weder im Betriebs- noch im Fachprotokoll | Systemnachweis durchsucht das Containerlog |
+| **Stille Datenbankfehler beseitigt** | 20 Stellen verschluckten `SQLException`. Ein stiller SQL-Fehler ist unauffindbar und kann eine fehlerhafte Zugriffsbedingung verdecken — so blieb ein defektes `WHERE` monatelang unentdeckt | Codeanalyse 10.08.2026, [10-codeanalyse.md](10-codeanalyse.md) |
 
 ### Offen — ehrlich benannt
 
-1. **Mandantentrennung: umgesetzt für Bestand und Ermittlung, offen für
-   Protokoll und Alarme.**
+1. **Mandantentrennung: vollständig umgesetzt** (Stand 10.08.2026 — der
+   folgende Absatz beschreibt den Weg dorthin).
+
+   Seit dem 09.08.2026 gilt sie auch für Geräte, Alarme und Protokolleinträge,
+   die ein Agent meldet: Vorher trug alles hart die Einrichtung `"Praxis"`,
+   womit ein Administrator der einen Praxis die Terminals der anderen gesehen
+   hätte. Die Einrichtung stammt jetzt aus der Registrierung des Agenten.
+
+   Historischer Stand:
 
    Seit dem 07.08.2026 erzwingt ein `Geltungsbereich` die Trennung bei
    Konnektoren, Kartenterminals, Organisationsauswahl, Filterwerten,

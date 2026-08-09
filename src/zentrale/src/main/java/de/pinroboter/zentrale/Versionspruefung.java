@@ -158,7 +158,13 @@ public class Versionspruefung {
                     if (ch != null && tresor != null) token = tresor.entschluesseln(ch);
                 }
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Versionspruefung.pruefen: " + e.getMessage());
+        }
 
         if (registry == null) {
             return zustand();   // nichts eingerichtet — kein Fehler, nur nichts zu tun

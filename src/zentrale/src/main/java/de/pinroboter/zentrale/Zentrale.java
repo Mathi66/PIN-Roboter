@@ -193,1303 +193,110 @@ public class Zentrale {
             c.attribute("benutzer", angemeldet.get());
         });
 
-        // ------------------------------------------------------------------ Anmeldung
-        app.get("/anmelden", c -> c.html(Anmeldeseiten.anmeldeformular(null)));
 
-        app.post("/anmelden", c -> {
-            String name = Anmeldeseiten.feld(c, "benutzer");
-            String absender = c.ip();
 
-            // Bremse VOR der Pruefung: Wer schon auffaellig war, wartet - und
-            // zwar unabhaengig davon, ob dieses Kennwort stimmt. Sonst liesse
-            // sich die Bremse durch einen bekannten Treffer zuruecksetzen.
-            var warten = bremse.wartezeit(absender);
-            if (!warten.isZero()) {
-                try { Thread.sleep(warten.toMillis()); }
-                catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
-            }
 
-            var ergebnis = benutzer.anmelden(name,
-                    Anmeldeseiten.passwortFeld(c, "passwort"), Anmeldeseiten.feld(c, "code"));
 
-            switch (ergebnis) {
-                case Benutzerverwaltung.Anmeldung.Erfolg e -> {
-                    bremse.erfolg(absender);
-                    setzeSitzungscookie(c, e.sitzung());
-                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_ERFOLGREICH,
-                            true, e.benutzer().anzeigename(), null,
-                            "Anmeldung erfolgreich", null);
-                    c.redirect("/");
-                }
-                case Benutzerverwaltung.Anmeldung.TotpEinrichten t ->
-                    c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(),
-                            "Bitte richten Sie zuerst den zweiten Faktor ein."));
-                case Benutzerverwaltung.Anmeldung.Gesperrt g -> {
-                    zaehleFehlversuch(absender, name);
-                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
-                            false, name, null, "Anmeldung bei gesperrtem Konto", null);
-                    c.html(Anmeldeseiten.anmeldeformular(g.meldung()));
-                }
-                case Benutzerverwaltung.Anmeldung.Abgelehnt a -> {
-                    zaehleFehlversuch(absender, name);
-                    // Der Benutzername wird protokolliert, das Passwort nie (FA-PRO-020).
-                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
-                            false, name.isBlank() ? "unbekannt" : name, null,
-                            "Anmeldung fehlgeschlagen", null);
-                    c.html(Anmeldeseiten.anmeldeformular(a.meldung()));
-                }
-            }
-        });
 
-        app.post("/abmelden", c -> {
-            benutzer.abmelden(c.cookie(SITZUNGSCOOKIE));
-            c.removeCookie(SITZUNGSCOOKIE, "/");
-            c.header("HX-Redirect", "/anmelden").redirect("/anmelden");
-        });
 
-        // ------------------------------------------------------------ Ersteinrichtung
-        app.get("/ersteinrichtung", c -> {
-            if (!benutzer.ersteinrichtungNoetig()) { c.redirect("/anmelden"); return; }
-            c.html(Anmeldeseiten.ersteinrichtung(null));
-        });
 
-        app.post("/ersteinrichtung", c -> {
-            if (!benutzer.ersteinrichtungNoetig()) { c.redirect("/anmelden"); return; }
-            var e = benutzer.anlegen(Anmeldeseiten.feld(c, "benutzer"),
-                    Anmeldeseiten.feld(c, "anzeigename"),
-                    Anmeldeseiten.passwortFeld(c, "passwort"),
-                    Benutzerverwaltung.Rolle.ADMINISTRATOR);
-            if (e instanceof Benutzerverwaltung.Anmeldung.TotpEinrichten t) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
-                        "Ersteinrichtung", null,
-                        "Erstes Administratorkonto angelegt: " + Anmeldeseiten.feld(c, "benutzer"), null);
-                c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(), null));
-            } else if (e instanceof Benutzerverwaltung.Anmeldung.Abgelehnt a) {
-                c.html(Anmeldeseiten.ersteinrichtung(a.meldung()));
-            }
-        });
 
-        app.post("/totp-bestaetigen", c -> {
-            long id = Long.parseLong(Anmeldeseiten.feld(c, "benutzerId"));
-            if (benutzer.totpBestaetigen(id, Anmeldeseiten.feld(c, "code"))) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_EINGERICHTET, true,
-                        "Benutzer " + id, null, "Zweiter Faktor eingerichtet", null);
-                c.html(Anmeldeseiten.rahmen("Einrichtung abgeschlossen", """
-                        <div class="hinweis"><strong>Der zweite Faktor ist eingerichtet.</strong>
-                        Sie können sich jetzt anmelden.</div>
-                        <a class="knopf haupt" href="/anmelden" title="Öffnet die Anmeldeseite" aria-label="Öffnet die Anmeldeseite">Zur Anmeldung</a>"""));
-            } else {
-                c.html(Anmeldeseiten.rahmen("Einrichtung", Anmeldeseiten.meldung(
-                        "Der Code stimmt nicht. Bitte prüfen Sie die Uhrzeit Ihres Telefons "
-                        + "und versuchen Sie es mit dem nächsten Code erneut.", "warnend")
-                        + "<a class=\"knopf\" href=\"/anmelden\">Zurück</a>"));
-            }
-        });
 
-        app.get("/", c -> c.html(seite("uebersicht", uebersichtsSeite(c), angemeldeter(c))));
-        app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(), angemeldeter(c))));
-        app.get("/protokoll", c -> c.html(seite("protokoll", protokollSeite(c), angemeldeter(c))));
-        app.get("/teil/uebersicht", c -> c.html(uebersicht(c)));
-        // Zwei getrennte Einschuebe statt eines Komplettaustauschs. Siehe
-        // uebersichtsSeite() zur Begruendung.
-        app.get("/teil/alarme", c -> c.html(alarmblock(c)));
-        app.get("/teil/lage",   c -> c.html(lageblock(c)));
-        app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
 
-        /**
-         * Geräte-Zeitstrahl (FA-PRO-050) — aus der Geräteliste in einem Klick.
-         *
-         * <p>Das gefilterte Protokoll leistet das nicht: Dort sucht man
-         * Einträge, hier liest man die Geschichte eines Geräts.
-         */
-        app.get("/geraete/{terminalId}/verlauf", c -> {
-            String id = c.pathParam("terminalId");
-            String zeitraum = c.queryParam("zeitraum");
-            if (zeitraum == null || zeitraum.isBlank()) zeitraum = "7t";
-            var arten = c.queryParams("art");
-            var seite = protokoll.seite(id, arten, null,
-                    Verlaufsseiten.seitFuer(zeitraum), null,
-                    Math.max(1, zahl(c.queryParam("seite"), 1)), 200, bereich(c));
-            var g = geraete.get(id);
-            c.html(seite("geraete", Verlaufsseiten.zeitstrahl(id,
-                    g == null ? id : anzeigename(g), seite, zeitraum, arten),
-                    angemeldeter(c)));
-        });
 
-        /** Vorgangsansicht (FA-PRO-060). */
-        app.get("/vorgang/{nummer}", c -> {
-            String nr = c.pathParam("nummer");
-            var seite = protokoll.seite(null, java.util.List.of(), null, null, nr, 1, 200, bereich(c));
-            c.html(seite("protokoll", Verlaufsseiten.vorgang(nr, seite), angemeldeter(c)));
-        });
 
-        app.get("/teil/vorgang/{nummer}", c -> {
-            String nr = c.pathParam("nummer");
-            var seite = protokoll.seite(null, java.util.List.of(), null, null, nr, 1, 200, bereich(c));
-            // Nur die Verlaufstafel, nicht die ganze Seite — der Kopf mit den
-            // Kennzahlen bleibt stehen (UX-Konzept, Stufe 1).
-            String ganz = Verlaufsseiten.vorgang(nr, seite);
-            int ab = ganz.lastIndexOf("<div class=\"tafel\"");
-            c.html(ab < 0 ? ganz : ganz.substring(ab));
-        });
-        app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
 
-        // ---------------------------------------------------------- Gruppen
-        app.get("/gruppen",      c -> c.html(seite("gruppen", gruppenSeite(c, null), angemeldeter(c))));
-        app.get("/teil/gruppen", c -> c.html(gruppenTabelle(c)));
 
-        app.post("/gruppen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            int intervall;
-            try { intervall = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
-            catch (NumberFormatException e) { intervall = 60; }
-            String bez = Anmeldeseiten.feld(c, "bezeichnung");
-            // FA-GER-050: Die Einrichtung wird gewaehlt, nicht verdrahtet.
-            String einrichtung = Anmeldeseiten.feld(c, "einrichtung");
-            if (einrichtung == null || einrichtung.isBlank()) einrichtung = "Praxis";
-            String fehler = gruppen.anlegen(bez, einrichtung, intervall);
-            if (fehler == null) {
-                protokoll.anfuegen(einrichtung, null, Ereignisart.GRUPPE_ANGELEGT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Gerätegruppe \"" + bez + "\" für " + einrichtung
-                        + " angelegt, Prüfintervall " + intervall + " s", null);
-            }
-            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
-        });
 
-        app.post("/gruppen/{id}/intervall", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            int sek;
-            try { sek = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
-            catch (NumberFormatException e) { sek = 60; }
-            String fehler = gruppen.intervallSetzen(id, sek);
-            if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Prüfintervall der Gruppe " + id + " auf " + sek + " s gesetzt", null);
-            }
-            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
-        });
 
-        app.post("/gruppen/{id}/loeschen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            String fehler = gruppen.loeschen(id, "Praxis");
-            if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GELOESCHT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Gerätegruppe " + id + " gelöscht, Geräte in die Vorgabegruppe verschoben", null);
-            }
-            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
-        });
 
-        app.post("/geraete/{id}/gruppe", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            String fehler = gruppen.zuordnen(c.pathParam("id"),
-                    Long.parseLong(Anmeldeseiten.feld(c, "gruppe")));
-            if (fehler == null) {
-                protokoll.anfuegen("Praxis", c.pathParam("id"), Ereignisart.GERAET_ZUGEORDNET,
-                        true, angemeldeter(c).anzeigename(), null,
-                        "Gerät einer anderen Gruppe zugeordnet", null);
-            }
-            c.html(gruppenTabelle(c));
-        });
 
-        // ------------------------------------------------------------ Bestand
-        // FA-GER-010, FA-GER-020: Konnektoren und Kartenterminals erfassen.
-        app.get("/bestand", c -> c.html(seite("bestand", bestandsSeite(c, null, false), angemeldeter(c))));
 
-        // FA-GER-030 / FA-GER-035: Vorschlagsliste aus der Ermittlung.
-        app.get("/bestand/ermittelt", c -> c.html(seite("bestand",
-                Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)), ermittlung.juengstesModell(),
-                        bestand.konnektoren(bereich(c)), null, false),
-                angemeldeter(c))));
 
-        // FA-GER-030 erlaubt die Uebernahme "einzeln oder als Auswahl".
-        app.post("/bestand/ermittelt/uebernehmen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            var ids = kennungen(c, "fund");
-            long konnektorId;
-            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
-            catch (NumberFormatException e) { konnektorId = -1; }
 
-            int uebernommen = 0;
-            List<String> fehler = new ArrayList<>();
-            for (long id : ids) {
-                var fund = ermittlung.fund(id, bereich(c));
-                if (fund.isEmpty()) { fehler.add("Ein Fund ist nicht mehr vorhanden."); continue; }
-                var e = bestand.uebernehmen(fund.get(), konnektorId, null, bereich(c));
-                if (e.geklappt()) {
-                    ermittlung.alsUebernommenMarkieren(id);
-                    uebernommen++;
-                    var t2 = bestand.terminal(e.id(), bereich(c)).orElseThrow();
-                    protokoll.anfuegen(t2.organisation(), t2.terminalId(),
-                            Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
-                            "Kartenterminal \u201e" + t2.bezeichnung() + "\u201c aus der Ermittlung "
-                                    + "\u00fcbernommen (Sammelauswahl)",
-                            "Die Adresse des Ger\u00e4ts ist noch nicht hinterlegt \u2014 ohne sie "
-                            + "ist keine Erreichbarkeitspr\u00fcfung m\u00f6glich.");
-                } else {
-                    fehler.add(e.fehler());
-                }
-            }
 
-            String meldung = ids.isEmpty()
-                    ? "Es war kein Ger\u00e4t ausgew\u00e4hlt."
-                    : "%d von %d Ger\u00e4t(en) \u00fcbernommen.%s".formatted(uebernommen, ids.size(),
-                            fehler.isEmpty() ? "" : " " + String.join(" ", fehler));
-            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
-                    ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)), meldung,
-                    uebernommen < ids.size()), angemeldeter(c)));
-        });
 
-        app.post("/bestand/ermittelt/{id}/uebernehmen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var fund = ermittlung.fund(id, bereich(c));
-            if (fund.isEmpty()) {
-                c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
-                        ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)),
-                        "Dieser Fund ist nicht mehr vorhanden. Bitte die Seite neu laden.", true),
-                        angemeldeter(c)));
-                return;
-            }
-            long konnektorId;
-            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
-            catch (NumberFormatException e) { konnektorId = -1; }
 
-            var e = bestand.uebernehmen(fund.get(), konnektorId, Anmeldeseiten.feld(c, "adresse"), bereich(c));
-            String meldung;
-            if (e.geklappt()) {
-                ermittlung.alsUebernommenMarkieren(id);
-                var t = bestand.terminal(e.id(), bereich(c)).orElseThrow();
-                protokoll.anfuegen(t.organisation(), t.terminalId(),
-                        Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
-                        "Kartenterminal \u201e" + t.bezeichnung() + "\u201c aus der Ermittlung "
-                                + "in den Bestand \u00fcbernommen",
-                        t.adresse() == null ? "Die Adresse des Ger\u00e4ts ist noch nicht "
-                                + "hinterlegt \u2014 ohne sie ist keine Erreichbarkeitspr\u00fcfung "
-                                + "m\u00f6glich." : null);
-                meldung = "Kartenterminal \u201e" + t.bezeichnung() + "\u201c \u00fcbernommen.";
-            } else {
-                meldung = e.fehler();
-            }
-            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
-                    ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)), meldung, !e.geklappt()),
-                    angemeldeter(c)));
-        });
 
-        // FA-GER-060: Massenaktionen auf mehrere Geraete.
-        app.post("/bestand/massenaktion", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            var ids = kennungen(c, "geraet");
-            String aktion = Anmeldeseiten.feld(c, "aktion");
 
-            Bestandsverwaltung.Massenergebnis e;
-            String was;
-            switch (aktion) {
-                case "aktivieren"   -> { e = bestand.massenAktivSetzen(ids, true, bereich(c));  was = "aktiviert"; }
-                case "deaktivieren" -> { e = bestand.massenAktivSetzen(ids, false, bereich(c)); was = "deaktiviert"; }
-                case "gruppe"       -> {
-                    long gruppeId;
-                    try { gruppeId = Long.parseLong(Anmeldeseiten.feld(c, "gruppeId")); }
-                    catch (NumberFormatException ex) {
-                        c.html(seite("bestand", bestandsSeite(c,
-                                "Bitte eine Gerätegruppe auswählen.", true), angemeldeter(c)));
-                        return;
-                    }
-                    e = bestand.massenGruppeZuweisen(ids, gruppeId, bereich(c));
-                    was = "einer Gruppe zugeordnet";
-                }
-                default -> {
-                    c.html(seite("bestand", bestandsSeite(c,
-                            "Unbekannte Aktion. Bitte die Seite neu laden.", true), angemeldeter(c)));
-                    return;
-                }
-            }
 
-            // Auch eine Massenaktion ist Bestandspflege - sie entscheidet
-            // darueber, welche Geraete ueberwacht werden.
-            if (e.geaendert() > 0) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.TERMINAL_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "%d Kartenterminal(s) %s".formatted(e.geaendert(), was),
-                        e.vollstaendig() ? null : String.join(" ", e.hinweise()));
-            }
 
-            String meldung = e.geaendert() == 0
-                    ? (e.hinweise().isEmpty() ? "Es wurde nichts geändert."
-                                              : String.join(" ", e.hinweise()))
-                    : "%d Kartenterminal(s) %s.%s".formatted(e.geaendert(), was,
-                            e.hinweise().isEmpty() ? "" : " " + String.join(" ", e.hinweise()));
-            c.html(seite("bestand", bestandsSeite(c, meldung, !e.vollstaendig()), angemeldeter(c)));
-        });
 
-        app.post("/bestand/konnektor", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long orgId;
-            try { orgId = Long.parseLong(Anmeldeseiten.feld(c, "organisationId")); }
-            catch (NumberFormatException e) {
-                c.html(seite("bestand", bestandsSeite(c, "Bitte eine Einrichtung auswählen.", true),
-                        angemeldeter(c)));
-                return;
-            }
-            var e = bestand.konnektorAnlegen(orgId,
-                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
-                    Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
-                    Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
-                    Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
-                    Anmeldeseiten.feld(c, "webadminAdresse"), bereich(c));
-            if (!e.geklappt()) {
-                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
-                return;
-            }
-            // Die Erreichbarkeit wird direkt geprueft und gemeldet - aber sie
-            // entscheidet nicht ueber das Speichern (FA-GER-010).
-            var erreichbar = bestand.konnektorPruefen(e.id(), bereich(c));
-            var k = bestand.konnektor(e.id(), bereich(c)).orElseThrow();
-            protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_ANGELEGT, true,
-                    angemeldeter(c).anzeigename(), null,
-                    "Konnektor „" + k.bezeichnung() + "“ erfasst ("
-                            + k.adresse() + ", Aufrufkontext " + k.mandantId() + "/"
-                            + k.clientsystemId() + "/" + k.arbeitsplatzId() + ")",
-                    erreichbar.erreichbar() ? null
-                            : "Der Konnektor ist derzeit nicht erreichbar: " + erreichbar.hinweis());
-            c.html(seite("bestand", bestandsSeite(c,
-                    "Konnektor gespeichert. " + erreichbar.hinweis(), !erreichbar.erreichbar()),
-                    angemeldeter(c)));
-        });
 
-        app.get("/bestand/konnektor/neu", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            c.html(seite("bestand", Bestandsseiten.konnektorMaske(
-                    bestand.organisationen(bereich(c)), ermittlung.aufrufkontextAuswahl()),
-                    angemeldeter(c)));
-        });
 
-        app.get("/bestand/terminal/neu", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            c.html(seite("bestand", Bestandsseiten.terminalNeuMaske(
-                    bestand.konnektoren(bereich(c))), angemeldeter(c)));
-        });
 
-        app.get("/bestand/konnektor/{id}", c -> {
-            var k = bestand.konnektor(Long.parseLong(c.pathParam("id")), bereich(c));
-            if (k.isEmpty()) { c.status(404).html(seite("bestand",
-                    bestandsSeite(c, "Diesen Konnektor gibt es nicht mehr.", true), angemeldeter(c))); return; }
-            c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), null), angemeldeter(c)));
-        });
-
-        app.post("/bestand/konnektor/{id}", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var e = bestand.konnektorAendern(id,
-                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
-                    Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
-                    Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
-                    Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
-                    Anmeldeseiten.feld(c, "webadminAdresse"), angekreuzt(c, "aktiv"), bereich(c));
-            if (!e.geklappt()) {
-                var k = bestand.konnektor(id, bereich(c));
-                c.html(seite("bestand", k.isPresent()
-                        ? Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), e.fehler())
-                        : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
-                return;
-            }
-            var k = bestand.konnektor(id, bereich(c)).orElseThrow();
-            protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT, true,
-                    angemeldeter(c).anzeigename(), null,
-                    "Konnektor „" + k.bezeichnung() + "“ geändert"
-                            + (k.aktiv() ? "" : ", Gerät deaktiviert"), null);
-            c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
-        });
-
-        app.post("/bestand/konnektor/{id}/kennwort-entfernen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var vorher = bestand.konnektor(id, bereich(c));
-            var e = bestand.konnektorPasswortEntfernen(id, bereich(c));
-            if (e.geklappt() && vorher.isPresent()) {
-                protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT,
-                        true, angemeldeter(c).anzeigename(), null,
-                        "Hinterlegtes Kennwort des Konnektors „" + vorher.get().bezeichnung()
-                                + "“ entfernt",
-                        "Ohne Kennwort kann der Roboter sich an diesem Konnektor nicht "
-                        + "selbsttätig anmelden.");
-            }
-            c.html(seite("bestand", bestandsSeite(c,
-                    e.geklappt() ? "Kennwort entfernt." : e.fehler(), !e.geklappt()), angemeldeter(c)));
-        });
-
-        app.post("/bestand/konnektor/{id}/loeschen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var vorher = bestand.konnektor(id, bereich(c));
-            var e = bestand.konnektorLoeschen(id, bereich(c));
-            if (e.geklappt() && vorher.isPresent()) {
-                protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GELOESCHT,
-                        true, angemeldeter(c).anzeigename(), null,
-                        "Konnektor „" + vorher.get().bezeichnung() + "“ gelöscht", null);
-            }
-            c.html(seite("bestand", bestandsSeite(c,
-                    e.geklappt() ? "Konnektor gelöscht." : e.fehler(), !e.geklappt()), angemeldeter(c)));
-        });
-
-        app.post("/bestand/konnektor/{id}/pruefen", c -> {
-            long id = Long.parseLong(c.pathParam("id"));
-            var k = bestand.konnektor(id, bereich(c));
-            var e = bestand.konnektorPruefen(id, bereich(c));
-            c.html(Bestandsseiten.pruefmeldung(k.map(Bestandsverwaltung.Konnektor::bezeichnung)
-                    .orElse("Konnektor"), e));
-        });
-
-        app.post("/bestand/terminal", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long konnektorId;
-            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
-            catch (NumberFormatException ex) {
-                c.html(seite("bestand", bestandsSeite(c,
-                        "Bitte einen Konnektor auswählen, an dem das Terminal betrieben wird.", true),
-                        angemeldeter(c)));
-                return;
-            }
-            var e = bestand.terminalAnlegen(Anmeldeseiten.feld(c, "terminalId"), konnektorId,
-                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
-                    Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
-                    Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
-                    Anmeldeseiten.feld(c, "adminPasswort"),
-                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), bereich(c));
-            if (!e.geklappt()) {
-                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
-                return;
-            }
-            var erreichbar = bestand.terminalPruefen(e.id(), bereich(c));
-            var t = bestand.terminal(e.id(), bereich(c)).orElseThrow();
-            protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_ANGELEGT, true,
-                    angemeldeter(c).anzeigename(), null,
-                    "Kartenterminal „" + t.bezeichnung() + "“ erfasst (" + t.adresse()
-                            + (t.hatSmcb() ? ", mit SMC-B" : ", ohne SMC-B")
-                            + (t.pevimAktiv() ? ", PIN-Automatik aktiv" : "") + ")",
-                    erreichbar.erreichbar() ? null
-                            : "Das Terminal ist derzeit nicht erreichbar: " + erreichbar.hinweis());
-            c.html(seite("bestand", bestandsSeite(c,
-                    "Kartenterminal gespeichert. " + erreichbar.hinweis(), !erreichbar.erreichbar()),
-                    angemeldeter(c)));
-        });
-
-        app.get("/bestand/terminal/{id}", c -> {
-            var t = bestand.terminal(Long.parseLong(c.pathParam("id")), bereich(c));
-            if (t.isEmpty()) { c.status(404).html(seite("bestand",
-                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
-                    angemeldeter(c))); return; }
-            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
-        });
-
-        app.post("/bestand/terminal/{id}", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var e = bestand.terminalAendern(id,
-                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
-                    Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
-                    Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
-                    Anmeldeseiten.feld(c, "adminPasswort"),
-                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), angekreuzt(c, "aktiv"), bereich(c));
-            if (!e.geklappt()) {
-                var t = bestand.terminal(id, bereich(c));
-                c.html(seite("bestand", t.isPresent()
-                        ? terminalMaske(t.get(), e.fehler())
-                        : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
-                return;
-            }
-            var t = bestand.terminal(id, bereich(c)).orElseThrow();
-            protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_GEAENDERT, true,
-                    angemeldeter(c).anzeigename(), null,
-                    "Kartenterminal „" + t.bezeichnung() + "“ geändert"
-                            + (t.aktiv() ? "" : ", Gerät deaktiviert"), null);
-            c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
-        });
-
-        app.post("/bestand/terminal/{id}/loeschen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var vorher = bestand.terminal(id, bereich(c));
-            var e = bestand.terminalLoeschen(id, bereich(c));
-            if (e.geklappt() && vorher.isPresent()) {
-                protokoll.anfuegen(vorher.get().organisation(), vorher.get().terminalId(),
-                        Ereignisart.TERMINAL_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
-                        "Kartenterminal „" + vorher.get().bezeichnung() + "“ gelöscht",
-                        "Dieses Gerät wird nicht mehr überwacht.");
-            }
-            c.html(seite("bestand", bestandsSeite(c,
-                    e.geklappt() ? "Kartenterminal gelöscht." : e.fehler(), !e.geklappt()),
-                    angemeldeter(c)));
-        });
-
-        app.post("/bestand/terminal/{id}/pruefen", c -> {
-            long id = Long.parseLong(c.pathParam("id"));
-            var t = bestand.terminal(id, bereich(c));
-            var e = bestand.terminalPruefen(id, bereich(c));
-            c.html(Bestandsseiten.pruefmeldung(t.map(Bestandsverwaltung.Terminal::bezeichnung)
-                    .orElse("Kartenterminal"), e));
-        });
 
         // --------------------------------------------------------- SMC-B-PIN
         // FA-PIN-010 / FA-PIN-060 nach ADR-0009. Hier kommt ausschliesslich ein
         // Chiffrat an, das nur der Standort-Agent entschluesseln kann.
 
-        app.post("/bestand/terminal/{id}/pin", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Hinterlegen einer PIN")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var t = bestand.terminal(id, bereich(c));
-            if (t.isEmpty()) { c.status(404).html(seite("bestand",
-                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
-                    angemeldeter(c))); return; }
 
-            String handle = Anmeldeseiten.feld(c, "kartenhandle");
-            String fehler = pins.hinterlegen(t.get().terminalId(), handle,
-                    Anmeldeseiten.feld(c, "chiffrat"), angemeldeter(c).anzeigename());
-            if (fehler != null) {
-                c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
-                return;
-            }
-            // Protokolliert wird DASS, nie WAS. Weder PIN noch Chiffrat -
-            // ADR-0009, Festlegung 4.
-            protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
-                    Ereignisart.PIN_HINTERLEGT, true, angemeldeter(c).anzeigename(), null,
-                    "PIN für die SMC-B in „" + t.get().bezeichnung() + "“ hinterlegt",
-                    "Die PIN wurde im Browser verschlüsselt und wird zum Standort-Agenten "
-                    + "übertragen. Die Zentrale kann sie nicht lesen.");
-            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
-        });
 
-        app.post("/bestand/terminal/{id}/pin-aendern", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Ändern einer PIN")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var t = bestand.terminal(id, bereich(c));
-            if (t.isEmpty()) { c.status(404).html(seite("bestand",
-                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
-                    angemeldeter(c))); return; }
 
-            String fehler = pins.aendern(t.get().terminalId(),
-                    Anmeldeseiten.feld(c, "kartenhandle"),
-                    Anmeldeseiten.feld(c, "chiffratAlt"), Anmeldeseiten.feld(c, "chiffratNeu"),
-                    angemeldeter(c).anzeigename());
-            if (fehler == null) {
-                // Protokolliert wird DASS geaendert wurde — nie ein Wert,
-                // weder der alte noch der neue (ADR-0009).
-                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
-                        Ereignisart.PIN_GEAENDERT, true, angemeldeter(c).anzeigename(), null,
-                        "Änderung der SMC-B-PIN in „" + t.get().bezeichnung() + "“ beauftragt",
-                        "Die Änderung erfolgt am Kartenterminal selbst (A_24082). Schlägt sie "
-                        + "fehl, bleibt die bisher hinterlegte PIN unverändert.");
-            }
-            c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
-        });
-
-        app.post("/bestand/terminal/{id}/pin-loeschen", c -> {
-            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Löschen einer PIN")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var t = bestand.terminal(id, bereich(c));
-            if (t.isEmpty()) { c.status(404).html(seite("bestand",
-                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
-                    angemeldeter(c))); return; }
-
-            String fehler = pins.loeschen(t.get().terminalId(),
-                    Anmeldeseiten.feld(c, "kartenhandle"), angemeldeter(c).anzeigename());
-            if (fehler == null) {
-                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
-                        Ereignisart.PIN_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
-                        "Hinterlegte PIN für „" + t.get().bezeichnung() + "“ gelöscht",
-                        "Der Roboter kann diese SMC-B nicht mehr verifizieren, bis eine neue "
-                        + "PIN hinterlegt wird.");
-            }
-            c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
-        });
-
-        /**
-         * FA-ALA-010: Einen Alarm quittieren.
-         *
-         * <p>Die Oberfläche bot diesen Knopf schon an, bevor es die Route gab —
-         * ein Klick lief ins Leere. Gefunden hat das der Systemnachweis, nicht
-         * der Modultest: {@code Alarmverwaltung.quittieren} war geprüft, nur nie
-         * angebunden. Eine Funktion, die nur in der Klasse existiert, ist für
-         * den Benutzer keine.
-         */
-        app.post("/alarme/{id}/quittieren", c -> {
-            long id = Long.parseLong(c.pathParam("id"));
-            var b = angemeldeter(c);
-            if (alarme.quittieren(id, b.anzeigename(), bereich(c))) {
-                protokoll.anfuegen(bereich(c).bezeichnung(), null, Ereignisart.ALARM_QUITTIERT,
-                        true, b.anzeigename(), null,
-                        "Alarm " + id + " quittiert",
-                        "Quittieren heißt „zur Kenntnis genommen“ — der Alarm bleibt bestehen, "
-                        + "solange der Zustand besteht.");
-            }
-            c.header("HX-Refresh", "true").result("");
-        });
 
         // ------------------------------------------------ Benachrichtigung
         // FA-ALA-020. Der Mailserver gilt instanzweit, die Regeln je Einheit.
 
-        app.get("/benachrichtigung", c -> c.html(seite("benachrichtigung",
-                benachrichtigungsSeite(c, null, false, null), angemeldeter(c))));
 
-        app.post("/benachrichtigung/server", c -> {
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
-                    "Das Einrichten des Mailservers")) return;
-            String fehler = benachrichtigung.serverSpeichern(
-                    Anmeldeseiten.feld(c, "host"), Anmeldeseiten.feld(c, "port"),
-                    angekreuzt(c, "tls"), Anmeldeseiten.feld(c, "benutzer"),
-                    Anmeldeseiten.feld(c, "kennwort"), Anmeldeseiten.feld(c, "absender"));
-            if (fehler == null) {
-                // Protokolliert wird DASS eingerichtet wurde, nie das Kennwort.
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Mailserver eingerichtet: " + Anmeldeseiten.feld(c, "host"), null);
-            }
-            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
-                    fehler == null ? "Mailserver gespeichert." : fehler, fehler != null, null),
-                    angemeldeter(c)));
-        });
 
-        /**
-         * Testversand (FA-ALA-020).
-         *
-         * <p>Ohne ihn merkt der Betreiber erst beim ersten echten Alarm, dass
-         * die Einstellung nicht stimmt — also genau dann, wenn die Nachricht
-         * gebraucht wird.
-         */
-        app.post("/benachrichtigung/test", c -> {
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Der Testversand")) return;
-            String an = Anmeldeseiten.feld(c, "testempfaenger");
-            var zugang = benachrichtigung.zugang();
-            String verlauf = null, meldung;
-            boolean fehler;
-            if (zugang.isEmpty()) {
-                meldung = "Es ist kein Mailserver eingerichtet.";
-                fehler = true;
-            } else {
-                var e = Mailversand.senden(zugang.get(), Benachrichtigung.adressenZerlegen(an),
-                        "PIN-Roboter: Testnachricht",
-                        """
-                        Diese Nachricht bestätigt, dass der PIN-Roboter Ihren Mailserver
-                        erreichen kann.
 
-                        Sie wurde von Hand ausgelöst und bedeutet nicht, dass ein Alarm
-                        vorliegt. Echte Meldungen nennen Gerät und Handlungsempfehlung —
-                        und niemals Zugangsdaten oder personenbezogene Daten.
-                        """);
-                fehler = !e.geklappt();
-                meldung = e.geklappt()
-                        ? "Testnachricht an " + an + " übergeben. Wenn sie nicht ankommt, "
-                          + "prüfen Sie den Spam-Ordner und die Protokolle Ihres Mailservers."
-                        : e.fehler();
-                verlauf = e.verlauf();
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT,
-                        e.geklappt(), angemeldeter(c).anzeigename(), null,
-                        "Testnachricht " + (e.geklappt() ? "versendet" : "fehlgeschlagen"),
-                        e.geklappt() ? null : e.fehler());
-            }
-            c.html(seite("benachrichtigung",
-                    benachrichtigungsSeite(c, meldung, fehler, verlauf), angemeldeter(c)));
-        });
 
-        app.post("/benachrichtigung/regel", c -> {
-            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(),
-                    "Das Einrichten von Benachrichtigungen")) return;
-            Long org = zahlOderNull(Anmeldeseiten.feld(c, "organisationId"));
-            String fehler = org == null
-                    ? "Bitte eine Organisationseinheit wählen."
-                    : benachrichtigung.regelSpeichern(org, Anmeldeseiten.feld(c, "empfaenger"),
-                            Anmeldeseiten.feld(c, "schwelle"), Anmeldeseiten.feld(c, "fenster"),
-                            angekreuzt(c, "aktiv"), bereich(c));
-            if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Benachrichtigungsregel gespeichert", null);
-            }
-            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
-                    fehler == null ? "Regel gespeichert." : fehler, fehler != null, null),
-                    angemeldeter(c)));
-        });
-
-        app.post("/benachrichtigung/regel/{id}/loeschen", c -> {
-            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(),
-                    "Das Entfernen von Benachrichtigungen")) return;
-            String fehler = benachrichtigung.regelLoeschen(
-                    Long.parseLong(c.pathParam("id")), bereich(c));
-            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
-                    fehler == null ? "Regel entfernt." : fehler, fehler != null, null),
-                    angemeldeter(c)));
-        });
 
         // ------------------------------------------------------- Organisation
         // FA-ORG-020. Wer den Baum aendert, aendert Geltungsbereiche - deshalb
         // ist jede Aenderung protokollpflichtig und auf Standortebene begrenzt.
 
-        app.get("/organisation", c -> c.html(seite("organisation",
-                organisationsSeite(c, null, false), angemeldeter(c))));
+        // ── Routen ───────────────────────────────────────────────────────
+        // Bis zum 09.08.2026 standen alle 81 Routen in dieser einen Methode:
+        // 1450 Zeilen, in denen die Anmeldung neben der PIN-Ablage und der
+        // Agentenschnittstelle lag. Eine Änderung an einer Route erforderte,
+        // sich durch alles andere zu lesen — und ein Blick auf "was kann die
+        // Zentrale eigentlich" war unmöglich.
+        //
+        // Jetzt bündelt jede Methode einen Fachbereich. Die Reihenfolge der
+        // AUFRUFE ist frei, weil sich die Pfadpräfixe nicht überschneiden;
+        // die Reihenfolge INNERHALB eines Bündels ist es nicht.
+        routenAnmeldung(app);
+        routenUebersicht(app);
+        routenProtokoll(app);
+        routenGruppen(app);
+        routenBestand(app);
+        routenOrganisation(app);
+        routenBenutzer(app);
+        routenBenachrichtigung(app);
+        routenVerwaltung(app);
+        routenAgentSchnittstelle(app);
 
-        /**
-         * Detailseite einer Einheit (UX-Konzept, Stufe 5).
-         *
-         * <p>Eigene Adresse statt aufklappender Tabellenzeile: Die Seite ist
-         * als Lesezeichen speicherbar, verlinkbar, und der Zurück-Knopf des
-         * Browsers tut, was man erwartet.
-         */
-        app.get("/organisation/neu", c -> {
-            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
-                    "Das Anlegen von Organisationseinheiten")) return;
-            c.html(seite("organisation",
-                    Organisationsseiten.anlegeseite(organisationen.baum(bereich(c))),
-                    angemeldeter(c)));
-        });
 
-        app.get("/organisation/{id}", c -> {
-            long id = Long.parseLong(c.pathParam("id"));
-            c.html(seite("organisation", organisationsDetail(c, id, null, false),
-                    angemeldeter(c)));
-        });
 
-        app.post("/organisation", c -> {
-            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
-                    "Das Anlegen von Organisationseinheiten")) return;
-            Long eltern = zahlOderNull(Anmeldeseiten.feld(c, "elternId"));
-            var e = organisationen.anlegen(Anmeldeseiten.feld(c, "bezeichnung"),
-                    String.valueOf(Anmeldeseiten.feld(c, "art")), eltern, bereich(c));
-            if (e.geklappt()) {
-                protokoll.anfuegen(bereich(c).bezeichnung(), null,
-                        Ereignisart.ORGANISATION_ANGELEGT, true, angemeldeter(c).anzeigename(),
-                        null, e.meldung(),
-                        "Konten und Geräte lassen sich dieser Einheit ab sofort zuordnen.");
-            }
-            c.html(seite("organisation", organisationsSeite(c,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
-                    angemeldeter(c)));
-        });
 
-        app.post("/organisation/{id}/umbenennen", c -> {
-            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
-                    "Das Ändern von Organisationseinheiten")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var e = organisationen.umbenennen(id, Anmeldeseiten.feld(c, "bezeichnung"), bereich(c));
-            if (e.geklappt()) {
-                protokoll.anfuegen(bereich(c).bezeichnung(), null,
-                        Ereignisart.ORGANISATION_UMBENANNT, true, angemeldeter(c).anzeigename(),
-                        null, e.meldung(), null);
-            }
-            c.html(seite("organisation", organisationsDetail(c, id,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
-                    angemeldeter(c)));
-        });
 
-        app.post("/organisation/{id}/umhaengen", c -> {
-            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
-                    "Das Umhängen von Organisationseinheiten")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var e = organisationen.umhaengen(id, zahlOderNull(Anmeldeseiten.feld(c, "elternId")),
-                    bereich(c));
-            if (e.geklappt()) {
-                // Sicherheitsstufe: Diese Aenderung verschiebt, wer was sieht.
-                protokoll.anfuegen(bereich(c).bezeichnung(), null,
-                        Ereignisart.ORGANISATION_UMGEHAENGT, true, angemeldeter(c).anzeigename(),
-                        null, e.meldung(),
-                        "Mit der Einheit wechseln auch die Zuständigkeiten für ihre Geräte "
-                        + "und Konten.");
-            }
-            c.html(seite("organisation", organisationsDetail(c, id,
-                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
-                    angemeldeter(c)));
-        });
 
-        app.post("/organisation/{id}/loeschen", c -> {
-            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
-                    "Das Löschen von Organisationseinheiten")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var e = organisationen.loeschen(id, bereich(c));
-            if (e.geklappt()) {
-                protokoll.anfuegen(bereich(c).bezeichnung(), null,
-                        Ereignisart.ORGANISATION_GELOESCHT, true, angemeldeter(c).anzeigename(),
-                        null, e.meldung(), null);
-            }
-            // Nach dem Loeschen zurueck zur Struktur — die Einheit, deren
-            // Detailseite das war, gibt es nicht mehr.
-            c.html(seite("organisation", e.geklappt()
-                    ? organisationsSeite(c, e.meldung(), false)
-                    : organisationsDetail(c, id, e.fehler(), true), angemeldeter(c)));
-        });
 
-        // ----------------------------------------------------------- Benutzer
-        app.get("/benutzer", c -> c.html(seite("benutzer",
-                benutzerSeite(c, null, false, null, null), angemeldeter(c))));
 
-        app.post("/benutzer/einladen", c -> {
-            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Einladen von Personen")) return;
-            Long orgId = null;
-            try {
-                String o = Anmeldeseiten.feld(c, "organisationId");
-                if (o != null && !o.isBlank()) orgId = Long.parseLong(o);
-            } catch (NumberFormatException ignored) { }
 
-            Benutzerverwaltung.Rolle rolle;
-            try { rolle = Benutzerverwaltung.Rolle.valueOf(Anmeldeseiten.feld(c, "rolle")); }
-            catch (Exception e) { rolle = Benutzerverwaltung.Rolle.BENUTZER; }
 
-            String name = Anmeldeseiten.feld(c, "benutzername");
-            var e = einladungen.einladen(name, Anmeldeseiten.feld(c, "anzeigename"), rolle,
-                    orgId, angemeldeter(c).anzeigename(), bereich(c));
-            if (e.geklappt()) {
-                // Das Geheimnis selbst steht NICHT im Protokoll - es waere sonst
-                // fuer jeden lesbar, der das Protokoll einsehen darf.
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Person \u201e" + name + "\u201c eingeladen (Rolle " + rolle.anzeige() + ")",
-                        "Der Zugangscode wird nur einmal angezeigt und ist nicht im Protokoll "
-                        + "enthalten.");
-            }
-            c.html(seite("benutzer", benutzerSeite(c,
-                    e.geklappt() ? null : e.fehler(), !e.geklappt(),
-                    e.geheimnis(), name), angemeldeter(c)));
-        });
 
-        app.post("/benutzer/einladung/zurueckziehen", c -> {
-            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Zurückziehen von Einladungen")) return;
-            String name = Anmeldeseiten.feld(c, "benutzername");
-            boolean weg = einladungen.zurueckziehen(name, bereich(c));
-            if (weg) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Einladung für \u201e" + name + "\u201c zurückgezogen", null);
-            }
-            c.html(seite("benutzer", benutzerSeite(c,
-                    weg ? "Einladung zurückgezogen." : "Diese Einladung gibt es nicht mehr.",
-                    !weg, null, null), angemeldeter(c)));
-        });
 
-        app.post("/benutzer/{id}/totp-zuruecksetzen", c -> {
-            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Zurücksetzen des zweiten Faktors")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            var ziel = benutzer.benutzer(id, bereich(c));
-            boolean ok = benutzer.totpZuruecksetzen(id, bereich(c));
-            if (ok && ziel.isPresent()) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_ZURUECKGESETZT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Zweiter Faktor von \u201e" + ziel.get().anzeigename() + "\u201c zurückgesetzt",
-                        "Die Person richtet ihn bei der nächsten Anmeldung neu ein. Das neue "
-                        + "Geheimnis sieht nur sie selbst.");
-            }
-            c.html(seite("benutzer", benutzerSeite(c,
-                    ok ? "Der zweite Faktor wurde zurückgesetzt. Die Person richtet ihn bei der "
-                       + "nächsten Anmeldung neu ein."
-                       : "Dieses Konto gibt es nicht mehr.", !ok, null, null), angemeldeter(c)));
-        });
 
-        app.post("/benutzer/{id}/aktiv", c -> {
-            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Ändern von Konten")) return;
-            long id = Long.parseLong(c.pathParam("id"));
-            boolean aktiv = "ja".equals(Anmeldeseiten.feld(c, "aktiv"));
-            var ziel = benutzer.benutzer(id, bereich(c));
-            String fehler = benutzer.aktivSetzen(id, aktiv, bereich(c));
-            if (fehler == null && ziel.isPresent()) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Konto \u201e" + ziel.get().anzeigename() + "\u201c "
-                                + (aktiv ? "aktiviert" : "deaktiviert"),
-                        aktiv ? null : "Das Konto bleibt im Protokoll nachvollziehbar; es kann "
-                                     + "sich nur nicht mehr anmelden.");
-            }
-            c.html(seite("benutzer", benutzerSeite(c,
-                    fehler == null ? "Konto " + (aktiv ? "aktiviert." : "deaktiviert.") : fehler,
-                    fehler != null, null, null), angemeldeter(c)));
-        });
 
-        // Einloesen einer Einladung - ohne Anmeldung erreichbar.
-        app.get("/einladung", c -> c.html(Benutzerseiten.einloesenSeite(
-                c.queryParam("code"), null)));
 
-        app.post("/einladung", c -> {
-            String geheimnis = Anmeldeseiten.feld(c, "geheimnis");
-            char[] kennwort = Anmeldeseiten.feld(c, "kennwort").toCharArray();
-            var e = einladungen.einloesen(geheimnis, kennwort);
-            java.util.Arrays.fill(kennwort, '\0');
 
-            if (e instanceof Einladungen.Einloesung.Abgelehnt a) {
-                c.html(Benutzerseiten.einloesenSeite(geheimnis, a.grund()));
-                return;
-            }
-            var erfolg = (Einladungen.Einloesung.Erfolg) e;
-            protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
-                    "Einladung", null,
-                    "Einladung eingelöst, Konto eingerichtet (Nummer " + erfolg.benutzerId() + ")",
-                    null);
-            // Weiter zur TOTP-Einrichtung - derselbe Ablauf wie bei der
-            // Ersteinrichtung, damit niemand zwei Wege lernen muss.
-            c.html(Anmeldeseiten.totpEinrichten(erfolg.benutzerId(), erfolg.totpUri(),
-                    erfolg.totpGeheimnis(), null));
-        });
 
-        // ---------------------------------------------------------- Verwaltung
-        app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)),
-                angemeldeter(c))));
 
-        app.post("/verwaltung/registry", c -> {
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
-                    "Das Einrichten der Registry")) return;
-            String fehler = versionen.zugangSpeichern(Anmeldeseiten.feld(c, "registry"),
-                    Anmeldeseiten.feld(c, "abbild"), Anmeldeseiten.feld(c, "benutzer"),
-                    Anmeldeseiten.feld(c, "token"));
-            if (fehler == null) {
-                // Nie das Token — nur DASS eingerichtet wurde.
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Registry-Zugang eingerichtet: " + Anmeldeseiten.feld(c, "abbild"), null);
-                versionen.pruefen();
-            }
-            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)), angemeldeter(c)));
-        });
 
-        app.post("/verwaltung/registry/pruefen", c -> {
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Die Versionsprüfung")) return;
-            var z = versionen.pruefen();
-            c.html(seite("verwaltung", verwaltungsSeite(z.fehler(), null), angemeldeter(c)));
-        });
 
-        app.post("/verwaltung/demodaten/anlegen", c -> {
-            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
-            // an oder entfernen sie. Ein Praxisadministrator, der den
-            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Anlegen des Demodatensatzes")) return;
-            try {
-                var konten = demodaten.anlegen();
-                var b = demodaten.bestand();
-                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Demodatensatz angelegt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals (%d mit SMC-B), %d Konten"
-                                .formatted(b.organisationen(), b.konnektoren(), b.arbeitsplaetze(),
-                                           b.terminals(), b.terminalsMitSmcb(), b.benutzer()), null);
-                c.html(seite("verwaltung", verwaltungsSeite(null, konten), angemeldeter(c)));
-            } catch (IllegalStateException e) {
-                c.html(seite("verwaltung", verwaltungsSeite(e.getMessage(), null), angemeldeter(c)));
-            }
-        });
 
-        // NFA-LEI-010/020: Bestand in Zielgroesse erzeugen, damit die
-        // Leistungswerte am echten Mengengeruest gemessen werden koennen -
-        // auch beim Betreiber auf dessen Hardware.
-        app.post("/verwaltung/lasttest/anlegen", c -> {
-            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
-            // an oder entfernen sie. Ein Praxisadministrator, der den
-            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Anlegen des Lasttestbestands")) return;
-            int anzahl = zahl(Anmeldeseiten.feld(c, "anzahl"), Lasterzeuger.TERMINALS_ZIEL);
-            try {
-                var e = last.erzeugen(anzahl);
-                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren (%d ms)"
-                                .formatted(e.terminals(), e.konnektoren(), e.dauerMs()),
-                        "Dieser Bestand dient nur der Leistungsmessung und ist als Demo "
-                        + "gekennzeichnet. Er sollte nach der Messung wieder entfernt werden.");
-                c.html(seite("verwaltung", verwaltungsSeite(
-                        "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren in %d ms."
-                                .formatted(e.terminals(), e.konnektoren(), e.dauerMs()), null),
-                        angemeldeter(c)));
-            } catch (Exception e) {
-                c.html(seite("verwaltung", verwaltungsSeite(
-                        "Der Lasttestbestand konnte nicht angelegt werden: " + e.getMessage(),
-                        null), angemeldeter(c)));
-            }
-        });
 
-        app.post("/verwaltung/lasttest/entfernen", c -> {
-            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
-            // an oder entfernen sie. Ein Praxisadministrator, der den
-            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Lasttestbestands")) return;
-            try {
-                int weg = last.entfernen();
-                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
-                        angemeldeter(c).anzeigename(), null,
-                        "Lasttestbestand entfernt: %d Kartenterminals".formatted(weg), null);
-                c.html(seite("verwaltung", verwaltungsSeite(
-                        "Lasttestbestand entfernt: %d Kartenterminals.".formatted(weg), null),
-                        angemeldeter(c)));
-            } catch (Exception e) {
-                c.html(seite("verwaltung", verwaltungsSeite(
-                        "Der Lasttestbestand konnte nicht entfernt werden: " + e.getMessage(),
-                        null), angemeldeter(c)));
-            }
-        });
 
-        app.post("/verwaltung/demodaten/loeschen", c -> {
-            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
-            // an oder entfernen sie. Ein Praxisadministrator, der den
-            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Demodatensatzes")) return;
-            var weg = demodaten.loeschen();
-            protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
-                    angemeldeter(c).anzeigename(), null,
-                    "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals, %d Konten"
-                            .formatted(weg.organisationen(), weg.konnektoren(),
-                                       weg.arbeitsplaetze(), weg.terminals(), weg.benutzer()), null);
-            c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)), angemeldeter(c)));
-        });
 
-        // FA-PRO-040: Excel-Export der gefilterten Protokollansicht.
-        // Exportiert wird genau das, was auf dem Bildschirm steht - alles andere
-        // ueberrascht den Benutzer. Das Deckblatt haelt fest, mit welchen Filtern
-        // die Datei entstand; ohne diese Angabe ist ein Export als Nachweis
-        // wertlos, weil niemand spaeter weiss, was darin fehlt.
-        app.get("/protokoll/export", c -> {
-            var b = angemeldeter(c);
-            String fArt = c.queryParam("art");
-            String fErg = c.queryParam("ergebnis");
-            String fGer = c.queryParam("geraet");
-            var eintraege = protokoll.filtern(fGer, fArt, fErg, Tabellenmappe.MAX_ZEILEN - 10, bereich(c));
 
-            var aus = new java.io.ByteArrayOutputStream();
-            try (Tabellenmappe m = new Tabellenmappe(aus)) {
-                m.blattBeginnen("Deckblatt");
-                m.zeile("PIN-Roboter - Protokollauszug");
-                m.zeile();
-                m.zeile("Erstellt am", java.time.Instant.now());
-                m.zeile("Erstellt von", b.anzeigename());
-                m.zeile("Einrichtung", "Praxis");
-                m.zeile();
-                m.zeile("Angewendete Filter");
-                m.zeile("Ereignisart", leerAls(fArt, "alle"));
-                m.zeile("Ergebnis", leerAls(fErg, "alle"));
-                m.zeile("Geraet", leerAls(fGer, "alle"));
-                m.zeile();
-                m.zeile("Zeilen in diesem Auszug", eintraege.size());
-                m.zeile();
-                m.zeile("Hinweis", "Dieser Auszug enthaelt keine PINs, Kennwoerter oder "
-                        + "Zugangsdaten. Er gibt ausschliesslich die oben genannten "
-                        + "gefilterten Eintraege wieder.");
 
-                m.blattBeginnen("Protokoll");
-                m.kopfzeile("Zeitpunkt", "Gerät", "Ereignis", "Ergebnis",
-                            "Ausgelöst durch", "Beschreibung", "Was zu tun ist", "Vorgang");
-                for (var e : eintraege) {
-                    m.zeile(e.zeitpunkt(),
-                            e.geraet() == null ? "" : e.geraet(),
-                            e.art().anzeige(),
-                            e.erfolg() ? "erfolgreich" : "fehlgeschlagen",
-                            e.ausloeser(),
-                            e.text() == null ? "" : e.text(),
-                            e.handlung() == null ? "" : e.handlung(),
-                            e.vorgang() == null ? "" : e.vorgang());
-                }
-            }
 
-            // Der Export ist selbst protokollpflichtig: Er kann personenbezogene
-            // Daten enthalten (FA-PRO-040).
-            protokoll.anfuegen("Praxis", null, Ereignisart.PROTOKOLL_EXPORTIERT, true,
-                    b.anzeigename(), null,
-                    "Protokoll exportiert (" + eintraege.size() + " Zeilen)", null);
 
-            String datei = "PIN-Roboter-Protokoll-"
-                    + java.time.LocalDateTime.now().format(
-                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmm"))
-                    + ".xlsx";
-            c.header("Content-Type",
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-            c.header("Content-Disposition", "attachment; filename=\"" + datei + "\"");
-            c.result(aus.toByteArray());
-        });
 
-        /**
-         * Not-Aus (FA-PIN-050).
-         *
-         * <p><b>Bekannte Einschränkung:</b> Er wirkt <b>instanzweit</b>, nicht
-         * je Einrichtung. Bei mehreren Mandanten an einer Zentrale hält ein
-         * Praxisadministrator damit auch fremde Standorte an.
-         *
-         * <p>Das ist bewusst so belassen, nicht übersehen: Die Alternative wäre,
-         * ihn für Praxisadministratoren zu sperren — und bei einem
-         * Sicherheitsmittel ist das die schlechtere Wahl. Wer den Verdacht hat,
-         * dass der Roboter falsch handelt, muss ihn sofort anhalten können.
-         *
-         * <p>Damit die Wirkung nicht überrascht, wird sie protokolliert
-         * <b>mit Namen</b> — bisher stand dort nur „Benutzer". Als offener Punkt
-         * vermerkt in {@code docs/05-sicherheit-datenschutz.md}.
-         */
-        app.post("/notaus", c -> {
-            if (abgewiesen(c, rechte(c).darfNotAus(), "Das Auslösen des Not-Aus")) return;
-            var b = angemeldeter(c);
-            notAus = !notAus;
-            protokoll.anfuegen("Praxis", null,
-                    notAus ? Ereignisart.NOT_AUS_AUSGELOEST : Ereignisart.NOT_AUS_AUFGEHOBEN,
-                    true, b == null ? "Unbekannt" : b.anzeigename(), null,
-                    notAus ? "Not-Aus ausgelöst — die Automatik ruht."
-                           : "Not-Aus aufgehoben — die Automatik arbeitet wieder.",
-                    "Der Not-Aus wirkt für alle Einrichtungen dieser Instanz.");
-            c.header("HX-Refresh", "true").result("");
-        });
 
-        // Meldeschnittstelle des Agenten. Im Produkt eine gegenseitig
-        // authentifizierte WebSocket-Verbindung, ausgehend vom Agenten (ADR-0002).
-        app.post("/api/agent/melden", this::agentMeldung);
-        app.get("/api/agent/notaus", c -> c.json(Map.of("notAus", notAus)));
 
-        /**
-         * FA-UEB-010: Das Prüfintervall je Kartenterminal.
-         *
-         * <p>Bis zum 08.08.2026 kannte der Agent nur einen globalen Wert aus
-         * seiner Umgebung. Die Gerätegruppen trugen zwar ein Intervall, aber
-         * es erreichte ihn nie — die Einstellung war wirkungslos. Bei 5.000
-         * Terminals ist genau das der Hebel, mit dem die Last steuerbar
-         * bleibt: Die Notaufnahme braucht 30 Sekunden, das Archiv kommt mit
-         * fünf Minuten aus.
-         */
-        app.get("/api/agent/intervalle", c -> {
-            var werte = new LinkedHashMap<String, Integer>();
-            try (var p = db.verbindung().prepareStatement("""
-                    SELECT g.terminal_id, gr.pruefintervall_sekunden
-                    FROM geraet g JOIN geraetegruppe gr ON gr.id = g.gruppe_id
-                    WHERE g.aktiv""")) {
-                try (var rs = p.executeQuery()) {
-                    while (rs.next()) werte.put(rs.getString(1), rs.getInt(2));
-                }
-            } catch (java.sql.SQLException e) {
-                System.err.println("Prüfintervalle nicht abrufbar: " + e.getMessage());
-            }
-            c.json(Map.of("intervalle", werte));
-        });
-
-        /**
-         * FA-GER-030 / FA-GER-035: Der Agent meldet, was er beim Konnektor
-         * vorgefunden hat. Die Zentrale legt den Befund ab und übernimmt
-         * <b>nichts</b> davon selbsttätig in den Bestand.
-         */
-        app.post("/api/agent/bestand", c -> {
-            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
-            Map<String, Object> m = c.bodyAsClass(Map.class);
-
-            @SuppressWarnings("unchecked")
-            var terminals = (List<Map<String, Object>>) m.getOrDefault("terminals", List.of());
-            int n = ermittlung.aufnehmen(agent.id(), terminals);
-
-            // FA-GER-040: Karten je Terminal, einschliesslich eGK und HBA.
-            int karten = 0;
-            for (var eintrag : terminals) {
-                @SuppressWarnings("unchecked")
-                var liste = (List<Map<String, Object>>) eintrag.getOrDefault("karten", List.of());
-                karten += ermittlung.kartenAufnehmen(agent.id(),
-                        String.valueOf(eintrag.get("terminalId")), liste);
-            }
-
-            // ADR-0009: Der oeffentliche Schluessel des Agenten. Er ist nicht
-            // geheim - der Browser braucht ihn, um die PIN zu verschluesseln.
-            // FA-AGT-040: Version merken und bewerten. Ein Agent ausserhalb der
-            // Spanne wird NICHT abgewiesen — das hiesse: keine
-            // PIN-Verifikation in dieser Praxis. Ein veralteter Agent, der
-            // seine Kernaufgabe noch erfuellt, ist besser als gar keiner.
-            versionMerken(agent.id(), m.get("protokollversion"), m.get("bausteinversion"));
-
-            Object schluessel = m.get("oeffentlicherSchluessel");
-            if (schluessel instanceof String s && !s.isBlank()) {
-                pins.schluesselMerken(agent.id(), s);
-            }
-
-            boolean modellDa = Boolean.TRUE.equals(m.get("informationsmodellVerfuegbar"));
-            ermittlung.modellAblegen(agent.id(), modellDa,
-                    modellDa ? String.valueOf(m.get("informationsmodell")) : null);
-
-            int neu = ermittlung.neueAnzahl();
-            protokoll.anfuegen(agent.einrichtung(), null, Ereignisart.BESTAND_ERMITTELT, true,
-                    "Standort-Agent", null,
-                    "Bestand beim Konnektor ermittelt: %d Kartenterminal(s), %d Karte(n)%s"
-                            .formatted(n, karten,
-                            modellDa ? ", Informationsmodell gelesen"
-                                     : ", Informationsmodell nicht verfügbar"),
-                    neu == 0 ? null : neu + " Gerät(e) sind noch nicht erfasst. "
-                            + "Unter „Bestand → Ermittelte Geräte“ prüfen und übernehmen.");
-            c.json(Map.of("aufgenommen", n, "neu", neu));
-        });
-
-        /**
-         * Der Agent holt seine offenen PIN-Aufträge ab (ADR-0009).
-         *
-         * <p>Das Chiffrat wird dabei aus der Datenbank gelöscht — es ist
-         * ausgeliefert. Was hier durchgeht, kann die Zentrale nicht lesen.
-         */
-        app.get("/api/agent/pin-auftraege", c -> {
-            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
-            c.json(Map.of("auftraege", pins.abholen(agent.id())));
-        });
-
-        /** Der Agent quittiert einen Auftrag. */
-        app.post("/api/agent/pin-quittung", c -> {
-            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
-            Map<String, Object> m = c.bodyAsClass(Map.class);
-            boolean erfolg = Boolean.TRUE.equals(m.get("erfolg"));
-            String art = String.valueOf(m.getOrDefault("art", "HINTERLEGEN"));
-            String handle = String.valueOf(m.get("kartenhandle"));
-            pins.quittieren(agent.id(), ((Number) m.get("auftragId")).longValue(),
-                    erfolg, erfolg ? null : String.valueOf(m.get("fehler")), handle, art);
-
-            if (!erfolg) {
-                protokoll.anfuegen(agent.einrichtung(), handle,
-                        "HINTERLEGEN".equals(art) ? Ereignisart.PIN_HINTERLEGT
-                                                  : Ereignisart.PIN_GELOESCHT,
-                        false, "Standort-Agent", null,
-                        "Der Standort-Agent konnte den PIN-Auftrag nicht ausführen",
-                        String.valueOf(m.get("fehler")));
-            }
-            c.json(Map.of("quittiert", true));
-        });
-
-        /**
-         * FA-AGT-010: Ein Agent löst hier sein einmalig gültiges
-         * Registrierungsgeheimnis gegen ein dauerhaftes Token ein.
-         */
-        app.post("/api/registrieren", c -> {
-            String geheimnis = kopfWert(c, "X-Registrierung");
-            var ergebnis = agenten.registrieren(geheimnis);
-            if (ergebnis instanceof Agentenverwaltung.Registrierung.Erfolg e) {
-                protokoll.anfuegen(einrichtungVonAgent(e.agentId()), null,
-                        Ereignisart.AGENT_REGISTRIERT, true,
-                        "Registrierung", null,
-                        "Standort-Agent registriert (Nummer " + e.agentId() + ")", null);
-                c.json(Map.of("token", e.token(), "agentId", e.agentId()));
-            } else {
-                var a = (Agentenverwaltung.Registrierung.Abgelehnt) ergebnis;
-                // Fehlversuche werden protokolliert - sie sind ein Angriffshinweis.
-                // Instanzweit abgelegt: Zu einem abgelehnten Versuch gibt es
-                // keine belegte Einrichtung, und ein Angreifer duerfte den
-                // Ablageort nicht ueber sein Geheimnis waehlen koennen.
-                protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERUNG_ABGELEHNT,
-                        false, "Registrierung", null, a.grund(),
-                        "Falls ein Agent eingerichtet werden soll, bitte ein neues "
-                        + "Registrierungsgeheimnis erzeugen.");
-                c.status(403).json(Map.of("fehler", a.grund()));
-            }
-        });
-
-        // Erzeugt ein Registrierungsgeheimnis. Nur für angemeldete Administratoren.
-        app.post("/agenten/geheimnis", c -> {
-            var angemeldet = angemeldeter(c);
-            if (angemeldet == null || angemeldet.rolle() != Benutzerverwaltung.Rolle.ADMINISTRATOR) {
-                c.status(403).result("Nur Administratoren dürfen Agenten einrichten.");
-                return;
-            }
-            String bez = Anmeldeseiten.feld(c, "bezeichnung");
-            // Die Einrichtung gehoert zur Registrierung, nicht zur Meldung:
-            // Ein Agent steht in genau einer Praxis, und alles, was er meldet,
-            // gehoert dorthin. Sie hier zu waehlen ist der einzige Zeitpunkt,
-            // an dem ein Mensch es wissen kann.
-            String einr = Anmeldeseiten.feld(c, "einrichtung");
-            if (einr == null || einr.isBlank()) einr = "Praxis";
-            String geheimnis = agenten.geheimnisAnlegen(
-                    bez.isBlank() ? "Standort-Agent" : bez, einr, angemeldet.anzeigename());
-            protokoll.anfuegen(einr, null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,
-                    angemeldet.anzeigename(), null,
-                    "Registrierungsgeheimnis für \"" + bez + "\" erzeugt", null);
-            // Der Klartext erscheint genau einmal - danach ist nur der Hash gespeichert.
-            c.html(geheimnisAnzeige(geheimnis));
-        });
 
         app.start("0.0.0.0", port);
         System.out.println("""
@@ -3265,4 +2072,1400 @@ public class Zentrale {
         if (s == null) return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
+
+    /**
+     * Anmelden, Abmelden, Ersteinrichtung, zweiter Faktor, Einladungen (FA-BEN-010/020/030).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenAnmeldung(Javalin app) {
+        // ------------------------------------------------------------------ Anmeldung
+        app.get("/anmelden", c -> c.html(Anmeldeseiten.anmeldeformular(null)));
+
+        app.post("/anmelden", c -> {
+            String name = Anmeldeseiten.feld(c, "benutzer");
+            String absender = c.ip();
+
+            // Bremse VOR der Pruefung: Wer schon auffaellig war, wartet - und
+            // zwar unabhaengig davon, ob dieses Kennwort stimmt. Sonst liesse
+            // sich die Bremse durch einen bekannten Treffer zuruecksetzen.
+            var warten = bremse.wartezeit(absender);
+            if (!warten.isZero()) {
+                try { Thread.sleep(warten.toMillis()); }
+                catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+
+            var ergebnis = benutzer.anmelden(name,
+                    Anmeldeseiten.passwortFeld(c, "passwort"), Anmeldeseiten.feld(c, "code"));
+
+            switch (ergebnis) {
+                case Benutzerverwaltung.Anmeldung.Erfolg e -> {
+                    bremse.erfolg(absender);
+                    setzeSitzungscookie(c, e.sitzung());
+                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_ERFOLGREICH,
+                            true, e.benutzer().anzeigename(), null,
+                            "Anmeldung erfolgreich", null);
+                    c.redirect("/");
+                }
+                case Benutzerverwaltung.Anmeldung.TotpEinrichten t ->
+                    c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(),
+                            "Bitte richten Sie zuerst den zweiten Faktor ein."));
+                case Benutzerverwaltung.Anmeldung.Gesperrt g -> {
+                    zaehleFehlversuch(absender, name);
+                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
+                            false, name, null, "Anmeldung bei gesperrtem Konto", null);
+                    c.html(Anmeldeseiten.anmeldeformular(g.meldung()));
+                }
+                case Benutzerverwaltung.Anmeldung.Abgelehnt a -> {
+                    zaehleFehlversuch(absender, name);
+                    // Der Benutzername wird protokolliert, das Passwort nie (FA-PRO-020).
+                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
+                            false, name.isBlank() ? "unbekannt" : name, null,
+                            "Anmeldung fehlgeschlagen", null);
+                    c.html(Anmeldeseiten.anmeldeformular(a.meldung()));
+                }
+            }
+        });
+
+        app.post("/abmelden", c -> {
+            benutzer.abmelden(c.cookie(SITZUNGSCOOKIE));
+            c.removeCookie(SITZUNGSCOOKIE, "/");
+            c.header("HX-Redirect", "/anmelden").redirect("/anmelden");
+        });
+
+        // ------------------------------------------------------------ Ersteinrichtung
+        app.get("/ersteinrichtung", c -> {
+            if (!benutzer.ersteinrichtungNoetig()) { c.redirect("/anmelden"); return; }
+            c.html(Anmeldeseiten.ersteinrichtung(null));
+        });
+
+        app.post("/ersteinrichtung", c -> {
+            if (!benutzer.ersteinrichtungNoetig()) { c.redirect("/anmelden"); return; }
+            var e = benutzer.anlegen(Anmeldeseiten.feld(c, "benutzer"),
+                    Anmeldeseiten.feld(c, "anzeigename"),
+                    Anmeldeseiten.passwortFeld(c, "passwort"),
+                    Benutzerverwaltung.Rolle.ADMINISTRATOR);
+            if (e instanceof Benutzerverwaltung.Anmeldung.TotpEinrichten t) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                        "Ersteinrichtung", null,
+                        "Erstes Administratorkonto angelegt: " + Anmeldeseiten.feld(c, "benutzer"), null);
+                c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(), null));
+            } else if (e instanceof Benutzerverwaltung.Anmeldung.Abgelehnt a) {
+                c.html(Anmeldeseiten.ersteinrichtung(a.meldung()));
+            }
+        });
+
+        app.post("/totp-bestaetigen", c -> {
+            long id = Long.parseLong(Anmeldeseiten.feld(c, "benutzerId"));
+            if (benutzer.totpBestaetigen(id, Anmeldeseiten.feld(c, "code"))) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_EINGERICHTET, true,
+                        "Benutzer " + id, null, "Zweiter Faktor eingerichtet", null);
+                c.html(Anmeldeseiten.rahmen("Einrichtung abgeschlossen", """
+                        <div class="hinweis"><strong>Der zweite Faktor ist eingerichtet.</strong>
+                        Sie können sich jetzt anmelden.</div>
+                        <a class="knopf haupt" href="/anmelden" title="Öffnet die Anmeldeseite" aria-label="Öffnet die Anmeldeseite">Zur Anmeldung</a>"""));
+            } else {
+                c.html(Anmeldeseiten.rahmen("Einrichtung", Anmeldeseiten.meldung(
+                        "Der Code stimmt nicht. Bitte prüfen Sie die Uhrzeit Ihres Telefons "
+                        + "und versuchen Sie es mit dem nächsten Code erneut.", "warnend")
+                        + "<a class=\"knopf\" href=\"/anmelden\">Zurück</a>"));
+            }
+        });
+
+        // Einloesen einer Einladung - ohne Anmeldung erreichbar.
+        app.get("/einladung", c -> c.html(Benutzerseiten.einloesenSeite(
+                c.queryParam("code"), null)));
+
+        app.post("/einladung", c -> {
+            String geheimnis = Anmeldeseiten.feld(c, "geheimnis");
+            char[] kennwort = Anmeldeseiten.feld(c, "kennwort").toCharArray();
+            var e = einladungen.einloesen(geheimnis, kennwort);
+            java.util.Arrays.fill(kennwort, '\0');
+
+            if (e instanceof Einladungen.Einloesung.Abgelehnt a) {
+                c.html(Benutzerseiten.einloesenSeite(geheimnis, a.grund()));
+                return;
+            }
+            var erfolg = (Einladungen.Einloesung.Erfolg) e;
+            protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                    "Einladung", null,
+                    "Einladung eingelöst, Konto eingerichtet (Nummer " + erfolg.benutzerId() + ")",
+                    null);
+            // Weiter zur TOTP-Einrichtung - derselbe Ablauf wie bei der
+            // Ersteinrichtung, damit niemand zwei Wege lernen muss.
+            c.html(Anmeldeseiten.totpEinrichten(erfolg.benutzerId(), erfolg.totpUri(),
+                    erfolg.totpGeheimnis(), null));
+        });
+    }
+
+
+    /**
+     * Lage, Geräte, Alarme, Not-Aus und die HTMX-Einschübe, die sich selbst auffrischen.
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenUebersicht(Javalin app) {
+        app.get("/", c -> c.html(seite("uebersicht", uebersichtsSeite(c), angemeldeter(c))));
+
+        app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(), angemeldeter(c))));
+
+        app.get("/teil/uebersicht", c -> c.html(uebersicht(c)));
+
+        // Zwei getrennte Einschuebe statt eines Komplettaustauschs. Siehe
+        // uebersichtsSeite() zur Begruendung.
+        app.get("/teil/alarme", c -> c.html(alarmblock(c)));
+
+        app.get("/teil/lage",   c -> c.html(lageblock(c)));
+
+        app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
+
+        /**
+         * Geräte-Zeitstrahl (FA-PRO-050) — aus der Geräteliste in einem Klick.
+         *
+         * <p>Das gefilterte Protokoll leistet das nicht: Dort sucht man
+         * Einträge, hier liest man die Geschichte eines Geräts.
+         */
+        app.get("/geraete/{terminalId}/verlauf", c -> {
+            String id = c.pathParam("terminalId");
+            String zeitraum = c.queryParam("zeitraum");
+            if (zeitraum == null || zeitraum.isBlank()) zeitraum = "7t";
+            var arten = c.queryParams("art");
+            var seite = protokoll.seite(id, arten, null,
+                    Verlaufsseiten.seitFuer(zeitraum), null,
+                    Math.max(1, zahl(c.queryParam("seite"), 1)), 200, bereich(c));
+            var g = geraete.get(id);
+            c.html(seite("geraete", Verlaufsseiten.zeitstrahl(id,
+                    g == null ? id : anzeigename(g), seite, zeitraum, arten),
+                    angemeldeter(c)));
+        });
+
+        /** Vorgangsansicht (FA-PRO-060). */
+        app.get("/vorgang/{nummer}", c -> {
+            String nr = c.pathParam("nummer");
+            var seite = protokoll.seite(null, java.util.List.of(), null, null, nr, 1, 200, bereich(c));
+            c.html(seite("protokoll", Verlaufsseiten.vorgang(nr, seite), angemeldeter(c)));
+        });
+
+        app.get("/teil/vorgang/{nummer}", c -> {
+            String nr = c.pathParam("nummer");
+            var seite = protokoll.seite(null, java.util.List.of(), null, null, nr, 1, 200, bereich(c));
+            // Nur die Verlaufstafel, nicht die ganze Seite — der Kopf mit den
+            // Kennzahlen bleibt stehen (UX-Konzept, Stufe 1).
+            String ganz = Verlaufsseiten.vorgang(nr, seite);
+            int ab = ganz.lastIndexOf("<div class=\"tafel\"");
+            c.html(ab < 0 ? ganz : ganz.substring(ab));
+        });
+
+        app.get("/teil/protokoll",  c -> c.html(protokollTabelle(c)));
+
+        app.get("/teil/gruppen", c -> c.html(gruppenTabelle(c)));
+
+        app.post("/geraete/{id}/gruppe", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            String fehler = gruppen.zuordnen(c.pathParam("id"),
+                    Long.parseLong(Anmeldeseiten.feld(c, "gruppe")));
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", c.pathParam("id"), Ereignisart.GERAET_ZUGEORDNET,
+                        true, angemeldeter(c).anzeigename(), null,
+                        "Gerät einer anderen Gruppe zugeordnet", null);
+            }
+            c.html(gruppenTabelle(c));
+        });
+
+        /**
+         * FA-ALA-010: Einen Alarm quittieren.
+         *
+         * <p>Die Oberfläche bot diesen Knopf schon an, bevor es die Route gab —
+         * ein Klick lief ins Leere. Gefunden hat das der Systemnachweis, nicht
+         * der Modultest: {@code Alarmverwaltung.quittieren} war geprüft, nur nie
+         * angebunden. Eine Funktion, die nur in der Klasse existiert, ist für
+         * den Benutzer keine.
+         */
+        app.post("/alarme/{id}/quittieren", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            var b = angemeldeter(c);
+            if (alarme.quittieren(id, b.anzeigename(), bereich(c))) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null, Ereignisart.ALARM_QUITTIERT,
+                        true, b.anzeigename(), null,
+                        "Alarm " + id + " quittiert",
+                        "Quittieren heißt „zur Kenntnis genommen“ — der Alarm bleibt bestehen, "
+                        + "solange der Zustand besteht.");
+            }
+            c.header("HX-Refresh", "true").result("");
+        });
+
+        /**
+         * Not-Aus (FA-PIN-050).
+         *
+         * <p><b>Bekannte Einschränkung:</b> Er wirkt <b>instanzweit</b>, nicht
+         * je Einrichtung. Bei mehreren Mandanten an einer Zentrale hält ein
+         * Praxisadministrator damit auch fremde Standorte an.
+         *
+         * <p>Das ist bewusst so belassen, nicht übersehen: Die Alternative wäre,
+         * ihn für Praxisadministratoren zu sperren — und bei einem
+         * Sicherheitsmittel ist das die schlechtere Wahl. Wer den Verdacht hat,
+         * dass der Roboter falsch handelt, muss ihn sofort anhalten können.
+         *
+         * <p>Damit die Wirkung nicht überrascht, wird sie protokolliert
+         * <b>mit Namen</b> — bisher stand dort nur „Benutzer". Als offener Punkt
+         * vermerkt in {@code docs/05-sicherheit-datenschutz.md}.
+         */
+        app.post("/notaus", c -> {
+            if (abgewiesen(c, rechte(c).darfNotAus(), "Das Auslösen des Not-Aus")) return;
+            var b = angemeldeter(c);
+            notAus = !notAus;
+            protokoll.anfuegen("Praxis", null,
+                    notAus ? Ereignisart.NOT_AUS_AUSGELOEST : Ereignisart.NOT_AUS_AUFGEHOBEN,
+                    true, b == null ? "Unbekannt" : b.anzeigename(), null,
+                    notAus ? "Not-Aus ausgelöst — die Automatik ruht."
+                           : "Not-Aus aufgehoben — die Automatik arbeitet wieder.",
+                    "Der Not-Aus wirkt für alle Einrichtungen dieser Instanz.");
+            c.header("HX-Refresh", "true").result("");
+        });
+    }
+
+
+    /**
+     * Fachprotokoll und Excel-Export (FA-PRO-010 bis 040).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenProtokoll(Javalin app) {
+        app.get("/protokoll", c -> c.html(seite("protokoll", protokollSeite(c), angemeldeter(c))));
+
+        // FA-PRO-040: Excel-Export der gefilterten Protokollansicht.
+        // Exportiert wird genau das, was auf dem Bildschirm steht - alles andere
+        // ueberrascht den Benutzer. Das Deckblatt haelt fest, mit welchen Filtern
+        // die Datei entstand; ohne diese Angabe ist ein Export als Nachweis
+        // wertlos, weil niemand spaeter weiss, was darin fehlt.
+        app.get("/protokoll/export", c -> {
+            var b = angemeldeter(c);
+            String fArt = c.queryParam("art");
+            String fErg = c.queryParam("ergebnis");
+            String fGer = c.queryParam("geraet");
+            var eintraege = protokoll.filtern(fGer, fArt, fErg, Tabellenmappe.MAX_ZEILEN - 10, bereich(c));
+
+            var aus = new java.io.ByteArrayOutputStream();
+            try (Tabellenmappe m = new Tabellenmappe(aus)) {
+                m.blattBeginnen("Deckblatt");
+                m.zeile("PIN-Roboter - Protokollauszug");
+                m.zeile();
+                m.zeile("Erstellt am", java.time.Instant.now());
+                m.zeile("Erstellt von", b.anzeigename());
+                m.zeile("Einrichtung", "Praxis");
+                m.zeile();
+                m.zeile("Angewendete Filter");
+                m.zeile("Ereignisart", leerAls(fArt, "alle"));
+                m.zeile("Ergebnis", leerAls(fErg, "alle"));
+                m.zeile("Geraet", leerAls(fGer, "alle"));
+                m.zeile();
+                m.zeile("Zeilen in diesem Auszug", eintraege.size());
+                m.zeile();
+                m.zeile("Hinweis", "Dieser Auszug enthaelt keine PINs, Kennwoerter oder "
+                        + "Zugangsdaten. Er gibt ausschliesslich die oben genannten "
+                        + "gefilterten Eintraege wieder.");
+
+                m.blattBeginnen("Protokoll");
+                m.kopfzeile("Zeitpunkt", "Gerät", "Ereignis", "Ergebnis",
+                            "Ausgelöst durch", "Beschreibung", "Was zu tun ist", "Vorgang");
+                for (var e : eintraege) {
+                    m.zeile(e.zeitpunkt(),
+                            e.geraet() == null ? "" : e.geraet(),
+                            e.art().anzeige(),
+                            e.erfolg() ? "erfolgreich" : "fehlgeschlagen",
+                            e.ausloeser(),
+                            e.text() == null ? "" : e.text(),
+                            e.handlung() == null ? "" : e.handlung(),
+                            e.vorgang() == null ? "" : e.vorgang());
+                }
+            }
+
+            // Der Export ist selbst protokollpflichtig: Er kann personenbezogene
+            // Daten enthalten (FA-PRO-040).
+            protokoll.anfuegen("Praxis", null, Ereignisart.PROTOKOLL_EXPORTIERT, true,
+                    b.anzeigename(), null,
+                    "Protokoll exportiert (" + eintraege.size() + " Zeilen)", null);
+
+            String datei = "PIN-Roboter-Protokoll-"
+                    + java.time.LocalDateTime.now().format(
+                        java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HHmm"))
+                    + ".xlsx";
+            c.header("Content-Type",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            c.header("Content-Disposition", "attachment; filename=\"" + datei + "\"");
+            c.result(aus.toByteArray());
+        });
+    }
+
+
+    /**
+     * Gerätegruppen und ihr Prüfintervall (FA-GER-050, FA-UEB-010).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenGruppen(Javalin app) {
+        // ---------------------------------------------------------- Gruppen
+        app.get("/gruppen",      c -> c.html(seite("gruppen", gruppenSeite(c, null), angemeldeter(c))));
+
+        app.post("/gruppen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            int intervall;
+            try { intervall = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
+            catch (NumberFormatException e) { intervall = 60; }
+            String bez = Anmeldeseiten.feld(c, "bezeichnung");
+            // FA-GER-050: Die Einrichtung wird gewaehlt, nicht verdrahtet.
+            String einrichtung = Anmeldeseiten.feld(c, "einrichtung");
+            if (einrichtung == null || einrichtung.isBlank()) einrichtung = "Praxis";
+            String fehler = gruppen.anlegen(bez, einrichtung, intervall);
+            if (fehler == null) {
+                protokoll.anfuegen(einrichtung, null, Ereignisart.GRUPPE_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe \"" + bez + "\" für " + einrichtung
+                        + " angelegt, Prüfintervall " + intervall + " s", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
+        });
+
+        app.post("/gruppen/{id}/intervall", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            int sek;
+            try { sek = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
+            catch (NumberFormatException e) { sek = 60; }
+            String fehler = gruppen.intervallSetzen(id, sek);
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Prüfintervall der Gruppe " + id + " auf " + sek + " s gesetzt", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
+        });
+
+        app.post("/gruppen/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            String fehler = gruppen.loeschen(id, "Praxis");
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GELOESCHT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe " + id + " gelöscht, Geräte in die Vorgabegruppe verschoben", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
+        });
+    }
+
+
+    /**
+     * Konnektoren, Kartenterminals, Zugangsdaten und PIN-Ablage (FA-GER-010 bis 040, FA-PIN-010/060).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenBestand(Javalin app) {
+        // ------------------------------------------------------------ Bestand
+        // FA-GER-010, FA-GER-020: Konnektoren und Kartenterminals erfassen.
+        app.get("/bestand", c -> c.html(seite("bestand", bestandsSeite(c, null, false), angemeldeter(c))));
+
+        // FA-GER-030 / FA-GER-035: Vorschlagsliste aus der Ermittlung.
+        app.get("/bestand/ermittelt", c -> c.html(seite("bestand",
+                Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)), ermittlung.juengstesModell(),
+                        bestand.konnektoren(bereich(c)), null, false),
+                angemeldeter(c))));
+
+        // FA-GER-030 erlaubt die Uebernahme "einzeln oder als Auswahl".
+        app.post("/bestand/ermittelt/uebernehmen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            var ids = kennungen(c, "fund");
+            long konnektorId;
+            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
+            catch (NumberFormatException e) { konnektorId = -1; }
+
+            int uebernommen = 0;
+            List<String> fehler = new ArrayList<>();
+            for (long id : ids) {
+                var fund = ermittlung.fund(id, bereich(c));
+                if (fund.isEmpty()) { fehler.add("Ein Fund ist nicht mehr vorhanden."); continue; }
+                var e = bestand.uebernehmen(fund.get(), konnektorId, null, bereich(c));
+                if (e.geklappt()) {
+                    ermittlung.alsUebernommenMarkieren(id);
+                    uebernommen++;
+                    var t2 = bestand.terminal(e.id(), bereich(c)).orElseThrow();
+                    protokoll.anfuegen(t2.organisation(), t2.terminalId(),
+                            Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
+                            "Kartenterminal \u201e" + t2.bezeichnung() + "\u201c aus der Ermittlung "
+                                    + "\u00fcbernommen (Sammelauswahl)",
+                            "Die Adresse des Ger\u00e4ts ist noch nicht hinterlegt \u2014 ohne sie "
+                            + "ist keine Erreichbarkeitspr\u00fcfung m\u00f6glich.");
+                } else {
+                    fehler.add(e.fehler());
+                }
+            }
+
+            String meldung = ids.isEmpty()
+                    ? "Es war kein Ger\u00e4t ausgew\u00e4hlt."
+                    : "%d von %d Ger\u00e4t(en) \u00fcbernommen.%s".formatted(uebernommen, ids.size(),
+                            fehler.isEmpty() ? "" : " " + String.join(" ", fehler));
+            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
+                    ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)), meldung,
+                    uebernommen < ids.size()), angemeldeter(c)));
+        });
+
+        app.post("/bestand/ermittelt/{id}/uebernehmen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var fund = ermittlung.fund(id, bereich(c));
+            if (fund.isEmpty()) {
+                c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
+                        ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)),
+                        "Dieser Fund ist nicht mehr vorhanden. Bitte die Seite neu laden.", true),
+                        angemeldeter(c)));
+                return;
+            }
+            long konnektorId;
+            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
+            catch (NumberFormatException e) { konnektorId = -1; }
+
+            var e = bestand.uebernehmen(fund.get(), konnektorId, Anmeldeseiten.feld(c, "adresse"), bereich(c));
+            String meldung;
+            if (e.geklappt()) {
+                ermittlung.alsUebernommenMarkieren(id);
+                var t = bestand.terminal(e.id(), bereich(c)).orElseThrow();
+                protokoll.anfuegen(t.organisation(), t.terminalId(),
+                        Ereignisart.GERAET_UEBERNOMMEN, true, angemeldeter(c).anzeigename(), null,
+                        "Kartenterminal \u201e" + t.bezeichnung() + "\u201c aus der Ermittlung "
+                                + "in den Bestand \u00fcbernommen",
+                        t.adresse() == null ? "Die Adresse des Ger\u00e4ts ist noch nicht "
+                                + "hinterlegt \u2014 ohne sie ist keine Erreichbarkeitspr\u00fcfung "
+                                + "m\u00f6glich." : null);
+                meldung = "Kartenterminal \u201e" + t.bezeichnung() + "\u201c \u00fcbernommen.";
+            } else {
+                meldung = e.fehler();
+            }
+            c.html(seite("bestand", Bestandsseiten.ermitteltSeite(ermittlung.abgleich(bereich(c)),
+                    ermittlung.juengstesModell(), bestand.konnektoren(bereich(c)), meldung, !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        // FA-GER-060: Massenaktionen auf mehrere Geraete.
+        app.post("/bestand/massenaktion", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            var ids = kennungen(c, "geraet");
+            String aktion = Anmeldeseiten.feld(c, "aktion");
+
+            Bestandsverwaltung.Massenergebnis e;
+            String was;
+            switch (aktion) {
+                case "aktivieren"   -> { e = bestand.massenAktivSetzen(ids, true, bereich(c));  was = "aktiviert"; }
+                case "deaktivieren" -> { e = bestand.massenAktivSetzen(ids, false, bereich(c)); was = "deaktiviert"; }
+                case "gruppe"       -> {
+                    long gruppeId;
+                    try { gruppeId = Long.parseLong(Anmeldeseiten.feld(c, "gruppeId")); }
+                    catch (NumberFormatException ex) {
+                        c.html(seite("bestand", bestandsSeite(c,
+                                "Bitte eine Gerätegruppe auswählen.", true), angemeldeter(c)));
+                        return;
+                    }
+                    e = bestand.massenGruppeZuweisen(ids, gruppeId, bereich(c));
+                    was = "einer Gruppe zugeordnet";
+                }
+                default -> {
+                    c.html(seite("bestand", bestandsSeite(c,
+                            "Unbekannte Aktion. Bitte die Seite neu laden.", true), angemeldeter(c)));
+                    return;
+                }
+            }
+
+            // Auch eine Massenaktion ist Bestandspflege - sie entscheidet
+            // darueber, welche Geraete ueberwacht werden.
+            if (e.geaendert() > 0) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.TERMINAL_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "%d Kartenterminal(s) %s".formatted(e.geaendert(), was),
+                        e.vollstaendig() ? null : String.join(" ", e.hinweise()));
+            }
+
+            String meldung = e.geaendert() == 0
+                    ? (e.hinweise().isEmpty() ? "Es wurde nichts geändert."
+                                              : String.join(" ", e.hinweise()))
+                    : "%d Kartenterminal(s) %s.%s".formatted(e.geaendert(), was,
+                            e.hinweise().isEmpty() ? "" : " " + String.join(" ", e.hinweise()));
+            c.html(seite("bestand", bestandsSeite(c, meldung, !e.vollstaendig()), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long orgId;
+            try { orgId = Long.parseLong(Anmeldeseiten.feld(c, "organisationId")); }
+            catch (NumberFormatException e) {
+                c.html(seite("bestand", bestandsSeite(c, "Bitte eine Einrichtung auswählen.", true),
+                        angemeldeter(c)));
+                return;
+            }
+            var e = bestand.konnektorAnlegen(orgId,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
+                    Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
+                    Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
+                    Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
+                    Anmeldeseiten.feld(c, "webadminAdresse"), bereich(c));
+            if (!e.geklappt()) {
+                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            // Die Erreichbarkeit wird direkt geprueft und gemeldet - aber sie
+            // entscheidet nicht ueber das Speichern (FA-GER-010).
+            var erreichbar = bestand.konnektorPruefen(e.id(), bereich(c));
+            var k = bestand.konnektor(e.id(), bereich(c)).orElseThrow();
+            protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_ANGELEGT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Konnektor „" + k.bezeichnung() + "“ erfasst ("
+                            + k.adresse() + ", Aufrufkontext " + k.mandantId() + "/"
+                            + k.clientsystemId() + "/" + k.arbeitsplatzId() + ")",
+                    erreichbar.erreichbar() ? null
+                            : "Der Konnektor ist derzeit nicht erreichbar: " + erreichbar.hinweis());
+            c.html(seite("bestand", bestandsSeite(c,
+                    "Konnektor gespeichert. " + erreichbar.hinweis(), !erreichbar.erreichbar()),
+                    angemeldeter(c)));
+        });
+
+        app.get("/bestand/konnektor/neu", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            c.html(seite("bestand", Bestandsseiten.konnektorMaske(
+                    bestand.organisationen(bereich(c)), ermittlung.aufrufkontextAuswahl()),
+                    angemeldeter(c)));
+        });
+
+        app.get("/bestand/terminal/neu", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            c.html(seite("bestand", Bestandsseiten.terminalNeuMaske(
+                    bestand.konnektoren(bereich(c))), angemeldeter(c)));
+        });
+
+        app.get("/bestand/konnektor/{id}", c -> {
+            var k = bestand.konnektor(Long.parseLong(c.pathParam("id")), bereich(c));
+            if (k.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Diesen Konnektor gibt es nicht mehr.", true), angemeldeter(c))); return; }
+            c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), null), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = bestand.konnektorAendern(id,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "adresse"),
+                    Anmeldeseiten.feld(c, "modell"), Anmeldeseiten.feld(c, "mandantId"),
+                    Anmeldeseiten.feld(c, "clientsystemId"), Anmeldeseiten.feld(c, "arbeitsplatzId"),
+                    Anmeldeseiten.feld(c, "benutzerName"), Anmeldeseiten.feld(c, "passwort"),
+                    Anmeldeseiten.feld(c, "webadminAdresse"), angekreuzt(c, "aktiv"), bereich(c));
+            if (!e.geklappt()) {
+                var k = bestand.konnektor(id, bereich(c));
+                c.html(seite("bestand", k.isPresent()
+                        ? Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), e.fehler())
+                        : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            var k = bestand.konnektor(id, bereich(c)).orElseThrow();
+            protokoll.anfuegen(k.organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Konnektor „" + k.bezeichnung() + "“ geändert"
+                            + (k.aktiv() ? "" : ", Gerät deaktiviert"), null);
+            c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}/kennwort-entfernen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = bestand.konnektor(id, bereich(c));
+            var e = bestand.konnektorPasswortEntfernen(id, bereich(c));
+            if (e.geklappt() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GEAENDERT,
+                        true, angemeldeter(c).anzeigename(), null,
+                        "Hinterlegtes Kennwort des Konnektors „" + vorher.get().bezeichnung()
+                                + "“ entfernt",
+                        "Ohne Kennwort kann der Roboter sich an diesem Konnektor nicht "
+                        + "selbsttätig anmelden.");
+            }
+            c.html(seite("bestand", bestandsSeite(c,
+                    e.geklappt() ? "Kennwort entfernt." : e.fehler(), !e.geklappt()), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = bestand.konnektor(id, bereich(c));
+            var e = bestand.konnektorLoeschen(id, bereich(c));
+            if (e.geklappt() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().organisation(), null, Ereignisart.KONNEKTOR_GELOESCHT,
+                        true, angemeldeter(c).anzeigename(), null,
+                        "Konnektor „" + vorher.get().bezeichnung() + "“ gelöscht", null);
+            }
+            c.html(seite("bestand", bestandsSeite(c,
+                    e.geklappt() ? "Konnektor gelöscht." : e.fehler(), !e.geklappt()), angemeldeter(c)));
+        });
+
+        app.post("/bestand/konnektor/{id}/pruefen", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            var k = bestand.konnektor(id, bereich(c));
+            var e = bestand.konnektorPruefen(id, bereich(c));
+            c.html(Bestandsseiten.pruefmeldung(k.map(Bestandsverwaltung.Konnektor::bezeichnung)
+                    .orElse("Konnektor"), e));
+        });
+
+        app.post("/bestand/terminal", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long konnektorId;
+            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
+            catch (NumberFormatException ex) {
+                c.html(seite("bestand", bestandsSeite(c,
+                        "Bitte einen Konnektor auswählen, an dem das Terminal betrieben wird.", true),
+                        angemeldeter(c)));
+                return;
+            }
+            var e = bestand.terminalAnlegen(Anmeldeseiten.feld(c, "terminalId"), konnektorId,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
+                    Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
+                    Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
+                    Anmeldeseiten.feld(c, "adminPasswort"),
+                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), bereich(c));
+            if (!e.geklappt()) {
+                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            var erreichbar = bestand.terminalPruefen(e.id(), bereich(c));
+            var t = bestand.terminal(e.id(), bereich(c)).orElseThrow();
+            protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_ANGELEGT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Kartenterminal „" + t.bezeichnung() + "“ erfasst (" + t.adresse()
+                            + (t.hatSmcb() ? ", mit SMC-B" : ", ohne SMC-B")
+                            + (t.pevimAktiv() ? ", PIN-Automatik aktiv" : "") + ")",
+                    erreichbar.erreichbar() ? null
+                            : "Das Terminal ist derzeit nicht erreichbar: " + erreichbar.hinweis());
+            c.html(seite("bestand", bestandsSeite(c,
+                    "Kartenterminal gespeichert. " + erreichbar.hinweis(), !erreichbar.erreichbar()),
+                    angemeldeter(c)));
+        });
+
+        app.get("/bestand/terminal/{id}", c -> {
+            var t = bestand.terminal(Long.parseLong(c.pathParam("id")), bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = bestand.terminalAendern(id,
+                    Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
+                    Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
+                    Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
+                    Anmeldeseiten.feld(c, "adminPasswort"),
+                    angekreuzt(c, "hatSmcb"), angekreuzt(c, "pevimAktiv"), angekreuzt(c, "aktiv"), bereich(c));
+            if (!e.geklappt()) {
+                var t = bestand.terminal(id, bereich(c));
+                c.html(seite("bestand", t.isPresent()
+                        ? terminalMaske(t.get(), e.fehler())
+                        : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            var t = bestand.terminal(id, bereich(c)).orElseThrow();
+            protokoll.anfuegen(t.organisation(), t.terminalId(), Ereignisart.TERMINAL_GEAENDERT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Kartenterminal „" + t.bezeichnung() + "“ geändert"
+                            + (t.aktiv() ? "" : ", Gerät deaktiviert"), null);
+            c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = bestand.terminal(id, bereich(c));
+            var e = bestand.terminalLoeschen(id, bereich(c));
+            if (e.geklappt() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().organisation(), vorher.get().terminalId(),
+                        Ereignisart.TERMINAL_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
+                        "Kartenterminal „" + vorher.get().bezeichnung() + "“ gelöscht",
+                        "Dieses Gerät wird nicht mehr überwacht.");
+            }
+            c.html(seite("bestand", bestandsSeite(c,
+                    e.geklappt() ? "Kartenterminal gelöscht." : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/pruefen", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            var e = bestand.terminalPruefen(id, bereich(c));
+            c.html(Bestandsseiten.pruefmeldung(t.map(Bestandsverwaltung.Terminal::bezeichnung)
+                    .orElse("Kartenterminal"), e));
+        });
+
+        app.post("/bestand/terminal/{id}/pin", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Hinterlegen einer PIN")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+
+            String handle = Anmeldeseiten.feld(c, "kartenhandle");
+            String fehler = pins.hinterlegen(t.get().terminalId(), handle,
+                    Anmeldeseiten.feld(c, "chiffrat"), angemeldeter(c).anzeigename());
+            if (fehler != null) {
+                c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
+                return;
+            }
+            // Protokolliert wird DASS, nie WAS. Weder PIN noch Chiffrat -
+            // ADR-0009, Festlegung 4.
+            protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                    Ereignisart.PIN_HINTERLEGT, true, angemeldeter(c).anzeigename(), null,
+                    "PIN für die SMC-B in „" + t.get().bezeichnung() + "“ hinterlegt",
+                    "Die PIN wurde im Browser verschlüsselt und wird zum Standort-Agenten "
+                    + "übertragen. Die Zentrale kann sie nicht lesen.");
+            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/pin-aendern", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Ändern einer PIN")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+
+            String fehler = pins.aendern(t.get().terminalId(),
+                    Anmeldeseiten.feld(c, "kartenhandle"),
+                    Anmeldeseiten.feld(c, "chiffratAlt"), Anmeldeseiten.feld(c, "chiffratNeu"),
+                    angemeldeter(c).anzeigename());
+            if (fehler == null) {
+                // Protokolliert wird DASS geaendert wurde — nie ein Wert,
+                // weder der alte noch der neue (ADR-0009).
+                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                        Ereignisart.PIN_GEAENDERT, true, angemeldeter(c).anzeigename(), null,
+                        "Änderung der SMC-B-PIN in „" + t.get().bezeichnung() + "“ beauftragt",
+                        "Die Änderung erfolgt am Kartenterminal selbst (A_24082). Schlägt sie "
+                        + "fehl, bleibt die bisher hinterlegte PIN unverändert.");
+            }
+            c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
+        });
+
+        app.post("/bestand/terminal/{id}/pin-loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Löschen einer PIN")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+
+            String fehler = pins.loeschen(t.get().terminalId(),
+                    Anmeldeseiten.feld(c, "kartenhandle"), angemeldeter(c).anzeigename());
+            if (fehler == null) {
+                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                        Ereignisart.PIN_GELOESCHT, true, angemeldeter(c).anzeigename(), null,
+                        "Hinterlegte PIN für „" + t.get().bezeichnung() + "“ gelöscht",
+                        "Der Roboter kann diese SMC-B nicht mehr verifizieren, bis eine neue "
+                        + "PIN hinterlegt wird.");
+            }
+            c.html(seite("bestand", terminalMaske(t.get(), fehler), angemeldeter(c)));
+        });
+    }
+
+
+    /**
+     * Verbünde, Standorte, Einrichtungen — die Mandantenstruktur (FA-ORG-010/020).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenOrganisation(Javalin app) {
+        app.get("/organisation", c -> c.html(seite("organisation",
+                organisationsSeite(c, null, false), angemeldeter(c))));
+
+        /**
+         * Detailseite einer Einheit (UX-Konzept, Stufe 5).
+         *
+         * <p>Eigene Adresse statt aufklappender Tabellenzeile: Die Seite ist
+         * als Lesezeichen speicherbar, verlinkbar, und der Zurück-Knopf des
+         * Browsers tut, was man erwartet.
+         */
+        app.get("/organisation/neu", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Anlegen von Organisationseinheiten")) return;
+            c.html(seite("organisation",
+                    Organisationsseiten.anlegeseite(organisationen.baum(bereich(c))),
+                    angemeldeter(c)));
+        });
+
+        app.get("/organisation/{id}", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            c.html(seite("organisation", organisationsDetail(c, id, null, false),
+                    angemeldeter(c)));
+        });
+
+        app.post("/organisation", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Anlegen von Organisationseinheiten")) return;
+            Long eltern = zahlOderNull(Anmeldeseiten.feld(c, "elternId"));
+            var e = organisationen.anlegen(Anmeldeseiten.feld(c, "bezeichnung"),
+                    String.valueOf(Anmeldeseiten.feld(c, "art")), eltern, bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_ANGELEGT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(),
+                        "Konten und Geräte lassen sich dieser Einheit ab sofort zuordnen.");
+            }
+            c.html(seite("organisation", organisationsSeite(c,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        app.post("/organisation/{id}/umbenennen", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Ändern von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.umbenennen(id, Anmeldeseiten.feld(c, "bezeichnung"), bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_UMBENANNT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(), null);
+            }
+            c.html(seite("organisation", organisationsDetail(c, id,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        app.post("/organisation/{id}/umhaengen", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Umhängen von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.umhaengen(id, zahlOderNull(Anmeldeseiten.feld(c, "elternId")),
+                    bereich(c));
+            if (e.geklappt()) {
+                // Sicherheitsstufe: Diese Aenderung verschiebt, wer was sieht.
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_UMGEHAENGT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(),
+                        "Mit der Einheit wechseln auch die Zuständigkeiten für ihre Geräte "
+                        + "und Konten.");
+            }
+            c.html(seite("organisation", organisationsDetail(c, id,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        app.post("/organisation/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Löschen von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.loeschen(id, bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_GELOESCHT, true, angemeldeter(c).anzeigename(),
+                        null, e.meldung(), null);
+            }
+            // Nach dem Loeschen zurueck zur Struktur — die Einheit, deren
+            // Detailseite das war, gibt es nicht mehr.
+            c.html(seite("organisation", e.geklappt()
+                    ? organisationsSeite(c, e.meldung(), false)
+                    : organisationsDetail(c, id, e.fehler(), true), angemeldeter(c)));
+        });
+    }
+
+
+    /**
+     * Konten, Rollen, Sperren, zweiter Faktor (FA-BEN-030/040).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenBenutzer(Javalin app) {
+        // ----------------------------------------------------------- Benutzer
+        app.get("/benutzer", c -> c.html(seite("benutzer",
+                benutzerSeite(c, null, false, null, null), angemeldeter(c))));
+
+        app.post("/benutzer/einladen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Einladen von Personen")) return;
+            Long orgId = null;
+            try {
+                String o = Anmeldeseiten.feld(c, "organisationId");
+                if (o != null && !o.isBlank()) orgId = Long.parseLong(o);
+            } catch (NumberFormatException ignored) { }
+
+            Benutzerverwaltung.Rolle rolle;
+            try { rolle = Benutzerverwaltung.Rolle.valueOf(Anmeldeseiten.feld(c, "rolle")); }
+            catch (Exception e) { rolle = Benutzerverwaltung.Rolle.BENUTZER; }
+
+            String name = Anmeldeseiten.feld(c, "benutzername");
+            var e = einladungen.einladen(name, Anmeldeseiten.feld(c, "anzeigename"), rolle,
+                    orgId, angemeldeter(c).anzeigename(), bereich(c));
+            if (e.geklappt()) {
+                // Das Geheimnis selbst steht NICHT im Protokoll - es waere sonst
+                // fuer jeden lesbar, der das Protokoll einsehen darf.
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Person \u201e" + name + "\u201c eingeladen (Rolle " + rolle.anzeige() + ")",
+                        "Der Zugangscode wird nur einmal angezeigt und ist nicht im Protokoll "
+                        + "enthalten.");
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    e.geklappt() ? null : e.fehler(), !e.geklappt(),
+                    e.geheimnis(), name), angemeldeter(c)));
+        });
+
+        app.post("/benutzer/einladung/zurueckziehen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Zurückziehen von Einladungen")) return;
+            String name = Anmeldeseiten.feld(c, "benutzername");
+            boolean weg = einladungen.zurueckziehen(name, bereich(c));
+            if (weg) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Einladung für \u201e" + name + "\u201c zurückgezogen", null);
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    weg ? "Einladung zurückgezogen." : "Diese Einladung gibt es nicht mehr.",
+                    !weg, null, null), angemeldeter(c)));
+        });
+
+        app.post("/benutzer/{id}/totp-zuruecksetzen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Zurücksetzen des zweiten Faktors")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var ziel = benutzer.benutzer(id, bereich(c));
+            boolean ok = benutzer.totpZuruecksetzen(id, bereich(c));
+            if (ok && ziel.isPresent()) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_ZURUECKGESETZT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Zweiter Faktor von \u201e" + ziel.get().anzeigename() + "\u201c zurückgesetzt",
+                        "Die Person richtet ihn bei der nächsten Anmeldung neu ein. Das neue "
+                        + "Geheimnis sieht nur sie selbst.");
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    ok ? "Der zweite Faktor wurde zurückgesetzt. Die Person richtet ihn bei der "
+                       + "nächsten Anmeldung neu ein."
+                       : "Dieses Konto gibt es nicht mehr.", !ok, null, null), angemeldeter(c)));
+        });
+
+        app.post("/benutzer/{id}/aktiv", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(), "Das Ändern von Konten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            boolean aktiv = "ja".equals(Anmeldeseiten.feld(c, "aktiv"));
+            var ziel = benutzer.benutzer(id, bereich(c));
+            String fehler = benutzer.aktivSetzen(id, aktiv, bereich(c));
+            if (fehler == null && ziel.isPresent()) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Konto \u201e" + ziel.get().anzeigename() + "\u201c "
+                                + (aktiv ? "aktiviert" : "deaktiviert"),
+                        aktiv ? null : "Das Konto bleibt im Protokoll nachvollziehbar; es kann "
+                                     + "sich nur nicht mehr anmelden.");
+            }
+            c.html(seite("benutzer", benutzerSeite(c,
+                    fehler == null ? "Konto " + (aktiv ? "aktiviert." : "deaktiviert.") : fehler,
+                    fehler != null, null, null), angemeldeter(c)));
+        });
+    }
+
+
+    /**
+     * Mailserver, Regeln, Testversand (FA-ALA-020).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenBenachrichtigung(Javalin app) {
+        app.get("/benachrichtigung", c -> c.html(seite("benachrichtigung",
+                benachrichtigungsSeite(c, null, false, null), angemeldeter(c))));
+
+        app.post("/benachrichtigung/server", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Einrichten des Mailservers")) return;
+            String fehler = benachrichtigung.serverSpeichern(
+                    Anmeldeseiten.feld(c, "host"), Anmeldeseiten.feld(c, "port"),
+                    angekreuzt(c, "tls"), Anmeldeseiten.feld(c, "benutzer"),
+                    Anmeldeseiten.feld(c, "kennwort"), Anmeldeseiten.feld(c, "absender"));
+            if (fehler == null) {
+                // Protokolliert wird DASS eingerichtet wurde, nie das Kennwort.
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Mailserver eingerichtet: " + Anmeldeseiten.feld(c, "host"), null);
+            }
+            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
+                    fehler == null ? "Mailserver gespeichert." : fehler, fehler != null, null),
+                    angemeldeter(c)));
+        });
+
+        /**
+         * Testversand (FA-ALA-020).
+         *
+         * <p>Ohne ihn merkt der Betreiber erst beim ersten echten Alarm, dass
+         * die Einstellung nicht stimmt — also genau dann, wenn die Nachricht
+         * gebraucht wird.
+         */
+        app.post("/benachrichtigung/test", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Der Testversand")) return;
+            String an = Anmeldeseiten.feld(c, "testempfaenger");
+            var zugang = benachrichtigung.zugang();
+            String verlauf = null, meldung;
+            boolean fehler;
+            if (zugang.isEmpty()) {
+                meldung = "Es ist kein Mailserver eingerichtet.";
+                fehler = true;
+            } else {
+                var e = Mailversand.senden(zugang.get(), Benachrichtigung.adressenZerlegen(an),
+                        "PIN-Roboter: Testnachricht",
+                        """
+                        Diese Nachricht bestätigt, dass der PIN-Roboter Ihren Mailserver
+                        erreichen kann.
+
+                        Sie wurde von Hand ausgelöst und bedeutet nicht, dass ein Alarm
+                        vorliegt. Echte Meldungen nennen Gerät und Handlungsempfehlung —
+                        und niemals Zugangsdaten oder personenbezogene Daten.
+                        """);
+                fehler = !e.geklappt();
+                meldung = e.geklappt()
+                        ? "Testnachricht an " + an + " übergeben. Wenn sie nicht ankommt, "
+                          + "prüfen Sie den Spam-Ordner und die Protokolle Ihres Mailservers."
+                        : e.fehler();
+                verlauf = e.verlauf();
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT,
+                        e.geklappt(), angemeldeter(c).anzeigename(), null,
+                        "Testnachricht " + (e.geklappt() ? "versendet" : "fehlgeschlagen"),
+                        e.geklappt() ? null : e.fehler());
+            }
+            c.html(seite("benachrichtigung",
+                    benachrichtigungsSeite(c, meldung, fehler, verlauf), angemeldeter(c)));
+        });
+
+        app.post("/benachrichtigung/regel", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(),
+                    "Das Einrichten von Benachrichtigungen")) return;
+            Long org = zahlOderNull(Anmeldeseiten.feld(c, "organisationId"));
+            String fehler = org == null
+                    ? "Bitte eine Organisationseinheit wählen."
+                    : benachrichtigung.regelSpeichern(org, Anmeldeseiten.feld(c, "empfaenger"),
+                            Anmeldeseiten.feld(c, "schwelle"), Anmeldeseiten.feld(c, "fenster"),
+                            angekreuzt(c, "aktiv"), bereich(c));
+            if (fehler == null) {
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Benachrichtigungsregel gespeichert", null);
+            }
+            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
+                    fehler == null ? "Regel gespeichert." : fehler, fehler != null, null),
+                    angemeldeter(c)));
+        });
+
+        app.post("/benachrichtigung/regel/{id}/loeschen", c -> {
+            if (abgewiesen(c, rechte(c).darfBenutzerVerwalten(),
+                    "Das Entfernen von Benachrichtigungen")) return;
+            String fehler = benachrichtigung.regelLoeschen(
+                    Long.parseLong(c.pathParam("id")), bereich(c));
+            c.html(seite("benachrichtigung", benachrichtigungsSeite(c,
+                    fehler == null ? "Regel entfernt." : fehler, fehler != null, null),
+                    angemeldeter(c)));
+        });
+    }
+
+
+    /**
+     * Instanzverwaltung: Demodaten, Lasttest, Registry, Agenten-Registrierung.
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenVerwaltung(Javalin app) {
+        // ---------------------------------------------------------- Verwaltung
+        app.get("/verwaltung", c -> c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)),
+                angemeldeter(c))));
+
+        app.post("/verwaltung/registry", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Einrichten der Registry")) return;
+            String fehler = versionen.zugangSpeichern(Anmeldeseiten.feld(c, "registry"),
+                    Anmeldeseiten.feld(c, "abbild"), Anmeldeseiten.feld(c, "benutzer"),
+                    Anmeldeseiten.feld(c, "token"));
+            if (fehler == null) {
+                // Nie das Token — nur DASS eingerichtet wurde.
+                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Registry-Zugang eingerichtet: " + Anmeldeseiten.feld(c, "abbild"), null);
+                versionen.pruefen();
+            }
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)), angemeldeter(c)));
+        });
+
+        app.post("/verwaltung/registry/pruefen", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Die Versionsprüfung")) return;
+            var z = versionen.pruefen();
+            c.html(seite("verwaltung", verwaltungsSeite(z.fehler(), null), angemeldeter(c)));
+        });
+
+        app.post("/verwaltung/demodaten/anlegen", c -> {
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Anlegen des Demodatensatzes")) return;
+            try {
+                var konten = demodaten.anlegen();
+                var b = demodaten.bestand();
+                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Demodatensatz angelegt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals (%d mit SMC-B), %d Konten"
+                                .formatted(b.organisationen(), b.konnektoren(), b.arbeitsplaetze(),
+                                           b.terminals(), b.terminalsMitSmcb(), b.benutzer()), null);
+                c.html(seite("verwaltung", verwaltungsSeite(null, konten), angemeldeter(c)));
+            } catch (IllegalStateException e) {
+                c.html(seite("verwaltung", verwaltungsSeite(e.getMessage(), null), angemeldeter(c)));
+            }
+        });
+
+        // NFA-LEI-010/020: Bestand in Zielgroesse erzeugen, damit die
+        // Leistungswerte am echten Mengengeruest gemessen werden koennen -
+        // auch beim Betreiber auf dessen Hardware.
+        app.post("/verwaltung/lasttest/anlegen", c -> {
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Anlegen des Lasttestbestands")) return;
+            int anzahl = zahl(Anmeldeseiten.feld(c, "anzahl"), Lasterzeuger.TERMINALS_ZIEL);
+            try {
+                var e = last.erzeugen(anzahl);
+                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren (%d ms)"
+                                .formatted(e.terminals(), e.konnektoren(), e.dauerMs()),
+                        "Dieser Bestand dient nur der Leistungsmessung und ist als Demo "
+                        + "gekennzeichnet. Er sollte nach der Messung wieder entfernt werden.");
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren in %d ms."
+                                .formatted(e.terminals(), e.konnektoren(), e.dauerMs()), null),
+                        angemeldeter(c)));
+            } catch (Exception e) {
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Der Lasttestbestand konnte nicht angelegt werden: " + e.getMessage(),
+                        null), angemeldeter(c)));
+            }
+        });
+
+        app.post("/verwaltung/lasttest/entfernen", c -> {
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Lasttestbestands")) return;
+            try {
+                int weg = last.entfernen();
+                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Lasttestbestand entfernt: %d Kartenterminals".formatted(weg), null);
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Lasttestbestand entfernt: %d Kartenterminals.".formatted(weg), null),
+                        angemeldeter(c)));
+            } catch (Exception e) {
+                c.html(seite("verwaltung", verwaltungsSeite(
+                        "Der Lasttestbestand konnte nicht entfernt werden: " + e.getMessage(),
+                        null), angemeldeter(c)));
+            }
+        });
+
+        app.post("/verwaltung/demodaten/loeschen", c -> {
+            // Instanzweite Werkzeuge: Sie legen Daten quer ueber alle Mandanten
+            // an oder entfernen sie. Ein Praxisadministrator, der den
+            // Demodatensatz loescht, traefe damit fremde Einrichtungen.
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Demodatensatzes")) return;
+            var weg = demodaten.loeschen();
+            protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
+                    angemeldeter(c).anzeigename(), null,
+                    "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals, %d Konten"
+                            .formatted(weg.organisationen(), weg.konnektoren(),
+                                       weg.arbeitsplaetze(), weg.terminals(), weg.benutzer()), null);
+            c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)), angemeldeter(c)));
+        });
+
+        // Erzeugt ein Registrierungsgeheimnis. Nur für angemeldete Administratoren.
+        app.post("/agenten/geheimnis", c -> {
+            var angemeldet = angemeldeter(c);
+            if (angemeldet == null || angemeldet.rolle() != Benutzerverwaltung.Rolle.ADMINISTRATOR) {
+                c.status(403).result("Nur Administratoren dürfen Agenten einrichten.");
+                return;
+            }
+            String bez = Anmeldeseiten.feld(c, "bezeichnung");
+            // Die Einrichtung gehoert zur Registrierung, nicht zur Meldung:
+            // Ein Agent steht in genau einer Praxis, und alles, was er meldet,
+            // gehoert dorthin. Sie hier zu waehlen ist der einzige Zeitpunkt,
+            // an dem ein Mensch es wissen kann.
+            String einr = Anmeldeseiten.feld(c, "einrichtung");
+            if (einr == null || einr.isBlank()) einr = "Praxis";
+            String geheimnis = agenten.geheimnisAnlegen(
+                    bez.isBlank() ? "Standort-Agent" : bez, einr, angemeldet.anzeigename());
+            protokoll.anfuegen(einr, null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,
+                    angemeldet.anzeigename(), null,
+                    "Registrierungsgeheimnis für \"" + bez + "\" erzeugt", null);
+            // Der Klartext erscheint genau einmal - danach ist nur der Hash gespeichert.
+            c.html(geheimnisAnzeige(geheimnis));
+        });
+    }
+
+
+    /**
+     * Die Schnittstelle zum Standort-Agenten — keine Oberfläche, nur JSON (FA-AGT-010/020).
+     *
+     * <p>Die Reihenfolge innerhalb dieser Methode ist bedeutsam: Javalin nimmt
+     * die zuerst passende Route, deshalb müssen feste Pfade vor solchen mit
+     * Platzhalter stehen.
+     */
+    private void routenAgentSchnittstelle(Javalin app) {
+        // Meldeschnittstelle des Agenten. Im Produkt eine gegenseitig
+        // authentifizierte WebSocket-Verbindung, ausgehend vom Agenten (ADR-0002).
+        app.post("/api/agent/melden", this::agentMeldung);
+
+        app.get("/api/agent/notaus", c -> c.json(Map.of("notAus", notAus)));
+
+        /**
+         * FA-UEB-010: Das Prüfintervall je Kartenterminal.
+         *
+         * <p>Bis zum 08.08.2026 kannte der Agent nur einen globalen Wert aus
+         * seiner Umgebung. Die Gerätegruppen trugen zwar ein Intervall, aber
+         * es erreichte ihn nie — die Einstellung war wirkungslos. Bei 5.000
+         * Terminals ist genau das der Hebel, mit dem die Last steuerbar
+         * bleibt: Die Notaufnahme braucht 30 Sekunden, das Archiv kommt mit
+         * fünf Minuten aus.
+         */
+        app.get("/api/agent/intervalle", c -> {
+            var werte = new LinkedHashMap<String, Integer>();
+            try (var p = db.verbindung().prepareStatement("""
+                    SELECT g.terminal_id, gr.pruefintervall_sekunden
+                    FROM geraet g JOIN geraetegruppe gr ON gr.id = g.gruppe_id
+                    WHERE g.aktiv""")) {
+                try (var rs = p.executeQuery()) {
+                    while (rs.next()) werte.put(rs.getString(1), rs.getInt(2));
+                }
+            } catch (java.sql.SQLException e) {
+                System.err.println("Prüfintervalle nicht abrufbar: " + e.getMessage());
+            }
+            c.json(Map.of("intervalle", werte));
+        });
+
+        /**
+         * FA-GER-030 / FA-GER-035: Der Agent meldet, was er beim Konnektor
+         * vorgefunden hat. Die Zentrale legt den Befund ab und übernimmt
+         * <b>nichts</b> davon selbsttätig in den Bestand.
+         */
+        app.post("/api/agent/bestand", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            Map<String, Object> m = c.bodyAsClass(Map.class);
+
+            @SuppressWarnings("unchecked")
+            var terminals = (List<Map<String, Object>>) m.getOrDefault("terminals", List.of());
+            int n = ermittlung.aufnehmen(agent.id(), terminals);
+
+            // FA-GER-040: Karten je Terminal, einschliesslich eGK und HBA.
+            int karten = 0;
+            for (var eintrag : terminals) {
+                @SuppressWarnings("unchecked")
+                var liste = (List<Map<String, Object>>) eintrag.getOrDefault("karten", List.of());
+                karten += ermittlung.kartenAufnehmen(agent.id(),
+                        String.valueOf(eintrag.get("terminalId")), liste);
+            }
+
+            // ADR-0009: Der oeffentliche Schluessel des Agenten. Er ist nicht
+            // geheim - der Browser braucht ihn, um die PIN zu verschluesseln.
+            // FA-AGT-040: Version merken und bewerten. Ein Agent ausserhalb der
+            // Spanne wird NICHT abgewiesen — das hiesse: keine
+            // PIN-Verifikation in dieser Praxis. Ein veralteter Agent, der
+            // seine Kernaufgabe noch erfuellt, ist besser als gar keiner.
+            versionMerken(agent.id(), m.get("protokollversion"), m.get("bausteinversion"));
+
+            Object schluessel = m.get("oeffentlicherSchluessel");
+            if (schluessel instanceof String s && !s.isBlank()) {
+                pins.schluesselMerken(agent.id(), s);
+            }
+
+            boolean modellDa = Boolean.TRUE.equals(m.get("informationsmodellVerfuegbar"));
+            ermittlung.modellAblegen(agent.id(), modellDa,
+                    modellDa ? String.valueOf(m.get("informationsmodell")) : null);
+
+            int neu = ermittlung.neueAnzahl();
+            protokoll.anfuegen(agent.einrichtung(), null, Ereignisart.BESTAND_ERMITTELT, true,
+                    "Standort-Agent", null,
+                    "Bestand beim Konnektor ermittelt: %d Kartenterminal(s), %d Karte(n)%s"
+                            .formatted(n, karten,
+                            modellDa ? ", Informationsmodell gelesen"
+                                     : ", Informationsmodell nicht verfügbar"),
+                    neu == 0 ? null : neu + " Gerät(e) sind noch nicht erfasst. "
+                            + "Unter „Bestand → Ermittelte Geräte“ prüfen und übernehmen.");
+            c.json(Map.of("aufgenommen", n, "neu", neu));
+        });
+
+        /**
+         * Der Agent holt seine offenen PIN-Aufträge ab (ADR-0009).
+         *
+         * <p>Das Chiffrat wird dabei aus der Datenbank gelöscht — es ist
+         * ausgeliefert. Was hier durchgeht, kann die Zentrale nicht lesen.
+         */
+        app.get("/api/agent/pin-auftraege", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            c.json(Map.of("auftraege", pins.abholen(agent.id())));
+        });
+
+        /** Der Agent quittiert einen Auftrag. */
+        app.post("/api/agent/pin-quittung", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            Map<String, Object> m = c.bodyAsClass(Map.class);
+            boolean erfolg = Boolean.TRUE.equals(m.get("erfolg"));
+            String art = String.valueOf(m.getOrDefault("art", "HINTERLEGEN"));
+            String handle = String.valueOf(m.get("kartenhandle"));
+            pins.quittieren(agent.id(), ((Number) m.get("auftragId")).longValue(),
+                    erfolg, erfolg ? null : String.valueOf(m.get("fehler")), handle, art);
+
+            if (!erfolg) {
+                protokoll.anfuegen(agent.einrichtung(), handle,
+                        "HINTERLEGEN".equals(art) ? Ereignisart.PIN_HINTERLEGT
+                                                  : Ereignisart.PIN_GELOESCHT,
+                        false, "Standort-Agent", null,
+                        "Der Standort-Agent konnte den PIN-Auftrag nicht ausführen",
+                        String.valueOf(m.get("fehler")));
+            }
+            c.json(Map.of("quittiert", true));
+        });
+
+        /**
+         * FA-AGT-010: Ein Agent löst hier sein einmalig gültiges
+         * Registrierungsgeheimnis gegen ein dauerhaftes Token ein.
+         */
+        app.post("/api/registrieren", c -> {
+            String geheimnis = kopfWert(c, "X-Registrierung");
+            var ergebnis = agenten.registrieren(geheimnis);
+            if (ergebnis instanceof Agentenverwaltung.Registrierung.Erfolg e) {
+                protokoll.anfuegen(einrichtungVonAgent(e.agentId()), null,
+                        Ereignisart.AGENT_REGISTRIERT, true,
+                        "Registrierung", null,
+                        "Standort-Agent registriert (Nummer " + e.agentId() + ")", null);
+                c.json(Map.of("token", e.token(), "agentId", e.agentId()));
+            } else {
+                var a = (Agentenverwaltung.Registrierung.Abgelehnt) ergebnis;
+                // Fehlversuche werden protokolliert - sie sind ein Angriffshinweis.
+                // Instanzweit abgelegt: Zu einem abgelehnten Versuch gibt es
+                // keine belegte Einrichtung, und ein Angreifer duerfte den
+                // Ablageort nicht ueber sein Geheimnis waehlen koennen.
+                protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERUNG_ABGELEHNT,
+                        false, "Registrierung", null, a.grund(),
+                        "Falls ein Agent eingerichtet werden soll, bitte ein neues "
+                        + "Registrierungsgeheimnis erzeugen.");
+                c.status(403).json(Map.of("fehler", a.grund()));
+            }
+        });
+    }
+
 }

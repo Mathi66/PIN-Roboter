@@ -68,7 +68,13 @@ public class Speicherwaechter {
             if (rs.next()) {
                 return new Zustand(rs.getLong("bytes"), budgetBytes, rs.getLong("anzahl"));
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Speicherwaechter.zustand: " + e.getMessage());
+        }
         return new Zustand(0, budgetBytes, 0);
     }
 

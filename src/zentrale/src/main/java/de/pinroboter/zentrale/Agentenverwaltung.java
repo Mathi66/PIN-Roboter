@@ -180,7 +180,13 @@ public class Agentenverwaltung {
                         rs.getString("einrichtung"), t == null ? null : t.toInstant(),
                         version, rs.getString("bausteinversion")));
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Agentenverwaltung.alle: " + e.getMessage());
+        }
         return liste;
     }
 

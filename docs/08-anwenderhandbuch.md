@@ -1,0 +1,335 @@
+# Anwenderhandbuch
+
+**Für alle, die mit dem PIN-Roboter arbeiten** — in der Praxis, im MVZ, in der
+Klinik. Sie brauchen keine IT-Kenntnisse. Wo doch einmal etwas technisch wird,
+steht dabei, wen Sie fragen können.
+
+**Stand:** 10.08.2026
+
+---
+
+## 1. Was der PIN-Roboter für Sie tut
+
+In Ihrer Einrichtung stecken **SMC-B-Karten** (Praxisausweise) in
+Kartenterminals. Damit die Karte für die Telematikinfrastruktur nutzbar ist,
+muss sie **freigeschaltet** sein — dafür wird ihre PIN eingegeben.
+
+Diese Freischaltung geht verloren: bei einem Stromausfall, einem Neustart des
+Terminals, einem Firmware-Update. Dann muss jemand hingehen und die PIN am Gerät
+neu eingeben. In einer Klinik mit hundert Terminals ist das ein halber
+Arbeitstag — und bis dahin funktioniert das Kartenlesen an diesen Plätzen nicht.
+
+**Der PIN-Roboter erledigt das selbsttätig.** Er überwacht die Terminals und
+stellt den freigeschalteten Zustand wieder her, sobald er verloren geht. Sie
+hinterlegen die PIN einmal; danach greift er ein, ohne dass jemand hingeht.
+
+### Was er ausdrücklich nicht tut
+
+- **Er verarbeitet keine Patientendaten.** Er sieht keine Versichertendaten,
+  keine Befunde, keine Abrechnung.
+- **Er arbeitet nur mit SMC-B.** Elektronische Gesundheitskarten und
+  Heilberufsausweise rührt er nicht an — das ist technisch ausgeschlossen und
+  regulatorisch so vorgeschrieben.
+- **Er rät nie eine PIN.** Vor jedem Versuch prüft er, wie viele Versuche die
+  Karte noch hat. Steht sie kurz vor der Sperre, bricht er ab und meldet es,
+  statt es zu versuchen.
+
+---
+
+## 2. Anmelden
+
+Sie brauchen drei Dinge:
+
+1. **Benutzername**
+2. **Passwort**
+3. **Einmalkennwort** — sechs Ziffern aus einer App auf Ihrem Telefon
+
+Das Einmalkennwort ist Pflicht und lässt sich nicht abschalten. Der Grund: Wer
+sich anmelden kann, kann PINs hinterlegen. Ein gestohlenes Passwort allein soll
+dafür nicht reichen.
+
+### Beim ersten Mal
+
+Nach der Anmeldung zeigt Ihnen das System einen **QR-Code** und einen
+Buchstabencode. Richten Sie damit eine Authenticator-App ein (zum Beispiel
+FreeOTP, Aegis oder die App Ihrer Einrichtung). Danach müssen Sie einmal einen
+Code eingeben, um zu bestätigen, dass es funktioniert hat.
+
+> **Der Code wird genau einmal angezeigt.** Wenn Sie ihn verlieren, bevor die
+> App eingerichtet ist, muss ein Administrator Ihren zweiten Faktor
+> zurücksetzen. Das ist kein Beinbruch, kostet aber einen Anruf.
+
+### Wenn die Anmeldung nicht klappt
+
+| Meldung | Was zu tun ist |
+|---|---|
+| „Benutzername, Passwort oder Einmalkennwort stimmen nicht." | Prüfen Sie, ob der Code noch aktuell ist — er wechselt alle 30 Sekunden. Warten Sie auf den nächsten. |
+| „Dieses Einmalkennwort wurde bereits verwendet." | Jeder Code gilt nur einmal. Warten Sie auf den nächsten. |
+| „Das Konto ist vorübergehend gesperrt." | Nach fünf Fehlversuchen sperrt das Konto für einige Minuten. Warten oder einen Administrator bitten. |
+
+> **Senden Sie nie denselben Code zweimal.** Jeder abgelehnte Versuch zählt als
+> Fehlversuch, und fünf davon sperren das Konto. Wenn ein Code nicht durchgeht,
+> nehmen Sie den nächsten — nicht denselben noch einmal.
+
+Wenn die Anmeldung plötzlich für **alle** nicht mehr geht, liegt es meist an der
+Uhrzeit: Die Einmalkennwörter sind zeitabhängig. Sagen Sie Ihrer IT Bescheid.
+
+---
+
+## 3. Die Oberfläche
+
+Links steht die Navigation, getrennt in **Betrieb** (Tagesgeschäft) und
+**Verwaltung** (Einrichten und Pflegen).
+
+| Bereich | Wofür |
+|---|---|
+| **Lage** | Der Blick am Morgen: Was braucht Aufmerksamkeit? |
+| **Kartenterminals** | Alle Geräte mit ihrem aktuellen Zustand |
+| **Gerätegruppen** | Geräte bündeln und festlegen, wie oft geprüft wird |
+| **Benachrichtigung** | Wer bekommt eine E-Mail, wenn etwas nicht stimmt |
+| **Protokoll** | Was ist wann passiert |
+| **Bestand** | Konnektoren und Terminals erfassen, PIN hinterlegen |
+| **Organisation** | Standorte und Einrichtungen |
+| **Konten** | Benutzer und ihre Rechte |
+| **Instanz** | Technisches: Agenten, Speicher, Versionen |
+
+**Not-Aus** steht immer sichtbar am Ende der Navigation. Ein Klick hält die
+Automatik sofort an — siehe Abschnitt 9.
+
+### Bedienung
+
+- **Suchfelder suchen beim Tippen.** Kein „Suchen"-Knopf.
+- **Spaltenüberschriften sortieren.** Ein zweiter Klick dreht die Richtung um.
+- **Eine Zeile anklicken öffnet den Eintrag.** Sie müssen keinen Knopf treffen.
+- **Jeder Knopf erklärt sich**, wenn Sie mit der Maus darauf verweilen.
+- **Alles ist mit der Tastatur bedienbar.** Tab wechselt das Feld, Enter löst
+  aus.
+
+---
+
+## 4. Die Lage-Seite
+
+Vier Zahlen, die zusammen die Frage beantworten: *Muss ich jetzt etwas tun?*
+
+| Kachel | Bedeutung |
+|---|---|
+| **Karten freigeschaltet** | läuft, nichts zu tun |
+| **Brauchen Aufmerksamkeit** | Etwas stimmt nicht, aber der Roboter arbeitet daran |
+| **Handlungsbedarf** | Ein Mensch muss eingreifen — hier zuerst hinsehen |
+| **Ohne Automatik (PEviM)** | Diese Geräte kann der Roboter nicht bedienen (siehe unten) |
+
+Darunter steht **„Was zu tun ist"** — die offenen Alarme im Klartext. Steht dort
+„nichts offen", ist wirklich nichts offen.
+
+### „Ohne Automatik (PEviM)"
+
+PEviM ist das Verfahren, mit dem die PIN über die Verwaltungsschnittstelle des
+Terminals übergeben wird. Nicht jedes Gerät kann das, und bei manchen muss es
+erst freigeschaltet werden. Diese Geräte überwacht der Roboter zwar, aber er
+kann die PIN nicht selbst eingeben — dort muss weiterhin jemand hingehen.
+
+Ob ein Gerät es kann, hängt vom Modell und vom Firmwarestand ab. Ihre IT kann
+das prüfen.
+
+---
+
+## 5. Ein Gerät einrichten
+
+Drei Schritte, in dieser Reihenfolge:
+
+### Schritt 1: Konnektor erfassen
+
+**Bestand → Konnektor hinzufügen.** Sie brauchen Adresse und Zugangsdaten des
+Konnektors. Diese Angaben bekommen Sie von Ihrer IT oder Ihrem Dienstleister.
+
+### Schritt 2: Kartenterminal erfassen
+
+Zwei Wege:
+
+- **Ermittelte Geräte** — der Roboter fragt den Konnektor, welche Terminals er
+  kennt, und Sie übernehmen sie mit einem Klick. Das ist der übliche Weg.
+- **Kartenterminal hinzufügen** — von Hand, wenn ein Gerät nicht gemeldet wird.
+
+### Schritt 3: PIN hinterlegen
+
+Öffnen Sie das Terminal (Zeile anklicken) und tragen Sie die PIN der
+eingelegten SMC-B ein.
+
+> **Was mit Ihrer PIN passiert:** Sie wird im Browser verschlüsselt, bevor sie
+> abgeschickt wird. Die Zentrale kann sie **nicht lesen** — sie reicht nur ein
+> verschlüsseltes Paket an den Agenten weiter, der es öffnen kann. Im Protokoll
+> steht, *dass* eine PIN hinterlegt wurde, nie *welche*.
+
+Ab jetzt arbeitet der Roboter selbstständig.
+
+---
+
+## 6. Gerätegruppen
+
+Eine Gruppe bündelt Geräte und legt fest, **wie oft geprüft wird**.
+
+Warum das wichtig ist: Die Notaufnahme braucht vielleicht alle 30 Sekunden eine
+Prüfung, das Archiv kommt mit fünf Minuten aus. Häufiger prüfen heißt schneller
+reagieren, belastet aber Konnektor und Terminals.
+
+**Gerätegruppen → Bezeichnung, Einrichtung, Intervall → Gruppe anlegen.**
+
+Jede Einrichtung hat eine **Vorgabegruppe**. Neu erkannte Geräte landen dort
+automatisch, damit sie überwacht werden, bevor jemand sie zuordnet. Die
+Vorgabegruppe lässt sich nicht löschen.
+
+Das Intervall ändern Sie direkt in der Liste — es speichert, sobald Sie das Feld
+verlassen. Die Untergrenze liegt bei 10 Sekunden.
+
+---
+
+## 7. Wenn etwas nicht stimmt
+
+### Alarme
+
+Ein Alarm sagt, **was zu tun ist** — nicht nur, was schiefging. Technische Codes
+sind übersetzt; das Original bleibt aufklappbar sichtbar, falls Ihre IT es
+braucht.
+
+Wenn Sie sich gekümmert haben, **quittieren** Sie den Alarm. Er verschwindet aus
+„Was zu tun ist", bleibt aber im Protokoll — mit Zeitpunkt und Ihrem Namen.
+
+### Häufige Meldungen
+
+| Meldung | Was dahintersteckt | Was Sie tun |
+|---|---|---|
+| Gerät nicht erreichbar | Terminal aus, Netzwerkkabel, Neustart | Gerät prüfen; meldet sich es wieder, löst sich der Alarm von selbst |
+| PIN wird benötigt | Karte nicht freigeschaltet, keine PIN hinterlegt | PIN hinterlegen (Abschnitt 5) |
+| Nur noch ein Versuch übrig | Die Karte steht kurz vor der Sperre | **Nichts selbst versuchen.** Der Roboter hat bereits abgebrochen. Die richtige PIN muss neu hinterlegt werden. |
+| Karte gesperrt | Zu viele Fehlversuche | Die Karte muss mit der PUK entsperrt werden — das geht nur am Gerät |
+| Konnektor nicht erreichbar | Konnektor aus oder Netz gestört | Ihre IT informieren |
+| Firmware-Update läuft | Der Konnektor aktualisiert gerade Terminals | Nichts tun. Der Roboter wartet ab und versucht keine PIN-Eingabe. |
+
+> **Warum der Roboter bei „ein Versuch übrig" aufhört:** Wäre die hinterlegte
+> PIN falsch, würde ein weiterer Versuch die Karte sperren. Eine gesperrte SMC-B
+> lässt sich nur mit der PUK entsperren, und danach ist die Karte womöglich für
+> Stunden nicht nutzbar. Abbrechen und melden ist immer die bessere Wahl.
+
+### Benachrichtigung per E-Mail
+
+**Benachrichtigung** legt fest, wer bei welchem Schweregrad eine E-Mail bekommt.
+
+Ein **Sammelfenster** verhindert Mailfluten: Fällt ein Konnektor mit 200
+Terminals aus, bekommen Sie eine Nachricht, nicht 200. In der Mail stehen nie
+PINs oder personenbezogene Daten.
+
+---
+
+## 8. Nachvollziehen, was passiert ist
+
+Vier Sichten, je nach Frage:
+
+| Ihre Frage | Wo Sie nachsehen |
+|---|---|
+| Was ist gerade los? | **Lage** |
+| Was ist mit diesem einen Gerät passiert? | Gerät öffnen → **Zeitstrahl** |
+| Wie lief dieser eine Vorgang? | Protokolleintrag → **Vorgang** |
+| Was ist an diesem Tag passiert? | **Protokoll**, mit Filtern |
+
+Das Protokoll lässt sich nach Zeitraum, Ereignisart, Ergebnis und Gerät filtern
+und **als Excel-Datei herunterladen** — für Auswertungen oder als Nachweis.
+
+**Protokolliert werden Handlungen und Zustandsänderungen, keine Abfragen.** Dass
+der Roboter alle 60 Sekunden nachsieht, steht nicht drin; dass sich etwas
+geändert hat, immer.
+
+**Einträge lassen sich nicht ändern und nicht löschen** — auch nicht von einem
+Administrator. Das ist technisch abgesichert, nicht nur eine Regel.
+
+---
+
+## 9. Not-Aus
+
+Der Knopf **Not-Aus** hält die Automatik sofort an. Es werden keine Karten mehr
+freigeschaltet, bis Sie ihn wieder aufheben.
+
+Wann Sie ihn brauchen:
+
+- Sie vermuten, dass etwas nicht stimmt, und wollen erst nachsehen.
+- Es wird an Konnektor oder Terminals gearbeitet.
+- Ein Prüfer oder Datenschutzbeauftragter verlangt es.
+
+Der Not-Aus **hält nur die Automatik an**. Die Überwachung läuft weiter, Sie
+sehen also weiterhin, was passiert. Das Aktivieren und Aufheben steht im
+Protokoll.
+
+---
+
+## 10. Benutzer und Rechte
+
+| Rolle | Darf |
+|---|---|
+| **Benutzer** | ansehen, Alarme quittieren |
+| **Administrator** | zusätzlich: Geräte erfassen, PINs hinterlegen, Konten verwalten |
+
+Die Rechte hängen zusätzlich an der **Ebene**: Wer für eine Einrichtung
+zuständig ist, sieht nur deren Geräte, Alarme und Protokolleinträge. Wer für
+einen Standort zuständig ist, sieht alle Einrichtungen darunter.
+
+### Ein neues Konto anlegen
+
+**Konten → Einladung erzeugen.** Die eingeladene Person setzt ihr Passwort
+selbst und richtet den zweiten Faktor ein. **Sie geben nie ein Passwort für
+jemand anderen ein** — dann kennen es zwei.
+
+### Wenn jemand sein Telefon verliert
+
+**Konten → Zweiter Faktor** bei der betreffenden Person. Sie richtet ihn bei der
+nächsten Anmeldung neu ein. Das dürfen nur Administratoren, und es steht im
+Protokoll.
+
+### Wenn jemand die Einrichtung verlässt
+
+**Deaktivieren**, nicht löschen. Das Konto kann sich nicht mehr anmelden, seine
+Einträge im Protokoll bleiben aber zuordenbar. Ein gelöschtes Konto würde die
+Nachvollziehbarkeit zerstören.
+
+---
+
+## 11. Fragen, die häufig kommen
+
+**Sieht der PIN-Roboter Patientendaten?**
+Nein. Er spricht mit Kartenterminals über deren Verwaltungsschnittstelle und mit
+dem Konnektor über den Kartendienst. Versichertendaten kommen dabei nicht vor.
+
+**Kann jemand die hinterlegte PIN auslesen?**
+Nicht aus der Zentrale und nicht aus dem Protokoll. Die PIN wird im Browser
+verschlüsselt und liegt beim Agenten in verschlüsselter Form. Wer physischen
+Zugriff auf den Agenten **und** den Schlüssel hat, kommt heran — deshalb gehört
+der Agent in eine gesicherte Umgebung. Das ist keine Nachlässigkeit, sondern die
+Bedingung, unter der die gematik das Vorhalten der PIN überhaupt erlaubt.
+
+**Was passiert, wenn die Zentrale ausfällt?**
+Der Agent arbeitet weiter. Sie sehen nur nichts und können nichts ändern, bis
+sie wieder läuft.
+
+**Was passiert, wenn der Agent ausfällt?**
+Dann wird nicht mehr überwacht und nicht mehr freigeschaltet. Die Zentrale
+merkt, dass er sich nicht mehr meldet, und alarmiert.
+
+**Warum sehe ich Geräte einer anderen Praxis nicht?**
+Weil Sie für Ihre Einrichtung zuständig sind. Das ist keine Einstellung, die
+sich versehentlich lösen lässt — die Grenze wird bei jeder Abfrage erzwungen.
+
+**Kann ich das Prüfintervall auf eine Sekunde stellen?**
+Nein, die Untergrenze liegt bei 10 Sekunden. Kürzere Abstände belasten Konnektor
+und Terminals, ohne etwas zu verbessern — der Zustand ändert sich nicht so
+schnell.
+
+---
+
+## 12. Wenn Sie nicht weiterkommen
+
+1. **Lage** ansehen — steht dort ein Alarm mit Handlungshinweis?
+2. **Protokoll** ansehen — was ist zuletzt passiert?
+3. Wenn beides nichts sagt: Ihre IT oder Ihren Dienstleister fragen. Nennen Sie
+   dabei Uhrzeit und Gerätekennung; damit findet sich der Vorgang sofort.
+
+Bei Verdacht, dass etwas grundsätzlich nicht stimmt: **Not-Aus** drücken. Er
+hält nur die Automatik an, richtet also keinen Schaden an — und Sie gewinnen
+Zeit zum Nachsehen.

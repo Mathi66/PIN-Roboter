@@ -7,7 +7,7 @@ eine Einrichtung oder eine Serviceorganisation aufsetzen und betreiben.
 einer Praxis ohne IT-Fachwissen. Dieses Dokument geht tiefer: Netzwerkschnitt,
 Secrets, Reverse-Proxy, Härtung, Wiederherstellung, Betriebsüberwachung.
 
-**Stand:** 09.08.2026. Werte stammen aus `docker-compose.yml` und dem Quelltext,
+**Stand:** 10.08.2026. Werte stammen aus `docker-compose.yml` und dem Quelltext,
 nicht aus der Erinnerung.
 
 ---
@@ -101,8 +101,8 @@ chmod 600 /opt/pin-roboter/secrets/*
 | Wert | Wofür | Verlust bedeutet |
 |---|---|---|
 | `DB_PASSWORD` | Datenbankzugang | Datenbank nicht mehr erreichbar |
-| `GEHEIMNIS_SCHLUESSEL` | Zugangsdaten der Geräte und des Mailservers (AES-256-GCM, [ADR-0008](adr/0008-verschluesselte-zugangsdaten.md)) | alle hinterlegten Kennwörter unbrauchbar, müssen neu erfasst werden |
-| `PIN_ABLAGE_SCHLUESSEL` | PIN-Ablage **im Agenten** ([ADR-0009](adr/0009-pin-uebergabe-und-ablage.md)) | hinterlegte PINs unbrauchbar, müssen neu hinterlegt werden |
+| `GEHEIMNIS_SCHLUESSEL` | Zugangsdaten der Geräte und des Mailservers (AES-256-GCM, [ADR-0008](adr/0008-ablage-von-geraete-zugangsdaten.md)) | alle hinterlegten Kennwörter unbrauchbar, müssen neu erfasst werden |
+| `PIN_ABLAGE_SCHLUESSEL` | PIN-Ablage **im Agenten** ([ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md)) | hinterlegte PINs unbrauchbar, müssen neu hinterlegt werden |
 
 > **Getrennt aufbewahren.** Die Schlüssel gehören in die Sicherung — aber
 > **nicht in dieselbe Datei wie der Datenbankauszug**. Liegen Chiffrat und

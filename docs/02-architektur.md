@@ -14,7 +14,7 @@
 > die Abläufe sind unverändert geblieben. Das ist ein gutes Zeichen für den
 > Schnitt.
 
-## Umsetzungsstand (07.08.2026)
+## Umsetzungsstand (09.08.2026)
 
 | Baustein | Stand |
 |---|---|
@@ -31,12 +31,25 @@
 | Betriebsdokumentation | [docs/04-betrieb.md](04-betrieb.md) — Wiederherstellung durchgeführt und als Nachweis automatisiert |
 | Sicherheit und Datenschutz | [docs/05-sicherheit-datenschutz.md](05-sicherheit-datenschutz.md) — TOMs belegt, Lücken benannt |
 | Benutzerverwaltung | Einladungen statt gesetzter Kennwörter, zweiter Faktor zurücksetzbar, Deaktivieren statt Löschen ([Umsetzung](03-umsetzung/12-benutzerverwaltung.md)) |
-| Update-Manager | **nicht umgesetzt** |
+| Update-Manager | **teilweise:** Versionen werden erkannt und angezeigt (FA-UPD-010, [Umsetzung 25](03-umsetzung/25-neue-versionen-erkennen.md)). Die geführte Ausführung (FA-UPD-020) fehlt |
 | Firmware-Rollout | **nicht umgesetzt** (V2 laut ADR-0004) |
 | Protokollansicht | Paginierung, 50 Zeilen je Seite; bei 5 Mio Einträgen 110 ms. **Grenze:** sehr tiefes Blättern (ab ~Seite 75.000) überschreitet 1 s |
 
 Umgesetzter Stack: **Java 21**, BouncyCastle, Javalin, PostgreSQL, HTMX —
-rund 15.200 Zeilen, **202 Modultests, 157 Systemnachweise** — im letzten Vollauf alle grün.
+rund 18.000 Zeilen, **264 Modultests, 329 Systemnachweise** — im letzten Vollauf alle grün.
+
+Seit dem 07.08.2026 hinzugekommen:
+
+| Baustein | Stand |
+|---|---|
+| PIN-Hinterlegung und PIN-Änderung über die Oberfläche | läuft; die Zentrale sieht die PIN **nie im Klartext** ([ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md)) |
+| Benachrichtigung per E-Mail | läuft, mit Sammelfenster gegen Mailfluten (FA-ALA-020) |
+| Geräte-Zeitstrahl und Vorgangsansicht | läuft (FA-PRO-050/060) — damit sind alle vier Sichten aus ADR-0005 vorhanden |
+| Prüfintervall je Gerätegruppe | wirkt nachweislich im Agenten (FA-UEB-010) |
+| KSR-Zustand „aktualisierend" | wird erkannt, keine PIN-Verifikation währenddessen (`[gemSpec_Kon] 4.3.10`) |
+| Versionsprüfung gegen die Registry | läuft (FA-UPD-010) |
+| Startkonto aus der Konfiguration | läuft (FA-BEN-035) — der Zugang überlebt einen Datenverlust |
+| Einheitlichkeit der Oberfläche | erzwungen statt gepflegt: `Bedienelemente` mit Pflicht-Kurzhinweis, Abstandsraster, 19 maschinelle Prüfpunkte ([Umsetzung 26](03-umsetzung/26-ux-refactoring.md)) |
 
 > Umsetzungsstand je Anforderung: [docs/01a-umsetzungsstand.md](01a-umsetzungsstand.md).
 > Was der PO entscheiden muss: [docs/ENTSCHEIDUNGEN-PO.md](ENTSCHEIDUNGEN-PO.md).
@@ -184,6 +197,29 @@ und protokolliert, der Agent besitzt und handelt.
 | **Alarmierung** | Alarmzustände führen, benachrichtigen, quittieren |
 | **Update-Manager** | Versionen erkennen, Freigabe, Ausführung, Rollback (ADR-0001) |
 | **Agentenvermittlung** | Registrierung, Verbindungen, Versionsabgleich |
+
+#### Wie sich das im Quelltext wiederfindet
+
+Die Komponenten oben sind fachliche Zuständigkeiten, keine Klassen. Die
+Abbildung auf den Code:
+
+| Komponente | Klassen |
+|---|---|
+| Weboberfläche | `*seiten.java`, `Bedienelemente`, `stil.css`, `oberflaeche.js` |
+| Identität & Rechte | `Benutzerverwaltung`, `Rechte`, `Geltungsbereich`, `Einladungen`, `Startkonto`, `Anmeldebremse` |
+| Mandanten & Bestand | `Organisationsverwaltung`, `Bestandsverwaltung`, `Gruppenverwaltung`, `Ermittlung` |
+| Regelwerk & Zeitpläne | `Gruppenverwaltung` (Intervalle), `Zentrale` (Not-Aus) |
+| Auftragsvergabe | `Pinverwaltung` |
+| Fachprotokoll | `Fachprotokoll`, `Ereignis`, `Speicherwaechter`, `Tabellenmappe`, `Pseudonymisierung` |
+| Alarmierung | `Alarmverwaltung`, `Benachrichtigung`, `Mailversand` |
+| Update-Manager | `Versionspruefung` |
+| Agentenvermittlung | `Agentenverwaltung` |
+
+`Zentrale.java` selbst hält die Routen, den Zustand im Speicher und die
+Hintergrundaufgaben. Die 81 Routen sind in zehn thematische Methoden gebündelt
+(`routenAnmeldung`, `routenBestand`, …); bis zum 09.08.2026 standen sie in
+**einer** Methode mit 1450 Zeilen. Einzelheiten:
+[Entwicklerhandbuch](07-entwicklerhandbuch.md).
 
 ### 5.3 Standort-Agent — Komponenten
 
@@ -485,6 +521,58 @@ Zwei getrennte Ströme (ADR-0005): das **Fachprotokoll** in der Datenbank, nur
 anfügbar, mit Vorgangsnummer und fester Ereignisliste — und das **technische
 Protokoll** als strukturierte Ausgabe. Die Vorgangsnummer verbindet beide, damit
 der Support eine fachliche Meldung bis in die technischen Details verfolgen kann.
+
+---
+
+## 8.8 Einheitlichkeit der Oberfläche — erzwungen, nicht gepflegt
+
+Am 09.08.2026 wurde die Oberfläche vermessen statt begutachtet: 142 von 154
+Bedienelementen ohne Kurzhinweis, 0 von 97 Tabellenzeilen klickbar, 37
+verschiedene Abstandswerte.
+
+Die Ursache war **kein** Mangel an Sorgfalt an 142 Einzelstellen, sondern das
+Fehlen eines gemeinsamen Bausteins: Jede Seite baute ihre Knöpfe und Tabellen
+selbst, also wich jede ein wenig ab.
+
+> Einheitlichkeit, die von Sorgfalt abhängt, zerfällt mit jeder neuen Seite.
+
+Deshalb ist die Antwort architektonisch, nicht kosmetisch:
+
+- **`Bedienelemente`** mit dem Kurzhinweis als **Pflichtparameter**. Ein Knopf
+  ohne Erklärung lässt sich nicht bauen — das erledigt der Compiler.
+- Ein **Abstandsraster** (`--r1` bis `--r6`) statt frei gewählter Werte.
+- **19 maschinelle Prüfpunkte** (`pruefungen/oberflaeche-pruefen.sh`), die nicht
+  fragen, ob Sortierung *angeboten* wird, sondern ob sie die Reihenfolge
+  *ändert*.
+
+Damit reiht sich die Oberfläche in dasselbe Muster wie `Geltungsbereich` (8.1)
+und die Einrichtung in `pruefe()`: **Was nicht vergessen werden darf, wird nicht
+der Sorgfalt überlassen, sondern dem Compiler oder einer zentralen Stelle.**
+
+---
+
+## 8.9 Wiedereinstieg nach Datenverlust
+
+Der Zugang zur Zentrale hing an einem Konto, das einmalig bei der
+Ersteinrichtung entstand — mit einem TOTP-Geheimnis, das genau einmal angezeigt
+wurde. Ging das Datenvolumen verloren, entstand bei der nächsten Ersteinrichtung
+ein **anderes** Geheimnis; der Eintrag in der Authenticator-App war tot, und
+niemand kam mehr hinein.
+
+Das ist im Projekt dreimal passiert. In einer Praxis ohne IT-Personal wäre es
+ein Ausfall mit Anruf beim Hersteller.
+
+`Startkonto` (FA-BEN-035) legt das Konto beim Start an, falls es fehlt, und
+übernimmt ein vorgegebenes TOTP-Geheimnis. Ein **vorhandenes** Konto wird nie
+verändert — sonst könnte jemand mit Schreibzugriff auf die Konfiguration sich
+per Neustart immer wieder Zutritt verschaffen, auch nachdem man ihn ausgesperrt
+hat.
+
+**Der Tausch, den der Betreiber eingeht:** Wer die Konfiguration lesen kann,
+kennt beide Faktoren — der zweite ist dann keiner mehr. Gegenmaßnahmen: Passwort
+aus einem Docker-Secret statt aus der Umgebung, und Entfernen der Variablen nach
+der Einrichtung. Beides steht in
+[09-devops-installation.md](09-devops-installation.md).
 
 ---
 

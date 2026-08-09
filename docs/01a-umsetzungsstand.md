@@ -100,6 +100,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-BEN-010` Rollenmodell <br><span style="opacity:.7">MUSS</span> |  | Administrator/Benutzer, zusätzlich nach Ebene |
 | **✔** | `FA-BEN-020` Anmeldung mit zweitem Faktor <br><span style="opacity:.7">MUSS</span> |  | Kennwort + TOTP, nicht abschaltbar; gegen RFC-Vektoren geprüft |
 | **✔** | `FA-BEN-030` Onboarding <br><span style="opacity:.7">MUSS</span> |  | Einladung mit einmaligem Code, TOTP-Einrichtung mit Prüfschritt |
+| **✔** | `FA-BEN-035` Startkonto aus der Konfiguration <br><span style="opacity:.7">SOLL</span> |  | Administratorkonto samt vorgegebenem zweitem Faktor über `START_ADMIN_*`. Der Zugang überlebt einen vollständigen Datenverlust — nachgewiesen. Ein vorhandenes Konto wird nie verändert. [DevOps](09-devops-installation.md) |
 | **✔** | `FA-BEN-040` Verlust des zweiten Faktors <br><span style="opacity:.7">MUSS</span> |  | zweiter Faktor zurücksetzbar, protokolliert |
 | **✔** | `FA-BEN-050` Benutzerverwaltung bei großer Anzahl <br><span style="opacity:.7">MUSS</span> |  | Live-Suche, Filter, serverseitige Paginierung |
 

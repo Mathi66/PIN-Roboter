@@ -182,7 +182,13 @@ public class Einladungen {
                 p.setLong(1, orgId);
                 p.setLong(2, t.benutzerId());
                 p.executeUpdate();
-            } catch (SQLException ignored) { }
+            }
+            catch (SQLException e) {
+                // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+                // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+                // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+                System.err.println("Einladungen.einloesen: " + e.getMessage());
+            }
         }
         return new Einloesung.Erfolg(t.benutzerId(), t.geheimnis(), t.uri());
     }

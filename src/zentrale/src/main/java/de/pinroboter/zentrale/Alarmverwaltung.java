@@ -182,7 +182,13 @@ public class Alarmverwaltung {
                             rs.getString("quittiert_von"), q == null ? null : q.toInstant()));
                 }
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Alarmverwaltung.offene: " + e.getMessage());
+        }
         return liste;
     }
 

@@ -165,13 +165,20 @@ Dokumentation entsteht **mit** der Umsetzung, nicht danach. Ablage im Repository
 
 ```
 docs/
-  00-referenzen/             Quellenverzeichnis und Fachanalysen
+  README.md                  Einstieg: welches Dokument für wen
+  00-referenzen/             Quellenverzeichnis, Fachanalysen, Messberichte
   01-anforderungskatalog.md  Funktionale und nichtfunktionale Anforderungen
                              mit testbaren Akzeptanzkriterien
-  02-architektur.md          Systemüberblick, Komponenten, Datenflüsse
+  01a-umsetzungsstand.md     Was davon fertig ist — je Anforderung, mit Nachweis
+  02-architektur.md          Systemüberblick nach arc42
   03-umsetzung/              Umsetzungsbeschreibungen je Feature
-  04-betrieb.md              Installation, Konfiguration, Backup, Update
+  04-betrieb.md              Installation und Betrieb für den Praxisbetreiber
   05-sicherheit-datenschutz.md  Schutzbedarf, TOMs, Datenflüsse personenbezogener Daten
+  06-ux-konzept.md           Gestaltungskonzept der Oberfläche
+  07-entwicklerhandbuch.md   Einstieg in den Code, Konventionen, Testen, Fallen
+  08-anwenderhandbuch.md     Bedienung, ohne IT-Kenntnisse
+  09-devops-installation.md  Netzschnitt, Secrets, Proxy, Härtung, Wiederherstellung
+  10-codeanalyse.md          Gemessener Zustand, Refactoring, bewusst Offenes
   adr/                       Architecture Decision Records (nummeriert, unveränderlich)
 ```
 

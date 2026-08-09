@@ -242,7 +242,13 @@ public class Pinverwaltung {
             p.setLong(2, auftragId);
             p.setLong(3, agentId);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Pinverwaltung.quittieren: " + e.getMessage());
+        }
 
         if (!erfolg) return;
         try {
@@ -262,7 +268,13 @@ public class Pinverwaltung {
                     p.executeUpdate();
                 }
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Pinverwaltung.quittieren: " + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------- Kennzeichen

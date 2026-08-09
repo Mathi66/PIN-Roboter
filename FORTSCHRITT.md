@@ -1894,3 +1894,49 @@ keinen Kurzhinweis. Er erscheint nur, wenn bereits Geräte übernommen wurden �
 beim Durchsehen von Hand war die Liste leer.
 
 ## Stand: 264 Modultests, 320 Systemnachweise — alle grün
+
+## Refactoring und vollständige Dokumentation
+
+Auftrag des PO: vollständiges Refactoring, Analyse des Quellcodes, und vier
+Dokumente — für Entwickler, Anwender, Architektur und DevOps.
+
+### Erst gemessen, dann geschnitten
+
+| Befund | vorher | nachher |
+|---|---:|---:|
+| `starten()` — eine Methode mit 81 Routen | **1450 Zeilen** | **257** |
+| verschluckte `SQLException` | **20** | **0** |
+| Kommentaranteil | 23 % | 23 % |
+| `TODO`/`FIXME` | 0 | 0 |
+
+**Die 20 verschluckten Datenbankfehler waren der ernstere Fund.** Ein stiller
+SQL-Fehler ist praktisch unauffindbar: Der Aufruf liefert eine leere Liste, die
+Oberfläche zeigt „keine Einträge", und niemand erfährt warum. Genau so blieb das
+fehlerhafte `WHERE 1=1AND` monatelang unentdeckt. Sie melden jetzt mit Klassen-
+und Methodennamen — bewusst ohne weiterzuwerfen, damit ein Zählfehler in einer
+Nebenanzeige nicht die Oberfläche abschießt.
+
+Die 81 Routen liegen in zehn thematischen Bündeln. Die Reihenfolge innerhalb
+eines Bündels bleibt exakt erhalten: Javalin nimmt die zuerst passende Route,
+also muss `/bestand/terminal/neu` vor `/bestand/terminal/{id}` stehen.
+
+### Ein Versuch, den ich zurückgenommen habe
+
+Die weitere Unterteilung von `routenBestand` (408 Zeilen) scheiterte: Das
+automatische Verschieben von Java-Code kam mit Klammern innerhalb von
+Textblöcken nicht zurecht, der erzeugte Code übersetzte nicht. Ich habe den
+geprüften Stand wiederhergestellt und den Punkt als bewusst offen dokumentiert,
+statt ihn mit der Brechstange zu erzwingen.
+
+### Vier neue Dokumente
+
+| Datei | Für wen |
+|---|---|
+| `docs/07-entwicklerhandbuch.md` | wer am Code arbeitet — inklusive „Fallen, die schon zugeschnappt sind" |
+| `docs/08-anwenderhandbuch.md` | Praxispersonal ohne IT-Kenntnisse |
+| `docs/09-devops-installation.md` | Netzschnitt, Secrets, Proxy, Härtung, Wiederherstellung |
+| `docs/10-codeanalyse.md` | der gemessene Zustand samt dem, was bewusst offen bleibt |
+
+Dazu `docs/README.md` als Einstieg, die Architekturbeschreibung um zwei
+Querschnittskapitel erweitert, und FA-BEN-035 im Anforderungskatalog nachgetragen
+— eine Funktion ohne Abnahmekriterium ist nicht abnehmbar.

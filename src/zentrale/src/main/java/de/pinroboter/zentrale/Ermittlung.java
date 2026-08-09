@@ -181,7 +181,13 @@ public class Ermittlung {
                             rs.getBoolean("verwaltet"), d == null ? null : d.toString()));
                 }
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Ermittlung.karten: " + e.getMessage());
+        }
         liste.sort((a, b) -> Boolean.compare(b.verwaltet(), a.verwaltet()));
         return liste;
     }
@@ -197,7 +203,13 @@ public class Ermittlung {
             p.setBoolean(2, verfuegbar);
             p.setString(3, verfuegbar ? inhalt : null);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Ermittlung.modellAblegen: " + e.getMessage());
+        }
     }
 
     /**
@@ -434,7 +446,13 @@ public class Ermittlung {
                         Lage.VERSCHWUNDEN, List.of(), rs.getLong("id")));
             }
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Ermittlung.verschwundene: " + e.getMessage());
+        }
         return liste;
     }
 
@@ -463,7 +481,13 @@ public class Ermittlung {
                 "UPDATE ermittelt_terminal SET uebernommen_am = now() WHERE id=?")) {
             p.setLong(1, id);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Ermittlung.alsUebernommenMarkieren: " + e.getMessage());
+        }
     }
 
     /** Wie viele Funde noch nicht im Bestand stehen — für die Anzeige im Menü. */

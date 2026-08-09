@@ -721,6 +721,12 @@ public class Datenbank implements AutoCloseable {
     public Connection verbindung() { return verbindung; }
 
     @Override public void close() {
-        try { verbindung.close(); } catch (SQLException ignored) { }
+        try { verbindung.close(); }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Datenbank.verbindung: " + e.getMessage());
+        }
     }
 }

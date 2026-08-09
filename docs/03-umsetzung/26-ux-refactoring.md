@@ -119,7 +119,7 @@ halb getippte Eingaben. Gruppen ändern sich ohnehin nur durch eine Handlung.
 
 ## Nachweise
 
-`pruefungen/oberflaeche-pruefen.sh`, 17 Prüfpunkte, eingebunden in den
+`pruefungen/oberflaeche-pruefen.sh`, 19 Prüfpunkte, eingebunden in den
 Hauptlauf. Er misst nicht Schönheit, sondern Einheitlichkeit — und hält damit
 fest, was sonst mit der nächsten Seite wieder zerfiele:
 

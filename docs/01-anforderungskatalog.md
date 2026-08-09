@@ -459,6 +459,47 @@ Geführter Prozess für Ersteinrichtung und Aufnahme weiterer Konten.
 - Der Einladungslink ist einmalig verwendbar und läuft nach konfigurierbarer
   Frist ab.
 
+### FA-BEN-035 — Administratorkonto aus der Konfiguration · SOLL · V1 · Claude
+Ein Zugang, der einen Datenverlust überlebt.
+
+**Anlass:** Der Zugang hängt sonst an einem Konto, das einmalig bei der
+Ersteinrichtung entsteht — mit einem TOTP-Geheimnis, das genau einmal angezeigt
+wird. Geht das Datenvolumen verloren (Neuaufbau, misslungene Wiederherstellung),
+entsteht bei der nächsten Ersteinrichtung ein **anderes** Geheimnis; der Eintrag
+in der Authenticator-App ist tot, und niemand kommt mehr hinein. Im Projekt
+dreimal eingetreten; in einer Praxis ohne IT-Personal wäre es ein Ausfall mit
+Anruf beim Hersteller.
+
+Diese Anforderung ergänzt FA-BEN-040, ersetzt sie nicht: Dort geht es um den
+Verlust des zweiten Faktors *eines Benutzers*, hier um den Verlust *aller
+Konten*.
+
+*Akzeptanz:*
+- Sind `START_ADMIN_BENUTZER` und ein Passwort gesetzt, entsteht das Konto beim
+  Start, **falls es fehlt**.
+- Ist `START_ADMIN_TOTP` gesetzt, gilt dieses Geheimnis sofort; eine erneute
+  TOTP-Einrichtung entfällt.
+- **Ein vorhandenes Konto wird nicht verändert** — weder Passwort noch Rolle
+  noch zweiter Faktor, auch nicht der Aktivzustand. Nachweis: Ein deaktiviertes
+  Konto bleibt nach einem Neustart deaktiviert.
+- Nach vollständigem Verlust des Datenvolumens gilt derselbe Zugang unverändert
+  weiter. Nachweis am laufenden System, nicht als Behauptung.
+- Weder Passwort noch TOTP-Geheimnis erscheinen im Betriebs- oder Fachprotokoll.
+- Das Anlegen erscheint als deutliche Warnung im Betriebsprotokoll und als
+  Eintrag im Fachprotokoll: Ein Administrator ist entstanden, ohne dass ihn
+  jemand angelegt hat.
+- Das Passwort ist aus einer Datei lesbar (Docker-Secret), damit es nicht in
+  `docker inspect` und nicht in der Prozessliste erscheint.
+- Eine fehlerhafte Konfiguration bricht den Start **nicht** ab, sondern warnt.
+  Die Überwachung der Kartenterminals ist die Kernfunktion; sie darf nicht an
+  einem Konto scheitern.
+
+> **Sicherheitsvorbehalt, der zu dokumentieren ist:** Wer die Konfiguration
+> lesen kann, kennt beide Faktoren — der zweite ist dann keiner mehr. Das ist
+> ein bewusster Tausch: Wiedereinstieg nach Datenverlust gegen die Trennung der
+> Faktoren. Der Betreiber entscheidet, ob er ihn eingeht, und wird in
+> [09-devops-installation.md](09-devops-installation.md) darauf hingewiesen.
+
 ### FA-BEN-040 — Verlust des zweiten Faktors · MUSS · V1 · PO
 Verfahren zur Wiederherstellung ohne Hintertür.
 

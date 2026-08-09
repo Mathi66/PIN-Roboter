@@ -75,7 +75,13 @@ public class Gruppenverwaltung {
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) liste.add(lesen(rs));
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Gruppenverwaltung.alle: " + e.getMessage());
+        }
         return liste;
     }
 
@@ -237,7 +243,13 @@ public class Gruppenverwaltung {
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) m.put(rs.getString(1), rs.getInt(2));
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Gruppenverwaltung.intervalleJeGeraet: " + e.getMessage());
+        }
         return m;
     }
 

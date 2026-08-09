@@ -64,7 +64,13 @@ public class Demodaten {
                 return new Bestand(rs.getInt("orgs"), rs.getInt("kon"), rs.getInt("ap"),
                         rs.getInt("term"), rs.getInt("smcb"), rs.getInt("ben"));
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Demodaten.bestand: " + e.getMessage());
+        }
         return new Bestand(0, 0, 0, 0, 0, 0);
     }
 

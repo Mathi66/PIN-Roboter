@@ -383,7 +383,13 @@ public class Benachrichtigung {
                             rs.getString(3), rs.getString(4)));
                 }
             }
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Benachrichtigung.wartende: " + e.getMessage());
+        }
         return liste;
     }
 

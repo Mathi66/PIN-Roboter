@@ -290,7 +290,13 @@ public class Benutzerverwaltung {
             p.setLong(2, SPERRDAUER.toMinutes());
             p.setLong(3, id);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Benutzerverwaltung.fehlversuch: " + e.getMessage());
+        }
     }
 
     private void erfolgVermerken(long id, long fenster) {
@@ -300,7 +306,13 @@ public class Benutzerverwaltung {
             p.setLong(1, fenster);
             p.setLong(2, id);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Benutzerverwaltung.erfolgVermerken: " + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------- Sitzungen
@@ -356,7 +368,13 @@ public class Benutzerverwaltung {
                 "UPDATE sitzung SET letzte_tat = now() WHERE kennung = ?")) {
             p.setString(1, kennung);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Benutzerverwaltung.beruehren: " + e.getMessage());
+        }
     }
 
     public void abmelden(String kennung) {
@@ -364,7 +382,13 @@ public class Benutzerverwaltung {
                 "DELETE FROM sitzung WHERE kennung = ?")) {
             p.setString(1, kennung);
             p.executeUpdate();
-        } catch (SQLException ignored) { }
+        }
+        catch (SQLException e) {
+            // Nicht verschlucken: Ein stiller SQL-Fehler ist praktisch
+            // unauffindbar - so blieb ein fehlerhaftes WHERE monatelang
+            // unentdeckt. Der Aufruf schlaegt trotzdem nicht fehl.
+            System.err.println("Benutzerverwaltung.abmelden: " + e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------- Verwaltung
