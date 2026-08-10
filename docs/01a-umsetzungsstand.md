@@ -65,12 +65,12 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 
 | | Anforderung | | Stand |
 |---|---|---|---|
-| **✔** | `FA-PIN-010` PIN hinterlegen <br><span style="opacity:.7">MUSS</span> |  | Ende-zu-Ende vom Browser zum Agenten (ADR-0009) |
-| **✔** | `FA-PIN-020` Automatische Verifikation <br><span style="opacity:.7">MUSS</span> |  🔌 | Durchstich über Brainpool-TLS am Simulator |
+| **✔** | `FA-PIN-010` PIN hinterlegen <br><span style="opacity:.7">MUSS</span> |  | Ende-zu-Ende vom Browser zum Agenten (ADR-0009)  **⚠ Gegen echte Hardware ungeprüft und nach ADR-0011 im Übergabeweg falsch modelliert:** Das Terminal fragt die PIN an, statt sie entgegenzunehmen. Umbau steht aus. |
+| **✔** | `FA-PIN-020` Automatische Verifikation <br><span style="opacity:.7">MUSS</span> |  🔌 | Durchstich über Brainpool-TLS am Simulator  **⚠ Siehe ADR-0011** — Übergabeweg falsch modelliert. |
 | **✔** | `FA-PIN-030` Schutz vor Kartensperrung <br><span style="opacity:.7">MUSS</span> |  🔌 | LeftTries vor jedem Versuch; genau ein Versuch bei falscher PIN |
 | **✔** | `FA-PIN-040` Nicht behebbare Zustände melden <br><span style="opacity:.7">MUSS</span> |  | alle vier Zustände mit Handlung, je 0 Versuche |
 | **✔** | `FA-PIN-050` Not-Aus <br><span style="opacity:.7">MUSS</span> |  | Not-Aus hält die Automatik sofort an |
-| **✔** | `FA-PIN-060` PIN ändern <br><span style="opacity:.7">SOLL</span> |  | Alte und neue PIN verdeckt, mit Bestätigung im Browser; Fehlversuchszähler wird vorher geprüft (FA-PIN-030). Bei Fehlschlag bleibt die hinterlegte PIN unverändert — nachgewiesen. [Umsetzung 23](03-umsetzung/23-pin-aendern.md) |
+| **◐** | `FA-PIN-060` PIN ändern <br><span style="opacity:.7">SOLL</span> |  | Alte und neue PIN verdeckt, mit Bestätigung im Browser; Fehlversuchszähler wird vorher geprüft (FA-PIN-030). Bei Fehlschlag bleibt die hinterlegte PIN unverändert — nachgewiesen. [Umsetzung 23](03-umsetzung/23-pin-aendern.md)  **⚠ Über die Remote-Schnittstelle nicht möglich:** CHERRY schließt PIN-Änderung dort ausdrücklich aus („PIN modification operations are never requested via the Remote PIN API"). Gebaut und gegen den Simulator nachgewiesen, gegen echte Hardware nicht führbar. [ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md) |
 
 ## A.4 Firmware-Verwaltung (FA-FW)
 

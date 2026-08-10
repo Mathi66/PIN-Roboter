@@ -64,9 +64,22 @@ entsprechender Kennwörter lassen sie sich aktivieren (`TIP_2967`), und zwar nur
 
 ## 4. Der technische Ablauf
 
+> **Korrektur vom 10.08.2026.** Dieser Abschnitt beschrieb den Ablauf bis dahin
+> so, als **schiebe** der Roboter die PIN ans Terminal. Das ist falsch. Die
+> Recherche in den Herstellerspezifikationen hat ergeben: **Das Terminal fragt
+> an, der Roboter antwortet.** Er ist ein *PIN-Provider*, kein Auftraggeber.
+> Einzelheiten und die Belegstellen:
+> [ADR-0011](../adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md).
+>
+> Die Aussagen unten zur Spezifikation (`A_24080` ff.) bleiben gültig — falsch
+> war die Vorstellung davon, wie der PIN-Wert praktisch an die
+> Managementschnittstelle gelangt.
+
 Entscheidend ist: **Der PIN-Roboter kann die PIN nicht einfach ins Terminal
 schreiben.** Das Terminal nimmt die PIN nur entgegen, während es ein
-SICCT-Kommando des Konnektors bearbeitet. Beide Seiten müssen zusammenspielen.
+SICCT-Kommando des Konnektors bearbeitet — und es **fordert sie dann aktiv an**
+bei dem Dienst, der sich zuvor als PIN-Provider angemeldet hat. Beide Seiten
+müssen zusammenspielen.
 
 ### 4.1 Verhalten des Terminals (`A_24081`)
 

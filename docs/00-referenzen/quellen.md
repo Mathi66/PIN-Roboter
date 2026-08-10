@@ -82,3 +82,22 @@ MUSS, brainpoolP256r1 und brainpoolP384r1 sind SOLL.
   Brainpool unter TLS 1.3 zuverlässig ab Version 3.2
 - https://groups.google.com/g/golang-dev/c/uq_J83dGjOs — Go lehnt Brainpool in
   der Standardbibliothek ab
+
+---
+
+## Herstellerdokumentation (recherchiert 10.08.2026)
+
+Beschafft auf Nachfrage des PO, nachdem sich der angenommene Übergabeweg der PIN
+als falsch erwies ([ADR-0011](../adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md)).
+
+| Quelle | Stand | Inhalt |
+|---|---|---|
+| **ST-1506 Remote Management Specification v2.8** — Cherry Digital Health GmbH, 24.03.2025, öffentlich | Firmware 4.x | 77 Seiten. Zwei WebSocket-Schnittstellen: `cobra` (Verwaltung) und `cobra-smcb` (PIN). Challenge-Response mit CMAC-AES256, `InputPinRequest` in Richtung Terminal → Client. [Download](https://pim.cherry-world.net/downloads/downloads/85885/st-1506-remote-management-specification-remote-management-specification-v2-8-94a8c5b.pdf) |
+| **Bedienungsanleitung ORGA 6141 online (ORGA Neo)** — Worldline, V24.5.1 | Firmware 3.9.0 | Rolle „SMC-B PIN Provider", PIN-Eingabe wird per RMI **umgeleitet**. Abschnitt 7.2.3.4. |
+| **Remote Management Interface ORGA 6141 online v1.0.3** — Worldline, 26.07.2024 | | **Nicht beschafft:** Der öffentlich verlinkte Pfad liefert 404. Ohne dieses Dokument ist der Worldline-Zweig nicht baubar. |
+
+> **Was diese Quellen leisten und was nicht.** Sie belegen das *Muster* — das
+> Terminal fragt an, ein Provider antwortet über eine dauerhafte Verbindung.
+> Sie ersetzen **keine Messung am Gerät**: Zeitverhalten, Verbindungsdauer und
+> Fehlerbilder stehen dort nicht oder nur als Sollwert. Der Vorbehalt aus
+> [ADR-0007](../adr/0007-simulierte-endpunkte-und-teststrategie.md) bleibt.

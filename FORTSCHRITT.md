@@ -2091,3 +2091,64 @@ Neu: `CHANGELOG.md` — es gab keine Änderungshinweise, obwohl die DevOps-Anlei
 an zwei Stellen darauf verweist.
 
 ## Stand: 269 Modultests, 352 Systemnachweise — alle grün
+
+## Der PIN-Übergabeweg war falsch modelliert
+
+Der PO fragte: „An welcher Stelle wendest du SICCT an?" — und stellte fest: „Der
+Konnektor schickt keine PIN an das Terminal." Er hatte recht. Die daraufhin
+geforderte Recherche in den **Herstellerdokumenten** hat einen Fehler im Kern
+des Produkts aufgedeckt.
+
+### Was wir angenommen hatten
+
+Der Agent baut eine Sitzung auf, **schiebt** die PIN hin (`POST /pin`), löst
+`VerifyPin` aus, meldet sich ab.
+
+### Was die Spezifikationen sagen
+
+**CHERRY ST-1506** (Remote Management Specification v2.8, 77 Seiten, öffentlich):
+Es gibt **zwei** WebSocket-Schnittstellen — `cobra` für die Verwaltung und
+`cobra-smcb` für die PIN. Der Client holt einen ephemeren AES256-Schlüssel
+(30 s gültig), verbindet sich, und **das Terminal** sendet einen
+`AuthenticateRequest` mit Challenge. Danach:
+
+> „While authenticated the Remote SMCB API will send `OutputRequests` and
+> **`InputPinRequests` if a PIN verification is requested on the respective slot
+> from the Konnektor**."
+
+`InputPinRequest`, Richtung **„ST1506 to Client"**. Das Terminal fragt, der
+Client antwortet.
+
+**Worldline ORGA 6141** (Bedienungsanleitung V24.5.1, Abschnitt 7.2.3.4):
+dasselbe Muster, eigene Worte — die Rolle **„SMC-B PIN Provider"**, an die die
+PIN-Eingabeaufforderung „per RMI **umgeleitet**" wird. Auch hier WSS.
+
+### Was das bedeutet
+
+| | angenommen | tatsächlich |
+|---|---|---|
+| Muster | Agent sendet | **Terminal fragt, Agent antwortet** |
+| Verbindung | kurz | **dauerhaft offen je Terminal** |
+| Authentisierung | Kennwort | **Challenge-Response, CMAC-AES256** |
+| Gleichzeitig | beliebig | **eine Verbindung je Gerät** |
+
+Die harte Folge ist die **Nebenläufigkeit**: eine dauerhafte Verbindung je
+Terminal, bei 5.000 Geräten aus dem Mengengerüst. Aus einer Frage der
+Abfragelast wird eine der Verbindungsverwaltung — ein anderes Problem als das,
+für das die Ablaufsteuerung gebaut ist.
+
+Und **FA-PIN-060 ist über diesen Weg gar nicht möglich**: CHERRY schließt
+PIN-Änderung dort ausdrücklich aus.
+
+### Was die 352 grünen Nachweise darüber sagen
+
+Nichts. Sie belegen, dass Agent und Simulator zueinander passen — der Simulator
+bildet unsere Annahme nach. Derselbe Fehlertyp wie beim RSA-OAEP, wo beide
+Seiten gleich falsch waren, nur diesmal in der Kernfunktion.
+
+### Vorgehen
+
+Festgehalten in [ADR-0011](docs/adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md),
+korrigiert in Analyse, Architektur und Umsetzungsstand. **Der Umbau folgt erst
+nach der Messung am Testaufbau** — ihn auf eine Dokumentenlektüre zu stützen
+wäre derselbe Fehler wie der, den diese ADR korrigiert, nur mit besserer Quelle.

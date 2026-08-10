@@ -416,9 +416,19 @@ SICCT.**
 `SICCT PERFORM VERIFICATION` und `SICCT MODIFY VERIFICATION DATA` sendet der
 **Konnektor**. Unser Beitrag besteht aus zwei Teilen, die zusammenpassen müssen:
 
-1. **vorher** den PIN-Wert an der Managementschnittstelle hinterlegen, als
-   Rolle `SMC-B_Nutzer` angemeldet,
-2. **dann** das Kommando über den Konnektor auslösen (`VerifyPin`).
+1. **vorher** eine Verbindung zur Managementschnittstelle aufbauen und dort als
+   PIN-Provider **bereitstehen**,
+2. **dann** die Verifikation über den Konnektor auslösen (`VerifyPin`) — und die
+   Anfrage beantworten, die das Terminal daraufhin stellt.
+
+> **Korrektur vom 10.08.2026.** Hier stand zuvor, der Agent *hinterlege* den
+> PIN-Wert. Das ist falsch: **Das Terminal fragt aktiv an**
+> (`InputPinRequest`, Richtung Terminal → Client), und der Agent antwortet über
+> eine dauerhaft offene Verbindung. Belegt aus den Spezifikationen von CHERRY
+> und Worldline —
+> [ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md).
+> Der Umbau steht aus; die heutige Umsetzung entspricht dem alten, falschen
+> Modell.
 
 Trifft das Kommando ein, ohne dass die Sitzung steht, verlangt das Terminal die
 Eingabe am Gerät (`A_24081`) — und der Vorgang ist verloren. Deshalb ist die
