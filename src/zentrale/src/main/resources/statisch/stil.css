@@ -714,3 +714,7 @@ tr > th:last-child,  tr > td:last-child  { padding-right:var(--karte-x); }
    um und mal nicht — die Liste wirkte dadurch unruhig, ohne dass sich sagen
    ließ, woran es liegt. */
 .kennung.zweitzeile.adresse { opacity:.85; }
+/* Eine Knopfreihe am Anfang der Zeile — anders als .knopfreihe, die ans Ende
+   rückt. In einem Karteninhalt gibt es kein Feld, an dessen Ende sich ein
+   Knopf ausrichten könnte. */
+.knopfreihe-links { display:flex; gap:var(--r2); align-items:center; flex-wrap:wrap; }

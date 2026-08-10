@@ -1990,3 +1990,45 @@ Gerät in der Notaufnahme.
 Vier der sechs Befunde ließen sich nachträglich in Prüfpunkte übersetzen.
 
 ## Stand: 269 Modultests, 331 Systemnachweise — alle grün
+
+## Datensicherung, Einstellungen, Wiederherstellung
+
+Vorgabe des PO: Menü „Einstellungen" mit Systemtest-Rubrik, drei rollierende
+Sicherungspläne, verschlüsselter Download und Upload, gezieltes
+Wiederherstellen mit Neustart.
+
+Bis dahin war die Sicherung ein Kapitel im Betriebshandbuch mit Befehlen zum
+Abtippen — das setzt jemanden voraus, der sie regelmäßig ausführt. In einer
+Praxis ohne IT-Personal gibt es den nicht.
+
+### Gebaut
+
+| | |
+|---|---|
+| Drei Pläne | täglich 7, wöchentlich 5, monatlich 12 Stände; stündliche Fälligkeitsprüfung |
+| Rotation | entfernt den ältesten Stand, nie den neuesten |
+| Fehlschlag | ist ein Alarm, keine Logzeile |
+| Download | AES-256-GCM, Schlüssel aus Argon2id, Kopf als AAD mitgeschützt |
+| Upload | prüft die Datei als Ganzes; ein gekipptes Byte wird erkannt |
+| Wiederherstellung | Sicherheitskopie davor, ganz oder gar nicht, danach Neustart |
+| Einstellungen | Demodatensatz und Leistungsmessung sind von „Instanz" hierher umgezogen |
+
+Falscher Schlüssel und veränderte Datei führen zur **gleichen** Meldung — die
+Unterscheidung wäre für einen Angreifer nützlicher als für den Betreiber.
+
+### Drei Funde beim Bauen
+
+**Der Prüfstand testete nicht das Auslieferungsimage.** Er startete die JAR in
+einem nackten JRE; alles, was im Bild steckt, blieb ungeprüft. Aufgefallen an
+`pg_dump`. Das widersprach der eigenen Definition of Done — jetzt läuft er
+gegen das Bild, das beim Kunden landet.
+
+**Zwei Orte für dieselbe Datei.** `docker compose build` baut im Container,
+`mvn package` lokal. Der Prüfstand mountet die lokale JAR — nach einer
+Korrektur nur über `compose build` lief dort noch der alte Stand.
+
+**Der Port im Hostnamen.** Beim Zerlegen der JDBC-Adresse blieb
+`datenbank:5432` als Rechnername stehen; `pg_dump` meldete „could not translate
+host name".
+
+## Stand: 269 Modultests, 349 Systemnachweise — alle grün

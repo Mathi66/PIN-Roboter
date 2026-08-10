@@ -43,7 +43,10 @@ public class Alarmverwaltung {
         KONNEKTOR_NICHT_ERREICHBAR(Schweregrad.KRITISCH),
         AGENT_STUMM(Schweregrad.KRITISCH),
         PEVIM_NICHT_AKTIV(Schweregrad.HINWEIS),
-        SPEICHER_KNAPP(Schweregrad.WARNUNG);
+        SPEICHER_KNAPP(Schweregrad.WARNUNG),
+        // Eine ausgebliebene Sicherung merkt man erst, wenn man sie braucht —
+        // deshalb ein Alarm und keine Logzeile (FA-BAK-010).
+        SICHERUNG_FEHLGESCHLAGEN(Schweregrad.WARNUNG);
 
         private final Schweregrad vorgabe;
         Art(Schweregrad s) { vorgabe = s; }

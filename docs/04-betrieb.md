@@ -161,6 +161,15 @@ Docker-Host. Begründung und Grenzen: [ADR-0008](adr/0008-ablage-von-geraete-zug
 
 ## 4. Sicherung und Wiederherstellung
 
+> **Seit dem 10.08.2026 macht das Produkt das selbst.** Unter **Einstellungen →
+> Datensicherung** laufen drei Pläne automatisch (täglich, wöchentlich,
+> monatlich), Stände lassen sich verschlüsselt herunterladen und wieder
+> einspielen. Sie müssen dafür nichts abtippen.
+>
+> Die Befehle unten bleiben für den Fall, dass die Oberfläche nicht erreichbar
+> ist — etwa weil die Zentrale nicht startet.
+
+
 **Was gesichert werden muss:**
 
 | | Wo | Warum |

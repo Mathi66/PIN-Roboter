@@ -708,6 +708,99 @@ bestätigungspflichtig.
 
 ---
 
+## A.12 Datensicherung (FA-BAK)
+
+Vorgabe des PO vom 10.08.2026. Bis dahin war die Sicherung ein
+Betriebshandbuch-Kapitel mit Befehlen zum Abtippen
+([04-betrieb.md](04-betrieb.md), Abschnitt 4). Das setzt jemanden voraus, der
+sie regelmäßig ausführt — in einer Praxis ohne IT-Personal gibt es den nicht.
+
+> **Warum das schwerer wiegt als eine Bequemlichkeit:** Geht die Datenbank
+> verloren, sind Bestand, Organisationsstruktur, Konten und das gesamte
+> Fachprotokoll weg. Das Protokoll ist der Nachweis darüber, was der Roboter
+> mit den SMC-B getan hat — es lässt sich nicht rekonstruieren.
+
+### FA-BAK-010 — Automatische Sicherung nach Plan · MUSS · V1 · PO
+Die Zentrale sichert ihre Datenbank selbsttätig, ohne Zutun des Betreibers.
+
+*Akzeptanz:*
+- Drei Pläne laufen unabhängig voneinander:
+
+  | Plan | Behält | Rotation |
+  |---|---|---|
+  | täglich | 7 Stände | wöchentlich rollierend |
+  | wöchentlich | 4–5 Stände | monatlich rollierend |
+  | monatlich | 12 Stände | jährlich rollierend |
+
+- Ist ein Plan über seine Zahl hinaus gefüllt, wird der **älteste** Stand
+  entfernt — nie der neueste, auch nicht bei knappem Speicher.
+- Jede Sicherung und jede Rotation erscheint im Fachprotokoll.
+- **Eine fehlgeschlagene Sicherung ist ein Alarm**, keine Logzeile. Eine
+  Sicherung, von der niemand weiß, dass sie ausblieb, ist keine Sicherung.
+- Die Sicherungen liegen in einem **eigenen Volume**, getrennt von den
+  Betriebsdaten. Ein Volume, das mit der Datenbank verschwindet, sichert nichts.
+- Der laufende Betrieb wird nicht angehalten. Die Überwachung der
+  Kartenterminals läuft während einer Sicherung weiter.
+
+### FA-BAK-020 — Herunterladen und Hochladen · MUSS · V1 · PO
+Sicherungen verlassen die Instanz nur verschlüsselt.
+
+*Akzeptanz:*
+- Eine Sicherung lässt sich über die Oberfläche herunterladen. Dabei ist
+  **zwingend ein Schlüssel einzugeben**; ohne ihn gibt es keinen Download.
+- Die Datei ist mit diesem Schlüssel **verschlüsselt und integritätsgeschützt**.
+  Eine veränderte Datei wird beim Hochladen erkannt und abgewiesen — nicht
+  teilweise eingelesen.
+- Der Schlüssel wird **nirgends gespeichert**: nicht in der Datenbank, nicht im
+  Protokoll, nicht im Arbeitsspeicher über den Vorgang hinaus. Nach Abschluss
+  wird er überschrieben.
+- **Geht der Schlüssel verloren, ist die Datei unbrauchbar.** Die Oberfläche
+  sagt das vor dem Download, nicht danach.
+- Eine hochgeladene Datei mit falschem Schlüssel wird mit verständlicher
+  Meldung abgewiesen — ohne preiszugeben, ob der Schlüssel oder die Datei
+  falsch war.
+- Der Vorgang steht im Fachprotokoll: wer, wann, welche Sicherung. Niemals der
+  Schlüssel.
+
+### FA-BAK-030 — Wiederherstellung · MUSS · V1 · PO
+Ein Stand lässt sich gezielt aktivieren.
+
+*Akzeptanz:*
+- Der Administrator wählt eine Sicherung und bestätigt ausdrücklich; die
+  Rückfrage nennt Zeitpunkt und Umfang des Standes.
+- **Vor dem Überschreiben entsteht eine Sicherung des aktuellen Zustands.** Eine
+  versehentliche Wiederherstellung darf nicht der letzte Stand sein.
+- Nach dem Einspielen **startet die Zentrale neu**. Zustände im Arbeitsspeicher
+  — gemeldete Geräte, Sitzungen, offene Aufträge — gehören zum alten Datenstand
+  und wären danach widersprüchlich.
+- Angemeldete Benutzer werden abgemeldet; das ist Folge des Neustarts und wird
+  vorher angekündigt.
+- Schlägt das Einspielen fehl, bleibt der bisherige Stand unverändert. Ein halb
+  eingespieltes Backup ist schlimmer als keines.
+- Der Vorgang steht im Fachprotokoll — und zwar so, dass er **nach** der
+  Wiederherstellung noch auffindbar ist.
+
+### FA-BAK-040 — Sichtbarkeit · MUSS · V1 · PO
+Der Betreiber sieht ohne Nachfragen, ob er gesichert ist.
+
+*Akzeptanz:*
+- Die Oberfläche zeigt je Plan den letzten Stand mit Zeitpunkt und Größe.
+- Fehlt eine Sicherung länger als ihr Plan vorsieht, erscheint das als
+  Handlungsbedarf — nicht als fehlender Eintrag in einer Liste.
+- Der belegte Speicherplatz ist ersichtlich.
+
+### FA-BAK-050 — Einstellungen als eigener Bereich · SOLL · V1 · PO
+Systemnahe Funktionen liegen zusammen, getrennt vom Tagesgeschäft.
+
+*Akzeptanz:*
+- Ein Menüpunkt „Einstellungen" bündelt Datensicherung und die Rubrik
+  „Systemtest" (Demodatensatz, Leistungsmessung).
+- Demodatensatz und Leistungsmessung sind aus „Instanz" verschwunden; „Instanz"
+  behält Agenten, Speicher und Produktversion.
+- Alles ist nur für Administratoren erreichbar.
+
+---
+
 ## A.11 Standort-Agent (FA-AGT)
 
 > Grundlage: ADR-0002.

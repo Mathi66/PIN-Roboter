@@ -56,9 +56,9 @@ HTTP-Schnittstelle.
 | Java-Dateien (Hauptcode) | 62 |
 | Zeilen Hauptcode | ~18.000 |
 | Testklassen | 26 |
-| Modultests | 264 |
-| Systemnachweise | 329 |
-| Datenbankmigrationen | 21 |
+| Modultests | 269 |
+| Systemnachweise | 349 |
+| Datenbankmigrationen | 22 |
 
 ---
 
@@ -100,6 +100,7 @@ die Stelle, an der die Mandantentrennung greifen muss.
 | `routenBenutzer` | Konten, Rollen, Sperren |
 | `routenBenachrichtigung` | Mailserver, Regeln, Testversand |
 | `routenVerwaltung` | Demodaten, Lasttest, Registry, Agenten-Registrierung |
+| `routenEinstellungen` | Datensicherung und Systemtest |
 | `routenAgentSchnittstelle` | die JSON-Schnittstelle zum Agenten |
 
 > **Die Reihenfolge innerhalb eines Bündels ist bedeutsam.** Javalin nimmt die
@@ -180,6 +181,7 @@ Testkennwörtern.
 | PIN-Ablage im Agenten | AES-256-GCM | ADR-0009 |
 | Zugangsdaten, Mailkennwort | AES-256-GCM | ADR-0008 |
 | Passwörter | Argon2id | `Passwort.java` |
+| Sicherungsdateien | AES-256-GCM, Schlüssel aus Argon2id | ADR-0010, `Sicherungsdatei.java` |
 | TLS zum Konnektor | TLS 1.2, `brainpoolP256r1`, BouncyCastle | ADR-0006 |
 
 > **Eine Falle, die uns getroffen hat:** Javas Kurzform
@@ -352,6 +354,9 @@ Eine unvollständige Liste aus der Projektgeschichte. Jede hat Stunden gekostet:
 | Textersetzung traf zwei Tabellen | `MissingFormatArgumentException`, Startseite HTTP 500 — und der Navigationsnachweis verdeckte es. |
 | Test-PIN `123456` in einer Demo-ICCSN | Falscher Positivbefund im Geheimnisnachweis. Seitdem unverwechselbare Testkennwörter. |
 | `docker compose down -v` vor dem Nachweislauf | Löschte das Administratorkonto samt TOTP-Geheimnis. Behoben durch eigene Ports und FA-BEN-035. |
+| Zwei Orte für dieselbe JAR | `docker compose build` baut **im Container**, `mvn package` **lokal**. Der Prüfstand mountet die lokale. Nach einer Korrektur nur über `compose build` lief im Prüfstand der alte Stand. |
+| Prüfstand ohne Auslieferungsimage | Er startete die JAR in einem nackten JRE — alles, was im Bild steckt, blieb ungeprüft. Aufgefallen an `pg_dump`. Seit 10.08.2026 läuft er gegen das Bild, das ausgeliefert wird. |
+| Port im Hostnamen | `jdbc:postgresql://datenbank:5432/…` zerlegt: Ohne Abtrennen des Ports meldet `pg_dump` „could not translate host name". |
 
 ---
 

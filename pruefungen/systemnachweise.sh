@@ -21,6 +21,19 @@ cd "$(dirname "$0")/.."
 NETZ=pinroboter-test
 SEC="$PWD/docker"
 JRE=eclipse-temurin:21-jre
+
+# Die Zentrale laeuft im AUSLIEFERUNGSIMAGE, nicht in einem nackten JRE.
+#
+# Bis zum 10.08.2026 startete der Pruefstand die JAR in eclipse-temurin:21-jre.
+# Damit pruefte er die Anwendung, aber nicht das Bild, das beim Kunden laeuft —
+# und alles, was im Bild steckt, blieb ungeprueft. Aufgefallen ist es an der
+# Datensicherung: Sie braucht pg_dump, das nur im Auslieferungsbild liegt.
+ZEN_IMAGE=kt-pin-roboter-zentrale
+docker image inspect "$ZEN_IMAGE" >/dev/null 2>&1 || {
+  echo "  Baue das Auslieferungsimage der Zentrale ..."
+  docker compose build zentrale >/dev/null 2>&1 || {
+    echo "  ABBRUCH: Das Image der Zentrale liess sich nicht bauen."; exit 1; }
+}
 JOPT="-Djava.security.properties=/sec/brainpool.security"
 FEHLER=0
 
@@ -135,7 +148,9 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
     -e DB_USER=pinroboter -e DB_PASSWORD=test \
     -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
-    $JRE java -jar /app.jar >/dev/null
+    -e SICHERUNG_ABLAGE=/sicherungen -e SICHERUNG_PLAN=aus \
+    -v pr-sicherungen:/sicherungen \
+    --entrypoint java $ZEN_IMAGE -jar /app.jar >/dev/null
   for _ in $(seq 40); do
     curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break
     curl -sf -o /dev/null $BASIS/ersteinrichtung 2>/dev/null && break
@@ -288,7 +303,7 @@ docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
   -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p $PR_PORT:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
-  $JRE java -jar /app.jar >/dev/null
+  --entrypoint java $ZEN_IMAGE -jar /app.jar >/dev/null
 for _ in $(seq 40); do curl -sf $BASIS/api/notaus >/dev/null 2>&1 && break; sleep 1; done
 NACH=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc "SELECT count(*) FROM fachprotokoll")
 [ "$NACH" -ge "$VOR" ] && [ "$VOR" -gt 0 ] && B=ja || B=nein
@@ -434,7 +449,7 @@ docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e PROTOKOLL_BUDGET=400KB \
   -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
-  $JRE java -jar /app.jar >/dev/null
+  --entrypoint java $ZEN_IMAGE -jar /app.jar >/dev/null
 for _ in $(seq 40); do curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break; sleep 1; done
 anmelden
 
@@ -466,7 +481,7 @@ docker run -d --name pr-zen --network $NETZ --network-alias zentrale \
   -v "$PWD/src/zentrale/target/zentrale.jar":/app.jar -p $PR_PORT:8090 \
   -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
   -e DB_USER=pinroboter -e DB_PASSWORD=test -e GEHEIMNIS_SCHLUESSEL="$SCHLUESSEL" \
-  $JRE java -jar /app.jar >/dev/null
+  --entrypoint java $ZEN_IMAGE -jar /app.jar >/dev/null
 for _ in $(seq 40); do curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && break; sleep 1; done
 anmelden
 
@@ -664,9 +679,11 @@ IST=$(sql "SELECT count(DISTINCT o.art) FROM benutzer b JOIN organisation o ON o
 [ "$IST" = "3" ] && R=ja || R=nein
 ergebnis "Benutzer auf allen drei Berechtigungsebenen ($IST von 3)" "$R"
 
-curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-antwort.html
+# Seit dem 10.08.2026 steht der Demodatensatz unter "Einstellungen", nicht
+# mehr unter "Instanz" (FA-BAK-050).
+curl -s -b "$KEKSE" $BASIS/einstellungen -o /tmp/pr-antwort.html
 VA=$(enthaelt /tmp/pr-antwort.html "Arbeitsplätze")
-ergebnis "Verwaltungsseite zeigt den Bestand einschliesslich Arbeitsplaetzen" "$VA"
+ergebnis "die Einstellungen zeigen den Demobestand einschliesslich Arbeitsplaetzen" "$VA"
 
 # Loeschen darf ausschliesslich Demodaten treffen. Wuerde es echte Daten
 # mitnehmen, waere der Knopf eine Falle statt eines Werkzeugs.
@@ -2647,6 +2664,134 @@ docker rm -f pr-sk pr-skdb >/dev/null 2>&1
 docker volume rm pr-skdaten >/dev/null 2>&1
 rm -f /tmp/pr-sk-kekse
 
+# ---------------------------------------------------------------- FA-BAK
+hinweis "FA-BAK — Datensicherung, Verschlüsselung, Wiederherstellung"
+
+# Sicherung von Hand ausloesen
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/einstellungen/sicherung/jetzt"
+STAND=$(docker exec pr-zen sh -c 'ls /sicherungen/*.dump 2>/dev/null | wc -l' | tr -d ' \r\n')
+[ "${STAND:-0}" -ge 1 ] && BK1=ja || BK1=nein
+ergebnis "eine Sicherung laesst sich von Hand ausloesen ($STAND vorhanden)" "$BK1"
+
+DATEI=$(docker exec pr-zen ls /sicherungen/ 2>/dev/null | grep '\.dump$' | head -1 | tr -d '\r\n')
+GROESSE=$(docker exec pr-zen stat -c%s "/sicherungen/$DATEI" 2>/dev/null | tr -d '\r\n')
+[ "${GROESSE:-0}" -gt 10000 ] && BK2=ja || BK2=nein
+ergebnis "der Auszug hat einen plausiblen Umfang ($GROESSE Bytes)" "$BK2"
+
+# Keine Reste unvollstaendiger Auszuege: Der Auszug entsteht als .teil und
+# wird erst nach Erfolg umbenannt.
+TEIL=$(docker exec pr-zen sh -c 'ls /sicherungen/*.teil 2>/dev/null | wc -l' | tr -d ' \r\n')
+[ "${TEIL:-1}" = "0" ] && BK3=ja || BK3=nein
+ergebnis "keine unvollstaendigen Auszuege in der Ablage ($TEIL)" "$BK3"
+
+# Der Download verlangt einen Schluessel und liefert das eigene Format.
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/$DATEI/herunterladen" \
+  --data-urlencode "schluessel=Blaues-Fahrrad-Sieben-Regal" \
+  --data-urlencode "schluessel2=Blaues-Fahrrad-Sieben-Regal" -o /tmp/pr-sich.prsich
+KOPF=$(head -c 8 /tmp/pr-sich.prsich)
+[ "$KOPF" = "PRSICH01" ] && BK4=ja || BK4=nein
+ergebnis "der Download traegt die eigene Formatkennung ($KOPF)" "$BK4"
+
+# Und er ist wirklich verschluesselt: Ein pg_dump beginnt mit "PGDMP".
+KLARTEXT=$(grep -o "PGDMP" /tmp/pr-sich.prsich 2>/dev/null | wc -l | tr -d ' \r\n')
+[ "${KLARTEXT:-1}" = "0" ] && BK5=ja || BK5=nein
+ergebnis "die heruntergeladene Datei enthaelt keinen Klartext-Auszug" "$BK5"
+
+# Zu kurzer Schluessel wird abgewiesen - mit Begruendung.
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/$DATEI/herunterladen" \
+  --data-urlencode "schluessel=kurz" --data-urlencode "schluessel2=kurz" -o /tmp/pr-kurz.html
+BK6=$(enthaelt /tmp/pr-kurz.html "mindestens 12 Zeichen")
+ergebnis "ein zu kurzer Schluessel wird mit Begruendung abgewiesen" "$BK6"
+
+# Zwei verschiedene Eingaben: Ein Tippfehler faellt sonst erst auf, wenn die
+# Sicherung gebraucht wird.
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/$DATEI/herunterladen" \
+  --data-urlencode "schluessel=Blaues-Fahrrad-Sieben-Regal" \
+  --data-urlencode "schluessel2=Anderes-Fahrrad-Sieben" -o /tmp/pr-ab.html
+BK7=$(enthaelt /tmp/pr-ab.html "stimmen nicht überein")
+ergebnis "eine abweichende Wiederholung wird abgewiesen" "$BK7"
+
+# Der Schluessel darf nirgends auftauchen.
+GEHEIM=$(sql "SELECT count(*) FROM fachprotokoll WHERE text LIKE '%Blaues-Fahrrad%'")
+LOG=$(docker logs pr-zen 2>&1 | grep -o "Blaues-Fahrrad" | wc -l | tr -d ' \r\n')
+if [ "${GEHEIM:-1}" = "0" ] && [ "${LOG:-1}" = "0" ]; then BK8=ja; else BK8=nein; fi
+ergebnis "der Schluessel steht weder im Protokoll noch im Log ($GEHEIM/$LOG)" "$BK8"
+
+# Hochladen mit richtigem Schluessel
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/hochladen" \
+  -F "datei=@/tmp/pr-sich.prsich" -F "schluessel=Blaues-Fahrrad-Sieben-Regal" \
+  -o /dev/null -D /tmp/pr-kopf.txt
+BK9=$(enthaelt /tmp/pr-kopf.txt "eingelesen")
+ergebnis "eine heruntergeladene Datei laesst sich wieder einlesen" "$BK9"
+
+# Falscher Schluessel
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/hochladen" \
+  -F "datei=@/tmp/pr-sich.prsich" -F "schluessel=Voellig-Anderer-Schluessel" \
+  -o /dev/null -D /tmp/pr-kopf.txt
+BK10=$(enthaelt /tmp/pr-kopf.txt "fehler=1")
+ergebnis "ein falscher Schluessel wird abgewiesen" "$BK10"
+
+# EIN gekipptes Byte muss auffallen - das ist der Integritaetsschutz.
+python3 -c "
+d = bytearray(open('/tmp/pr-sich.prsich','rb').read())
+d[len(d)//2] ^= 0xFF
+open('/tmp/pr-manip.prsich','wb').write(d)"
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/hochladen" \
+  -F "datei=@/tmp/pr-manip.prsich" -F "schluessel=Blaues-Fahrrad-Sieben-Regal" \
+  -o /dev/null -D /tmp/pr-kopf.txt
+BK11=$(enthaelt /tmp/pr-kopf.txt "fehler=1")
+ergebnis "ein einziges veraendertes Byte wird erkannt" "$BK11"
+
+# Eine Fremddatei wird als solche benannt, nicht als "Schluessel falsch".
+echo "kein Backup" > /tmp/pr-fremd.prsich
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/hochladen" \
+  -F "datei=@/tmp/pr-fremd.prsich" -F "schluessel=Blaues-Fahrrad-Sieben-Regal" \
+  -o /dev/null -D /tmp/pr-kopf.txt
+BK12=$(enthaelt /tmp/pr-kopf.txt "keine+Sicherung\|zu+klein")
+ergebnis "eine Fremddatei wird als solche benannt" "$BK12"
+
+# Ein Praxisbenutzer darf nichts davon.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASIS/einstellungen/sicherung/jetzt")
+[ "$CODE" = "403" ] || [ "$CODE" = "302" ] && BK13=ja || BK13=nein
+ergebnis "ohne Administratorrechte keine Sicherung (HTTP $CODE)" "$BK13"
+
+# Pfadausbruch ueber den Dateinamen
+CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' \
+       "$BASIS/einstellungen/sicherung/..%2F..%2Fetc%2Fpasswd/herunterladen")
+[ "$CODE" = "404" ] && BK14=ja || BK14=nein
+ergebnis "ein Pfadausbruch ueber den Dateinamen wird abgewehrt (HTTP $CODE)" "$BK14"
+
+# Die Wiederherstellung: Aenderung anlegen, zuruecksetzen, pruefen.
+sql "SELECT count(*) FROM geraetegruppe" > /dev/null
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/gruppen" \
+  --data-urlencode "bezeichnung=Nach der Sicherung" \
+  --data-urlencode "einrichtung=Praxis" --data-urlencode "intervall=99"
+VORHER=$(sql "SELECT count(*) FROM geraetegruppe WHERE bezeichnung='Nach der Sicherung'")
+[ "${VORHER:-0}" = "1" ] && BK15=ja || BK15=nein
+ergebnis "Vorbedingung: eine Aenderung nach der Sicherung" "$BK15"
+
+curl -s -b "$KEKSE" -X POST "$BASIS/einstellungen/sicherung/$DATEI/einspielen" -o /tmp/pr-wh.html
+BK16=$(enthaelt /tmp/pr-wh.html "eingespielt")
+ergebnis "die Wiederherstellung meldet Erfolg und kuendigt den Neustart an" "$BK16"
+
+# Die Zentrale beendet sich absichtlich. Im Pruefstand laeuft sie ohne
+# Neustartregel, also wird sie hier von Hand wieder gestartet — im Betrieb
+# uebernimmt das Docker (restart: unless-stopped, ADR-0010).
+sleep 4
+docker start pr-zen >/dev/null 2>&1
+for _ in $(seq 40); do curl -sf -o /dev/null "$BASIS/anmelden" 2>/dev/null && break; sleep 1; done
+NACHHER=$(sql "SELECT count(*) FROM geraetegruppe WHERE bezeichnung='Nach der Sicherung'")
+[ "${NACHHER:-1}" = "0" ] && BK17=ja || BK17=nein
+ergebnis "nach der Wiederherstellung ist die Aenderung verschwunden" "$BK17"
+
+# Vor dem Ueberschreiben MUSS eine Sicherheitskopie entstanden sein.
+ANZAHL=$(docker exec pr-zen sh -c 'ls /sicherungen/*.dump 2>/dev/null | wc -l' | tr -d ' \r\n')
+[ "${ANZAHL:-0}" -ge 2 ] && BK18=ja || BK18=nein
+ergebnis "vor dem Einspielen entstand eine Sicherheitskopie ($ANZAHL Staende)" "$BK18"
+
+rm -f /tmp/pr-sich.prsich /tmp/pr-manip.prsich /tmp/pr-fremd.prsich /tmp/pr-wh.html
+anmelden
+
 # NFA-USA-030: Barrierefreiheit. Bis zum 07.08.2026 war sie behauptet, nicht
 # belegt. Ausgelagert, weil sie ein eigenes Werkzeug braucht.
 if PR_BASIS="$BASIS" bash pruefungen/barrierefreiheit-pruefen.sh "$KEKSE"; then A11Y=ja; else A11Y=nein; fi
@@ -2659,7 +2804,7 @@ if PR_BASIS="$BASIS" bash pruefungen/oberflaeche-pruefen.sh "$KEKSE"; then UX=ja
 ergebnis "Oberflaeche einheitlich (Kurzhinweise, klickbare Zeilen, Raster)" "$UX"
 
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
-docker volume rm pr-testdaten pr-agentdaten >/dev/null 2>&1
+docker volume rm pr-testdaten pr-agentdaten pr-sicherungen >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"
 hinweis "Ergebnis"
 [ $FEHLER -eq 0 ] && { echo "  Alle Systemnachweise bestanden."; exit 0; }

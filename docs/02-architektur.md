@@ -608,3 +608,31 @@ der Einrichtung. Beides steht in
    getrennte Schemata? Entscheidung nach Messung und Datenschutzbewertung.
 3. **Agentenprotokoll** — konkrete Ausgestaltung; hängt an der Stack-Entscheidung.
 4. **Referenzhardware** für die Leistungsmessungen.
+
+---
+
+## 8.10 Datensicherung
+
+Seit dem 10.08.2026 sichert die Zentrale ihre Datenbank selbsttätig
+([ADR-0010](adr/0010-datensicherung-und-wiederherstellung.md)). Drei Pläne mit
+Rotation, ein eigenes Volume, verschlüsselter Download.
+
+Drei Entscheidungen tragen das:
+
+**`pg_dump` statt eigenem Format.** Bei einer Sicherung ist das Risiko
+unsymmetrisch: Ein Format, das sich im Ernstfall nicht zurückspielen lässt, ist
+schlimmer als gar keine Sicherung — es erzeugt Sicherheit, die nicht da ist.
+Preis: 30 MB im Image und eine Versionskopplung zwischen Client und Server.
+
+**Der Schlüssel wird nicht gespeichert.** Damit verlässt keine lesbare Kopie
+des Datenbestands die Instanz — und ein verlorener Schlüssel macht die Datei
+endgültig unbrauchbar. Das ist gewollt und wird dem Betreiber vorher gesagt.
+
+**Nach der Wiederherstellung startet die Zentrale neu.** Sie hält Zustand im
+Arbeitsspeicher, der zum alten Datenstand gehört; ein Neustart ist der einzige
+Weg ohne Mischzustand. Die Kernfunktion läuft im Agenten weiter und ist nicht
+betroffen — dieselbe Aufteilung, die schon
+[ADR-0002](adr/0002-betriebsmodell-und-systemtopologie.md) begründet.
+
+Damit reiht sich die Sicherung in dasselbe Muster wie 8.8 und 8.9: **Was der
+Betreiber nicht regelmäßig tun kann, darf nicht von ihm abhängen.**

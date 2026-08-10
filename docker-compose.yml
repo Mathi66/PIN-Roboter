@@ -27,6 +27,7 @@ services:
       retries: 12
 
   datenbank:
+    restart: unless-stopped
     image: postgres:17-alpine
     container_name: pinroboter-datenbank
     environment:
@@ -44,6 +45,9 @@ services:
       retries: 12
 
   zentrale:
+    # Nach der Wiederherstellung beendet sich die Zentrale absichtlich
+    # (ADR-0010). Ohne diese Regel bliebe sie danach aus.
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -88,6 +92,13 @@ services:
       START_ADMIN_PASSWORT: ${START_ADMIN_PASSWORT:-}
       START_ADMIN_PASSWORT_DATEI: ${START_ADMIN_PASSWORT_DATEI:-}
       START_ADMIN_TOTP: ${START_ADMIN_TOTP:-}
+
+      # Ablage der Sicherungen (FA-BAK-010, ADR-0010). Eigenes Volume, getrennt
+      # von den Betriebsdaten: Eine Sicherung im selben Volume wie die Datenbank
+      # ist keine — sie verschwindet mit ihr.
+      SICHERUNG_ABLAGE: /sicherungen
+      # Ausgeschaltet mit "aus". Sonst laufen die drei Pläne aus FA-BAK-010.
+      SICHERUNG_PLAN: ${SICHERUNG_PLAN:-an}
     ports:
       - "8090:8090"
     depends_on:
@@ -97,8 +108,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+    volumes:
+      - sicherungen:/sicherungen
 
   agent:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/Dockerfile
@@ -142,6 +156,9 @@ services:
 
 volumes:
   agentdaten:
+  # Sicherungen liegen NICHT bei den Betriebsdaten (ADR-0010): Der häufigste
+  # Verlustfall ist ein versehentliches "docker compose down -v".
+  sicherungen:
   # Betriebsdaten und Protokolldaten getrennt (ADR-0005): unterschiedliches
   # Wachstum, unterschiedliche Aufbewahrung, unterschiedliches Ausfallrisiko.
   betriebsdaten:

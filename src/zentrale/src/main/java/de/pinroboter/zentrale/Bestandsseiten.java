@@ -856,7 +856,9 @@ final class Bestandsseiten {
                     gespeichert und erscheint in keinem Protokoll.
                   </p>
                   <p id="pinMeldung" class="hilfe" role="status" aria-live="polite"></p>
-                  <button class="knopf haupt" type="submit" style="width:auto">%s</button>
+                  <button class="knopf haupt" type="submit"
+                          title="Verschlüsselt die PIN im Browser und übergibt sie dem Agenten; die Zentrale sieht sie nie"
+                          aria-label="PIN hinterlegen">%s</button>
                 </form>""".formatted(t.id(), esc(smcbHandle),
                         hinterlegt ? "Neue PIN" : "PIN", hinterlegt ? "PIN ersetzen" : "PIN hinterlegen"));
 
@@ -1224,8 +1226,10 @@ final class Bestandsseiten {
                 .formatted(
                         seite.hatVorherige()
                                 ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (seite.seitenNummer() - 1)
-                                  + "#terminals\" rel=\"prev\">Vorherige</a>"
-                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\">Vorherige</span>",
+                                  + "#terminals\" rel=\"prev\" title=\"Zeigt die vorherige Seite "
+                                  + "der Geräteliste\">Vorherige</a>"
+                                : "<span class=\"knopf gesperrt\" aria-disabled=\"true\" "
+                                  + "title=\"Sie sind auf der ersten Seite\">Vorherige</span>",
                         seite.seitenNummer(), seite.seitenZahl(), seite.gesamt(),
                         seite.hatNaechste()
                                 ? "<a class=\"knopf\" href=\"" + basis + "seite=" + (seite.seitenNummer() + 1)

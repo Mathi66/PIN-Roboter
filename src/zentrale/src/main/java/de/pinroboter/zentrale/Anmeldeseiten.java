@@ -55,7 +55,7 @@ public final class Anmeldeseiten {
                          autocomplete="one-time-code" pattern="[0-9 ]{6,7}"
                          placeholder="6 Ziffern">
 
-                  <button class="knopf haupt" type="submit">Anmelden</button>
+                  <button class="knopf haupt" type="submit" title="Meldet Sie mit Benutzername, Kennwort und Einmalkennwort an" aria-label="Anmelden">Anmelden</button>
                 </form>
                 """.formatted(meldung(fehler, "warnend")));
     }
@@ -87,7 +87,7 @@ public final class Anmeldeseiten {
                     und sicherer als ein kurzes Passwort mit Sonderzeichen.
                   </p>
 
-                  <button class="knopf haupt" type="submit">Konto anlegen</button>
+                  <button class="knopf haupt" type="submit" title="Legt das erste Administratorkonto dieser Instanz an" aria-label="Konto anlegen">Konto anlegen</button>
                 </form>
                 """.formatted(meldung(fehler, "warnend")));
     }
@@ -126,7 +126,7 @@ public final class Anmeldeseiten {
                   <label for="code">Code aus der App</label>
                   <input id="code" name="code" type="text" required autofocus inputmode="numeric"
                          autocomplete="one-time-code" pattern="[0-9 ]{6,7}" placeholder="6 Ziffern">
-                  <button class="knopf haupt" type="submit">Einrichtung abschließen</button>
+                  <button class="knopf haupt" type="submit" title="Prüft den eingegebenen Code und schließt die Einrichtung des zweiten Faktors ab" aria-label="Einrichtung abschließen">Einrichtung abschließen</button>
                 </form>
                 <p class="feldhinweis">
                   Bewahren Sie den Schlüssel sicher auf. Geht das Telefon verloren, kann ein

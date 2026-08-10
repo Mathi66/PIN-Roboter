@@ -150,6 +150,17 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-AGT-030` Autonomer Weiterbetrieb <br><span style="opacity:.7">MUSS</span> |  | Agent arbeitet ohne Zentrale weiter |
 | **✔** | `FA-AGT-040` Versionsunterschiede <br><span style="opacity:.7">MUSS</span> |  | Protokollversion gemeldet, bewertet, angezeigt; kein Abweisen |
 
+## A.12 Datensicherung (FA-BAK)
+
+| | Anforderung | Hardware | Stand |
+|---|---|---|---|
+| **✔** | `FA-BAK-010` Automatische Sicherung nach Plan <br><span style="opacity:.7">MUSS</span> |  | Drei Pläne (täglich 7, wöchentlich 5, monatlich 12), stündliche Fälligkeitsprüfung, Rotation entfernt den ältesten Stand. Fehlschlag ist ein Alarm. Eigenes Volume. [Umsetzung 28](03-umsetzung/28-datensicherung.md) |
+| **✔** | `FA-BAK-020` Herunterladen und Hochladen <br><span style="opacity:.7">MUSS</span> |  | AES-256-GCM mit Argon2id über die Passphrase, Kopf als AAD. Ein verändertes Byte wird erkannt. Schlüssel wird nirgends gespeichert. [ADR-0010](adr/0010-datensicherung-und-wiederherstellung.md) |
+| **✔** | `FA-BAK-030` Wiederherstellung <br><span style="opacity:.7">MUSS</span> |  | Sicherheitskopie davor, `--single-transaction`, Neustart der Zentrale. Am laufenden System nachgewiesen |
+| **✔** | `FA-BAK-040` Sichtbarkeit <br><span style="opacity:.7">MUSS</span> |  | Je Plan letzter Stand, Zahl und Größe; überfällige Pläne als Handlungsbedarf; belegter Platz |
+| **✔** | `FA-BAK-050` Einstellungen als eigener Bereich <br><span style="opacity:.7">SOLL</span> |  | Menüpunkt „Einstellungen" mit Datensicherung und Rubrik „Systemtest" (Demodatensatz, Leistungsmessung) |
+
+
 ## B.1 Sicherheit (NFA-SIC)
 
 | | Anforderung | | Stand |

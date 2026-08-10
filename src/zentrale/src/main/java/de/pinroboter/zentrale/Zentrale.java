@@ -44,6 +44,7 @@ public class Zentrale {
     private final Benachrichtigung benachrichtigung;
     private final Versionspruefung versionen;
     private final Lasterzeuger last;
+    private final Sicherungsverwaltung sicherung;
     private final Einladungen einladungen;
     private final Anmeldebremse bremse = new Anmeldebremse();
     private final Pseudonymisierung pseudonym;
@@ -78,6 +79,7 @@ public class Zentrale {
         // Nach den Migrationen, vor dem Zuhoeren: Das Konto muss stehen, bevor
         // sich jemand anmelden kann (FA-BEN-035).
         Startkonto.anlegenFallsNoetig(db, z.benutzer, z.protokoll);
+        z.sicherung.taktStarten();
         z.starten(port);
     }
 
@@ -100,6 +102,9 @@ public class Zentrale {
         this.benachrichtigung = new Benachrichtigung(db, tresor);
         this.versionen = new Versionspruefung(db, tresor);
         this.last = new Lasterzeuger(db);
+        this.sicherung = new Sicherungsverwaltung(protokoll, alarme,
+                env("DB_URL", "jdbc:postgresql://datenbank:5432/pinroboter"),
+                env("DB_USER", "pinroboter"), env("DB_PASSWORD", ""));
         this.einladungen = new Einladungen(db, benutzer);
         this.pseudonym = new Pseudonymisierung(db, protokoll,
                 Pseudonymisierung.fristAusUmgebung());
@@ -265,6 +270,7 @@ public class Zentrale {
         routenBenutzer(app);
         routenBenachrichtigung(app);
         routenVerwaltung(app);
+        routenEinstellungen(app);
         routenAgentSchnittstelle(app);
 
 
@@ -1118,16 +1124,17 @@ public class Zentrale {
         return verwaltungsSeite(fehler, neueKonten, Geltungsbereich.alles());
     }
 
-    private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten,
-                                    Geltungsbereich bereich) {
+    /**
+     * Demodatensatz und Leistungsmessung — die Rubrik „Systemtest".
+     *
+     * <p>Bis zum 10.08.2026 standen beide unter „Instanz", zwischen Agenten,
+     * Speicher und Produktversion. Dort geht es um den <b>laufenden Betrieb</b>;
+     * hier um Dinge, die man selten und bewusst tut. Vorgabe des PO
+     * (FA-BAK-050).
+     */
+    private String systemtestTafeln() {
         var b = demodaten.bestand();
-        StringBuilder s = new StringBuilder(seitenkopf("Instanz",
-                "Werkzeuge für den Betreiber dieser Instanz.", null));
-        if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
-
-        s.append(versionstafel());
-        s.append(agententafel(bereich));
-        s.append(fehlendePinsTafel());
+        StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"karte-leib\">");
         if (b.vorhanden()) {
             s.append("""
@@ -1165,7 +1172,8 @@ public class Zentrale {
                     </p>
                     <form method="post" action="/verwaltung/demodaten/anlegen">
                       <button class="knopf haupt" type="submit"
-                              style="width:auto">Demodatensatz anlegen</button>
+                              title="Legt einen vollständigen MVZ-Verbund mit Praxen, Geräten und Konten an"
+                              aria-label="Demodatensatz anlegen">Demodatensatz anlegen</button>
                     </form>""");
         }
         s.append("</div></div>");
@@ -1200,7 +1208,18 @@ public class Zentrale {
                         <form method="post" action="/verwaltung/lasttest/entfernen">
                           <button class="knopf warnend" type="submit" title="Löscht die für den Lasttest angelegten Testgeräte" aria-label="Löscht die für den Lasttest angelegten Testgeräte">Testbestand entfernen</button>
                         </form>"""));
+        return s.toString();
+    }
 
+    private String verwaltungsSeite(String fehler, java.util.List<Demodaten.Konto> neueKonten,
+                                    Geltungsbereich bereich) {
+        StringBuilder s = new StringBuilder(seitenkopf("Instanz",
+                "Werkzeuge für den Betreiber dieser Instanz.", null));
+        if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
+
+        s.append(versionstafel());
+        s.append(agententafel(bereich));
+        s.append(fehlendePinsTafel());
         if (neueKonten != null && !neueKonten.isEmpty()) {
             s.append("""
                     <div class="tafel"><h3>Angelegte Konten
@@ -1659,7 +1678,9 @@ public class Zentrale {
                             a.quittiert()
                                 ? "<span class=\"feldhinweis\">quittiert von "
                                   + esc(a.quittiertVon()) + "</span>"
-                                : "<button class=\"knopf\" hx-post=\"/alarme/" + a.id()
+                                : "<button class=\"knopf\" title=\"Bestätigt, dass Sie sich "
+                                  + "um diesen Alarm gekümmert haben; er bleibt im Protokoll\" "
+                                  + "aria-label=\"Alarm quittieren\" hx-post=\"/alarme/" + a.id()
                                   + "/quittieren\" hx-target=\"body\">Quittieren</button>"));
         }
         return s.append("</tbody></table></div></div>").toString();
@@ -2032,6 +2053,11 @@ public class Zentrale {
                 "<circle cx=\"10\" cy=\"7\" r=\"3\"/><path d=\"M4 16.5a6 6 0 0 1 12 0\"/>", 0));
         s.append(bereichsLink(aktiv, "verwaltung", "/verwaltung", "Instanz",
                 "<circle cx=\"10\" cy=\"10\" r=\"2.6\"/><path d=\"M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4\"/>", 0));
+        // Einstellungen (FA-BAK-050): Datensicherung und Systemtest. Getrennt
+        // von "Instanz", weil dort der laufende Betrieb steht — Agenten,
+        // Speicher, Version. Hier stehen Dinge, die man selten und bewusst tut.
+        s.append(bereichsLink(aktiv, "einstellungen", "/einstellungen", "Einstellungen",
+                "<path d=\"M3 5.5h14M3 10h14M3 14.5h14\"/><circle cx=\"7\" cy=\"5.5\" r=\"1.6\" fill=\"var(--karte)\"/><circle cx=\"13\" cy=\"10\" r=\"1.6\" fill=\"var(--karte)\"/><circle cx=\"7\" cy=\"14.5\" r=\"1.6\" fill=\"var(--karte)\"/>", 0));
         s.append("</nav>");
 
         // Not-Aus und Konto stehen unten: Beides gehoert nicht in den
@@ -2213,7 +2239,8 @@ public class Zentrale {
                 c.html(Anmeldeseiten.rahmen("Einrichtung", Anmeldeseiten.meldung(
                         "Der Code stimmt nicht. Bitte prüfen Sie die Uhrzeit Ihres Telefons "
                         + "und versuchen Sie es mit dem nächsten Code erneut.", "warnend")
-                        + "<a class=\"knopf\" href=\"/anmelden\">Zurück</a>"));
+                        + "<a class=\"knopf\" href=\"/anmelden\" title=\"Zurück zur Anmeldeseite\" "
+                        + "aria-label=\"Zurück zur Anmeldung\">Zurück</a>"));
             }
         });
 
@@ -3364,6 +3391,179 @@ public class Zentrale {
         });
     }
 
+
+    /**
+     * Einstellungen: Datensicherung und Systemtest (FA-BAK-020 bis 050).
+     *
+     * <p>Durchweg nur für Administratoren. Wer eine Sicherung herunterladen
+     * kann, hat den gesamten Datenbestand in der Hand — auch die
+     * verschlüsselten Zugangsdaten.
+     */
+    private void routenEinstellungen(Javalin app) {
+        app.get("/einstellungen", c -> {
+            if (keinAdministrator(c)) return;
+            c.html(seite("einstellungen", Einstellungsseiten.seite(
+                    sicherung.alleStaende(), sicherung, systemtestTafeln(),
+                    c.queryParam("meldung"), c.queryParam("fehler") != null),
+                    angemeldeter(c)));
+        });
+
+        app.post("/einstellungen/sicherung/jetzt", c -> {
+            if (keinAdministrator(c)) return;
+            var plan = Sicherungsverwaltung.Plan.TAEGLICH;
+            try {
+                var s = sicherung.sichern(plan, benutzername(c));
+                c.redirect("/einstellungen?meldung=" + urlKodiert(
+                        "Sicherung erstellt (" + s.groesse() + ")."));
+            } catch (Exception e) {
+                c.redirect("/einstellungen?fehler=1&meldung=" + urlKodiert(
+                        "Die Sicherung ist fehlgeschlagen: " + e.getMessage()));
+            }
+        });
+
+        // Erst die Maske für den Schlüssel, dann der Download. Zwei Schritte,
+        // damit der Hinweis "ein verlorener Schlüssel macht die Datei
+        // unbrauchbar" gelesen wird, bevor jemand tippt.
+        app.get("/einstellungen/sicherung/{datei}/herunterladen", c -> {
+            if (keinAdministrator(c)) return;
+            var st = sicherung.stand(c.pathParam("datei"));
+            if (st.isEmpty()) { c.status(404).result("Diese Sicherung gibt es nicht."); return; }
+            c.html(seite("einstellungen",
+                    Einstellungsseiten.schluesselMaske(st.get(), null), angemeldeter(c)));
+        });
+
+        app.post("/einstellungen/sicherung/{datei}/herunterladen", c -> {
+            if (keinAdministrator(c)) return;
+            var st = sicherung.stand(c.pathParam("datei"));
+            if (st.isEmpty()) { c.status(404).result("Diese Sicherung gibt es nicht."); return; }
+
+            char[] schluessel = Anmeldeseiten.passwortFeld(c, "schluessel");
+            char[] zweit = Anmeldeseiten.passwortFeld(c, "schluessel2");
+            try {
+                if (!java.util.Arrays.equals(schluessel, zweit)) {
+                    c.html(seite("einstellungen", Einstellungsseiten.schluesselMaske(st.get(),
+                            "Die beiden Eingaben stimmen nicht überein."), angemeldeter(c)));
+                    return;
+                }
+                String schwach = de.pinroboter.gemeinsam.Sicherungsdatei.pruefeSchluessel(schluessel);
+                if (schwach != null) {
+                    c.html(seite("einstellungen",
+                            Einstellungsseiten.schluesselMaske(st.get(), schwach), angemeldeter(c)));
+                    return;
+                }
+
+                byte[] klar = java.nio.file.Files.readAllBytes(sicherung.pfad(st.get()));
+                // verschluesseln() überschreibt den Schlüssel selbst.
+                byte[] datei = de.pinroboter.gemeinsam.Sicherungsdatei.verschluesseln(
+                        klar, schluessel, st.get().zeitpunkt());
+                java.util.Arrays.fill(klar, (byte) 0);
+
+                protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_HERUNTERGELADEN, true,
+                        benutzername(c), null,
+                        "Sicherung vom " + st.get().anzeige() + " heruntergeladen",
+                        "Die Datei ist verschlüsselt. Ohne den Schlüssel ist sie unbrauchbar.");
+
+                c.header("Content-Disposition", "attachment; filename=\""
+                        + st.get().dateiname().replace(".dump", "") + ".prsich\"");
+                c.contentType("application/octet-stream");
+                c.result(datei);
+            } finally {
+                java.util.Arrays.fill(schluessel, '\0');
+                java.util.Arrays.fill(zweit, '\0');
+            }
+        });
+
+        app.post("/einstellungen/sicherung/hochladen", c -> {
+            if (keinAdministrator(c)) return;
+            var datei = c.uploadedFile("datei");
+            char[] schluessel = Anmeldeseiten.passwortFeld(c, "schluessel");
+            try {
+                if (datei == null) {
+                    c.redirect("/einstellungen?fehler=1&meldung="
+                            + urlKodiert("Es wurde keine Datei ausgewählt."));
+                    return;
+                }
+                byte[] roh = datei.content().readAllBytes();
+                var inhalt = de.pinroboter.gemeinsam.Sicherungsdatei.entschluesseln(roh, schluessel);
+                var st = sicherung.aufnehmen(inhalt.daten(),
+                        Sicherungsverwaltung.Plan.MONATLICH, benutzername(c));
+                c.redirect("/einstellungen?meldung=" + urlKodiert(
+                        "Sicherung vom " + st.anzeige() + " eingelesen und geprüft. "
+                        + "Sie ist noch nicht eingespielt."));
+            } catch (de.pinroboter.gemeinsam.Sicherungsdatei.KeinSicherungsformat e) {
+                c.redirect("/einstellungen?fehler=1&meldung=" + urlKodiert(e.getMessage()));
+            } catch (de.pinroboter.gemeinsam.Sicherungsdatei.NichtLesbar e) {
+                c.redirect("/einstellungen?fehler=1&meldung=" + urlKodiert(e.getMessage()));
+            } catch (Exception e) {
+                c.redirect("/einstellungen?fehler=1&meldung=" + urlKodiert(
+                        "Die Datei konnte nicht eingelesen werden."));
+            } finally {
+                java.util.Arrays.fill(schluessel, '\0');
+            }
+        });
+
+        app.post("/einstellungen/sicherung/{datei}/einspielen", c -> {
+            if (keinAdministrator(c)) return;
+            var st = sicherung.stand(c.pathParam("datei"));
+            if (st.isEmpty()) { c.status(404).result("Diese Sicherung gibt es nicht."); return; }
+
+            String fehler = sicherung.wiederherstellen(st.get(), benutzername(c));
+            if (fehler != null) {
+                c.redirect("/einstellungen?fehler=1&meldung=" + urlKodiert(fehler));
+                return;
+            }
+            // Erst antworten, dann beenden: Sonst sieht der Betreiber einen
+            // Verbindungsabbruch statt einer Bestätigung. Docker startet die
+            // Zentrale neu (restart: unless-stopped, ADR-0010).
+            c.html(seite("einstellungen", """
+                    <div class="tafel"><div class="karte-leib">
+                      <div class="hinweis gut"><strong>Der Stand wurde eingespielt.</strong>
+                        Die Zentrale startet jetzt neu, damit keine Reste des alten
+                        Datenstandes im Arbeitsspeicher zurückbleiben. Das dauert einige
+                        Sekunden. Danach müssen Sie sich neu anmelden.</div>
+                      <p class="hilfe">Die Überwachung der Kartenterminals läuft im
+                         Standort-Agenten weiter und ist vom Neustart nicht betroffen.</p>
+                      <a class="knopf haupt" href="/"
+                         title="Lädt die Oberfläche neu; nach dem Neustart erscheint die Anmeldung"
+                         aria-label="Zur Anmeldung">Zur Anmeldung</a>
+                    </div></div>""", angemeldeter(c)));
+
+            Thread.ofVirtual().start(() -> {
+                try { Thread.sleep(1500); } catch (InterruptedException ignored) { }
+                System.out.println("[Wiederherstellung] Zentrale beendet sich für den Neustart");
+                System.exit(0);
+            });
+        });
+
+        app.post("/einstellungen/sicherung/{datei}/loeschen", c -> {
+            if (keinAdministrator(c)) return;
+            var st = sicherung.stand(c.pathParam("datei"));
+            if (st.isEmpty()) { c.status(404).result("Diese Sicherung gibt es nicht."); return; }
+            try {
+                java.nio.file.Files.deleteIfExists(sicherung.pfad(st.get()));
+                protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_GELOESCHT, true,
+                        benutzername(c), null,
+                        "Sicherung vom " + st.get().anzeige() + " gelöscht", null);
+                c.redirect("/einstellungen?meldung=" + urlKodiert("Sicherung gelöscht."));
+            } catch (Exception e) {
+                c.redirect("/einstellungen?fehler=1&meldung="
+                        + urlKodiert("Die Sicherung ließ sich nicht löschen."));
+            }
+        });
+    }
+
+    /** Wehrt Nicht-Administratoren ab und meldet es dem Aufrufer. */
+    private boolean keinAdministrator(Context c) {
+        var a = angemeldeter(c);
+        if (a != null && a.rolle() == Benutzerverwaltung.Rolle.ADMINISTRATOR) return false;
+        c.status(403).result("Diese Funktion ist Administratoren vorbehalten.");
+        return true;
+    }
+
+    private String benutzername(Context c) {
+        var a = angemeldeter(c);
+        return a == null ? "unbekannt" : a.benutzername();
+    }
 
     /**
      * Die Schnittstelle zum Standort-Agenten — keine Oberfläche, nur JSON (FA-AGT-010/020).

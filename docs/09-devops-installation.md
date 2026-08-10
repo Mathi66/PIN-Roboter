@@ -311,6 +311,43 @@ Agenten, sofern er die PIN-Ablage schreibt.
 
 ## 9. Sicherung und Wiederherstellung
 
+### 9.0 Die eingebaute Sicherung (seit 10.08.2026)
+
+Die Zentrale sichert selbsttätig — drei Pläne, in einem eigenen Volume
+`sicherungen`. Konfiguration:
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `SICHERUNG_ABLAGE` | `/sicherungen` | Ablageort im Container |
+| `SICHERUNG_PLAN` | `an` | `aus` schaltet die Zeitpläne ab; von Hand geht es weiterhin |
+
+| Plan | behält | Rotation |
+|---|---:|---|
+| täglich | 7 | wöchentlich rollierend |
+| wöchentlich | 5 | monatlich rollierend |
+| monatlich | 12 | jährlich rollierend |
+
+**Zwei Voraussetzungen, ohne die es nicht funktioniert:**
+
+1. **`restart: unless-stopped` für die Zentrale.** Nach einer Wiederherstellung
+   beendet sie sich absichtlich, damit kein Zustand aus dem alten Datenstand im
+   Arbeitsspeicher zurückbleibt ([ADR-0010](adr/0010-datensicherung-und-wiederherstellung.md)).
+   Ohne die Regel bliebe sie danach aus.
+2. **Das Volume `sicherungen`** muss eingehängt sein. Fehlt es, liegen die
+   Sicherungen im Container-Layer und verschwinden beim nächsten Update.
+
+**Die Versionskopplung:** Der `pg_dump` im Image muss mindestens so neu sein wie
+die Datenbank. Aktuell Client 18, Server 17 — geprüft. Wer die Datenbank
+anhebt, muss das Basisimage mit anheben.
+
+**Der Download ist der Teil, der nicht automatisch geht.** Beide Volumes liegen
+auf demselben Wirt; gegen einen Festplattenausfall hilft nur, Sicherungen
+herunterzuladen und woanders aufzubewahren. Der Schlüssel dafür wird nirgends
+gespeichert — **geht er verloren, ist die Datei unbrauchbar.**
+
+### 9.1 Von Hand, wenn die Oberfläche nicht erreichbar ist
+
+
 ### Was gesichert werden muss
 
 | Gegenstand | Wo | Ohne ihn |

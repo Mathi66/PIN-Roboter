@@ -13,12 +13,12 @@ was **bewusst offen bleibt**. Zahlen sind gezählt, nicht geschätzt.
 | Kennzahl | Wert |
 |---|---|
 | Java-Dateien (Hauptcode) | 62 |
-| Zeilen Hauptcode | 17.964 |
+| Zeilen Hauptcode | 19.100 |
 | davon Kommentar | 23 % |
 | Testklassen | 26 |
-| Modultests | 264 |
-| Systemnachweise | 329 |
-| Datenbankmigrationen | 21 |
+| Modultests | 269 |
+| Systemnachweise | 349 |
+| Datenbankmigrationen | 22 |
 | `TODO`/`FIXME` im Code | **0** |
 
 ### Verteilung auf die Module

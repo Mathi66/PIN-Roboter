@@ -92,7 +92,19 @@ public enum Ereignisart {
     AGENT_REGISTRIERT("Standort-Agent registriert", Stufe.SICHERHEIT),
     AGENT_REGISTRIERUNG_ABGELEHNT("Registrierung abgelehnt", Stufe.SICHERHEIT),
     AGENT_GEHEIMNIS_ERZEUGT("Registrierungsgeheimnis erzeugt", Stufe.SICHERHEIT),
-    AGENT_GETRENNT("Standort-Agent getrennt", Stufe.ROUTINE);
+    AGENT_GETRENNT("Standort-Agent getrennt", Stufe.ROUTINE),
+
+    // --- Datensicherung (FA-BAK, ADR-0010) ---
+    // Durchweg Sicherheitsstufe: Diese Einträge überleben die Rotation als
+    // letzte. Ob und wann gesichert wurde, ist die Frage, die nach einem
+    // Datenverlust zuerst gestellt wird.
+    SICHERUNG_ERSTELLT("Sicherung erstellt", Stufe.SICHERHEIT),
+    SICHERUNG_FEHLGESCHLAGEN("Sicherung fehlgeschlagen", Stufe.SICHERHEIT),
+    SICHERUNG_ROTIERT("Alte Sicherung entfernt", Stufe.SICHERHEIT),
+    SICHERUNG_HERUNTERGELADEN("Sicherung heruntergeladen", Stufe.SICHERHEIT),
+    SICHERUNG_HOCHGELADEN("Sicherung hochgeladen", Stufe.SICHERHEIT),
+    SICHERUNG_GELOESCHT("Sicherung gelöscht", Stufe.SICHERHEIT),
+    WIEDERHERSTELLUNG("Wiederherstellung", Stufe.SICHERHEIT);
 
     public enum Stufe { TECHNISCH, ROUTINE, SICHERHEIT }
 
@@ -151,7 +163,8 @@ public enum Ereignisart {
                  GERAET_NICHT_ERREICHBAR, KONNEKTOR_NICHT_ERREICHBAR,
                  PEVIM_NICHT_AKTIV, ANMELDUNG_FEHLGESCHLAGEN, ANMELDUNG_GEBREMST,
                  AGENT_REGISTRIERUNG_ABGELEHNT, AGENT_GETRENNT, ALARM_AUSGELOEST,
-                 AUTOMATIK_ANGEHALTEN, NOT_AUS_AUSGELOEST -> true;
+                 AUTOMATIK_ANGEHALTEN, NOT_AUS_AUSGELOEST,
+                 SICHERUNG_FEHLGESCHLAGEN -> true;
             default -> false;
         };
     }

@@ -205,6 +205,10 @@ ist Routine: protokolliert wird nach Wirkung, nicht nach Vorgang.
 | **Einrichtung aus der Registrierung** | Der Agent kann seine Einrichtung nicht selbst behaupten — sie stammt aus dem Registrierungscode, den ein Administrator erzeugt hat. Ein übernommener Agent kann keine Geräte in eine fremde Einrichtung unterschieben | Systemnachweis meldet ausdrücklich eine fremde Einrichtung; es kommt nichts davon an |
 | **Startkonto verändert nichts** | Ein per Konfiguration vorgegebenes Administratorkonto entsteht nur, wenn es fehlt. Ein vorhandenes Konto wird nie zurückgesetzt — sonst verschaffte sich jemand mit Schreibzugriff auf die Konfiguration per Neustart erneut Zutritt | Systemnachweis: deaktiviertes Konto bleibt nach Neustart deaktiviert |
 | **Keine Geheimnisse aus der Konfiguration im Protokoll** | Passwort und TOTP-Geheimnis des Startkontos erscheinen weder im Betriebs- noch im Fachprotokoll | Systemnachweis durchsucht das Containerlog |
+| **Sicherung verlässt die Instanz nur verschlüsselt** | AES-256-GCM, Schlüssel aus Argon2id über eine Passphrase, eigener Salt je Datei. Der Kopf ist als AAD mitgeschützt | 18 Systemnachweise; ein einzelnes verändertes Byte wird erkannt |
+| **Der Sicherungsschlüssel wird nicht gespeichert** | Weder Datenbank noch Protokoll noch Speicher über den Vorgang hinaus; `char[]` wird überschrieben | Systemnachweis durchsucht Fachprotokoll und Containerlog |
+| **Kein Pfadausbruch über Dateinamen** | Der Name einer Sicherung darf keine Pfadanteile enthalten und muss einem vorhandenen Stand entsprechen | Systemnachweis mit `../../etc/passwd` → HTTP 404 |
+| **Wiederherstellung ganz oder gar nicht** | `pg_restore --single-transaction`; davor entsteht eine Sicherheitskopie | Systemnachweis am laufenden System |
 | **Stille Datenbankfehler beseitigt** | 20 Stellen verschluckten `SQLException`. Ein stiller SQL-Fehler ist unauffindbar und kann eine fehlerhafte Zugriffsbedingung verdecken — so blieb ein defektes `WHERE` monatelang unentdeckt | Codeanalyse 10.08.2026, [10-codeanalyse.md](10-codeanalyse.md) |
 
 ### Offen — ehrlich benannt

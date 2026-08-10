@@ -94,7 +94,7 @@ Links steht die Navigation, getrennt in **Betrieb** (Tagesgeschäft) und
 | **Instanz** | Technisches: Agenten, Speicher, Versionen |
 
 **Not-Aus** steht immer sichtbar am Ende der Navigation. Ein Klick hält die
-Automatik sofort an — siehe Abschnitt 9.
+Automatik sofort an — siehe Abschnitt 10.
 
 ### Bedienung
 
@@ -243,7 +243,55 @@ Administrator. Das ist technisch abgesichert, nicht nur eine Regel.
 
 ---
 
-## 9. Not-Aus
+## 9. Datensicherung
+
+**Einstellungen → Datensicherung.** Das Produkt sichert seine Daten von selbst:
+täglich, wöchentlich und monatlich. Sie müssen dafür nichts tun.
+
+Vier Zahlen zeigen, ob Sie gesichert sind — je Plan, wann zuletzt und wie
+viele Stände vorhanden sind. Fehlt eine Sicherung zu lange, erscheint das als
+Handlungsbedarf.
+
+### Eine Sicherung aus dem Haus schaffen
+
+Die Sicherungen liegen auf demselben Rechner wie die Datenbank. **Gegen einen
+Festplattenausfall hilft das nicht.** Dafür laden Sie eine Sicherung herunter
+und bewahren sie woanders auf — auf einem Stick im Tresor, auf einem
+Netzlaufwerk, was in Ihrer Einrichtung üblich ist.
+
+Beim Herunterladen fragt das System nach einem **Schlüssel**. Damit wird die
+Datei verschlüsselt.
+
+> **Dieser Schlüssel wird nirgends gespeichert.** Nicht bei uns, nicht in der
+> Datenbank, nicht im Protokoll. Wenn Sie ihn verlieren, kann die Datei von
+> niemandem mehr geöffnet werden — auch nicht vom Hersteller. Notieren Sie ihn
+> dort, wo Sie auch Ihre anderen Zugangsdaten aufbewahren.
+
+Eine Folge mehrerer Wörter ist leichter zu merken und sicherer als etwas Kurzes
+mit Sonderzeichen. Mindestens zwölf Zeichen.
+
+### Eine Sicherung zurückspielen
+
+**Einstellungen → Vorhandene Stände → Einspielen.** Das ersetzt den aktuellen
+Datenbestand durch den gewählten Stand.
+
+Was dabei passiert:
+
+1. Vom **aktuellen** Zustand wird zuerst eine Sicherung angelegt — falls Sie
+   sich vertan haben.
+2. Der gewählte Stand wird eingespielt, ganz oder gar nicht.
+3. Die Zentrale **startet neu**. Das dauert einige Sekunden, danach müssen Sie
+   sich neu anmelden.
+
+Der Neustart ist Absicht: Sonst blieben Reste des alten Datenstandes im
+Speicher, und die Anzeige zeigte Dinge, die es nicht mehr gibt.
+
+**Die Überwachung der Kartenterminals läuft währenddessen weiter.** Sie
+passiert im Standort-Agenten und ist vom Neustart der Zentrale nicht betroffen.
+
+---
+
+## 10. Not-Aus
 
 Der Knopf **Not-Aus** hält die Automatik sofort an. Es werden keine Karten mehr
 freigeschaltet, bis Sie ihn wieder aufheben.
@@ -260,7 +308,7 @@ Protokoll.
 
 ---
 
-## 10. Benutzer und Rechte
+## 11. Benutzer und Rechte
 
 | Rolle | Darf |
 |---|---|
@@ -291,7 +339,7 @@ Nachvollziehbarkeit zerstören.
 
 ---
 
-## 11. Fragen, die häufig kommen
+## 12. Fragen, die häufig kommen
 
 **Sieht der PIN-Roboter Patientendaten?**
 Nein. Er spricht mit Kartenterminals über deren Verwaltungsschnittstelle und mit
@@ -323,7 +371,7 @@ schnell.
 
 ---
 
-## 12. Wenn Sie nicht weiterkommen
+## 13. Wenn Sie nicht weiterkommen
 
 1. **Lage** ansehen — steht dort ein Alarm mit Handlungshinweis?
 2. **Protokoll** ansehen — was ist zuletzt passiert?
