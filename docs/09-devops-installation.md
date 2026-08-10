@@ -77,11 +77,26 @@ funktioniert plötzlich nicht mehr" nach einem Serverumzug.
 | Agent | Zentrale | 8090/tcp | HTTP(S), **ausgehend** | ja |
 | Agent | Konnektor/HSK | 443/tcp | TLS 1.2, Brainpool | ja |
 | Agent | Kartenterminal | 443/tcp | TLS, Managementschnittstelle | ja |
+| Agent | Kartenterminal | 443/tcp | **WSS, dauerhaft offen** (Remote SMCB API) | ja |
 | Zentrale | SMTP-Relay | 25/465/587 | SMTP(S) | nur für FA-ALA-020 |
 | Zentrale | GHCR | 443/tcp | HTTPS | nur für FA-UPD-010 |
 
 **Die Zentrale darf nicht unverschlüsselt aus einem unsicheren Netz erreichbar
 sein.** Sie spricht selbst HTTP; TLS gehört vor sie (Abschnitt 7).
+
+> **Wichtig für Firewalls: die Verbindung zum Kartenterminal bleibt offen.**
+> Der Agent hält je Gerät mit hinterlegter PIN eine dauerhafte
+> WebSocket-Verbindung — darüber fragt das Terminal die PIN an
+> ([ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md)). Eine
+> Firewall, die Verbindungen nach einer Leerlaufzeit stillschweigend abräumt,
+> ist hier ein Problem: Das Gerät kann die PIN dann nicht mehr anfragen, und die
+> Freischaltung bleibt aus. Der Agent baut zwar neu auf, aber erst im nächsten
+> Durchgang und frühestens zwei Minuten nach einem Fehlschlag.
+>
+> Zu prüfen: Leerlauf-Zeitüberschreitung für diese Strecke großzügig setzen oder
+> ganz abschalten. Am Verhalten ablesbar: Häufen sich im Protokoll Einträge
+> „Verbindung beendet", ohne dass jemand am Gerät war, räumt etwas dazwischen
+> auf.
 
 ---
 
@@ -211,6 +226,8 @@ Zentrale automatisch und sind idempotent. Ein zweiter Start wiederholt sie nicht
 | `REGISTRIERUNG` | Einmaliger Code aus der Oberfläche (Instanz → Agenten). Gilt 24 h, genau einmal. |
 | `TOKEN_DATEI` | Ablage des dauerhaften Tokens nach der Registrierung |
 | `KONNEKTOR_URL` | Adresse des Konnektors oder HSK |
+| `TERMINAL_URL` | Adresse der Terminal-Managementschnittstelle |
+| `TERMINAL_SMCB_URL` | Nur nötig, wenn die Remote SMCB API auf einem anderen Port liegt als `TERMINAL_URL`. Am echten Gerät ist es derselbe; im Simulator nicht. |
 | `MANDANT_ID`, `CLIENTSYSTEM_ID`, `ARBEITSPLATZ_ID` | Aufrufkontext des Konnektors (`[gemSpec_Kon]`). **Nicht identisch mit unseren Mandanten.** |
 | `PIN_ABLAGE` | Pfad der verschlüsselten PIN-Ablage |
 | `PIN_ABLAGE_SCHLUESSEL` | Schlüssel dafür (ADR-0009) |

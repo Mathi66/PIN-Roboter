@@ -63,12 +63,19 @@ public class SimuliertesTerminal {
     /**
      * Prüfkette nach A_24081: Darf der PIN-Wert über die Managementschnittstelle
      * entgegengenommen werden?
+     *
+     * <p><b>Zwei Wege erfüllen die Bedingung „Rolle SMC-B_Nutzer authentisiert".</b>
+     * Der eine ist die angemeldete Verbindung zur Remote SMCB API — so löst der
+     * Hersteller es tatsächlich, und so arbeitet der Agent seit ADR-0011. Der
+     * andere ist die alte HTTP-Sitzung; sie bleibt als Gegenprobe stehen, damit
+     * ein Nachweis prüfen kann, was ohne Remote SMCB API passiert.
      */
     public boolean pevimGreift(SimulierteKarte karte) {
-        return pevimAktiv
-                && karte != null
-                && "SMC-B".equals(karte.kartentyp())   // A_24080: nur SMC-B
-                && smcbNutzerAngemeldet();
+        if (!pevimAktiv || karte == null || !"SMC-B".equals(karte.kartentyp())) {
+            return false;   // A_24080: nur SMC-B
+        }
+        var sitzung = SmcbApiNachbildung.sitzung(id);
+        return (sitzung != null && sitzung.angemeldet()) || smcbNutzerAngemeldet();
     }
 
     /**
@@ -79,6 +86,21 @@ public class SimuliertesTerminal {
      * @return der gelieferte PIN-Wert, oder {@code null} bei Zeitüberschreitung
      */
     public String pinAnfordern(String kartenhandle, long timeoutSekunden) throws InterruptedException {
+        // Der Weg nach ADR-0011: Besteht eine angemeldete Verbindung zur
+        // Remote SMCB API, FRAGT das Terminal dort — es wartet nicht darauf,
+        // dass jemand einen Wert vorbeibringt.
+        //
+        // Der alte Weg darunter bleibt bestehen, aber nur noch als Gegenprobe:
+        // Er bildet ein Terminal OHNE Remote SMCB API nach. Der Agent geht ihn
+        // seit dem Umbau nicht mehr — verhält er sich doch so, fällt es auf.
+        var sitzung = SmcbApiNachbildung.sitzung(id);
+        if (sitzung != null && sitzung.angemeldet()) {
+            int slot = kartenhandle == null ? 1 : slotVon(kartenhandle);
+            char[] pin = SmcbApiNachbildung.pinAnfordern(id, "Slot" + (slot < 0 ? 1 : slot),
+                    "3b8f", 6, 8, (int) timeoutSekunden);
+            return pin == null ? null : new String(pin);
+        }
+
         SynchronousQueue<String> q = new SynchronousQueue<>();
         offeneAufforderung.warteschlange = q;
         offeneAufforderung.kartenhandle = kartenhandle;
@@ -105,6 +127,22 @@ public class SimuliertesTerminal {
     public Collection<SimulierteKarte> alleKarten() { return karten.values(); }
     public Optional<SimulierteKarte> karte(String handle) {
         return karten.values().stream().filter(k -> k.kartenhandle().equals(handle)).findFirst();
+    }
+
+    /**
+     * Der Steckplatz einer Karte.
+     *
+     * <p>Gebraucht, seit das Terminal die PIN selbst anfragt (ADR-0011): Die
+     * Anfrage nennt einen Slot, der Konnektor kennt Kartenhandles. Ohne diese
+     * Zuordnung wüsste der Agent bei zwei Karten im Gerät nicht, welche PIN
+     * gemeint ist — und eine falsch zugeordnete PIN kostet einen Fehlversuch.
+     *
+     * @return die Slotnummer, oder -1 wenn die Karte nicht in diesem Gerät steckt
+     */
+    public int slotVon(String kartenhandle) {
+        return karten.entrySet().stream()
+                .filter(e -> e.getValue().kartenhandle().equals(kartenhandle))
+                .mapToInt(Map.Entry::getKey).findFirst().orElse(-1);
     }
 
     /** Firmware-Update: Neustart entzieht der SMC-B den verifizierten Zustand. */

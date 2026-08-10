@@ -60,6 +60,28 @@ public class TerminalVerwaltung implements HttpHandler {
                     String sitzung = t.anmeldenAlsSmcbNutzer();
                     antworte(ex, 200, "{\"sitzung\":\"" + sitzung + "\"}");
                 }
+                // SmcbAuthentication (ADR-0011, Spezifikation 4.38): liefert
+                // einen ephemeren Schluessel fuer die Remote SMCB API.
+                //
+                // ABWEICHUNG: Beim echten Geraet ist das eine WebSocket-
+                // Nachricht auf "cobra". Hier ein HTTP-Aufruf, weil der
+                // Simulator fuer die Verwaltungsschnittstelle keinen
+                // WebSocket betreibt. Der Agent kapselt das, damit der
+                // Unterschied nicht in die Fachlogik durchschlaegt.
+                case "smcb-schluessel" -> {
+                    if (!t.pevimUnterstuetzt() || !t.pevimAktiv()) {
+                        antworte(ex, 409, "{\"fehler\":\"Remote SMCB nicht eingeschaltet\"}");
+                        return;
+                    }
+                    String k = SmcbApiNachbildung.schluesselAusstellen(terminalId);
+                    if (k == null) {
+                        // "It is not allowed to regenerate a key if there is an
+                        // active connection to the Remote SMCB API."
+                        antworte(ex, 409, "{\"fehler\":\"Remote SMCB already connected\"}");
+                        return;
+                    }
+                    antworte(ex, 200, "{\"key\":\"" + k + "\"}");
+                }
                 case "abmelden" -> {
                     t.abmelden(kopf(ex, "X-Sitzung"));
                     antworte(ex, 200, "{\"ok\":true}");

@@ -22,6 +22,15 @@ public enum Ereignisart {
     PIN_GEAENDERT("PIN geändert", Stufe.SICHERHEIT),
     HANDLUNGSBEDARF("Handlungsbedarf erkannt", Stufe.ROUTINE),
 
+    // Seit ADR-0011 fragt das Kartenterminal die PIN an, statt sie
+    // entgegenzunehmen. Die Übergabe ist damit eine eigene Handlung und nicht
+    // dasselbe wie eine erfolgreiche Verifikation: Sie kann gelingen, während
+    // die Karte die PIN anschließend ablehnt. Sicherheitsstufe, weil hier ein
+    // Geheimnis das Haus verlässt — und weil die Anfrage nicht von uns
+    // ausgelöst worden sein muss.
+    PIN_UEBERGEBEN("PIN an das Kartenterminal übergeben", Stufe.SICHERHEIT),
+    PIN_UEBERGABE_VERWEIGERT("PIN-Anfrage des Kartenterminals abgelehnt", Stufe.SICHERHEIT),
+
     // --- Geräte und Verbindungen ---
     GERAET_ERKANNT("Gerät erkannt", Stufe.ROUTINE),
     GERAET_ZUGEORDNET("Gerät einer Gruppe zugeordnet", Stufe.ROUTINE),

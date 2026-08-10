@@ -313,17 +313,25 @@ sequenceDiagram
     participant KT as Kartenterminal
     participant C as SMC-B
 
+    Note over AG,KT: Die Verbindung steht schon — dauerhaft,<br/>unabhängig von jeder einzelnen Verifikation.
+
     AG->>KON: GetPinStatus
     KON->>KT: weiterreichen
     KT-->>AG: VERIFIABLE, LeftTries = 3
 
     Note over AG: Sicherungslogik prüft ZUERST:<br/>LeftTries > 1? Not-Aus aus?<br/>Kein KSR-Update aktiv?
 
-    AG->>KT: Sitzung aufbauen (TLS 1.2, Brainpool)
-    AG->>KT: PIN über Managementschnittstelle (PEviM)
+    AG->>KON: VerifyPin (Kartenhandle)
+    KON->>KT: SICCT PERFORM VERIFICATION
+    KT->>AG: InputPinRequest (Slot) — das Terminal FRAGT
+
+    Note over AG: Sicherungslogik prüft ERNEUT.<br/>Diese Anfrage muss nicht von uns<br/>ausgelöst worden sein.
+
+    AG->>KT: InputPinResponse (Code Pin)
     KT->>C: PIN prüfen
     C-->>KT: OK
-    KT-->>AG: verifiziert
+    KT-->>KON: verifiziert
+    KON-->>AG: PinResult OK
     AG->>KON: GetPinStatus (Gegenprobe)
     KON-->>AG: VERIFIED
 
@@ -331,14 +339,23 @@ sequenceDiagram
 ```
 
 
-**Zwei Dinge sind an diesem Ablauf nicht verhandelbar:**
+**Drei Dinge sind an diesem Ablauf nicht verhandelbar:**
 
-1. Die **Sitzung am Terminal muss vor dem `VerifyPin` bestehen.** `A_24081`
+1. Die **Verbindung zum Terminal muss vor dem `VerifyPin` stehen.** `A_24081`
    verlangt, dass die Rolle `SMC-B_Nutzer` beim Eintreffen des SICCT-Kommandos
-   bereits authentisiert ist. Die Reihenfolge ist Teil der Spezifikation, nicht
-   der Bequemlichkeit.
-2. Die **abschließende Statusabfrage ist Pflicht.** Ein `PinResult = OK` ist die
+   bereits authentisiert ist; die angemeldete Verbindung zur Remote SMCB API ist
+   genau das. Die Reihenfolge ist Teil der Spezifikation, nicht der
+   Bequemlichkeit.
+2. Die **Sicherungslogik greift beim Beantworten**, nicht nur beim Auslösen.
+   Solange die Verbindung steht, kann jede Stelle am Konnektor eine PIN-Anfrage
+   auslösen — die zweite Prüfung ist dann die einzige Bremse.
+3. Die **abschließende Statusabfrage ist Pflicht.** Ein `PinResult = OK` ist die
    Antwort auf einen Aufruf; erst `VERIFIED` ist der bestätigte Zustand.
+
+> Umgesetzt am 10.08.2026 nach
+> [ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md).
+> Einzelheiten:
+> [03-umsetzung/29](03-umsetzung/29-remote-smcb-api.md).
 
 ### 6.2 Verhalten bei `PinResult = REJECTED`
 
@@ -410,6 +427,7 @@ SICCT.**
 | Agent → Zentrale | HTTP(S), ausgehend | wir |
 | Agent → Konnektor | SOAP über TLS 1.2 (`brainpoolP256r1`) | wir |
 | Agent → Kartenterminal | HTTPS, Managementschnittstelle | wir |
+| Agent ↔ Kartenterminal | **WebSocket, Unterprotokoll `cobra-smcb`** (Remote SMCB API) | wir |
 | **Konnektor → Kartenterminal** | **SICCT** | **nicht wir** |
 | Kartenterminal → SMC-B | Kartenkommandos (`VERIFY`, `CHANGE REFERENCE DATA`) | nicht wir |
 
@@ -427,8 +445,10 @@ SICCT.**
 > eine dauerhaft offene Verbindung. Belegt aus den Spezifikationen von CHERRY
 > und Worldline —
 > [ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md).
-> Der Umbau steht aus; die heutige Umsetzung entspricht dem alten, falschen
-> Modell.
+> **Umgebaut am selben Tag**; die Umsetzung folgt seither dem richtigen Modell,
+> nachgewiesen gegen eine spezifikationskonforme Nachbildung
+> ([03-umsetzung/29](03-umsetzung/29-remote-smcb-api.md)). Was weiterhin fehlt,
+> ist die Messung an echter Hardware.
 
 Trifft das Kommando ein, ohne dass die Sitzung steht, verlangt das Terminal die
 Eingabe am Gerät (`A_24081`) — und der Vorgang ist verloren. Deshalb ist die

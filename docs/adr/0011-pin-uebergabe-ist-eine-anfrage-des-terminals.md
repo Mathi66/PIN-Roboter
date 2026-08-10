@@ -190,3 +190,48 @@ sondern der nächste Arbeitsschritt.
 > echter Hardware zu führen. Der Umsetzungsstand ist entsprechend zu
 > korrigieren, und die Freigabemitteilung zu 0.2.0 sagt es bereits: nicht für den
 > Produktivbetrieb an echten Kartenterminals.
+
+---
+
+## Nachtrag vom 10.08.2026 — der Umbau ist erfolgt
+
+Der PO hat den Umbau **vor** der Messung am Testaufbau beauftragt. Die
+Entscheidung dieser ADR ändert sich dadurch nicht; die Reihenfolge oben schon.
+Das ist hier festgehalten, damit später niemand rätselt, warum Schritt 3 vor
+Schritt 2 kam.
+
+**Was gebaut wurde**
+
+| Baustein | Datei | Inhalt |
+|---|---|---|
+| Protokollkern | `gemeinsam/SmcbProtokoll.java` | Nachrichtenschema, CMAC-AES256, Regeln aus 7.7.8 |
+| Verbindung | `agent/SmcbVerbindung.java` | Zustandsmodell, Challenge-Response, Beantwortung von `InputPinRequest` |
+| Verwaltung | `agent/SmcbVerbindungen.java` | eine Verbindung je Gerät, Auf- und Abbau nach Sollzustand, Sperrfrist |
+| Ablauf | `agent/Verifikationsablauf.java` | von „PIN senden" auf „Konnektor anstoßen und auswerten" |
+| Gegenstelle | `simulator/SmcbApiNachbildung.java` | eigener RFC-6455-WebSocket, weil der HTTP-Server des JDK nicht umschalten kann |
+
+**Was der Umbau zusätzlich zutage gefördert hat**
+
+Zwei Punkte, die im Modell „der Agent schiebt" gar nicht auftreten konnten:
+
+1. **Slot statt Kartenhandle.** Das Terminal fragt unter Angabe eines
+   Steckplatzes, der Konnektor spricht von Kartenhandles. Die Zuordnung kommt
+   jetzt aus `SlotId` im `CardInfoType` und wird in jedem Durchgang neu
+   aufgebaut. Ein unbekannter Slot führt zur **Ablehnung mit Begründung**, nicht
+   zu einem Versuch mit irgendeiner PIN.
+2. **Fremd ausgelöste Anfragen.** Solange die Verbindung steht, kann jede Stelle
+   am Konnektor eine PIN-Anfrage auslösen — nicht nur wir. Die Sicherungslogik
+   ist damit von einer Vorprüfung zur **einzigen Bremse** geworden und läuft
+   deshalb bei jeder Anfrage erneut, gegen einen Kenntnisstand, der höchstens
+   90 Sekunden alt sein darf.
+
+**Nachgewiesen** — `pruefungen/smcb-durchstich.sh`, neun Prüfpunkte, alle grün.
+Entscheidend ist dabei nicht, dass die Karte freigeschaltet wird, sondern **auf
+welchem Weg**: Der Simulator zählt die über `cobra-smcb` gelieferten PINs mit.
+Ein Nachweis, der nur das Ergebnis prüft, war schon einmal grün, während das
+Modell falsch war.
+
+**Was weiterhin offen bleibt** — unverändert die Liste oben, insbesondere:
+Zeitverhalten und Verbindungsdauer an echter Hardware, die Worldline-Variante,
+`FA-PIN-060`. Der Umbau macht die Messung am Testaufbau nicht überflüssig, er
+gibt ihr einen konkreten Gegenstand.

@@ -71,3 +71,15 @@ Alle Nachweise laufen gegen den selbstgebauten Simulator. Die in
 **Kalibrierung an echter Hardware** steht aus. Sie wiegt schwerer als jeder
 andere offene Punkt: Sie entscheidet, ob das Produkt in der Realität
 funktioniert.
+
+Wie schwer, hat sich am 10.08.2026 gezeigt: Der Simulator bildete dieselbe
+falsche Annahme über die PIN-Übergabe ab wie der Agent. Alle Nachweise waren
+grün und sagten über echte Geräte nichts. Aufgefallen ist es durch eine
+Rückfrage des PO, nicht durch einen Test.
+
+Die Konsequenz steckt seither in der Bauart der Nachweise: Wo ein Nachweis das
+Ergebnis prüfen kann oder den **Weg**, prüft er den Weg
+([ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md),
+[Umsetzung 29](03-umsetzung/29-remote-smcb-api.md)). Und wo eine
+Fremdspezifikation existiert, ist sie die Vorlage für den Simulator — nicht der
+eigene Code.

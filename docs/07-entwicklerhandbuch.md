@@ -53,11 +53,11 @@ HTTP-Schnittstelle.
 
 | | |
 |---|---|
-| Java-Dateien (Hauptcode) | 62 |
-| Zeilen Hauptcode | ~18.000 |
-| Testklassen | 26 |
-| Modultests | 269 |
-| Systemnachweise | 349 |
+| Java-Dateien (Hauptcode) | 69 |
+| Zeilen Hauptcode | ~21.000 |
+| Testklassen | 28 |
+| Modultests | 294 |
+| Systemnachweise | 355 |
 | Datenbankmigrationen | 22 |
 
 ---
@@ -321,6 +321,30 @@ Der Simulator kennt bewusst auch **Fehlerzustände**: gesperrte Karte,
 abgelaufenes Registry-Token, laufendes KSR-Update. Ein Simulator, der nur den
 guten Fall kann, prüft die Hälfte.
 
+### Die Remote SMCB API (Port 8445)
+
+Ein eigener Rohsocket-Zweig mit selbst gebautem RFC-6455-WebSocket. Grund:
+`com.sun.net.httpserver` kann nicht auf WebSocket umschalten, und eine
+zusätzliche Abhängigkeit wäre nach CLAUDE.md begründungspflichtig — für einen
+Handschlag und maskierte Textrahmen lohnt sie nicht.
+
+Steuerung für Nachweise:
+
+```
+POST /steuerung/{terminalId}/smcb-uebergaben
+  → {"uebergaben": 3, "angemeldet": true}
+```
+
+**Der wichtigste Zähler des Projekts.** Er sagt, ob eine PIN über `cobra-smcb`
+kam oder über den alten Weg. Ohne ihn prüft ein Nachweis nur, *dass* die Karte
+freigeschaltet wird — und genau so war ein Nachweis monatelang grün, während das
+Übergabemodell falsch war (ADR-0011).
+
+> **Die Lehre, allgemein:** Ein Simulator, den man nach den eigenen Annahmen
+> baut, bestätigt die eigenen Annahmen. Wo eine Fremdspezifikation existiert, ist
+> sie die Vorlage — nicht der eigene Code. Und wo ein Nachweis ein Ergebnis
+> prüfen kann oder einen Weg, ist der Weg die härtere Aussage.
+
 ---
 
 ## 10. Konventionen
@@ -357,6 +381,7 @@ Eine unvollständige Liste aus der Projektgeschichte. Jede hat Stunden gekostet:
 | Zwei Orte für dieselbe JAR | `docker compose build` baut **im Container**, `mvn package` **lokal**. Der Prüfstand mountet die lokale. Nach einer Korrektur nur über `compose build` lief im Prüfstand der alte Stand. |
 | Prüfstand ohne Auslieferungsimage | Er startete die JAR in einem nackten JRE — alles, was im Bild steckt, blieb ungeprüft. Aufgefallen an `pg_dump`. Seit 10.08.2026 läuft er gegen das Bild, das ausgeliefert wird. |
 | Port im Hostnamen | `jdbc:postgresql://datenbank:5432/…` zerlegt: Ohne Abtrennen des Ports meldet `pg_dump` „could not translate host name". |
+| Simulator nach eigener Annahme gebaut | Er bildete dasselbe falsche PIN-Übergabemodell nach wie der Agent. Alle Nachweise grün, Aussage über echte Geräte: keine. Gefunden erst durch eine Rückfrage des PO. Seitdem: Fremdspezifikation als Vorlage, und Nachweise prüfen den **Weg**, nicht nur das Ergebnis. |
 
 ---
 

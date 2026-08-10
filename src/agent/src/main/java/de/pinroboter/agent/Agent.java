@@ -57,12 +57,58 @@ public class Agent {
     /** Ablage der verschlüsselten PINs. Der Schlüssel dafür kommt aus der Umgebung. */
     private volatile Pinablage ablage;
 
+    /**
+     * Die stehenden Verbindungen zu den Kartenterminals (ADR-0011).
+     *
+     * <p>Seit dem Umbau der wichtigste Zustand des Agenten: Ohne angemeldete
+     * Verbindung kann keine PIN übergeben werden, egal wie oft der Konnektor
+     * gefragt wird.
+     */
+    private final SmcbVerbindungen smcb;
+
+    /**
+     * Slot → Kartenhandle, je Terminal.
+     *
+     * <p>Die Übersetzung zwischen zwei Welten: Der Konnektor spricht von
+     * Kartenhandles, das Terminal von Steckplätzen. Gefüllt aus {@code GetCards}
+     * in jedem Durchgang.
+     */
+    private final Map<String, String> slotZuKarte = new ConcurrentHashMap<>();
+
+    /** Letzter bekannter PIN-Status je Kartenhandle, mit Zeitstempel. */
+    private record Statusnotiz(PinStatus status, int verbleibendeVersuche,
+                               boolean aktualisierend, long zeitpunkt) {}
+    private final Map<String, Statusnotiz> letzterStatus = new ConcurrentHashMap<>();
+
+    /**
+     * Wie alt eine Statusnotiz höchstens sein darf, um eine PIN-Anfrage zu
+     * beantworten — mindestens das, sonst das Anderthalbfache des Prüfintervalls.
+     *
+     * <p>Hintergrund: Solange die Verbindung steht, kann <b>jede</b> Stelle am
+     * Konnektor eine PIN-Anfrage auslösen. Der Fehlversuchszähler aus dem
+     * letzten Durchgang ist dann das Beste, was wir haben — ihn im Antwortpfad
+     * frisch zu holen scheidet aus, weil dieser Aufruf dieselbe Karte betrifft,
+     * die der Konnektor gerade bearbeitet.
+     *
+     * <p>Der Schutz bleibt trotzdem wirksam: Ein unbemerkter Fremdversuch senkt
+     * den Zähler, und schon der erste erkannte Rückgang hält die Automatik an
+     * (Sicherungspruefung). Zusammen mit der Untergrenze „mehr als ein Versuch
+     * übrig" braucht es also mehrere unbemerkte Fremdversuche <i>und</i> unseren,
+     * bevor eine Sperrung überhaupt in Reichweite käme.
+     */
+    private static final long STATUS_HOECHSTALTER_MS = 90_000;
+
     public static void main(String[] args) throws Exception {
         BrainpoolFreischaltung.zustandAusgeben("vor anwenden");
         BrainpoolFreischaltung.anwenden();   // muss als Erstes laufen
         BrainpoolFreischaltung.zustandAusgeben("nach anwenden");
         String konnektorUrl = env("KONNEKTOR_URL", "https://simulator:8443/");
         String terminalUrl  = env("TERMINAL_URL",  "https://simulator:8444/");
+        // Die Remote SMCB API liegt am echten Gerät auf demselben Port wie die
+        // übrige Verwaltungsschnittstelle — deshalb ist das die Vorgabe. Der
+        // Simulator braucht einen eigenen Port, weil der eingebaute HTTP-Server
+        // des JDK keine Protokollumschaltung auf WebSocket beherrscht.
+        String smcbUrl      = env("TERMINAL_SMCB_URL", terminalUrl);
         String zentraleUrl  = env("ZENTRALE_URL",  "http://zentrale:8090/");
         String caUrl        = env("CA_URL",        "http://simulator:8480/ca.pem");
         int intervall       = Integer.parseInt(env("PRUEFINTERVALL_SEKUNDEN", "10"));
@@ -82,7 +128,7 @@ public class Agent {
                 env("ARBEITSPLATZ_ID", "Arbeitsplatz1"));
 
         Agent agent = new Agent(new KonnektorClient(http, URI.create(konnektorUrl), kontext),
-                http, URI.create(terminalUrl), URI.create(zentraleUrl));
+                http, URI.create(terminalUrl), URI.create(zentraleUrl), URI.create(smcbUrl));
 
         // Ohne diese Angabe laeuft alles weiter, nur ohne Unterstuetzung beim
         // Einrichten (FA-GER-035, NFA-QS-035). Vorbelegt auf den Konnektor
@@ -145,9 +191,101 @@ public class Agent {
     }
 
     Agent(KonnektorClient konnektor, HttpClient http, URI terminalBasis, URI zentrale) {
+        this(konnektor, http, terminalBasis, zentrale, terminalBasis);
+    }
+
+    Agent(KonnektorClient konnektor, HttpClient http, URI terminalBasis, URI zentrale,
+          URI smcbBasis) {
         this.konnektor = konnektor; this.http = http;
         this.terminalBasis = terminalBasis; this.zentrale = zentrale;
-        this.ablauf = new Verifikationsablauf(konnektor, http, terminalBasis, gepuffert::add);
+        this.smcb = new SmcbVerbindungen(http, terminalBasis, smcbBasis, new Kartenkenntnis(),
+                new Verbindungsprotokoll());
+        this.ablauf = new Verifikationsablauf(konnektor, http, terminalBasis, gepuffert::add,
+                smcb::angemeldet);
+    }
+
+    /**
+     * Was der Agent über eine Karte weiß, wenn das Terminal nach ihrem Slot
+     * fragt (ADR-0011).
+     *
+     * <p>Diese Klasse ist die Stelle, an der eine <b>fremd ausgelöste</b>
+     * PIN-Anfrage auf unsere Schutzlogik trifft. Sie ist deshalb bewusst
+     * misstrauisch: Was sie nicht sicher weiß, lehnt sie ab.
+     */
+    private class Kartenkenntnis implements SmcbVerbindungen.Kartenkenntnis {
+
+        @Override public String kartenhandle(String terminalId, String slot) {
+            return slotZuKarte.get(terminalId + "/" + slot);
+        }
+
+        @Override public char[] pin(String kartenhandle) {
+            char[] p = pins.get(kartenhandle);
+            return p == null ? null : p.clone();   // die Verbindung überschreibt ihre Kopie
+        }
+
+        @Override public String hindernis(String terminalId, String kartenhandle) {
+            Statusnotiz n = letzterStatus.get(kartenhandle);
+            if (n == null) {
+                return "Der Zustand dieser Karte ist noch nicht bekannt.";
+            }
+            if (System.currentTimeMillis() - n.zeitpunkt() > STATUS_HOECHSTALTER_MS) {
+                return "Der bekannte Zustand dieser Karte ist zu alt, um eine PIN zu verantworten.";
+            }
+            var urteil = Sicherungspruefung.pruefe(
+                    n.status(), n.verbleibendeVersuche(),
+                    letzteVersuche.getOrDefault(kartenhandle, -1),
+                    angehalten.contains(kartenhandle), notAus,
+                    pins.containsKey(kartenhandle), n.aktualisierend());
+            return urteil instanceof Sicherungspruefung.Urteil.Abgelehnt a ? a.grund() : null;
+        }
+    }
+
+    /**
+     * Verbindungsereignisse ins Fachprotokoll — ohne PIN, ohne Slotgeheimnisse.
+     *
+     * <p><b>Jede Meldung bekommt eine eigene Vorgangsnummer.</b> Sie muss
+     * eindeutig sein: Die Protokollansicht blättert danach, und eine Nummer, die
+     * mehrfach vorkommt, steht auf zwei Seiten gleichzeitig. Die Terminalkennung
+     * gehört in den Text, nicht in dieses Feld — ein Fehler, den ein
+     * Systemnachweis am 10.08.2026 aufgedeckt hat.
+     */
+    private class Verbindungsprotokoll implements SmcbVerbindung.Beobachter {
+
+        private String neuerVorgang() {
+            return UUID.randomUUID().toString().substring(0, 8);
+        }
+
+        @Override public void angemeldet(String terminalId) {
+            // Bewusst nur technisch: Eine stehende Verbindung ist ein Zustand,
+            // keine Handlung. Bei 5.000 Geräten und gelegentlichen Neuaufbauten
+            // wäre das Fachprotokoll sonst voll davon (Protokoll-Grundregel).
+            System.out.printf("  [%s] Verbindung zur Remote SMCB API steht%n", terminalId);
+        }
+
+        @Override public void pinGeliefert(String terminalId, String slot) {
+            // Eigener Eintrag, obwohl der Verifikationsablauf den Erfolg
+            // ebenfalls meldet: Das sind zwei verschiedene Dinge. Hier hat ein
+            // Geheimnis das Haus verlassen; dort ist ein Zustand bestätigt. Die
+            // Übergabe kann gelingen, während die Karte die PIN ablehnt — und
+            // sie kann von jemand anderem ausgelöst worden sein.
+            gepuffert.add(new Verifikationsablauf.Meldung(neuerVorgang(),
+                    Ereignisart.PIN_UEBERGEBEN,
+                    "PIN auf Anfrage von " + terminalId + " übergeben (" + slot + ")", true));
+        }
+
+        @Override public void pinVerweigert(String terminalId, String slot, String grund) {
+            // Wichtiger als der Erfolgsfall: Hier hat die Schutzlogik gegriffen.
+            // Ohne diesen Eintrag wäre nicht nachvollziehbar, warum eine
+            // Freischaltung ausblieb (NFA-USA-030).
+            gepuffert.add(new Verifikationsablauf.Meldung(neuerVorgang(),
+                    Ereignisart.PIN_UEBERGABE_VERWEIGERT,
+                    "PIN-Anfrage von " + terminalId + " abgelehnt (" + slot + "): " + grund, false));
+            System.out.printf("  [%s] PIN-Anfrage abgelehnt: %s%n", terminalId, grund);
+        }
+
+        @Override public void getrennt(String terminalId, String grund) {
+            System.out.printf("  [%s] Verbindung beendet: %s%n", terminalId, grund);
+        }
     }
 
     public void pinHinterlegen(String kartenhandle, char[] pin) { pins.put(kartenhandle, pin); }
@@ -188,6 +326,7 @@ public class Agent {
 
                 bestandMelden(terminals, karten);
                 pinAuftraegeAbarbeiten();
+                verbindungenPflegen(terminals, karten);
 
                 long jetzt = System.currentTimeMillis();
                 for (var t : terminals) {
@@ -209,6 +348,41 @@ public class Agent {
             }
             Thread.sleep(grundtaktSekunden * 1000L);
         }
+    }
+
+    /**
+     * Hält die Verbindungen zu den Kartenterminals im Sollzustand (ADR-0011).
+     *
+     * <p>Eine Verbindung soll stehen, wenn <b>alle vier</b> Bedingungen gelten:
+     * Das Gerät ist erreichbar, PEviM ist aktiv, es steckt eine SMC-B darin, und
+     * für diese Karte ist eine PIN hinterlegt. Fehlt eine davon, wird getrennt.
+     *
+     * <p>Das Trennen ist kein Aufräumen, sondern Pflicht: Die Spezifikation
+     * lässt <b>genau eine</b> Verbindung je Gerät zu. Eine, die wir nutzlos
+     * offen halten, sperrt den Platz für jeden anderen — etwa für einen zweiten
+     * Agenten in einem Ausfallszenario.
+     */
+    private void verbindungenPflegen(List<KonnektorClient.Terminal> terminals,
+                                     List<KonnektorClient.Karte> karten) {
+        // Zuordnung Slot → Kartenhandle neu aufbauen. Vollständig ersetzen statt
+        // ergänzen: Eine gezogene Karte muss aus der Zuordnung verschwinden,
+        // sonst antwortete der Agent später mit der PIN einer Karte, die gar
+        // nicht mehr im Gerät steckt.
+        Map<String, String> neu = new LinkedHashMap<>();
+        for (var k : karten) {
+            if (k.verwaltet()) neu.put(k.terminalId() + "/" + k.slotname(), k.kartenhandle());
+        }
+        slotZuKarte.keySet().retainAll(neu.keySet());
+        slotZuKarte.putAll(neu);
+
+        Set<String> gewuenscht = new LinkedHashSet<>();
+        for (var t : terminals) {
+            if (!t.erreichbar() || !t.pevimAktiv()) continue;
+            boolean pinDa = karten.stream().anyMatch(k -> k.verwaltet()
+                    && k.terminalId().equals(t.id()) && pins.containsKey(k.kartenhandle()));
+            if (pinDa) gewuenscht.add(t.id());
+        }
+        smcb.abgleichen(gewuenscht);
     }
 
     /**
@@ -500,6 +674,13 @@ public class Agent {
             meldung.put("verbleibendeVersuche", status.verbleibendeVersuche());
             meldung.put("aktualisierend", status.aktualisierend());
             meldung.put("automatikAngehalten", angehalten.contains(karte.kartenhandle()));
+            meldung.put("smcbVerbindung", smcb.angemeldet(t.id()));
+
+            // Für die Schutzlogik im Antwortpfad festhalten: Fragt das Terminal
+            // gleich nach der PIN, ist das hier der jüngste Kenntnisstand.
+            letzterStatus.put(karte.kartenhandle(), new Statusnotiz(
+                    status.status(), status.verbleibendeVersuche(),
+                    status.aktualisierend(), System.currentTimeMillis()));
 
             // Ein Gerät ohne aktives PEviM ist kein Fehler, aber es muss sichtbar sein:
             // ohne diese Funktion kann die Automatik dort nichts ausrichten (A_24074).
@@ -527,8 +708,10 @@ public class Agent {
                 }
             } else if (t.pevimAktiv()) {
                 System.out.printf("  [%s] Karte nicht freigeschaltet — starte Verifikation%n", t.id());
-                char[] pin = pins.get(karte.kartenhandle()).clone();
-                var erg = ablauf.ausfuehren(t.id(), karte.kartenhandle(), pin);
+                // Die Verbindung muss stehen, bevor der Konnektor angestoßen
+                // wird: Das Terminal fragt sofort danach, nicht später.
+                smcb.sicherstellen(t.id());
+                var erg = ablauf.ausfuehren(t.id(), karte.kartenhandle());
                 System.out.printf("  [%s] %s%n", t.id(), erg.erfolgreich() ? "freigeschaltet" : erg.meldung());
 
                 if (erg.automatikAnhalten()) angehalten.add(karte.kartenhandle());

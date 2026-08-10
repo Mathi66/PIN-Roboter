@@ -34,6 +34,23 @@ Die Zentrale trägt 78 % des Codes. Das entspricht der Aufgabenteilung: Der Agen
 tut eine Sache (überwachen und PIN übergeben), die Zentrale trägt Oberfläche,
 Datenhaltung, Protokoll, Rechte und Mandantentrennung.
 
+> **Nachtrag 10.08.2026, nach dem Umbau der PIN-Übergabe ([ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md)).**
+> Die Zahlen oben sind die Ausgangslage der Analyse und bleiben als solche
+> stehen. Gemessen nach dem Umbau:
+>
+> | Modul | Dateien | Zeilen | Veränderung |
+> |---|---:|---:|---|
+> | `gemeinsam` | 10 | 1.289 | +2 Dateien — Protokollkern, damit beide Seiten dieselbe Rechnung nutzen |
+> | `zentrale` | 35 | 15.044 | unberührt |
+> | `agent` | 11 | 2.661 | +2 Dateien — Verbindung und Verwaltung |
+> | `simulator` | 13 | 2.044 | +1 Datei — die Gegenstelle |
+>
+> Der Agent wächst um knapp die Hälfte. Das ist der Preis dafür, dass aus einem
+> Vorgang mit Anfang und Ende ein **Zustand** geworden ist: Eine offene
+> Verbindung muss aufgebaut, überwacht, abgebaut und wiederhergestellt werden.
+> Der `Verifikationsablauf` ist dabei um ein Drittel **geschrumpft** — er tut
+> jetzt weniger, und die PIN kommt darin nicht mehr vor.
+
 ---
 
 ## 2. Befunde

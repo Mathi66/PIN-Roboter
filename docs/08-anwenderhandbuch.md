@@ -241,6 +241,23 @@ geändert hat, immer.
 **Einträge lassen sich nicht ändern und nicht löschen** — auch nicht von einem
 Administrator. Das ist technisch abgesichert, nicht nur eine Regel.
 
+### Zwei Einträge, die leicht zu verwechseln sind
+
+| Eintrag | Bedeutung |
+|---|---|
+| **PIN an das Kartenterminal übergeben** | Das Gerät hat nach der PIN gefragt, der Roboter hat sie geliefert. Das heißt noch nicht, dass die Karte sie akzeptiert hat. |
+| **Karte freigeschaltet** | Der Zustand ist nachgeprüft und bestätigt. **Das** ist der Erfolg. |
+
+Kommt der erste Eintrag ohne den zweiten, hat die Karte die PIN abgelehnt — dann
+steht der Grund direkt daneben.
+
+Ein dritter Eintrag ist wichtiger, als sein Wortlaut vermuten lässt:
+**PIN-Anfrage des Kartenterminals abgelehnt.** Er bedeutet, dass der Roboter
+eine Anfrage bewusst *nicht* beantwortet hat — etwa weil zu wenige Versuche übrig
+waren, der Not-Aus lief oder gerade ein Firmware-Update stattfand. Der Grund
+steht dabei. Diese Einträge sind kein Fehler des Systems, sondern der Schutz bei
+der Arbeit.
+
 ---
 
 ## 9. Datensicherung

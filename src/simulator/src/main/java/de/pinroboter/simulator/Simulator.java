@@ -57,6 +57,16 @@ public class Simulator {
         System.out.printf("  %-28s https://0.0.0.0:%d/webadmin/informationsmodell%n",
                 "Konnektor-Webadmin", 8443);
         starteTls(8444, ctx, "/api/", new TerminalVerwaltung(zustand), "Kartenterminal-Management");
+
+        // Die Remote SMCB API (ADR-0011). Eigener Port, weil der eingebaute
+        // HttpsServer die Protokollumschaltung auf WebSocket nicht beherrscht
+        // und wir dafuer keine Bibliothek aufnehmen.
+        //
+        // ABWEICHUNG VON DER SPEZIFIKATION, bewusst und benannt: Beim echten
+        // ST-1506 liegen beide Schnittstellen auf 443, unterschieden nur durch
+        // das WebSocket-Unterprotokoll ("cobra" und "cobra-smcb"). Der Agent
+        // spricht hier denselben Nachrichtensatz; nur der Port ist ein anderer.
+        starteSmcbApi(8445, ctx, zustand);
         starteSteuerung(8480, zustand, kette);
         // Nur fuer die Nachweise: ein Auffangserver fuer Benachrichtigungsmails.
         Mailauffang.starten(1025);
@@ -73,6 +83,60 @@ public class Simulator {
         System.out.println();
 
         Thread.currentThread().join();
+    }
+
+    /**
+     * Die Remote SMCB API auf einem eigenen TLS-Socket.
+     *
+     * <p>Ein Rohsocket statt {@code HttpsServer}: Für den WebSocket-Handschlag
+     * muss die Verbindung nach der HTTP-Antwort offen bleiben und in ein
+     * anderes Protokoll wechseln. Genau das kann {@code com.sun.net.httpserver}
+     * nicht.
+     */
+    private static void starteSmcbApi(int port, SSLContext ctx, Zustand zustand) throws IOException {
+        var fabrik = ctx.getServerSocketFactory();
+        var server = (javax.net.ssl.SSLServerSocket) fabrik.createServerSocket(port);
+        server.setEnabledProtocols(TlsAufbau.PROTOKOLLE);
+
+        Thread.ofVirtual().name("smcb-api").start(() -> {
+            while (true) {
+                try {
+                    var socket = server.accept();
+                    Thread.ofVirtual().start(() -> bedieneSmcb(socket));
+                } catch (IOException e) {
+                    System.err.println("  SMCB-API: " + e.getMessage());
+                    return;
+                }
+            }
+        });
+        System.out.printf("  %-28s wss://0.0.0.0:%d/{terminalId}/%s%n",
+                "Remote SMCB API", port, de.pinroboter.gemeinsam.SmcbProtokoll.UNTERPROTOKOLL);
+    }
+
+    /** Liest den HTTP-Upgrade und übergibt an die Nachbildung. */
+    private static void bedieneSmcb(java.net.Socket socket) {
+        try {
+            var ein = socket.getInputStream();
+            StringBuilder kopf = new StringBuilder();
+            int c, folge = 0;
+            // Kopfzeilen bis zur Leerzeile lesen — Zeichen für Zeichen, weil
+            // danach das Protokoll wechselt und ein Puffer zu viel läse.
+            while (folge < 4 && (c = ein.read()) >= 0) {
+                kopf.append((char) c);
+                folge = (c == '\r' || c == '\n') ? folge + 1 : 0;
+            }
+            String text = kopf.toString();
+            var mPfad = java.util.regex.Pattern
+                    .compile("GET /([A-Za-z0-9_-]+)/" + de.pinroboter.gemeinsam.SmcbProtokoll.UNTERPROTOKOLL)
+                    .matcher(text);
+            var mSchluessel = java.util.regex.Pattern
+                    .compile("(?i)Sec-WebSocket-Key:\\s*(\\S+)").matcher(text);
+            if (!mPfad.find() || !mSchluessel.find()) { socket.close(); return; }
+
+            SmcbApiNachbildung.bedienen(mPfad.group(1), socket, mSchluessel.group(1));
+        } catch (IOException e) {
+            try { socket.close(); } catch (IOException ignored) { }
+        }
     }
 
     private static HttpsServer starteTls(int port, SSLContext ctx, String pfad,
@@ -208,6 +272,18 @@ public class Simulator {
 
             try {
                 switch (t[3]) {
+                    // Der Beleg, dass die PIN über cobra-smcb kam und nicht über
+                    // den alten Weg (ADR-0011). Ein Nachweis, der nur „Karte
+                    // freigeschaltet" prüft, war schon einmal grün, während das
+                    // Übergabemodell falsch war.
+                    case "smcb-uebergaben" -> {
+                        var sitzung = SmcbApiNachbildung.sitzung(t[2]);
+                        TerminalVerwaltung.antworte(ex, 200,
+                                "{\"uebergaben\":" + SmcbApiNachbildung.uebergaben(t[2])
+                                + ",\"angemeldet\":"
+                                + (sitzung != null && sitzung.angemeldet()) + "}");
+                        return;
+                    }
                     case "erreichbar"    -> term.erreichbarSetzen(Boolean.parseBoolean(wert));
                     case "pevim"         -> term.pevimAktivSetzen(Boolean.parseBoolean(wert));
                     case "verzoegerung"  -> term.antwortverzoegerungSetzen(Integer.parseInt(wert));

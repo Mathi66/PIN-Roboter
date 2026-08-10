@@ -50,11 +50,20 @@ public class KonnektorClient {
      *        angezeigt, aber nie angefasst.
      * @param zertifikatGueltigBis Ablaufdatum, leer wenn der Konnektor es nicht
      *        liefert
+     * @param slot Steckplatz im Terminal ({@code SlotId} aus dem
+     *        {@code CardInfoType}), oder -1 wenn der Konnektor ihn nicht
+     *        liefert. Seit ADR-0011 nicht mehr nur Information: Das Terminal
+     *        fragt die PIN unter Angabe eines Slots an, und ohne diese
+     *        Zuordnung ließe sich bei mehreren Karten nicht entscheiden, welche
+     *        PIN gemeint ist.
      */
     public record Karte(String kartenhandle, String kartentyp, String iccsn, String terminalId,
-                        String zertifikatGueltigBis) {
+                        String zertifikatGueltigBis, int slot) {
         /** Ob diese Karte vom Roboter verwaltet wird. */
         public boolean verwaltet() { return "SMC-B".equals(kartentyp); }
+
+        /** Die Slotbezeichnung, wie das Terminal sie in der Anfrage nennt. */
+        public String slotname() { return "Slot" + (slot < 0 ? 1 : slot); }
     }
 
     public record StatusAntwort(PinStatus status, int verbleibendeVersuche, boolean aktualisierend) {}
@@ -89,9 +98,16 @@ public class KonnektorClient {
         var m = Pattern.compile("<Card>(.*?)</Card>", Pattern.DOTALL).matcher(a);
         while (m.find()) {
             String b = m.group(1);
+            int slot = -1;
+            try { slot = Integer.parseInt(tag(b, "SlotId").trim()); }
+            catch (Exception ignored) {
+                // Ein Konnektor, der keinen Slot liefert, ist kein Fehler.
+                // Dann greift die Annahme „Slot1" — richtig, solange nur eine
+                // Karte im Gerät steckt, und das ist der Regelfall.
+            }
             ergebnis.add(new Karte(tag(b, "CardHandle"), tag(b, "CardType"),
                     tag(b, "Iccsn"), tag(b, "CtId"),
-                    tag(b, "CertificateExpirationDate")));
+                    tag(b, "CertificateExpirationDate"), slot));
         }
         return ergebnis;
     }

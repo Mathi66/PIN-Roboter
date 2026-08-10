@@ -241,10 +241,16 @@ System den verifizierten Zustand selbsttätig wieder her.
 
 *Akzeptanz — der Ablauf ist vollständig nachzuweisen:*
 1. `GetPinStatus` liefert `VERIFIABLE`.
-2. Am Terminal besteht eine Sitzung in der Rolle `SMC-B_Nutzer` (`A_24081`).
+2. Am Terminal besteht eine **angemeldete Verbindung** in der Rolle
+   `SMC-B_Nutzer` (`A_24081`) — bei der Remote SMCB API die dauerhaft offene
+   WebSocket-Verbindung.
 3. `VerifyPin` mit `PinTyp = PIN.SMC` wird am Konnektor ausgelöst.
-4. Die PIN wird über die Managementschnittstelle geliefert.
+4. **Das Terminal fragt die PIN an** (`InputPinRequest`), und das System
+   antwortet. Nachzuweisen ist der Weg, nicht nur das Ergebnis: Es ist zu
+   belegen, dass die PIN über dieses Protokoll geliefert wurde ([ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md)).
 5. `GetPinStatus` liefert anschließend `VERIFIED`.
+- Schritt 4 wurde am 10.08.2026 berichtigt. Zuvor stand hier, das System
+  *liefere* die PIN — das entspricht keinem echten Gerät.
 - Schritt 5 ist verpflichtend: Ohne erneute Abfrage gilt die Verifikation als
   **nicht** bestätigt.
 - Die Gesamtdauer wird gemessen und protokolliert.

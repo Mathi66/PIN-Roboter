@@ -46,7 +46,40 @@ public class TerminalClient implements AutoCloseable {
         return new Anmeldeergebnis(false, feld(a.body(), "fehler"), feld(a.body(), "hinweis"));
     }
 
-    /** Liefert den PIN-Wert an eine offene Aufforderung des Terminals. */
+    /**
+     * Holt einen Authentisierungsschlüssel für die Remote SMCB API
+     * ({@code SmcbAuthentication}, ST-1506-Spezifikation 2.8 Abschnitt 4.38).
+     *
+     * <p>Der Schlüssel gilt <b>30 Sekunden</b> und taugt für <b>genau einen</b>
+     * CMAC. Er wird deshalb unmittelbar vor dem Verbindungsaufbau geholt,
+     * niemals auf Vorrat.
+     *
+     * <p><b>Abweichung im Simulator:</b> Am echten Gerät wird der Schlüssel über
+     * das WebSocket-Unterprotokoll {@code cobra} angefordert. Der Simulator
+     * bietet ihn zusätzlich über diesen HTTP-Endpunkt an, weil das Verwalten
+     * einer zweiten WebSocket-Verbindung für den Nachweis der PIN-Übergabe
+     * nichts beiträgt. Diese Klasse ist die Stelle, an der die Umstellung auf
+     * {@code cobra} später zu machen ist — und nur hier.
+     *
+     * @return 64 Hexzeichen, oder {@code null} wenn das Gerät keinen ausgibt
+     */
+    public String smcbSchluessel() throws Exception {
+        HttpResponse<String> a = post("/api/" + terminalId + "/smcb-schluessel", "{}", false);
+        if (a.statusCode() != 200) return null;
+        String k = feld(a.body(), "key");
+        return k != null && k.matches("[0-9a-fA-F]{64}") ? k : null;
+    }
+
+    /**
+     * Liefert den PIN-Wert an eine offene Aufforderung des Terminals.
+     *
+     * @deprecated Dieses Muster gibt es an echten Kartenterminals nicht
+     *     (ADR-0011). Die PIN wird nicht hingeschoben, sondern auf Anfrage des
+     *     Terminals über {@link SmcbVerbindung} geliefert. Die Methode bleibt
+     *     nur, um im Nachweis ein Gerät <i>ohne</i> Remote SMCB API
+     *     gegenzuprüfen; im Betrieb ruft sie niemand mehr auf.
+     */
+    @Deprecated
     public boolean pinLiefern(char[] pin) throws Exception {
         if (sitzung == null) throw new IllegalStateException("Keine Sitzung als SMC-B_Nutzer");
         String koerper = "{\"pin\":\"" + new String(pin) + "\"}";

@@ -18,6 +18,7 @@ services:
     ports:
       - "8443:8443"   # Konnektor, SOAP über Brainpool-TLS
       - "8444:8444"   # Kartenterminal-Management über Brainpool-TLS
+      - "8445:8445"   # Remote SMCB API (WebSocket) — hier fragt das Terminal die PIN an
       - "8480:8480"   # Steuerung für Tests und Ausgabe des Vertrauensankers
       - "1025:1025"   # Auffang für Benachrichtigungsmails, nur für Nachweise
     healthcheck:
@@ -121,6 +122,11 @@ services:
     environment:
       KONNEKTOR_URL: "https://simulator:8443/"
       TERMINAL_URL:  "https://simulator:8444/"
+      # Am echten Kartenterminal liegt die Remote SMCB API auf demselben Port
+      # wie die Verwaltungsschnittstelle; dann entfaellt dieser Eintrag. Der
+      # Simulator braucht einen eigenen, weil der HTTP-Server des JDK nicht auf
+      # WebSocket umschalten kann (ADR-0011).
+      TERMINAL_SMCB_URL: "https://simulator:8445/"
       ZENTRALE_URL:  "http://zentrale:8090/"
       CA_URL:        "http://simulator:8480/ca.pem"
       PRUEFINTERVALL_SEKUNDEN: "10"

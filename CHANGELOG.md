@@ -9,6 +9,36 @@ beachten muss.
 
 ---
 
+## Unveröffentlicht
+
+### Geändert — betrifft die Kernfunktion
+
+**Die PIN-Übergabe an das Kartenterminal ist neu gebaut**
+([ADR-0011](docs/adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md),
+[Umsetzung 29](docs/03-umsetzung/29-remote-smcb-api.md))
+
+Bisher schob der PIN-Roboter die PIN an das Terminal. Echte Geräte arbeiten
+umgekehrt: **Das Terminal fragt die PIN an, der Roboter antwortet** — über eine
+Verbindung, die dauerhaft offen bleibt (WebSocket, Unterprotokoll `cobra-smcb`,
+Anmeldung über Challenge-Response).
+
+**Was ein Betreiber davon merkt:** nichts, solange alles läuft. Zwei Dinge
+ändern sich im Betrieb:
+
+- Der Agent hält je Kartenterminal mit hinterlegter PIN **eine offene
+  Verbindung**. Firewalls zwischen Agent und Terminals müssen langlebige
+  Verbindungen zulassen.
+- Neue Einstellung `TERMINAL_SMCB_URL` — nur nötig, wenn die Schnittstelle des
+  Terminals auf einem anderen Port liegt als seine übrige Verwaltung. Sonst
+  weglassen.
+
+> **Weiterhin nicht für den Produktivbetrieb an echten Kartenterminals.** Der
+> Umbau folgt der Herstellerspezifikation und ist gegen eine danach gebaute
+> Nachbildung nachgewiesen. Zeitverhalten und Verbindungsdauer an echter
+> Hardware sind ungemessen.
+
+---
+
 ## 0.2.0 — 10.08.2026
 
 Die erste Version mit eingebauter Datensicherung. Schwerpunkt daneben:

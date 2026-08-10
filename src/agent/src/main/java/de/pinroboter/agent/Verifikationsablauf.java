@@ -1,33 +1,46 @@
 package de.pinroboter.agent;
 
 import de.pinroboter.gemeinsam.Ereignisart;
-import de.pinroboter.gemeinsam.PinErgebnis;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.util.UUID;
-import java.util.concurrent.*;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * Der vollständige PEviM-Ablauf für eine SMC-B (FA-PIN-020).
  *
- * <p>Die Reihenfolge ist durch [gemSpec_KT] {@code A_24081} vorgegeben und nicht
- * verhandelbar: Die Sitzung als {@code SMC-B_Nutzer} muss <b>bestehen, bevor</b>
- * das SICCT-Kommando eintrifft. Trifft es ein, ohne dass die Rolle angemeldet
- * ist, erwartet das Terminal die Eingabe am PIN-Pad — und dort steht nachts
- * niemand.
+ * <h2>Was sich am 10.08.2026 geändert hat</h2>
  *
- * <p>Ebenso verpflichtend ist der letzte Schritt: Erst die erneute Abfrage von
- * {@code GetPinStatus} belegt den Erfolg. Ein {@code PinResult=OK} ist die
- * Antwort auf einen Aufruf, kein bestätigter Zustand.
+ * Bis dahin tat diese Klasse zwei Dinge nebenläufig: den Konnektor anstoßen
+ * <i>und</i> die PIN ans Terminal schieben. Das zweite gibt es an echten Geräten
+ * nicht (ADR-0011). Die PIN liefert seither {@link SmcbVerbindung} — auf Anfrage
+ * des Terminals, über eine Verbindung, die schon vorher steht.
+ *
+ * <p>Übrig bleibt hier <b>ein</b> Schritt und seine Kontrolle: den Konnektor
+ * auffordern, dann prüfen, ob es gewirkt hat. Die Klasse ist damit kürzer und
+ * ehrlicher — sie tut nicht mehr so, als hätte sie die Übergabe in der Hand.
+ *
+ * <h2>Was gleich geblieben ist</h2>
+ *
+ * Die Vorbedingung aus [gemSpec_KT] {@code A_24081}: Die Rolle
+ * {@code SMC-B_Nutzer} muss <b>authentisiert sein, bevor</b> das SICCT-Kommando
+ * eintrifft. Bei der Remote SMCB API ist genau das die stehende, angemeldete
+ * WebSocket-Verbindung. Fehlt sie, erwartet das Terminal die Eingabe am PIN-Pad
+ * — und dort steht nachts niemand.
+ *
+ * <p>Und der letzte Schritt: Erst die erneute Abfrage von {@code GetPinStatus}
+ * belegt den Erfolg. Ein {@code PinResult=OK} ist die Antwort auf einen Aufruf,
+ * kein bestätigter Zustand.
  */
 public class Verifikationsablauf {
 
     private final KonnektorClient konnektor;
-    private final HttpClient http;
-    private final URI terminalBasis;
     private final Consumer<Meldung> protokoll;
+
+    /** Ob für ein Terminal eine angemeldete Verbindung zur Remote SMCB API besteht. */
+    private final Predicate<String> verbindungSteht;
 
     public record Meldung(String vorgang, Ereignisart art, String text, boolean erfolg) {}
 
@@ -35,68 +48,51 @@ public class Verifikationsablauf {
                            String handlung, boolean automatikAnhalten) {}
 
     public Verifikationsablauf(KonnektorClient konnektor, HttpClient http,
-                               URI terminalBasis, Consumer<Meldung> protokoll) {
-        this.konnektor = konnektor; this.http = http;
-        this.terminalBasis = terminalBasis; this.protokoll = protokoll;
+                               URI terminalBasis, Consumer<Meldung> protokoll,
+                               Predicate<String> verbindungSteht) {
+        this.konnektor = konnektor;
+        this.protokoll = protokoll;
+        this.verbindungSteht = verbindungSteht;
     }
 
     /**
-     * Führt die Verifikation durch. Die {@link Sicherungspruefung} muss vorher
-     * bestanden sein — diese Methode prüft sie nicht erneut.
+     * Löst die Verifikation aus und wertet sie aus.
      *
-     * @param pin wird nach Gebrauch überschrieben; der Aufrufer gibt eine Kopie
+     * <p>Die {@link Sicherungspruefung} muss vorher bestanden sein — und sie
+     * greift ein zweites Mal, wenn das Terminal tatsächlich fragt (siehe
+     * {@link SmcbVerbindungen}). Zweimal zu prüfen ist kein Versehen: Die erste
+     * Prüfung entscheidet, ob wir überhaupt anstoßen; die zweite gilt für jede
+     * Anfrage — auch für die, die jemand anders ausgelöst hat.
+     *
+     * <p><b>Die PIN kommt in dieser Methode nicht mehr vor.</b> Sie liegt in der
+     * Pinablage und wird ausschließlich von der Verbindung geholt, wenn das
+     * Terminal danach fragt. Das ist nicht nur Umbau, sondern auch weniger
+     * Fläche: Ein Geheimnis, das eine Methode nie sieht, kann sie auch nicht
+     * verlieren.
      */
-    public Ergebnis ausfuehren(String terminalId, String kartenhandle, char[] pin) {
+    public Ergebnis ausfuehren(String terminalId, String kartenhandle) {
         String vorgang = UUID.randomUUID().toString().substring(0, 8);
 
-        try (TerminalClient terminal = new TerminalClient(http, terminalBasis, terminalId)) {
+        // Vorbedingung nach A_24081: ohne angemeldete Verbindung keine
+        // PIN-Übergabe. Das Kommando liefe am Gerät auf das PIN-Pad und dort in
+        // die Zeitüberschreitung.
+        if (!verbindungSteht.test(terminalId)) {
+            protokoll.accept(new Meldung(vorgang, Ereignisart.PEVIM_NICHT_AKTIV,
+                    "Keine angemeldete Verbindung zur Remote SMCB API", false));
+            return new Ergebnis(false, vorgang,
+                    "Das Kartenterminal nimmt zurzeit keine PIN entgegen.",
+                    "Bitte prüfen, ob die Funktion „PIN-Eingabe via Managementschnittstelle“ "
+                    + "am Gerät aktiviert ist. Die Aktivierung ist nur durch einen "
+                    + "Administrator direkt am Terminal möglich.",
+                    false);
+        }
 
-            // Schritt 1 — Sitzung als SMC-B_Nutzer aufbauen (A_24081, Vorbedingung)
-            var anmeldung = terminal.anmelden();
-            if (!anmeldung.erfolgreich()) {
-                protokoll.accept(new Meldung(vorgang, Ereignisart.PEVIM_NICHT_AKTIV,
-                        "Anmeldung am Kartenterminal nicht möglich: " + anmeldung.fehler(), false));
-                return new Ergebnis(false, vorgang,
-                        "Das Kartenterminal nimmt keine PIN über die Verwaltungsschnittstelle entgegen.",
-                        anmeldung.hinweis() != null ? anmeldung.hinweis()
-                                : "Bitte prüfen, ob die Funktion \u201ePIN-Eingabe via Managementschnittstelle\u201c "
-                                  + "am Gerät aktiviert ist. Die Aktivierung ist nur durch einen "
-                                  + "Administrator direkt am Terminal möglich.",
-                        false);
-            }
-
-            // Schritt 2 — VerifyPin auslösen. Der Konnektor sendet daraufhin das
-            // SICCT-Kommando; das Terminal wartet dann auf den PIN-Wert.
-            // Beides läuft nebenläufig: Der Aufruf kehrt erst zurück, wenn die
-            // PIN geliefert wurde, also muss die Lieferung parallel erfolgen.
-            try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
-
-                Future<KonnektorClient.VerifyAntwort> verify =
-                        pool.submit(() -> konnektor.verifyPin(kartenhandle));
-
-                // Schritt 3 — PIN über die Managementschnittstelle liefern,
-                // sobald das Terminal darauf wartet.
-                Future<Boolean> lieferung = pool.submit(() -> {
-                    for (int i = 0; i < 100; i++) {           // bis zu 10 s warten
-                        if (terminal.wartetAufPin()) return terminal.pinLiefern(pin);
-                        Thread.sleep(100);
-                    }
-                    return false;
-                });
-
-                boolean geliefert = lieferung.get(20, TimeUnit.SECONDS);
-                KonnektorClient.VerifyAntwort antwort = verify.get(60, TimeUnit.SECONDS);
-
-                if (!geliefert && antwort.ergebnis() == PinErgebnis.ERROR) {
-                    protokoll.accept(new Meldung(vorgang, Ereignisart.VERIFIKATION_FEHLGESCHLAGEN,
-                            "PIN konnte nicht übergeben werden: " + antwort.fehlertext(), false));
-                    return new Ergebnis(false, vorgang,
-                            uebersetze(antwort.fehlercode(), antwort.fehlertext()),
-                            "Bitte die Verbindung zum Kartenterminal prüfen.", false);
-                }
-
-                return auswerten(vorgang, kartenhandle, antwort);
-            }
+        try {
+            // Der Konnektor sendet daraufhin das SICCT-Kommando. Das Terminal
+            // fragt dann über die stehende Verbindung nach der PIN; die Antwort
+            // gibt SmcbVerbindung, nebenläufig zu diesem blockierenden Aufruf.
+            KonnektorClient.VerifyAntwort antwort = konnektor.verifyPin(kartenhandle);
+            return auswerten(vorgang, kartenhandle, antwort);
 
         } catch (Exception e) {
             protokoll.accept(new Meldung(vorgang, Ereignisart.VERIFIKATION_FEHLGESCHLAGEN,
@@ -104,8 +100,6 @@ public class Verifikationsablauf {
             return new Ergebnis(false, vorgang,
                     "Die Freischaltung konnte nicht abgeschlossen werden.",
                     "Bitte das technische Protokoll prüfen. Vorgang " + vorgang, false);
-        } finally {
-            java.util.Arrays.fill(pin, '\0');   // PIN im Speicher überschreiben
         }
     }
 
@@ -168,7 +162,7 @@ public class Verifikationsablauf {
         if (code == null) return text == null ? "Unbekannter Fehler" : text;
         return switch (code) {
             case "4078" -> "Der Konnektor lässt die PIN-Eingabe über dieses System nicht zu. "
-                    + "Am Kartenterminal ist die Funktion \u201ePIN-Eingabe via Managementschnittstelle\u201c "
+                    + "Am Kartenterminal ist die Funktion „PIN-Eingabe via Managementschnittstelle“ "
                     + "vermutlich nicht aktiviert.";
             case "4047" -> "Das Kartenterminal hat nicht rechtzeitig geantwortet.";
             case "4209" -> "Dieser Kartentyp wird nicht unterstützt. Der PIN-Roboter arbeitet "

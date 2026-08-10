@@ -174,16 +174,18 @@ sequenceDiagram
     end
 
     rect rgb(226, 242, 233)
-        Note over PR,KT: (2) Vorbereitung
-        PR->>KT: HTTPS, Rolle SMC-B_Nutzer
-        Note over KT: Sitzung an der Management-<br/>schnittstelle, PEviM aktiv
+        Note over PR,KT: (2) Vorbereitung — dauerhaft, nicht je Vorgang
+        PR->>KT: WebSocket cobra-smcb, Rolle SMC-B_Nutzer
+        Note over KT: Challenge-Response (CMAC-AES256),<br/>Verbindung bleibt offen, PEviM aktiv
     end
 
     rect rgb(251, 240, 221)
         Note over PR,C: (3) Auslösung
         PR->>KON: SOAP VerifyPin
-        KON->>KT: PIN-Eingabe anfordern
-        KT->>C: PIN übergeben (PEviM)
+        KON->>KT: SICCT PERFORM VERIFICATION
+        KT->>PR: InputPinRequest — das Terminal FRAGT
+        PR->>KT: InputPinResponse (PIN)
+        KT->>C: VERIFY
         C-->>KT: OK
         KT-->>KON: verifiziert
         KON-->>PR: PinResult = OK

@@ -2152,3 +2152,69 @@ Festgehalten in [ADR-0011](docs/adr/0011-pin-uebergabe-ist-eine-anfrage-des-term
 korrigiert in Analyse, Architektur und Umsetzungsstand. **Der Umbau folgt erst
 nach der Messung am Testaufbau** — ihn auf eine Dokumentenlektüre zu stützen
 wäre derselbe Fehler wie der, den diese ADR korrigiert, nur mit besserer Quelle.
+
+---
+
+## Der Umbau: das Terminal fragt, der Agent antwortet
+
+Der PO hat den Umbau beauftragt, **bevor** die Messung am Testaufbau lief. ADR-0011
+sah die andere Reihenfolge vor; das ist seine Entscheidung, und sie ist im
+Nachtrag der ADR festgehalten, damit später niemand rätselt.
+
+### Was gebaut wurde
+
+| Baustein | Was er tut |
+|---|---|
+| `SmcbProtokoll` (gemeinsam) | Nachrichtenschema, CMAC-AES256, die Regeln aus Abschnitt 7.7.8 |
+| `SmcbVerbindung` (Agent) | eine Verbindung: Zustand, Challenge-Response, Beantworten |
+| `SmcbVerbindungen` (Agent) | alle Verbindungen: Sollzustand, Sperrfrist, Aufräumen |
+| `Verifikationsablauf` (Agent) | von „PIN senden" auf „anstoßen und nachprüfen" — **die PIN kommt darin nicht mehr vor** |
+| `SmcbApiNachbildung` (Simulator) | die Gegenstelle, eigener RFC-6455-WebSocket |
+
+### Zwei Dinge, die im alten Modell gar nicht auftreten konnten
+
+**Der Slot ist nicht das Kartenhandle.** Das Terminal fragt nach `Slot1`, der
+Konnektor kennt `card-smcb-001`. Die Zuordnung kommt jetzt aus `SlotId` im
+`CardInfoType` und wird in jedem Durchgang **vollständig neu** aufgebaut — eine
+gezogene Karte muss verschwinden, sonst antwortete der Agent später mit der PIN
+einer Karte, die nicht mehr im Gerät steckt. Ein unbekannter Slot führt zur
+Ablehnung mit Begründung, nicht zu einem Versuch mit irgendeiner PIN.
+
+**Die Sicherungslogik ist von einer Vorprüfung zur einzigen Bremse geworden.**
+Solange die Verbindung steht, kann jede Stelle am Konnektor eine PIN-Anfrage
+auslösen — nicht nur wir. Vorher entschied der Agent, ob er eine PIN schickt;
+jetzt entscheidet er, ob er auf eine Frage antwortet, die schon gestellt ist.
+Deshalb läuft die vollständige Prüfung bei **jeder** Anfrage, gegen einen
+Kenntnisstand, der höchstens 90 Sekunden alt sein darf.
+
+Dass 90 Sekunden reichen, hängt nicht an der Frische eines Wertes, sondern an
+einer Kette: Es wird nur bei mehr als einem verbleibenden Versuch gehandelt, und
+jeder erkannte Rückgang hält die Automatik an.
+
+### Was ein Modultest gefunden hat, bevor es jemand anders tat
+
+Der Test „Ein Gerät ohne Remote SMCB API wird nicht im Takt bombardiert" deckte
+auf, dass die Sperrfrist nach einem Fehlschlag **nie aufgeräumt** wurde. Bei
+5.000 Terminals über Monate Laufzeit ein Speicherleck, das niemand bemerkt.
+Beim Beheben fiel die zweite Frage auf: Ein flatterndes Gerät hätte die
+Sperrfrist umgehen können, indem es kurz aus dem Sollzustand fällt und
+wiederkommt — genau das Muster, das ein wackeliges Netz erzeugt. Beides
+behoben, beides mit eigenem Test.
+
+### Der Nachweis prüft den Weg, nicht das Ergebnis
+
+Das ist die Lehre aus dem Fund von gestern. Ein Nachweis, der „Karte
+freigeschaltet" prüft, war schon einmal grün, während das Übergabemodell falsch
+war. Deshalb zählt der Simulator jetzt mit, wie oft eine PIN über `cobra-smcb`
+geliefert wurde, und `pruefungen/smcb-durchstich.sh` fragt diesen Zähler ab —
+gegen den ausgelieferten Agenten, kein Ersatzprogramm.
+
+Neun Prüfpunkte, darunter drei, die belegen, was **nicht** passieren darf: keine
+Übergabe bei abgeschaltetem PEviM, kein Verbindungsaufbau ohne hinterlegte PIN,
+kein belegter Verbindungsplatz an einem Gerät ohne PIN.
+
+### Was weiterhin offen ist
+
+Zeitverhalten und Verbindungsdauer an echter Hardware, 1.250 offene Verbindungen
+unter Last, die Worldline-Variante, `FA-PIN-060`. Der Umbau macht die Messung am
+Testaufbau nicht überflüssig — er gibt ihr einen konkreten Gegenstand.

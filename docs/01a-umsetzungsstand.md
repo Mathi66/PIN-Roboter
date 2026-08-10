@@ -65,8 +65,8 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 
 | | Anforderung | | Stand |
 |---|---|---|---|
-| **✔** | `FA-PIN-010` PIN hinterlegen <br><span style="opacity:.7">MUSS</span> |  | Ende-zu-Ende vom Browser zum Agenten (ADR-0009)  **⚠ Gegen echte Hardware ungeprüft und nach ADR-0011 im Übergabeweg falsch modelliert:** Das Terminal fragt die PIN an, statt sie entgegenzunehmen. Umbau steht aus. |
-| **✔** | `FA-PIN-020` Automatische Verifikation <br><span style="opacity:.7">MUSS</span> |  🔌 | Durchstich über Brainpool-TLS am Simulator  **⚠ Siehe ADR-0011** — Übergabeweg falsch modelliert. |
+| **✔** | `FA-PIN-010` PIN hinterlegen <br><span style="opacity:.7">MUSS</span> |  | Ende-zu-Ende vom Browser zum Agenten (ADR-0009)  **⚠ Gegen echte Hardware ungeprüft.** Der Übergabeweg ist seit dem Umbau nach [ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md) richtig modelliert: Das Terminal fragt die PIN an. |
+| **✔** | `FA-PIN-020` Automatische Verifikation <br><span style="opacity:.7">MUSS</span> |  🔌 | Durchstich über Brainpool-TLS am Simulator  Seit 10.08.2026 über die **Remote SMCB API** (`cobra-smcb`): Das Terminal fragt, der Agent antwortet ([ADR-0011](adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md), [Umsetzung 29](03-umsetzung/29-remote-smcb-api.md)). Der Nachweis zählt die Übergaben über das Protokoll mit, prüft also den Weg und nicht nur das Ergebnis.  **⚠ Gegen echte Hardware weiterhin ungeprüft** — offen sind Zeitverhalten und Verbindungsdauer. |
 | **✔** | `FA-PIN-030` Schutz vor Kartensperrung <br><span style="opacity:.7">MUSS</span> |  🔌 | LeftTries vor jedem Versuch; genau ein Versuch bei falscher PIN |
 | **✔** | `FA-PIN-040` Nicht behebbare Zustände melden <br><span style="opacity:.7">MUSS</span> |  | alle vier Zustände mit Handlung, je 0 Versuche |
 | **✔** | `FA-PIN-050` Not-Aus <br><span style="opacity:.7">MUSS</span> |  | Not-Aus hält die Automatik sofort an |

@@ -133,8 +133,9 @@ sequenceDiagram
     Note over Z: reicht weiter · kann nicht lesen ·<br/>löscht nach Zustellung
     Z-->>AG: Chiffrat (beim Abholen)
     Note over AG: entschlüsselt mit privatem Schlüssel,<br/>der sein Volume nie verlässt
-    AG->>KT: PIN über PEviM
     Note over AG: Ablage: AES-256-GCM,<br/>eigener Schlüssel aus der Umgebung
+    KT->>AG: InputPinRequest — das Terminal FRAGT
+    AG->>KT: InputPinResponse (PIN), über cobra-smcb
 ```
 
 
@@ -152,6 +153,39 @@ Sekundenbruchteile, und im Agenten. **Nirgends dazwischen.**
 **Was das nicht leistet:** Wer den Agenten vollständig kontrolliert, kommt an
 die PIN — er muss sie ja verwenden können. Der Gewinn liegt woanders: Bei 1.000
 Standorten liefert ein Angriff auf die Zentrale **keine einzige** PIN.
+
+### Die letzte Strecke: Agent → Kartenterminal (ADR-0011)
+
+Seit dem 10.08.2026 ist diese Strecke anders gebaut, und sie hat eine eigene
+Bedrohungslage. Bis dahin galt die Annahme: *Der Agent entscheidet, wann eine
+PIN das Haus verlässt.* Diese Annahme ist falsch.
+
+> **Solange die Verbindung zum Terminal steht, kann jede Stelle am Konnektor
+> eine PIN-Anfrage auslösen** — ein Primärsystem, ein Administrator, ein
+> Kartenwechsel. Der Agent sieht nur die Frage, nicht ihren Urheber.
+
+Daraus folgen vier Maßnahmen:
+
+| Maßnahme | Wogegen | Durchsetzung |
+|---|---|---|
+| Verbindung nur, wo eine PIN hinterlegt ist | eine offene Verbindung ohne Zweck ist Angriffsfläche und sperrt zugleich den einzigen Verbindungsplatz | Sollzustandsabgleich in jedem Durchgang |
+| **Vollständige Sicherungsprüfung bei jeder Anfrage** | fremd ausgelöste Verifikationen, die den Fehlversuchszähler verbrauchen | `Sicherungspruefung` im Antwortpfad, nicht nur beim Auslösen |
+| Kenntnisstand höchstens 90 s alt | Antworten auf Grundlage veralteter Zählerstände | Zeitstempel je Karte; ist er zu alt, wird abgelehnt |
+| Unbekannter Slot → Ablehnung | eine PIN an die falsche Karte, also ein sicherer Fehlversuch | Slot-Zuordnung aus `SlotId`, in jedem Durchgang neu aufgebaut |
+
+**Warum 90 Sekunden vertretbar sind.** Den Zähler im Antwortpfad frisch zu holen
+scheidet aus — dieser Aufruf beträfe dieselbe Karte, die der Konnektor gerade
+bearbeitet. Der Schutz hängt deshalb nicht an der Frische eines Wertes, sondern
+an einer Kette: Es wird nur bei **mehr als einem** verbleibenden Versuch
+gehandelt, und **jeder erkannte Rückgang** hält die Automatik an. Ein unbemerkter
+Fremdversuch senkt den Zähler und wird im nächsten Durchgang erkannt.
+
+**Kryptographie auf dieser Strecke:** Challenge-Response mit CMAC-AES256; der
+Schlüssel gilt 30 Sekunden und wird nach genau einer Antwort verworfen. Die PIN
+wird vor dem Senden auf reine Ziffern geprüft — ohne das ließe sich über eine
+PIN mit Anführungszeichen die Nachricht manipulieren.
+
+Einzelheiten: [03-umsetzung/29](03-umsetzung/29-remote-smcb-api.md).
 
 ### Wer die Organisationsstruktur ändern darf (FA-ORG-020)
 

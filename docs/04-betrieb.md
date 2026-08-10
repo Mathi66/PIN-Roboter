@@ -81,6 +81,7 @@ im Repository (`NFA-BET-010`). Vorgesehener Weg: eine Datei `.env` neben der
 | `REGISTRIERUNG` | beim ersten Start | Einmalig gültiges Geheimnis, in der Zentrale unter „Agenten" erzeugt. Danach kann der Eintrag entfallen. |
 | `KONNEKTOR_URL` | ja | Adresse der Konnektor-Fachschnittstelle |
 | `TERMINAL_URL` | ja | Adresse der Terminal-Managementschnittstelle |
+| `TERMINAL_SMCB_URL` | nein | Wo die Remote SMCB API liegt — dort fragt das Terminal die PIN an. Ohne Angabe dieselbe Adresse wie `TERMINAL_URL`, und das ist am echten Gerät der Normalfall. |
 | `WEBADMIN_URL` | nein | Webadmin-Schnittstelle des Konnektors. Herstellerspezifisch und **immer optional** (`NFA-QS-035`) — ohne sie bleibt alles von Hand erfassbar. |
 | `PRUEFINTERVALL_SEKUNDEN` | nein | Vorgabe 10 s. Im Betrieb üblicherweise 60 s. |
 | `PIN_ABLAGE_SCHLUESSEL` | dringend empfohlen | Verschlüsselt die hinterlegten SMC-B-PINs. Siehe unten. |

@@ -185,6 +185,7 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     -v "$PWD/src/agent/target/agent.jar":/app.jar -v "$SEC":/sec:ro -v pr-agentdaten:/daten \
     -e REGISTRIERUNG="$GEHEIMNIS" \
     -e KONNEKTOR_URL=https://simulator:8443/ -e TERMINAL_URL=https://simulator:8444/ \
+    -e TERMINAL_SMCB_URL=https://simulator:8445/ \
     -e ZENTRALE_URL=http://zentrale:8090/ -e CA_URL=http://simulator:8480/ca.pem \
     -e PRUEFINTERVALL_SEKUNDEN="$2" -e PIN_card_smcb_001="$1" \
     -e PIN_ABLAGE_SCHLUESSEL="$ABLAGESCHLUESSEL" \
@@ -224,6 +225,20 @@ docker logs pr-agt 2>&1 | grep -qE "^  \[.*\] freigeschaltet" && D=ja || D=nein
 ergebnis "SMC-B wird selbsttätig freigeschaltet" "$D"
 [ "$(docker logs pr-sim 2>&1 | grep -c 'no selectable')" = "0" ] && H=ja || H=nein
 ergebnis "keine TLS-Handshake-Fehler" "$H"
+
+# ADR-0011: Nicht nur DASS es klappt, sondern ÜBER WELCHEN WEG. Bis zum
+# 10.08.2026 war dieser Nachweis grün, während das Übergabemodell falsch war —
+# der Simulator bildete denselben Irrtum nach wie der Agent. Der Zähler im
+# Terminal ist der Unterschied zwischen „funktioniert" und „funktioniert so,
+# wie das echte Gerät es verlangt".
+UEB=$(curl -s "$SIMBASIS/steuerung/KT-EMPFANG-01/smcb-uebergaben" \
+      | grep -oE '"uebergaben":[0-9]+' | cut -d: -f2)
+[ "${UEB:-0}" -ge 1 ] && SM=ja || SM=nein
+ergebnis "die PIN kam über die Remote SMCB API (${UEB:-0} Übergaben)" "$SM"
+VERB=$(curl -s "$SIMBASIS/steuerung/KT-EMPFANG-01/smcb-uebergaben" \
+       | grep -oE '"angemeldet":(true|false)' | cut -d: -f2)
+[ "$VERB" = "true" ] && SV=ja || SV=nein
+ergebnis "die Verbindung bleibt nach der Übergabe bestehen" "$SV"
 
 # ---------------------------------------------------------------- FA-PIN-030
 hinweis "FA-PIN-030 — falsche PIN löst genau EINEN Versuch aus"
