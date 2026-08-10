@@ -49,7 +49,7 @@ Seit dem 07.08.2026 hinzugekommen:
 | KSR-Zustand „aktualisierend" | wird erkannt, keine PIN-Verifikation währenddessen (`[gemSpec_Kon] 4.3.10`) |
 | Versionsprüfung gegen die Registry | läuft (FA-UPD-010) |
 | Startkonto aus der Konfiguration | läuft (FA-BEN-035) — der Zugang überlebt einen Datenverlust |
-| Einheitlichkeit der Oberfläche | erzwungen statt gepflegt: `Bedienelemente` mit Pflicht-Kurzhinweis, Abstandsraster, 19 maschinelle Prüfpunkte ([Umsetzung 26](03-umsetzung/26-ux-refactoring.md)) |
+| Einheitlichkeit der Oberfläche | erzwungen statt gepflegt: `Bedienelemente` mit Pflicht-Kurzhinweis, Abstandsraster, 20 maschinelle Prüfpunkte ([Umsetzung 26](03-umsetzung/26-ux-refactoring.md)) |
 
 > Umsetzungsstand je Anforderung: [docs/01a-umsetzungsstand.md](01a-umsetzungsstand.md).
 > Was der PO entscheiden muss: [docs/ENTSCHEIDUNGEN-PO.md](ENTSCHEIDUNGEN-PO.md).
@@ -541,7 +541,7 @@ Deshalb ist die Antwort architektonisch, nicht kosmetisch:
 - **`Bedienelemente`** mit dem Kurzhinweis als **Pflichtparameter**. Ein Knopf
   ohne Erklärung lässt sich nicht bauen — das erledigt der Compiler.
 - Ein **Abstandsraster** (`--r1` bis `--r6`) statt frei gewählter Werte.
-- **19 maschinelle Prüfpunkte** (`pruefungen/oberflaeche-pruefen.sh`), die nicht
+- **20 maschinelle Prüfpunkte** (`pruefungen/oberflaeche-pruefen.sh`), die nicht
   fragen, ob Sortierung *angeboten* wird, sondern ob sie die Reihenfolge
   *ändert*.
 

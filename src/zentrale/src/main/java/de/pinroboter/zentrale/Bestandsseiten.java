@@ -256,7 +256,7 @@ final class Bestandsseiten {
         // Alles darum — Filterleiste, Fokus, Cursorposition — bleibt stehen.
         s.append("<div id=\"terminalliste\" class=\"traegt\">");
         s.append("<p class=\"suchstand\" id=\"t-treffer\" role=\"status\" aria-live=\"polite\" "
-                + "style=\"padding:.5rem 1.2rem 0;margin:0\">")
+                + "class=\"suchstand treffer\">")
          .append(seite.gesamt()).append(seite.gesamt() == 1 ? " Treffer" : " Treffer").append("</p>");
         if (seite.eintraege().isEmpty()) {
             s.append("<p class=\"leer\">")
@@ -272,17 +272,15 @@ final class Bestandsseiten {
                     <caption class="nurLeser">Erfasste Kartenterminals</caption>
                     <thead><tr>
                       <th scope="col" class="wahl"><span class="nurLeser">Auswahl</span></th>
-                      %s%s%s%s%s
+                      %s%s%s
                       <th scope="col">SMC-B</th>
                       <th scope="col">Zugang</th>
                       %s
-                      <th scope="col">Aktionen</th>
+                      <th scope="col"><span class="nurLeser">Aktionen</span></th>
                     </tr></thead><tbody>"""
                     .formatted(
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.BEZEICHNUNG),
-                            spaltenkopf(a, Bestandsverwaltung.Sortierung.KENNUNG),
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.KONNEKTOR),
-                            spaltenkopf(a, Bestandsverwaltung.Sortierung.STANDORT),
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.MODELL),
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.ERREICHBARKEIT)));
             for (var t : seite.eintraege()) {
@@ -291,11 +289,11 @@ final class Bestandsseiten {
                           <td class="wahl"><input type="checkbox" name="geraet" value="%d"
                             form="massenform" aria-label="%s auswählen"></td>
                           <td><a class="zeilenziel" href="/bestand/terminal/%d"
-                                 title="Öffnet Stammdaten, Zugang und PIN dieses Kartenterminals">%s</a>%s</td>
-                          <td><code>%s</code></td>
+                                 title="Öffnet Stammdaten, Zugang und PIN dieses Kartenterminals">%s</a>%s
+                              <span class="kennung zweitzeile" title="Kennung des Terminals">%s</span>
+                              <span class="kennung zweitzeile adresse" title="Netzwerkadresse">%s</span></td>
                           <td>%s</td>
-                          <td>%s</td>
-                          <td class="klein">%s%s</td>
+                          <td class="klein einzeilig" title="%s">%s%s</td>
                           <td>%s</td>
                           <td>%s</td>
                           <td>%s</td>
@@ -316,7 +314,12 @@ final class Bestandsseiten {
                                 t.id(), esc(t.bezeichnung()),
                                 t.id(), esc(t.bezeichnung()),
                                 t.aktiv() ? "" : " <span class=\"marke\">deaktiviert</span>",
-                                esc(t.terminalId()), esc(t.konnektor()), esc(nz(t.standortangabe())),
+                                esc(t.terminalId()),
+                                t.standortangabe() == null || t.standortangabe().isBlank()
+                                        ? "—" : esc(t.standortangabe()),
+                                esc(t.konnektor()),
+                                esc(nz(t.modell()))
+                                        + (t.firmware() == null ? "" : " / " + esc(t.firmware())),
                                 esc(nz(t.modell())),
                                 t.firmware() == null ? "" : " / " + esc(t.firmware()),
                                 smcbMarke(t),
@@ -380,17 +383,19 @@ final class Bestandsseiten {
                 <caption class="nurLeser">Beim Konnektor ermittelte Kartenterminals</caption>
                 <thead><tr>
                   <th scope="col" class="wahl"><span class="nurLeser">Auswahl</span></th>
-                  <th scope="col">Kennung</th><th scope="col">Name</th>
+                  <th scope="col">Gerät</th>
                   <th scope="col">Modell / Firmware</th><th scope="col">SMC-B</th>
                   <th scope="col">PEviM</th><th scope="col">Lage</th>
-                  <th scope="col">Zuletzt gesehen</th><th scope="col">Aktion</th>
+                  <th scope="col">Zuletzt gesehen</th>
+                  <th scope="col"><span class="nurLeser">Aktion</span></th>
                 </tr></thead><tbody>""");
 
         for (var f : funde) {
             s.append("""
                     <tr>
                       <td class="wahl">%s</td>
-                      <td><code>%s</code></td><td>%s</td>
+                      <td class="geraet">%s
+                          <span class="kennung zweitzeile">%s</span></td>
                       <td class="klein">%s%s</td>
                       <td>%s</td><td>%s</td>
                       <td>%s%s</td>
@@ -403,7 +408,7 @@ final class Bestandsseiten {
                                        + "\" form=\"sammelform\" aria-label=\"" + esc(f.terminalId())
                                        + " auswählen\">")
                                     : "",
-                            esc(f.terminalId()), esc(nz(f.name())),
+                            esc(nz(f.name())), esc(f.terminalId()),
                             esc(nz(f.modell())),
                             f.firmware() == null ? "" : " / " + esc(f.firmware()),
                             f.hatSmcb() ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>vorhanden</span>"
@@ -542,7 +547,7 @@ final class Bestandsseiten {
             // und darf nicht so tun, als fehle etwas Pflichtiges.
             return """
                     <div class="tafel"><h3>Informationsmodell des Konnektors</h3>
-                    <div class="anmeldeinhalt">%s
+                    <div class="karte-leib">%s
                       <p class="hilfe">Diese Schnittstelle ist herstellerspezifisch und von der
                          gematik nicht spezifiziert. Ohne sie funktioniert alles weiter — die
                          Werte des Aufrufkontexts (Mandant, Clientsystem, Arbeitsplatz) sind
@@ -555,7 +560,7 @@ final class Bestandsseiten {
         return """
                 <div class="tafel"><h3>Informationsmodell des Konnektors
                   <span class="zaehler">gelesen %s</span></h3>
-                <div class="anmeldeinhalt">
+                <div class="karte-leib">
                   <p class="hilfe">Aus diesen Werten setzt sich der Aufrufkontext zusammen
                      (<code>TUC_KON_000</code>). Sie beim Erfassen eines Konnektors
                      <strong>auszuwählen statt abzutippen</strong> beseitigt die häufigste

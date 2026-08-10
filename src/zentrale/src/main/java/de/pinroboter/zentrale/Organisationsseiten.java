@@ -184,7 +184,7 @@ final class Organisationsseiten {
                 <form method="post" action="/organisation/%d/umbenennen" class="feldreihe">
                   <div class="feldgruppe"><label for="o-bez">Bezeichnung</label>
                     <input id="o-bez" name="bezeichnung" required maxlength="160" value="%s"></div>
-                  <div class="feldgruppe"><label for="o-bez-k" class="nurLeser">Speichern</label>
+                  <div class="feldaktion">
                     <button id="o-bez-k" class="knopf" type="submit" title="Speichert den neuen Namen dieser Einheit" aria-label="Speichert den neuen Namen dieser Einheit">Umbenennen</button></div>
                 </form>""".formatted(e.id(), esc(e.bezeichnung())));
 
@@ -208,17 +208,19 @@ final class Organisationsseiten {
                     <form method="post" action="/organisation/%d/umhaengen" class="feldreihe">
                       <div class="feldgruppe"><label for="o-eltern">Übergeordnete Einheit</label>
                         <select id="o-eltern" name="elternId" aria-describedby="o-eltern-hilfe">%s</select></div>
-                      <div class="feldgruppe"><label for="o-eltern-k" class="nurLeser">Verschieben</label>
+                      <div class="feldaktion">
                         <button id="o-eltern-k" class="knopf" type="submit" title="Verschiebt diese Einheit unter die gewählte übergeordnete Einheit" aria-label="Verschiebt diese Einheit unter die gewählte übergeordnete Einheit">Umhängen</button></div>
-                    </form>
-                    <p id="o-eltern-hilfe" class="hilfe">Beim Umhängen zieht alles mit, was an
-                       dieser Einheit hängt — Geräte, Konten und deren Zuständigkeiten.</p>"""
+                      <p id="o-eltern-hilfe" class="hilfe feldbreit">Beim Umhängen zieht alles
+                         mit, was an dieser Einheit hängt — Geräte, Konten und deren
+                         Zuständigkeiten.</p>
+                    </form>"""
                     .formatted(e.id(), ziele));
         }
 
         if (e.elternId() != null && !e.leer()) {
-            s.append("<p class=\"hilfe\">Löschen nicht möglich: Daran hängen noch ")
-             .append(esc(e.hindernis())).append(". Bitte zuerst verschieben oder entfernen.</p>");
+            s.append("<div class=\"hinweis\"><div><strong>Löschen nicht möglich</strong>"
+                    + "Daran hängen noch ").append(esc(e.hindernis()))
+             .append(". Bitte zuerst verschieben oder entfernen.</div></div>");
         }
         return s.append("</div></div>").toString();
     }

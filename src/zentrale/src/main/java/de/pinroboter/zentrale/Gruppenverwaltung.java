@@ -218,6 +218,40 @@ public class Gruppenverwaltung {
             System.err.println("Vorgabegruppe für " + einrichtung
                     + " konnte nicht angelegt werden: " + e.getMessage());
         }
+
+        var v = vorgabegruppe(einrichtung);
+        if (v.isPresent()) return v;
+
+        // Zweiter Anlauf für einen Fall, der am 10.08.2026 am laufenden Stand
+        // auftrat: Es gibt bereits eine Gruppe „Alle Geräte" in dieser
+        // Einrichtung — von Hand angelegt, ohne Vorgabe-Kennzeichen. Das
+        // Einfügen oben scheitert dann am eindeutigen Namensindex, ON CONFLICT
+        // schluckt es, und die Einrichtung bleibt ohne Vorgabegruppe. Jedes
+        // gemeldete Gerät fiel durch.
+        //
+        // Statt einen Ausweichnamen zu erfinden („Alle Geräte (2)"), wird die
+        // ÄLTESTE vorhandene Gruppe zur Vorgabe erklärt. Das ist deterministisch
+        // und trifft die Absicht: Wer eine Gruppe angelegt hat, will Geräte
+        // dort haben — nicht in einer zweiten mit fast gleichem Namen.
+        //
+        // Nur in DIESEM Fall. Hat eine Einrichtung fachlich benannte Gruppen
+        // („Notaufnahme", „Archiv"), aber keine „Alle Geräte", so gelingt das
+        // Einfügen oben, und es entsteht eine eigene Vorgabegruppe. Sonst
+        // landete jedes neu erkannte Gerät in der Notaufnahme.
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                UPDATE geraetegruppe SET ist_vorgabe = TRUE
+                WHERE id = (SELECT id FROM geraetegruppe WHERE einrichtung = ?
+                            ORDER BY angelegt, id LIMIT 1)""")) {
+            p.setString(1, einrichtung);
+            if (p.executeUpdate() == 1) {
+                System.err.println("Bestehende Gruppe in " + einrichtung
+                        + " wurde zur Vorgabegruppe erklärt — neu erkannte Geräte "
+                        + "landen dort.");
+            }
+        } catch (SQLException e) {
+            System.err.println("Vorgabegruppe für " + einrichtung
+                    + " konnte nicht bestimmt werden: " + e.getMessage());
+        }
         return vorgabegruppe(einrichtung);
     }
 

@@ -21,7 +21,7 @@
 set -uo pipefail
 
 KEKSE="${1:?Keksdatei mit angemeldeter Sitzung erwartet}"
-BASIS="${PR_BASIS:-$BASIS}"
+BASIS="${PR_BASIS:-http://localhost:8090}"
 ABLAGE=$(mktemp -d)
 trap 'rm -rf "$ABLAGE"' EXIT
 
@@ -150,10 +150,11 @@ ergebnis "das Abstandsraster ist vollstaendig definiert ($RASTER von 6 Stufen)" 
 # ── 6. Keine Abstaende in Inline-Styles ───────────────────────────────────
 # Ein style="padding:..." im Java-Code umgeht das Raster und ist von aussen
 # nicht auffindbar — genau so entstanden die 37 Werte.
-INLINE=$(grep -ohE 'style="[^"]*"' src/zentrale/src/main/java/de/pinroboter/zentrale/*.java \
+INLINE=$(grep -ohE 'style="[^"]*"|style=\\"[^\\]*\\"' \
+           src/zentrale/src/main/java/de/pinroboter/zentrale/*.java \
          | grep -cE "(padding|gap|margin)" || true)
-[ "${INLINE:-9}" -le 3 ] && I=ja || I=nein
-ergebnis "kaum Abstaende in Inline-Styles ($INLINE, hoechstens 3 geduldet)" "$I"
+[ "${INLINE:-9}" = "0" ] && I=ja || I=nein
+ergebnis "keine Abstaende in Inline-Styles ($INLINE)" "$I"
 
 # ── 6b. Tabellenzellen bleiben Tabellenzellen ─────────────────────────────
 # display:flex auf einem <td> nimmt die Zelle aus dem Tabellenlayout: Die
@@ -187,6 +188,49 @@ PY2
 )
 [ "${SPALTEN:-1}" = "0" ] && SP=ja || SP=nein
 ergebnis "jede Tabellenzeile hat so viele Zellen wie ihr Kopf ($SPALTEN Abweichungen)" "$SP"
+
+# ── 6c. Knoepfe werden nicht gestreckt ────────────────────────────────────
+# Eine .feldgruppe hat flex:1 1 14rem und waechst auf die halbe Reihenbreite.
+# Steckt ein Knopf darin, wird er so breit wie das Eingabefeld daneben — der
+# PO hat das am 10.08.2026 in der Organisationsmaske gesehen. Ein Knopf ist so
+# breit wie seine Beschriftung; dafuer gibt es .feldaktion.
+GESTRECKT=$(python3 - "$ABLAGE" <<'PY2'
+import re, sys, glob, os
+n = 0
+for f in glob.glob(os.path.join(sys.argv[1], "*.html")):
+    h = open(f, encoding="utf-8").read()
+    for m in re.finditer(r'<div class="feldgruppe"[^>]*>(.*?)</div>', h, re.S):
+        if re.search(r'<button|class="[^"]*knopf', m.group(1)): n += 1
+print(n)
+PY2
+)
+[ "${GESTRECKT:-1}" = "0" ] && GS=ja || GS=nein
+ergebnis "kein Knopf steckt in einer gestreckten Feldgruppe ($GESTRECKT)" "$GS"
+
+# ── 6d. Tabellen passen ins Bild ─────────────────────────────────────────
+# Eine Tabelle darf breiter sein als ihr Container — sie rollt dann. Wenn sie
+# aber DEUTLICH breiter ist, sieht niemand die letzten Spalten, und der
+# Rollbalken wird unter macOS ausgeblendet. Der PO hat das zweimal gemeldet.
+#
+# Gemessen wird an der Spaltenzahl, weil sich die Pixelbreite ohne Browser
+# nicht bestimmen laesst: Ab neun Spalten passt keine Liste mehr in ein
+# 1280 Pixel breites Fenster. Das ist eine Faustregel aus der Messung am
+# 10.08.2026 (acht Spalten = 996 px bei 982 px Platz).
+BREIT=$(python3 - "$ABLAGE" <<'PY2'
+import re, sys, glob, os
+schlimmste = 0
+for f in glob.glob(os.path.join(sys.argv[1], "*.html")):
+    h = open(f, encoding="utf-8").read()
+    for tab in re.findall(r'<table\b.*?</table>', h, re.S):
+        kopf = re.search(r'<thead\b.*?</thead>', tab, re.S)
+        if not kopf: continue
+        n = len(re.findall(r'<th\b', kopf.group(0)))
+        schlimmste = max(schlimmste, n)
+print(schlimmste)
+PY2
+)
+[ "${BREIT:-99}" -le 8 ] && BR=ja || BR=nein
+ergebnis "keine Liste hat mehr als acht Spalten (hoechste: $BREIT)" "$BR"
 
 # ── 7. Destruktives ist bestaetigungspflichtig ────────────────────────────
 # UX-Vorgabe 2: jede destruktive Aktion ist bestaetigungspflichtig.

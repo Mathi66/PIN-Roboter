@@ -151,10 +151,16 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
   # 10 s ist das kleinste zulaessige Intervall (CHECK in der Datenbank, als
   # Lastschutz gewollt). Die Nachweise takten damit so schnell, wie das Produkt
   # es ueberhaupt zulaesst.
-  VORGABEGRUPPE=$(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
-      "SELECT id FROM geraetegruppe WHERE ist_vorgabe" 2>/dev/null | tr -d ' \r\n')
-  [ -n "$VORGABEGRUPPE" ] && curl -s -b "$KEKSE" -o /dev/null -X POST \
-      "$BASIS/gruppen/$VORGABEGRUPPE/intervall" --data-urlencode "intervall=10"
+  # ALLE Vorgabegruppen, nicht "die eine": Seit jede Einrichtung eine eigene
+  # hat, liefert eine Abfrage ohne Einschraenkung mehrere Zeilen. Am 10.08.2026
+  # wurde die Variable dadurch mehrzeilig, der Aufruf schlug fehl, das Intervall
+  # blieb bei 60 s — und zwei Nachweise warteten vergeblich auf eine
+  # Verifikation. Dieselbe Annahme hatte schon einmal zugeschlagen.
+  for VG in $(docker exec pr-db psql -U pinroboter -d pinroboter -tAc \
+              "SELECT id FROM geraetegruppe WHERE ist_vorgabe" 2>/dev/null | tr -d ' \r'); do
+    curl -s -b "$KEKSE" -o /dev/null -X POST \
+        "$BASIS/gruppen/$VG/intervall" --data-urlencode "intervall=10"
+  done
 
   # Ab Iteration 6 muss der Agent registriert sein (FA-AGT-010).
   GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
@@ -1327,6 +1333,13 @@ ergebnis "keine Absenderadresse im Protokoll (Treffer: $IST)" "$AA"
 
 # Die Anmeldung muss trotz Bremse weiter moeglich sein - eine harte Sperre
 # waere die schlechtere Wahl.
+#
+# Die Bremse gilt fuer den ABSENDER, nicht fuer das Konto: Nach acht
+# Fehlversuchen ist die Adresse des Pruefstands selbst gebremst, und zwar bis
+# zu 30 Sekunden (Anmeldebremse.HOECHSTENS). Am 10.08.2026 brach der Lauf hier
+# ab — nicht wegen eines Fehlers, sondern weil die Bremse genau das tat, was
+# sie soll. Der Nachweis hat den Zustand erzeugt, also raeumt er ihn auch ab.
+python3 -c "import time; time.sleep(32)"
 rm -f "$KEKSE"
 anmelden
 CODE=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' $BASIS/geraete)

@@ -154,4 +154,71 @@ class GruppenverwaltungTest {
         assertEquals(ersteId, gv.vorgabegruppeAnlegen(einrichtung).orElseThrow().id());
         assertEquals(1, gv.alle(einrichtung, ALLES).stream().filter(Gruppenverwaltung.Gruppe::istVorgabe).count());
     }
+
+    @Test
+    @DisplayName("Eine bestehende Gruppe wird zur Vorgabe, wenn der Name schon belegt ist")
+    void bestehendeGruppeWirdVorgabe() {
+        // Am 10.08.2026 am laufenden Stand aufgetreten: In einer Einrichtung
+        // gab es bereits eine von Hand angelegte Gruppe „Alle Geräte" — ohne
+        // Vorgabe-Kennzeichen. Das Anlegen der Vorgabegruppe scheiterte am
+        // eindeutigen Namensindex, ON CONFLICT schluckte es, und JEDES vom
+        // Agenten gemeldete Gerät fiel durch. Vier Terminals waren im
+        // Protokoll sichtbar, aber in keiner Geräteliste.
+        String einrichtung = "Standort-" + UUID.randomUUID().toString().substring(0, 8);
+        assertNull(gv.anlegen("Alle Geräte", einrichtung, 60));
+        assertTrue(gv.vorgabegruppe(einrichtung).isEmpty(),
+                "Vorbedingung: eine Gruppe, aber keine als Vorgabe gekennzeichnet");
+
+        String terminal = "KT-" + UUID.randomUUID().toString().substring(0, 8);
+        assertTrue(gv.geraetSicherstellen(terminal, einrichtung, "Terminal"),
+                "Das Gerät muss erfasst werden, auch wenn der Name der Vorgabegruppe belegt ist");
+
+        // Und zwar in der VORHANDENEN Gruppe, nicht in einer zweiten mit
+        // Ausweichnamen: Wer eine Gruppe angelegt hat, will Geräte dort haben.
+        assertEquals(1, gv.alle(einrichtung, ALLES).size(),
+                "Es darf keine zweite Gruppe entstanden sein");
+        var v = gv.vorgabegruppe(einrichtung);
+        assertTrue(v.isPresent());
+        assertEquals("Alle Geräte", v.get().bezeichnung());
+        assertEquals(v.get().id(), gv.gruppeVon(terminal).orElseThrow());
+    }
+
+    @Test
+    @DisplayName("Neben fachlich benannten Gruppen entsteht eine eigene Vorgabegruppe")
+    void eigeneVorgabeNebenFachgruppen() {
+        // Wichtige Unterscheidung: Hat eine Einrichtung Gruppen wie
+        // „Notaufnahme" und „Archiv", darf NICHT eine davon zur Vorgabe werden
+        // — sonst landete jedes neu erkannte Gerät in der Notaufnahme. Es
+        // entsteht eine eigene Gruppe „Alle Geräte".
+        String einrichtung = "Standort-" + UUID.randomUUID().toString().substring(0, 8);
+        assertNull(gv.anlegen("Notaufnahme", einrichtung, 30));
+        assertNull(gv.anlegen("Archiv", einrichtung, 300));
+
+        var v = gv.vorgabegruppeAnlegen(einrichtung);
+        assertTrue(v.isPresent());
+        assertEquals("Alle Geräte", v.get().bezeichnung());
+        assertEquals(3, gv.alle(einrichtung, ALLES).size());
+        // Und die fachlichen Gruppen behalten ihr Prüfintervall.
+        assertEquals(30, gv.alle(einrichtung, ALLES).stream()
+                .filter(g -> g.bezeichnung().equals("Notaufnahme"))
+                .findFirst().orElseThrow().pruefintervallSekunden());
+    }
+
+    @Test
+    @DisplayName("Ist der Name belegt, wird die älteste vorhandene Gruppe zur Vorgabe")
+    void aeltesteWirdVorgabeWennNameBelegt() {
+        // Nur in diesem Fall greift der zweite Anlauf: „Alle Geräte" lässt sich
+        // nicht anlegen, weil es den Namen schon gibt. Deterministisch über das
+        // Anlegedatum, damit nicht die Sortierreihenfolge der Datenbank
+        // entscheidet, wo neue Geräte landen.
+        String einrichtung = "Standort-" + UUID.randomUUID().toString().substring(0, 8);
+        assertNull(gv.anlegen("Alle Geräte", einrichtung, 60));
+        assertNull(gv.anlegen("Danach angelegt", einrichtung, 60));
+
+        var v = gv.vorgabegruppeAnlegen(einrichtung);
+        assertTrue(v.isPresent());
+        assertEquals("Alle Geräte", v.get().bezeichnung());
+        assertEquals(2, gv.alle(einrichtung, ALLES).size(),
+                "Es darf keine dritte Gruppe entstanden sein");
+    }
 }

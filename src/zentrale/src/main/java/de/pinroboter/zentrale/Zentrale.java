@@ -919,7 +919,7 @@ public class Zentrale {
         } else if (z.fehler() == null && z.zuletztGeprueft() != null) {
             s.append(" <span class=\"marke ok\"><span class=\"sym\">✓</span>aktuell</span>");
         }
-        s.append("</h3><div class=\"karte-leib\" style=\"padding:1.1rem 1.2rem\">");
+        s.append("</h3><div class=\"karte-leib\">");
 
         if (z.fehler() != null) {
             s.append("<div class=\"hinweis warnend\"><div><strong>Die Registry lässt sich "
@@ -1026,7 +1026,7 @@ public class Zentrale {
                              placeholder="z. B. Agent Praxis Nord"></div>
                     <div class="feldgruppe"><label for="ag-einr">Einrichtung</label>
                       <select id="ag-einr" name="einrichtung" aria-describedby="ag-hilfe">%s</select></div>
-                    <div class="feldgruppe"><label for="ag-k" class="nurLeser">Erzeugen</label>
+                    <div class="feldaktion">
                       <button id="ag-k" class="knopf haupt" type="submit" title="Erzeugt einen einmaligen Code, mit dem sich ein Standort-Agent anmeldet" aria-label="Erzeugt einen einmaligen Code, mit dem sich ein Standort-Agent anmeldet">Zugangscode erzeugen</button></div>
                   </div>
                   <p id="ag-hilfe" class="hilfe">Alles, was dieser Agent meldet — Geräte, Alarme,
@@ -1074,7 +1074,7 @@ public class Zentrale {
         s.append("</tbody></table></div>");
         s.append(agentAnlegenFormular(bereich));
         s.append("""
-                <div class="karte-leib karte-leib">
+                <div class="karte-leib">
                   <p class="hilfe">Die Zentrale unterstützt die Protokollversionen %d bis %d.
                      Ein Agent außerhalb dieser Spanne wird <strong>nicht abgewiesen</strong> —
                      das hieße: keine PIN-Verifikation an diesem Standort. Er arbeitet weiter,
@@ -1097,7 +1097,7 @@ public class Zentrale {
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>PINs neu zu hinterlegen "
                 + "<span class=\"zaehler\">" + fehlen.size() + "</span></h3>"
-                + "<div class=\"karte-leib\" style=\"padding:1rem 1.2rem\">"
+                + "<div class=\"karte-leib\">"
                 + "<div class=\"hinweis warnend\"><div><strong>Der Standort-Agent hat einen "
                 + "neuen Schlüssel.</strong> Das geschieht, wenn er neu aufgesetzt oder sein "
                 + "Datenverzeichnis geleert wurde. Die zuvor hinterlegten PINs kann er nicht "
@@ -1128,7 +1128,7 @@ public class Zentrale {
         s.append(versionstafel());
         s.append(agententafel(bereich));
         s.append(fehlendePinsTafel());
-        s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"anmeldeinhalt\">");
+        s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"karte-leib\">");
         if (b.vorhanden()) {
             s.append("""
                     <p>Ein Demodatensatz ist eingerichtet:</p>
@@ -1177,7 +1177,7 @@ public class Zentrale {
         s.append("""
                 <div class="tafel"><h3>Leistungsmessung
                   <span class="zaehler">%s</span></h3>
-                <div class="anmeldeinhalt">
+                <div class="karte-leib">
                   <p class="unterzeile">Legt einen Bestand in der Größe des Mengengerüsts an
                      (%d Kartenterminals), damit sich die Zielwerte aus NFA-LEI-010 auf
                      dieser Hardware nachmessen lassen — statt sie zu schätzen.</p>
@@ -1455,6 +1455,40 @@ public class Zentrale {
         return s == null ? "" : java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * „3 von 4 Agenten verbunden" — die Zahl statt eines Ja/Nein.
+     *
+     * <p>Ein Standort-Agent gilt als verbunden, wenn er sich in den letzten
+     * zwei Minuten gemeldet hat. Der Grundtakt beträgt 10 s; zwei Minuten
+     * lassen einen ausgefallenen Takt zu, ohne einen abgehängten Agenten als
+     * verbunden auszuweisen.
+     */
+    private String agentZeile() {
+        var alle = agenten.alle();
+        if (alle.isEmpty()) return "kein Agent eingerichtet";
+        Instant grenze = Instant.now().minusSeconds(120);
+        long verbunden = alle.stream()
+                .filter(a -> a.zuletztGesehen() != null && a.zuletztGesehen().isAfter(grenze))
+                .count();
+        if (alle.size() == 1) {
+            return verbunden == 1 ? "Agent verbunden" : "Agent nicht erreichbar";
+        }
+        return verbunden + " von " + alle.size() + " Agenten verbunden";
+    }
+
+    /**
+     * Die laufende Version, wie sie im Manifest steht.
+     *
+     * <p>Im Entwicklungslauf aus der Entwicklungsumgebung heraus gibt es kein
+     * Manifest; dann steht „Entwicklungsstand" statt einer erfundenen Nummer.
+     * Eine Versionsangabe, die nicht stimmt, ist schlimmer als keine — nach ihr
+     * wird gefragt, wenn etwas nicht funktioniert.
+     */
+    private static String versionsanzeige() {
+        String v = Versionspruefung.laufendeVersion();
+        return "unbekannt".equals(v) ? "Entwicklungsstand" : "Version " + v;
+    }
+
     private static String kopfWert(Context c, String name) {
         String v = c.header(name);
         return v == null ? "" : v.trim();
@@ -1685,7 +1719,7 @@ public class Zentrale {
         }
         s.append("</tbody></table></div>");
         s.append("""
-                <div class="karte-leib karte-leib">
+                <div class="karte-leib">
                   <p class="hilfe">Als „aktuellster Stand" gilt die höchste vorkommende Version
                      je Modell. Einen Sollstand kennt der Roboter nicht — die Firmware kommt vom
                      Hersteller des Geräts, nicht von uns.</p>
@@ -1954,7 +1988,15 @@ public class Zentrale {
     }
 
     private String seitenleiste(String aktiv, Benutzerverwaltung.Benutzer angemeldet) {
-        String agentText = agentGesehen == null ? "kein Agent verbunden" : "Agent verbunden";
+        // Wie viele Agenten melden sich gerade? Bis zum 10.08.2026 stand hier
+        // nur "Agent verbunden" — bei einer Serviceorganisation mit dreißig
+        // Standorten sagt das nichts. Jetzt: wie viele von wie vielen.
+        //
+        // "Verbunden" heißt: innerhalb der letzten zwei Minuten gemeldet. Der
+        // Grundtakt liegt bei 10 s und das längste Prüfintervall im Betrieb bei
+        // 60 s — zwei Minuten lassen einen ausgefallenen Takt zu, ohne einen
+        // wirklich abgehängten Agenten als verbunden auszuweisen.
+        String agentText = agentZeile();
         int offeneAlarme = alarme.zaehlen("Praxis").values().stream().mapToInt(Integer::intValue).sum();
 
         StringBuilder s = new StringBuilder();
@@ -1962,11 +2004,12 @@ public class Zentrale {
                 <nav class="leiste" aria-label="Hauptnavigation">
                   <div class="marke-kopf">
                     <div class="marke-zeichen" aria-hidden="true">PR</div>
-                    <div class="marke-text">PIN-Roboter<small>%s</small></div>
+                    <div class="marke-text">PIN-Roboter<small>%s</small><small
+                         class="version" title="Laufende Version dieser Zentrale">%s</small></div>
                   </div>
                   <nav class="bereiche" aria-label="Arbeitsbereiche">
                     <div class="bereich-titel">Betrieb</div>
-                """.formatted(esc(agentText)));
+                """.formatted(esc(agentText), esc(versionsanzeige())));
 
         s.append(bereichsLink(aktiv, "uebersicht", "/", "Lage",
                 "<path d=\"M3 10a7 7 0 0 1 14 0M10 10l3.5-3\"/><circle cx=\"10\" cy=\"10\" r=\"1.3\" fill=\"currentColor\" stroke=\"none\"/>",
@@ -2233,7 +2276,11 @@ public class Zentrale {
             String id = c.pathParam("terminalId");
             String zeitraum = c.queryParam("zeitraum");
             if (zeitraum == null || zeitraum.isBlank()) zeitraum = "7t";
+            // Die Feinauswahl schlaegt die Sicht: Wer einzelne Arten ankreuzt,
+            // hat sich bewusst entschieden. Ohne Haekchen entscheidet die
+            // Sicht, und ohne Sicht wird nichts gefiltert.
             var arten = c.queryParams("art");
+            if (arten.isEmpty()) arten = Verlaufsseiten.artenDerSicht(c.queryParam("sicht"));
             var seite = protokoll.seite(id, arten, null,
                     Verlaufsseiten.seitFuer(zeitraum), null,
                     Math.max(1, zahl(c.queryParam("seite"), 1)), 200, bereich(c));

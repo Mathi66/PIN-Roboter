@@ -96,10 +96,79 @@ public enum Ereignisart {
 
     public enum Stufe { TECHNISCH, ROUTINE, SICHERHEIT }
 
+    /**
+     * Themenbereich für die Filterung in der Oberfläche.
+     *
+     * <p>Am 10.08.2026 zeigte der Zeitstrahl <b>59 Ankreuzfelder, alle
+     * angehakt</b>. Das ist kein Filter: Der Vorgabezustand „alles an" verlangt
+     * abzuwählen, was man nicht will, und bei 59 Möglichkeiten tut das niemand.
+     *
+     * <p>Der Bereich gehört zur Ereignisart, nicht zur Darstellung — sonst
+     * müsste jede Seite die Zuordnung erneut treffen und könnte sie anders
+     * treffen.
+     */
+    public enum Bereich {
+        PIN("PIN und Freischaltung"),
+        GERAET("Geräte und Verbindungen"),
+        BETRIEB("Betrieb und Verwaltung");
+
+        private final String anzeige;
+        Bereich(String anzeige) { this.anzeige = anzeige; }
+        public String anzeige() { return anzeige; }
+    }
+
     private final String anzeige;
     private final Stufe stufe;
 
     Ereignisart(String anzeige, Stufe stufe) { this.anzeige = anzeige; this.stufe = stufe; }
     public String anzeige() { return anzeige; }
     public Stufe stufe() { return stufe; }
+
+    /**
+     * Zu welchem Themenbereich diese Art gehört.
+     *
+     * <p>Abgeleitet aus der Reihenfolge im Enum, die den drei Blöcken oben
+     * folgt. Eine zweite Liste zu pflegen hieße, sie irgendwann zu vergessen —
+     * die Grenzen sind {@code GERAET_ERKANNT} und {@code ANMELDUNG_ERFOLGREICH}.
+     */
+    public Bereich bereich() {
+        if (ordinal() < GERAET_ERKANNT.ordinal()) return Bereich.PIN;
+        if (ordinal() < ANMELDUNG_ERFOLGREICH.ordinal()) return Bereich.GERAET;
+        return Bereich.BETRIEB;
+    }
+
+    /**
+     * Meldet diese Art ein Problem?
+     *
+     * <p>Die Grundlage der Sicht „nur Probleme" — der häufigsten Frage an ein
+     * Protokoll. Bewusst eine ausdrückliche Aufzählung statt einer Ableitung
+     * aus dem Namen: „Alarm behoben" enthält „Alarm", ist aber eine gute
+     * Nachricht, und „Karte gesperrt" enthält kein Fehlerwort.
+     */
+    public boolean istProblem() {
+        return switch (this) {
+            case VERIFIKATION_FEHLGESCHLAGEN, KARTE_GESPERRT, HANDLUNGSBEDARF,
+                 GERAET_NICHT_ERREICHBAR, KONNEKTOR_NICHT_ERREICHBAR,
+                 PEVIM_NICHT_AKTIV, ANMELDUNG_FEHLGESCHLAGEN, ANMELDUNG_GEBREMST,
+                 AGENT_REGISTRIERUNG_ABGELEHNT, AGENT_GETRENNT, ALARM_AUSGELOEST,
+                 AUTOMATIK_ANGEHALTEN, NOT_AUS_AUSGELOEST -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Handelt der Roboter hier selbsttätig?
+     *
+     * <p>Grundlage der Sicht „was der Roboter getan hat". Sie beantwortet die
+     * Frage, für die dieses Produkt gebaut wurde: Hat er die Karte
+     * freigeschaltet, und wann?
+     */
+    public boolean istAutomatik() {
+        return bereich() == Bereich.PIN || switch (this) {
+            case GERAET_ERKANNT, GERAET_ERREICHBAR, GERAET_NICHT_ERREICHBAR,
+                 KONNEKTOR_NICHT_ERREICHBAR, ERREICHBARKEIT_GEPRUEFT,
+                 FIRMWARE_GEAENDERT, TERMINAL_AKTUALISIEREND -> true;
+            default -> false;
+        };
+    }
 }

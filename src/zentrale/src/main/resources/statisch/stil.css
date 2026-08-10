@@ -389,14 +389,20 @@ select:focus, input:focus { border-color:var(--akzent); }
 .knopf.warnend:hover { background:var(--fehler-hg); color:var(--fehler); }
 .knopf.gesperrt { opacity:.45; cursor:default; }
 .knopf.gesperrt:hover { border-color:var(--rand-bedien); color:var(--text); }
+/* In Tabellenzeilen zählt jeder Pixel: Bei acht Spalten entscheidet die
+   Aktionsspalte darüber, ob die Tabelle ins Bild passt. */
 .knopf.klein { padding:var(--r1) var(--r2); font-size:.82rem; }
+td.aktionen > * { margin-left:var(--r1); }
+/* Die Aktionsspalte braucht rechts nicht den vollen Kartenrand: Die Knöpfe
+   tragen ihren eigenen Rand, und die Spalte steht ohnehin am Zeilenende. */
+tr > td.aktionen:last-child, tr > th:last-child { padding-right:var(--r3); }
 .knopf.haupt {
   background:var(--akzent); color:var(--auf-akzent); border-color:var(--akzent); font-weight:620;
 }
 .knopf.haupt:hover { filter:brightness(1.12); color:var(--auf-akzent); border-color:var(--akzent); }
 
 .hinweis {
-  display:flex; gap:var(--r2); padding:var(--r3) var(--r4); border-radius:var(--radius-klein);
+  display:block; padding:var(--r3) var(--r4); border-radius:var(--radius-klein);
   background:var(--akzent-hg); font-size:.87rem; line-height:1.55;
   border:1px solid color-mix(in oklab, var(--akzent) 22%, transparent);
 }
@@ -613,7 +619,12 @@ td.einzeilig { max-width:11rem; overflow:hidden; text-overflow:ellipsis; white-s
    Sie umgingen damit das Raster und waren von außen nicht auffindbar — genau
    so sind die 37 Einzelwerte entstanden. Hier stehen sie als benannte
    Klassen, damit eine Änderung wieder an einer Stelle greift. */
-.karte-leib  { padding:var(--karte-y) var(--karte-x); }
+.karte-leib {
+  padding:var(--karte-y) var(--karte-x);
+  display:flex; flex-direction:column; gap:var(--r4); align-items:stretch;
+}
+/* Ein Knopf oder Formular im Karteninhalt behält seine natürliche Breite. */
+.karte-leib > form, .karte-leib > .knopf, .karte-leib > form > .knopf { align-self:flex-start; }
 .karte-eng   { padding:var(--r3) var(--karte-x); }
 .karte-blank { padding:0; }
 .reihe-frei  { display:flex; gap:var(--r3); flex-wrap:wrap; }
@@ -625,7 +636,81 @@ td.einzeilig { max-width:11rem; overflow:hidden; text-overflow:ellipsis; white-s
 .filter-suche { border-bottom:1px solid var(--rand); }
 .filter-suche .suchfeld { flex:1 1 18rem; }
 
-/* Die erste Spalte einer Liste traegt den Namen. Ohne Mindestbreite bricht
-   „Konnektor Allgemeinmedizin Mitte" auf drei Zeilen und macht die ganze
-   Zeile dreimal so hoch — bei zehn Zeilen kostet das den halben Bildschirm. */
-td.geraet, th:first-child { min-width:11rem; }
+/* Die Spalte mit dem Namen braucht eine Mindestbreite: Ohne sie bricht
+   „Konnektor Allgemeinmedizin Mitte" auf drei Zeilen und macht die Zeile
+   dreimal so hoch. Ausdrücklich NICHT über th:first-child — das traf die
+   Ankreuzspalte und blies sie von 42 auf 176 px auf. */
+td.geraet { min-width:11rem; }
+
+/* Innenabstand der Zellen: außen am Kartenrand ausgerichtet, innen enger.
+   Bei acht Spalten kosten 24 px je Seite zusammen 384 px — mehr als ein
+   Drittel der verfügbaren Breite, nur für Luft zwischen Spalten. */
+th, td { padding-left:var(--r3); padding-right:var(--r3); }
+tr > th:first-child, tr > td:first-child { padding-left:var(--karte-x); }
+tr > th:last-child,  tr > td:last-child  { padding-right:var(--karte-x); }
+
+/* Ein Knopf am Ende einer Feldreihe.
+   Vorher steckte er in einer .feldgruppe — und die hat flex:1 1 14rem, wächst
+   also auf die halbe Reihenbreite. Das Ergebnis war ein "Umbenennen"-Knopf so
+   breit wie das Eingabefeld daneben, mit dem Text linksbündig irgendwo darin.
+
+   Ein Knopf ist so breit wie seine Beschriftung. Und er steht auf der
+   Grundlinie des Feldes, zu dem er gehört — nicht auf Höhe von dessen
+   Beschriftung. */
+.feldaktion { display:flex; align-items:flex-end; flex:0 0 auto; }
+.feldaktion .knopf { white-space:nowrap; }
+/* Ein Hilfetext unter einer Feldreihe nimmt die ganze Breite ein — sonst
+   klebt er neben dem Knopf und wirkt wie dessen Beschriftung. */
+.feldreihe > .hilfe.feldbreit { flex:1 1 100%; margin-top:calc(-1 * var(--r2)); }
+/* Der Tagestrenner im Zeitstrahl: enger als eine Bereichsüberschrift in der
+   Seitenleiste, weil er zwischen Einträgen steht und nicht über einer Liste. */
+.bereich-titel.tagestrenner { padding:var(--r3) var(--karte-x) var(--r1); }
+/* Ankreuzfelder, die in einer Reihe stehen statt untereinander — die
+   Ereignisarten im Zeitstrahlfilter. */
+.ankreuz.nebeneinander { display:inline-flex; margin-right:var(--r3); }
+
+/* Die Kennung steht unter dem Namen statt in einer eigenen Spalte. Zehn
+   Spalten passten nicht ins Bild; die Kennung wird gelesen, wenn man ein
+   bestimmtes Gerät sucht, nicht beim Überfliegen der Liste. */
+.kennung.zweitzeile { display:block; font-size:.74rem; }
+/* Die Versionszeile im Kopf der Seitenleiste: leiser als die Agentenzahl —
+   sie wird gebraucht, wenn etwas nicht funktioniert, nicht im Alltag. */
+.marke-text small.version { opacity:.72; font-variant-numeric:tabular-nums; }
+
+/* ── Sichten statt Häkchenwand ────────────────────────────────────────────
+   Vier Karten, von denen genau eine gewählt ist. Jede beantwortet eine Frage,
+   die jemand wirklich hat — „gab es Probleme?" statt „möchte ich
+   PEVIM_NICHT_AKTIV sehen?".
+
+   Das Auswahlfeld bleibt im Markup und wird nur optisch versteckt: Ein
+   Screenreader liest weiterhin eine Optionsgruppe, und die Tastaturbedienung
+   mit Pfeiltasten funktioniert unverändert. */
+.sichten { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
+           gap:var(--r2); border:0; padding:0; margin:0; flex:1 1 100%; }
+.sicht {
+  display:flex; flex-direction:column; gap:var(--r1);
+  padding:var(--r3); border:1px solid var(--rand-bedien);
+  border-radius:var(--radius-klein); cursor:pointer;
+  transition: border-color .15s, background .15s;
+}
+.sicht:hover { border-color:var(--akzent); background:var(--akzent-hg); }
+.sicht input { position:absolute; opacity:0; width:1px; height:1px; }
+.sicht:focus-within { outline:3px solid var(--akzent); outline-offset:2px; }
+.sicht.gewaehlt { border-color:var(--akzent); background:var(--akzent-hg); border-width:2px; padding:calc(var(--r3) - 1px); }
+.sicht-name { font-weight:640; font-size:.9rem; }
+/* Farbe ist nie das einzige Merkmal (WCAG 2.2 AA): Die gewählte Sicht trägt
+   zusätzlich ein Häkchen im Namen. */
+.sicht.gewaehlt .sicht-name::before { content:"✓ "; color:var(--akzent); font-weight:800; }
+.sicht-was { font-size:.8rem; color:var(--gedaempft); line-height:1.4; }
+
+.feinauswahl { flex:1 1 100%; border:0; }
+.feinauswahl-leib { padding:var(--r3) 0 0; display:flex; flex-direction:column; gap:var(--r3); }
+.artgruppe { border:1px solid var(--rand); border-radius:var(--radius-klein);
+             padding:var(--r3); margin:0; }
+.artgruppe legend { font-size:.8rem; font-weight:640; padding:0 var(--r1); }
+.feldgruppe.schmal { flex:0 1 14rem; }
+/* Die Netzwerkadresse steht immer in einer eigenen Zeile unter der Kennung.
+   Zusammen in einer Zeile brach die Kombination je nach Länge des Namens mal
+   um und mal nicht — die Liste wirkte dadurch unruhig, ohne dass sich sagen
+   ließ, woran es liegt. */
+.kennung.zweitzeile.adresse { opacity:.85; }

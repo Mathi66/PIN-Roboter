@@ -11,7 +11,7 @@
 # Aufruf:  pruefungen/barrierefreiheit-pruefen.sh
 set -uo pipefail
 
-BASIS="${PR_BASIS:-$BASIS}"
+BASIS="${PR_BASIS:-http://localhost:8090}"
 cd "$(dirname "$0")/.."
 
 KEKSE=${1:-/tmp/pr-kekse.txt}

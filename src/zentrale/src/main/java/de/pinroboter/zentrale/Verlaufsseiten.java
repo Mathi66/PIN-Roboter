@@ -60,7 +60,7 @@ final class Verlaufsseiten {
                 if (!tag.equals(letzterTag)) {
                     // Tagestrenner: Ohne ihn verschwimmt bei 200 Eintraegen,
                     // was gestern und was heute war.
-                    s.append("<div class=\"bereich-titel\" style=\"padding:.7rem 1.2rem .3rem\">")
+                    s.append("<div class=\"bereich-titel tagestrenner\">")
                      .append(esc(tag)).append("</div>");
                     letzterTag = tag;
                 }
@@ -101,6 +101,62 @@ final class Verlaufsseiten {
                             : " · <a href=\"/vorgang/" + esc(e.vorgang()) + "\">Vorgang ansehen</a>");
     }
 
+    /**
+     * Die vier Sichten, die tatsächlich gebraucht werden.
+     *
+     * <p>Bis zum 10.08.2026 zeigte der Zeitstrahl <b>59 Ankreuzfelder, alle
+     * angehakt</b>. Das ist kein Filter — es ist eine Wand. Zwei Dinge waren
+     * daran falsch:
+     *
+     * <ul>
+     *   <li><b>Die Vorgabe „alles an" verlangt Abwählen.</b> Wer nur
+     *       Freischaltungen sehen will, müsste 52 Häkchen entfernen. Das tut
+     *       niemand — also filtert niemand.</li>
+     *   <li><b>Die Liste folgte der Datenbank, nicht der Frage.</b> Ein
+     *       Anwender fragt „gab es Probleme?", nicht „möchte ich
+     *       {@code PEVIM_NICHT_AKTIV} sehen?".</li>
+     * </ul>
+     *
+     * <p>Deshalb jetzt: vier Sichten, die je eine echte Frage beantworten. Die
+     * Feinauswahl bleibt erreichbar — sie ist die Ausnahme, nicht der Regelweg,
+     * und deshalb zugeklappt.
+     */
+    private enum Sicht {
+        ALLES("Alles", "Jeder Eintrag, nichts ausgeblendet"),
+        PROBLEME("Nur Probleme", "Fehlschläge, Ausfälle, gesperrte Karten — was schiefging"),
+        AUTOMATIK("Was der Roboter tat", "Freischaltungen, Prüfungen, Zustandswechsel der Geräte"),
+        MENSCHEN("Änderungen durch Menschen", "Wer hat was erfasst, geändert, gelöscht");
+
+        final String anzeige, erklaerung;
+        Sicht(String anzeige, String erklaerung) { this.anzeige = anzeige; this.erklaerung = erklaerung; }
+
+        boolean passt(de.pinroboter.gemeinsam.Ereignisart art) {
+            return switch (this) {
+                case ALLES     -> true;
+                case PROBLEME  -> art.istProblem();
+                case AUTOMATIK -> art.istAutomatik();
+                // Alles, was ein Mensch auslöst: weder Automatik noch reine
+                // Störungsmeldung. Bewusst als Rest definiert — sonst fällt
+                // eine neue Ereignisart aus allen Sichten heraus und ist nur
+                // noch über die Feinauswahl zu finden.
+                case MENSCHEN  -> !art.istAutomatik() && !art.istProblem();
+            };
+        }
+
+        static Sicht aus(String s) {
+            for (Sicht x : values()) if (x.name().equalsIgnoreCase(s)) return x;
+            return ALLES;
+        }
+    }
+
+    /** Die Ereignisarten einer Sicht — für den Filter der Abfrage. */
+    static List<String> artenDerSicht(String sicht) {
+        Sicht s = Sicht.aus(sicht);
+        if (s == Sicht.ALLES) return List.of();
+        return java.util.Arrays.stream(de.pinroboter.gemeinsam.Ereignisart.values())
+                .filter(s::passt).map(Enum::name).toList();
+    }
+
     private static String filterleiste(String terminalId, String zeitraum,
                                        List<String> gewaehlt) {
         StringBuilder z = new StringBuilder();
@@ -109,29 +165,74 @@ final class Verlaufsseiten {
              .append(zr.kennung().equals(zeitraum) ? " selected" : "").append(">")
              .append(esc(zr.anzeige())).append("</option>");
         }
-        // Ereignisarten als Ankreuzfelder statt Auswahlliste: Sichtbar ist, was
-        // an und was aus ist, ohne die Liste zu oeffnen.
-        StringBuilder a = new StringBuilder();
-        for (var art : de.pinroboter.gemeinsam.Ereignisart.values()) {
-            boolean an = gewaehlt.isEmpty() || gewaehlt.contains(art.name());
-            a.append("<label class=\"ankreuz\" style=\"display:inline-flex;margin-right:.9rem\">")
-             .append("<input type=\"checkbox\" name=\"art\" value=\"").append(art.name()).append("\"")
-             .append(an ? " checked" : "").append("> <span style=\"font-size:.84rem\">")
-             .append(esc(art.anzeige())).append("</span></label>");
+
+        // Welche Sicht ist aktiv? Abgeleitet aus der Auswahl, damit ein Wechsel
+        // in die Feinauswahl und zurueck nichts verliert.
+        String aktiv = "ALLES";
+        for (Sicht s : Sicht.values()) {
+            if (s != Sicht.ALLES && !gewaehlt.isEmpty()
+                    && gewaehlt.size() == artenDerSicht(s.name()).size()
+                    && gewaehlt.containsAll(artenDerSicht(s.name()))) {
+                aktiv = s.name();
+            }
         }
+
+        StringBuilder sichten = new StringBuilder();
+        for (Sicht s : Sicht.values()) {
+            sichten.append("""
+                    <label class="sicht%s">
+                      <input type="radio" name="sicht" value="%s"%s
+                             onchange="this.form.requestSubmit()">
+                      <span class="sicht-name">%s</span>
+                      <span class="sicht-was">%s</span>
+                    </label>"""
+                    .formatted(s.name().equals(aktiv) ? " gewaehlt" : "", s.name(),
+                            s.name().equals(aktiv) ? " checked" : "",
+                            esc(s.anzeige), esc(s.erklaerung)));
+        }
+
+        // Die Feinauswahl: nach Themenbereich gruppiert, zugeklappt. Sie ist
+        // fuer den Fall da, dass jemand genau eine Ereignisart sucht — nicht
+        // fuer den Alltag.
+        StringBuilder fein = new StringBuilder();
+        for (var b : de.pinroboter.gemeinsam.Ereignisart.Bereich.values()) {
+            fein.append("<fieldset class=\"artgruppe\"><legend>")
+                .append(esc(b.anzeige())).append("</legend>");
+            for (var art : de.pinroboter.gemeinsam.Ereignisart.values()) {
+                if (art.bereich() != b) continue;
+                boolean an = gewaehlt.contains(art.name());
+                fein.append("<label class=\"ankreuz nebeneinander\">")
+                    .append("<input type=\"checkbox\" name=\"art\" value=\"")
+                    .append(art.name()).append("\"").append(an ? " checked" : "")
+                    .append("> <span>").append(esc(art.anzeige())).append("</span></label>");
+            }
+            fein.append("</fieldset>");
+        }
+
         return """
                 <form method="get" action="/geraete/%s/verlauf" class="filterleiste">
-                  <div class="feldgruppe" style="flex:0 1 14rem">
+                  <div class="feldgruppe schmal">
                     <label for="v-zeit">Zeitraum</label>
                     <select id="v-zeit" name="zeitraum">%s</select>
                   </div>
-                  <button class="knopf" type="submit" title="Wendet Zeitraum und Ereignisarten auf den Zeitstrahl an" aria-label="Filter anwenden">Anwenden</button>
-                  <a class="knopf" href="/geraete/%s/verlauf" title="Verwirft die Filter und zeigt wieder den vollständigen Zeitstrahl" aria-label="Filter zurücksetzen">Zurücksetzen</a>
-                  <details class="ausklapp" style="flex:1 1 100%%;border:0">
-                    <summary class="zeile-schmal">Ereignisarten ein- und ausblenden</summary>
-                    <div class="zeile-schmal">%s</div>
+                  <div class="feldaktion">
+                    <button class="knopf" type="submit"
+                            title="Wendet Zeitraum und Sicht auf den Zeitstrahl an"
+                            aria-label="Filter anwenden">Anwenden</button>
+                  </div>
+                  <fieldset class="sichten">
+                    <legend class="nurLeser">Welche Ereignisse sollen erscheinen?</legend>
+                    %s
+                  </fieldset>
+                  <details class="ausklapp feinauswahl">
+                    <summary>Einzelne Ereignisarten wählen</summary>
+                    <div class="feinauswahl-leib">
+                      <p class="hilfe">Setzt die Sicht oben außer Kraft. Ohne Häkchen
+                         erscheinen alle Arten.</p>
+                      %s
+                    </div>
                   </details>
-                </form>""".formatted(esc(terminalId), z, esc(terminalId), a);
+                </form>""".formatted(esc(terminalId), z, sichten, fein);
     }
 
     // ─────────────────────────────────────────────── Vorgangsansicht

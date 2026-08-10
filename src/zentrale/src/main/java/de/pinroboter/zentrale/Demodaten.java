@@ -146,6 +146,11 @@ public class Demodaten {
                                 true);   // Managementschnittstelle dennoch freigeschaltet
                     }
 
+                    // Eine Gruppe je Praxis, mit allen ihren Terminals
+                    // (Vorgabe PO, 10.08.2026).
+                    long gruppe = geraetegruppe(praxisname, praxis);
+                    geraeteZuordnen(praxis, praxisname, gruppe);
+
                     // Ebene 1: zustaendig fuer genau diese Praxis
                     konten.add(benutzer("praxis." + kuerzel.toLowerCase(),
                             p[0] + " " + standortname, "BENUTZER", praxis, praxisname));
@@ -197,6 +202,11 @@ public class Demodaten {
         boolean vorherAuto = db.verbindung().getAutoCommit();
         db.verbindung().setAutoCommit(false);
         try (Statement s = db.verbindung().createStatement()) {
+            // Zuerst die Zuordnung, dann die Gruppe: geraet verweist auf
+            // geraetegruppe. In umgekehrter Reihenfolge scheitert das Loeschen
+            // am Fremdschluessel.
+            s.executeUpdate("DELETE FROM geraet          WHERE ist_demo");
+            s.executeUpdate("DELETE FROM geraetegruppe   WHERE ist_demo");
             s.executeUpdate("DELETE FROM kartenterminal WHERE ist_demo");
             s.executeUpdate("DELETE FROM arbeitsplatz   WHERE ist_demo");
             s.executeUpdate("DELETE FROM konnektor      WHERE ist_demo");
@@ -261,6 +271,93 @@ public class Demodaten {
             p.setString(4, bezeichnung);
             p.setString(5, art);
             try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
+        }
+    }
+
+    /**
+     * Eine Gerätegruppe für eine Praxis, mit allen ihren Kartenterminals.
+     *
+     * <p>Vorgabe des PO vom 10.08.2026. Vorher legte der Demodatensatz Geräte
+     * an, aber keine Gruppen — und die Gruppenseite zeigte damit eine leere
+     * Liste, obwohl 36 Terminals erfasst waren. Wer die Funktion „Prüfintervall
+     * je Gruppe" beurteilen soll, sieht dann nichts, was er beurteilen könnte.
+     *
+     * <p>Die Gruppe ist die <b>Vorgabegruppe</b> ihrer Einrichtung: Meldet ein
+     * Agent später ein weiteres Gerät an diesem Standort, landet es hier statt
+     * ins Leere zu fallen.
+     *
+     * <p>Eine Gruppe je <b>Einrichtung</b>, nicht je Standort — eine Gruppe
+     * liegt nach FA-GER-050 in genau einer Einrichtung. „Standort Nord" mit den
+     * Terminals dreier Praxen wäre technisch keine Gruppe, sondern drei.
+     */
+    private long geraetegruppe(String einrichtung, long organisationId) throws SQLException {
+        // Gibt es die Gruppe schon? Der Name „Alle Geräte" ist naheliegend, und
+        // ein Betreiber kann ihn längst vergeben haben. Beim ersten Versuch am
+        // 10.08.2026 scheiterte daran der GESAMTE Demodatensatz: Der eindeutige
+        // Namensindex warf, die Transaktion rollte zurück, und die Oberfläche
+        // meldete nur „konnte nicht angelegt werden".
+        //
+        // Eine vorhandene Gruppe wird deshalb verwendet, nicht verdoppelt. Sie
+        // bekommt aber KEIN Demo-Kennzeichen — sie gehört dem Betreiber, und
+        // das Entfernen der Demodaten darf sie nicht mitnehmen.
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT id FROM geraetegruppe WHERE einrichtung = ? AND lower(bezeichnung) = ?")) {
+            p.setString(1, einrichtung);
+            p.setString(2, "alle geräte");
+            try (ResultSet rs = p.executeQuery()) {
+                if (rs.next()) {
+                    long id = rs.getLong(1);
+                    vorgabeSicherstellen(einrichtung, id);
+                    return id;
+                }
+            }
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
+                        pruefintervall_sekunden, organisation_id, ist_demo)
+                VALUES ('Alle Geräte', ?, TRUE, 60, ?, TRUE) RETURNING id""")) {
+            p.setString(1, einrichtung);
+            p.setLong(2, organisationId);
+            try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
+        }
+    }
+
+    /**
+     * Macht die Gruppe zur Vorgabe, falls die Einrichtung noch keine hat.
+     *
+     * <p>Ohne Vorgabegruppe fällt jedes später vom Agenten gemeldete Gerät
+     * durch — es steht dann im Protokoll, aber in keiner Geräteliste.
+     */
+    private void vorgabeSicherstellen(String einrichtung, long gruppe) throws SQLException {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                UPDATE geraetegruppe SET ist_vorgabe = TRUE WHERE id = ?
+                  AND NOT EXISTS (SELECT 1 FROM geraetegruppe
+                                  WHERE einrichtung = ? AND ist_vorgabe)""")) {
+            p.setLong(1, gruppe);
+            p.setString(2, einrichtung);
+            p.executeUpdate();
+        }
+    }
+
+    /**
+     * Ordnet die Terminals einer Praxis ihrer Gruppe zu.
+     *
+     * <p>Die Tabelle {@code geraet} trägt die Gruppenzuordnung; sie wird sonst
+     * vom Agenten gefüllt, wenn er ein Gerät erstmals meldet. Im Demodatensatz
+     * gibt es keinen Agenten, deshalb hier.
+     */
+    private void geraeteZuordnen(long organisationId, String einrichtung, long gruppe)
+            throws SQLException {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung,
+                        standort, aktiv, ist_demo)
+                SELECT t.terminal_id, ?, ?, t.bezeichnung, t.standortangabe, TRUE, TRUE
+                FROM kartenterminal t WHERE t.organisation_id = ? AND t.ist_demo
+                ON CONFLICT (terminal_id) DO NOTHING""")) {
+            p.setString(1, einrichtung);
+            p.setLong(2, gruppe);
+            p.setLong(3, organisationId);
+            p.executeUpdate();
         }
     }
 

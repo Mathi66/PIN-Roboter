@@ -105,7 +105,7 @@ final class Benachrichtigungsseiten {
                         <div class="feldgruppe"><label for="m-test">Testnachricht senden an</label>
                           <input id="m-test" name="testempfaenger" required maxlength="200"
                                  placeholder="ihre.adresse@praxis.de"></div>
-                        <div class="feldgruppe"><label for="m-test-k" class="nurLeser">Senden</label>
+                        <div class="feldaktion">
                           <button id="m-test-k" class="knopf" type="submit" title="Sendet sofort eine Probemail an die eingetragenen Empfänger" aria-label="Testnachricht senden">Testnachricht senden</button></div>
                       </form>
                       <p class="hilfe">Ohne Testversand merken Sie erst beim ersten echten Alarm,

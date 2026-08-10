@@ -1940,3 +1940,53 @@ statt ihn mit der Brechstange zu erzwingen.
 Dazu `docs/README.md` als Einstieg, die Architekturbeschreibung um zwei
 Querschnittskapitel erweitert, und FA-BEN-035 im Anforderungskatalog nachgetragen
 — eine Funktion ohne Abnahmekriterium ist nicht abnehmbar.
+
+## UX-Nacharbeit — was ein Werkzeug nicht findet
+
+Das Refactoring hatte 20 maschinelle Prüfpunkte hinterlassen, alle grün.
+Trotzdem fand eine Durchsicht des PO an der laufenden Oberfläche sechs echte
+Mängel:
+
+| Befund | Ursache |
+|---|---|
+| Knöpfe über die halbe Feldbreite gestreckt | steckten in `.feldgruppe` mit `flex:1 1 14rem` |
+| Hinweiskästen zweispaltig | `display:flex` für ein Symbol, das es nie gab |
+| Kacheln, Hinweis und Knopf klebten aneinander | Container ohne Abstand zwischen den Kindern |
+| Tabellen liefen aus dem Bild | zehn Spalten, 24 px Zellenrand je Seite, und eine eigene Regel, die die Ankreuzspalte von 42 auf 176 px aufblies |
+| IP brach mal um, mal nicht | Kennung und Adresse in einer Zeile |
+| **59 Ankreuzfelder, alle angehakt** | die Liste folgte der Datenbank, nicht der Frage |
+
+Der letzte Punkt war der wichtigste. „Alles an" als Vorgabe heißt: abwählen,
+was man nicht will — bei 59 Möglichkeiten tut das niemand, also filtert
+niemand. Jetzt vier Sichten, jede beantwortet eine echte Frage: *Alles · Nur
+Probleme · Was der Roboter tat · Änderungen durch Menschen.*
+
+Tabellenbreite, gemessen bei 1280 px Fenster: **1274 px → 984 px** bei 982 px
+Platz.
+
+### Zwei Fehler, die dabei auffielen
+
+**Vier Terminals fielen still durch.** Der Agent meldete sie, keines wurde
+erfasst: Die Einrichtung hatte eine Gruppe „Alle Geräte" ohne
+Vorgabe-Kennzeichen, das Anlegen scheiterte am Namensindex, `ON CONFLICT`
+schluckte es. Gefunden hat es die Warnung aus dem vorigen Umbau — genau dafür
+war sie da.
+
+**Mein eigener Modultest war falsch konstruiert.** Er erwartete, dass bei
+mehreren Gruppen immer die älteste zur Vorgabe wird. Richtig ist das nur, wenn
+der Name „Alle Geräte" belegt ist: Hat eine Praxis „Notaufnahme" und „Archiv",
+muss eine eigene Vorgabegruppe entstehen — sonst landete jedes neu erkannte
+Gerät in der Notaufnahme.
+
+### Weiter auf Vorgabe des PO
+
+- **Demodatensatz mit Gruppen:** eine je Einrichtung, mit ihren vier Terminals.
+  Nicht je Standort — eine Gruppe liegt nach FA-GER-050 in genau einer
+  Einrichtung.
+- **Kopf der Seitenleiste:** „3 von 4 Agenten verbunden" statt „Agent
+  verbunden", dazu die laufende Version. Ohne Manifest steht
+  „Entwicklungsstand" statt einer erfundenen Nummer.
+
+Vier der sechs Befunde ließen sich nachträglich in Prüfpunkte übersetzen.
+
+## Stand: 269 Modultests, 331 Systemnachweise — alle grün

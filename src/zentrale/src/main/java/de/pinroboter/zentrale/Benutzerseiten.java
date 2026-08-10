@@ -38,7 +38,7 @@ final class Benutzerseiten {
             s.append("""
                     <div class="tafel"><h3>Einladung für %s
                       <span class="zaehler">wird nur jetzt angezeigt</span></h3>
-                    <div class="anmeldeinhalt">
+                    <div class="karte-leib">
                       <div class="hinweis"><strong>Dieser Zugangscode erscheint genau einmal.</strong>
                         Geben Sie ihn der eingeladenen Person auf einem Weg weiter, den Sie
                         selbst verantworten — nicht per unverschlüsselter E-Mail. Sie setzt damit

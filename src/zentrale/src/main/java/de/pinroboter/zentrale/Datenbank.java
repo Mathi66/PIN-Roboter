@@ -699,6 +699,18 @@ public class Datenbank implements AutoCloseable {
               geaendert      TIMESTAMPTZ NOT NULL DEFAULT now()
             );
             """);
+
+        migration(21, """
+            -- Gerätegruppen und Geräte als Demo kennzeichnen.
+            --
+            -- Der Demodatensatz legt seit dem 10.08.2026 auch Gruppen an und
+            -- ordnet die Kartenterminals zu (Vorgabe PO). Ohne dieses Merkmal
+            -- ließe er sich nicht mehr rückstandsfrei entfernen — und genau
+            -- das verspricht die Oberfläche: "Echte Bestandsdaten bleiben
+            -- unberührt."
+            ALTER TABLE geraetegruppe ADD COLUMN IF NOT EXISTS ist_demo BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE geraet        ADD COLUMN IF NOT EXISTS ist_demo BOOLEAN NOT NULL DEFAULT FALSE;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {
