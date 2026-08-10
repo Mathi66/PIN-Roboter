@@ -55,8 +55,14 @@ public class TerminalClient implements AutoCloseable {
     }
 
     /**
-     * Ändert die PIN über die Managementschnittstelle
-     * ({@code SICCT MODIFY VERIFICATION DATA}, {@code A_24082}, FA-PIN-060).
+     * Hinterlegt alte und neue PIN an der Managementschnittstelle (FA-PIN-060).
+     *
+     * <p><b>Das SICCT-Kommando sendet der Konnektor, nicht wir.</b> Dieser
+     * Aufruf legt die Werte bereit; ausgelöst wird die Änderung über die
+     * SOAP-Schnittstelle des Konnektors. Das Terminal entscheidet dann nach
+     * {@code A_24082}, ob es die Werte von hier nimmt oder ein PIN-Pad
+     * verlangt — deshalb muss diese Sitzung stehen, BEVOR das Kommando
+     * eintrifft.
      *
      * <p><b>Auch das Ändern kann die Karte sperren.</b> Stimmt die alte PIN
      * nicht, zählt der Fehlversuchszähler herunter — genau wie beim

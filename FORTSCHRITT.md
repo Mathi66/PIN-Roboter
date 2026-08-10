@@ -2060,3 +2060,34 @@ Diagramms. Das wäre schlimmer als die ASCII-Zeichnung davor.
 
 Die zwei Diagramme in den ADRs bleiben unverändert: Nach CLAUDE.md werden ADRs
 nicht überschrieben, auch nicht kosmetisch.
+
+## Version 0.2.0 — und eine Korrektur beim Taggen
+
+Auf die Frage des PO „an welcher Stelle wendest du SICCT an?" fiel eine
+**fachlich falsche Aussage** in der Dokumentation auf.
+
+**Der PIN-Roboter spricht kein SICCT.** Er redet SOAP mit dem Konnektor und
+HTTPS mit der Managementschnittstelle des Terminals. `SICCT PERFORM
+VERIFICATION` und `SICCT MODIFY VERIFICATION DATA` sendet der **Konnektor**.
+
+An sechs Stellen stand sinngemäß „PIN ändern über `SICCT MODIFY VERIFICATION
+DATA`" — das liest sich, als sendeten wir das Kommando. Auch mein neues
+Sequenzdiagramm zeigte den Pfeil `Agent → Terminal: SICCT …`. Falsch: Dort läuft
+HTTPS.
+
+Das ist keine Kosmetik. Wer nach dieser Doku eine Fehlersuche beginnt, sucht das
+Kommando an der falschen Stelle — und übersieht, dass der eigentliche Knackpunkt
+die **Reihenfolge** ist: Die Sitzung an der Managementschnittstelle muss stehen,
+*bevor* das Kommando des Konnektors eintrifft. Trifft es ein, ohne dass die
+Rolle `SMC-B_Nutzer` angemeldet ist, verlangt das Terminal die Eingabe am Gerät
+(`A_24081`), und der Vorgang ist verloren.
+
+Korrigiert in Anforderungskatalog, Umsetzungsstand, Umsetzung 01 und 23, im
+Sequenzdiagramm und im Javadoc von `TerminalClient`. Neu in der Architektur:
+Abschnitt 6.2a-2 mit einer Tabelle, welche Strecke welches Protokoll spricht und
+wer davon wir sind.
+
+Neu: `CHANGELOG.md` — es gab keine Änderungshinweise, obwohl die DevOps-Anleitung
+an zwei Stellen darauf verweist.
+
+## Stand: 269 Modultests, 352 Systemnachweise — alle grün

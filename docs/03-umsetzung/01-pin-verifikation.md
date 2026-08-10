@@ -81,4 +81,4 @@ nach drei Läufen wäre die Karte gesperrt. Das ist der Grund für den Simulator
 - **Kalibrierung an echter Hardware.** Alles hier ist gegen den Simulator
   geprüft. Der bildet die Spezifikation ab, nicht notwendigerweise die
   Wirklichkeit.
-- **FA-PIN-060 PIN ändern** (`SICCT MODIFY VERIFICATION DATA`) — für V2 vorgesehen
+- **FA-PIN-060 PIN ändern** (`A_24082`) — inzwischen umgesetzt, siehe [Umsetzung 23](23-pin-aendern.md)

@@ -399,6 +399,34 @@ Zentrale.
 
 ---
 
+### 6.2a-2 Welche Protokolle wo gesprochen werden
+
+Eine Verwechslung, die sich hartnäckig hält: **Der PIN-Roboter spricht kein
+SICCT.**
+
+| Strecke | Protokoll | Wer spricht |
+|---|---|---|
+| Browser → Zentrale | HTTP(S) | wir |
+| Agent → Zentrale | HTTP(S), ausgehend | wir |
+| Agent → Konnektor | SOAP über TLS 1.2 (`brainpoolP256r1`) | wir |
+| Agent → Kartenterminal | HTTPS, Managementschnittstelle | wir |
+| **Konnektor → Kartenterminal** | **SICCT** | **nicht wir** |
+| Kartenterminal → SMC-B | Kartenkommandos (`VERIFY`, `CHANGE REFERENCE DATA`) | nicht wir |
+
+`SICCT PERFORM VERIFICATION` und `SICCT MODIFY VERIFICATION DATA` sendet der
+**Konnektor**. Unser Beitrag besteht aus zwei Teilen, die zusammenpassen müssen:
+
+1. **vorher** den PIN-Wert an der Managementschnittstelle hinterlegen, als
+   Rolle `SMC-B_Nutzer` angemeldet,
+2. **dann** das Kommando über den Konnektor auslösen (`VerifyPin`).
+
+Trifft das Kommando ein, ohne dass die Sitzung steht, verlangt das Terminal die
+Eingabe am Gerät (`A_24081`) — und der Vorgang ist verloren. Deshalb ist die
+Reihenfolge in `Verifikationsablauf` nicht beliebig, sondern die eigentliche
+Schwierigkeit dieses Produkts.
+
+---
+
 ### 6.2b Eine PIN vom Browser bis zur Karte
 
 Die Zentrale sieht die PIN **nie im Klartext** — auch nicht kurzzeitig

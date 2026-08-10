@@ -7,7 +7,7 @@
 ## Der Anlass
 
 `FA-PIN-060` stand im Umsetzungsstand als „PIN löschen ✔". Im Katalog heißt die
-Anforderung **PIN ändern** — über `SICCT MODIFY VERIFICATION DATA`. Gebaut und
+Anforderung **PIN ändern** (`A_24082`). Gebaut und
 nachgewiesen war das Löschen; das Ändern gab es nicht. Ein Haken, hinter dem
 nichts stand.
 
@@ -22,6 +22,7 @@ sequenceDiagram
     participant B as Browser
     participant Z as Zentrale
     participant AG as Agent
+    participant KON as Konnektor
     participant KT as Kartenterminal
     participant C as SMC-B
 
@@ -29,14 +30,26 @@ sequenceDiagram
     B->>Z: zwei Chiffrate
     Note over Z: reicht durch, löscht danach
     Z-->>AG: beim Abholen
-    AG->>KT: SICCT MODIFY VERIFICATION DATA
-    KT->>C: alte PIN prüfen, neue setzen
+    AG->>KT: HTTPS — beide PIN-Werte hinterlegen<br/>(Rolle SMC-B_Nutzer)
+    AG->>KON: SOAP — Änderung auslösen
+    KON->>KT: SICCT MODIFY VERIFICATION DATA
+    Note over KT: prüft A_24082: nimmt es die Werte<br/>von der Schnittstelle oder vom PIN-Pad?
+    KT->>C: CHANGE REFERENCE DATA
     C-->>KT: OK
-    KT-->>AG: geändert
+    KT-->>KON: geändert
+    KON-->>AG: Ergebnis
     AG->>Z: Quittung
     Note over Z: Keine der beiden PINs<br/>war je im Klartext hier.
 ```
 
+
+> **Wer welches Kommando sendet.** Der Roboter spricht **kein SICCT**. Er redet
+> SOAP mit dem Konnektor und HTTPS mit der Managementschnittstelle des
+> Terminals. `SICCT MODIFY VERIFICATION DATA` sendet der **Konnektor** — der
+> Roboter hinterlegt nur die Werte und löst aus. Deshalb muss die Sitzung an der
+> Managementschnittstelle stehen, *bevor* das Kommando eintrifft: Trifft es ein,
+> ohne dass die Rolle `SMC-B_Nutzer` angemeldet ist, verlangt das Terminal die
+> Eingabe am Gerät.
 
 **Die Wiederholung wird im Browser geprüft, nicht auf dem Server.** Sie *muss*
 dort geprüft werden: RSA-OAEP ist nicht deterministisch, zwei Chiffrate

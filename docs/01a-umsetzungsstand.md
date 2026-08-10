@@ -70,7 +70,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-PIN-030` Schutz vor Kartensperrung <br><span style="opacity:.7">MUSS</span> |  🔌 | LeftTries vor jedem Versuch; genau ein Versuch bei falscher PIN |
 | **✔** | `FA-PIN-040` Nicht behebbare Zustände melden <br><span style="opacity:.7">MUSS</span> |  | alle vier Zustände mit Handlung, je 0 Versuche |
 | **✔** | `FA-PIN-050` Not-Aus <br><span style="opacity:.7">MUSS</span> |  | Not-Aus hält die Automatik sofort an |
-| **✔** | `FA-PIN-060` PIN ändern <br><span style="opacity:.7">SOLL</span> |  | Über `SICCT MODIFY VERIFICATION DATA`: alte und neue PIN verdeckt, mit Bestätigung im Browser; Fehlversuchszähler wird vorher geprüft (FA-PIN-030). Bei Fehlschlag bleibt die hinterlegte PIN unverändert — nachgewiesen. [Umsetzung 23](03-umsetzung/23-pin-aendern.md) |
+| **✔** | `FA-PIN-060` PIN ändern <br><span style="opacity:.7">SOLL</span> |  | Alte und neue PIN verdeckt, mit Bestätigung im Browser; Fehlversuchszähler wird vorher geprüft (FA-PIN-030). Bei Fehlschlag bleibt die hinterlegte PIN unverändert — nachgewiesen. [Umsetzung 23](03-umsetzung/23-pin-aendern.md) |
 
 ## A.4 Firmware-Verwaltung (FA-FW)
 

@@ -289,8 +289,13 @@ Die Automatik lässt sich sofort anhalten.
 - Auslösen und Aufheben werden protokolliert.
 
 ### FA-PIN-060 — PIN ändern · SOLL · V2 · gemSpec `A_24082`
-Die SMC-B-PIN kann über die Managementschnittstelle geändert werden
-(`SICCT MODIFY VERIFICATION DATA`).
+Die SMC-B-PIN kann geändert werden, ohne dass jemand am Gerät steht.
+
+**Wer dabei was tut:** Der Roboter sendet `SICCT MODIFY VERIFICATION DATA`
+**nicht selbst** — das tut der Konnektor. Der Roboter hinterlegt vorher alte und
+neue PIN an der Managementschnittstelle des Terminals und löst das Kommando über
+den Konnektor aus. Das Terminal entscheidet dann nach `A_24082`, ob es die Werte
+von dort nimmt oder ein PIN-Pad verlangt.
 
 *Akzeptanz:*
 - Alte und neue PIN werden verdeckt erfasst, die neue mit Bestätigung.
