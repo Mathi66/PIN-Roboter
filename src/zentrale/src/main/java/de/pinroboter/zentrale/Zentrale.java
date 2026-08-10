@@ -983,7 +983,7 @@ public class Zentrale {
                      keinen Zugriff auf den Docker-Dienst und führt kein Update selbst aus
                      (ADR-0001).</p>
                   <div class="reihe-frei">
-                    <button class="knopf haupt" type="submit" style="width:auto" title="Speichert die Registry-Zugangsdaten verschlüsselt" aria-label="Speichert die Registry-Zugangsdaten verschlüsselt">Zugang speichern</button>
+                    <button class="knopf haupt" type="submit" title="Speichert die Registry-Zugangsdaten verschlüsselt" aria-label="Speichert die Registry-Zugangsdaten verschlüsselt">Zugang speichern</button>
                   </div>
                 </form>
                 <form method="post" action="/verwaltung/registry/pruefen" class="abstand-oben">
@@ -1292,10 +1292,10 @@ public class Zentrale {
                                placeholder="z. B. Notaufnahme"></div>
                       <div class="feldgruppe"><label for="ge">Einrichtung</label>
                         <select id="ge" name="einrichtung">%s</select></div>
-                      <div class="feldgruppe"><label for="iv">Prüfintervall (Sekunden)</label>
+                      <div class="feldgruppe zahlenfeld"><label for="iv" title="Wie oft der Agent die Geräte dieser Gruppe prüft">Prüfintervall (s)</label>
                         <input id="iv" name="intervall" type="text" inputmode="numeric"
                                value="60" size="6"></div>
-                      <div class="knopfreihe">%s</div>
+                      <div class="feldaktion">%s</div>
                     </form>
                   </div>
                 </div>

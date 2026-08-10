@@ -17,12 +17,26 @@ Eine Änderung braucht **zwei** Werte: die alte PIN als Nachweis und die neue.
 Beide werden im Browser verschlüsselt; die Zentrale kann keinen von beiden
 lesen (ADR-0009).
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant Z as Zentrale
+    participant AG as Agent
+    participant KT as Kartenterminal
+    participant C as SMC-B
+
+    Note over B: alte UND neue PIN werden<br/>im Browser einzeln verschlüsselt
+    B->>Z: zwei Chiffrate
+    Note over Z: reicht durch, löscht danach
+    Z-->>AG: beim Abholen
+    AG->>KT: SICCT MODIFY VERIFICATION DATA
+    KT->>C: alte PIN prüfen, neue setzen
+    C-->>KT: OK
+    KT-->>AG: geändert
+    AG->>Z: Quittung
+    Note over Z: Keine der beiden PINs<br/>war je im Klartext hier.
 ```
-Browser ──[alte PIN]──┐
-                      ├──► Zentrale ──► Agent ──► Kartenterminal ──► Karte
-Browser ──[neue PIN]──┘    reicht durch,          SICCT MODIFY
-                           löscht danach          VERIFICATION DATA
-```
+
 
 **Die Wiederholung wird im Browser geprüft, nicht auf dem Server.** Sie *muss*
 dort geprüft werden: RSA-OAEP ist nicht deterministisch, zwei Chiffrate

@@ -122,16 +122,21 @@ Die PIN wird in der Oberfläche eingegeben — und die läuft in der Zentrale, d
 sie nie sehen darf. Aufgelöst wird der Widerspruch durch
 **Ende-zu-Ende-Verschlüsselung**:
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant Z as Zentrale
+    participant AG as Agent
+    participant KT as Kartenterminal
+
+    B->>Z: PIN, verschlüsselt mit dem<br/>öffentlichen Schlüssel DIESES Agenten
+    Note over Z: reicht weiter · kann nicht lesen ·<br/>löscht nach Zustellung
+    Z-->>AG: Chiffrat (beim Abholen)
+    Note over AG: entschlüsselt mit privatem Schlüssel,<br/>der sein Volume nie verlässt
+    AG->>KT: PIN über PEviM
+    Note over AG: Ablage: AES-256-GCM,<br/>eigener Schlüssel aus der Umgebung
 ```
-Browser ──[PIN, verschlüsselt mit dem öffentlichen ──► Zentrale
-           Schlüssel DIESES Agenten]                     │ reicht weiter,
-                                                         │ kann nicht lesen,
-                                                         │ löscht nach Zustellung
-                                                         ▼
-                                                       Agent
-                                               entschlüsselt, legt
-                                               verschlüsselt ab (AES-256-GCM)
-```
+
 
 Der Klartext existiert an genau zwei Stellen: im Browser des Bedieners, für
 Sekundenbruchteile, und im Agenten. **Nirgends dazwischen.**
@@ -278,20 +283,23 @@ ist Routine: protokolliert wird nach Wirkung, nicht nach Vorgang.
 
 ## 5. Datenflüsse
 
+```mermaid
+graph LR
+    B["Browser<br/><i>Praxis</i>"] -->|"HTTP<br/>hinter Proxy: HTTPS"| Z["Zentrale<br/><i>Praxis oder RZ</i>"]
+    Z -->|"JDBC"| DB[("PostgreSQL<br/><i>Volumes</i>")]
+    Z -->|"SMTP, STARTTLS"| M["Mailserver<br/><i>Betreiber</i>"]
+    Z -->|"HTTPS"| REG["Registry"]
+    AG["Standort-Agent"] -->|"HTTP + Token<br/><b>ausgehend aufgebaut</b>"| Z
+    AG -->|"TLS 1.2, brainpoolP256r1"| KON["Konnektor / HSK"]
+    AG -->|"TLS, Managementschnittstelle"| KT["Kartenterminal"]
+    AG --> ABL[("PIN-Ablage<br/>AES-256-GCM")]
+
+    classDef daten fill:#fbf0dd,stroke:#8a5300,color:#101623
+    classDef aussen fill:#e7ebf1,stroke:#45505f,color:#101623
+    class DB,ABL daten
+    class M,REG,KON,KT aussen
 ```
-   Browser ──HTTP──► Zentrale ──JDBC──► PostgreSQL
-   (Praxis)          (Praxis/RZ)         (Volumes)
-                       │  ▲
-        SMTP (STARTTLS)│  │ HTTP, Token
-                       ▼  │ ausgehend aufgebaut
-                  Mailserver│
-                  (Betreiber)│
-                          Standort-Agent ──TLS 1.2/Brainpool──► Konnektor
-                          (Praxisnetz)                           │
-                             │                                   ▼
-                             └──TLS 1.2/Brainpool───────► Kartenterminal
-                                                           (PEviM, PIN)
-```
+
 
 **Was über welche Verbindung geht:**
 

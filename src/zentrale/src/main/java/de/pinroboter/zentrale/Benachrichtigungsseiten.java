@@ -88,7 +88,7 @@ final class Benachrichtigungsseiten {
                      keine Verschlüsselung anbieten. Die Nachricht wäre auf dem Weg mitlesbar —
                      vertretbar nur, wenn der Server im eigenen Netz steht.</p>
 
-                  <button class="knopf haupt" type="submit" style="width:auto" title="Speichert die Zugangsdaten verschlüsselt; das Kennwort erscheint nie im Protokoll" aria-label="Mailserver speichern">Mailserver speichern</button>
+                  <button class="knopf haupt" type="submit" title="Speichert die Zugangsdaten verschlüsselt; das Kennwort erscheint nie im Protokoll" aria-label="Mailserver speichern">Mailserver speichern</button>
                 </form>"""
                 .formatted(e == null ? "" : esc(e.host()),
                         e == null ? "587" : String.valueOf(e.port()),
@@ -196,7 +196,7 @@ final class Benachrichtigungsseiten {
                     <input id="r-aktiv" name="aktiv" type="checkbox" value="ja" checked>
                     <label for="r-aktiv">Aktiv</label>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto" title="Legt fest, wer ab welchem Schweregrad benachrichtigt wird" aria-label="Benachrichtigungsregel speichern">Regel speichern</button>
+                  <button class="knopf haupt" type="submit" title="Legt fest, wer ab welchem Schweregrad benachrichtigt wird" aria-label="Benachrichtigungsregel speichern">Regel speichern</button>
                 </form></div>""".formatted(auswahl));
 
         return s.append("</div>").toString();

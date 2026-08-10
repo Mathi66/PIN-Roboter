@@ -2032,3 +2032,31 @@ Korrektur nur über `compose build` lief dort noch der alte Stand.
 host name".
 
 ## Stand: 269 Modultests, 349 Systemnachweise — alle grün
+
+## Diagramme: Mermaid statt ASCII
+
+Befund des PO: „ASCII-Bilder sind altbacken." Berechtigt — sie lassen sich
+nicht zoomen, nicht durchsuchen, auf dem Telefon nicht lesen, und ein
+Sequenzdiagramm mit acht Beteiligten wird darin unlesbar.
+
+**25 Diagramme umgestellt**, in 14 Dateien. Mermaid statt PNG, weil die Quelle
+im Repository bleibt: versionierbar und diffbar. Ein Bild, dessen Quelle
+woanders liegt, veraltet als Erstes — der Code ändert sich, das Bild bleibt.
+
+Dabei fiel eine echte Lücke auf: **Es gab keine Sequenzdiagramme**, obwohl
+arc42 sie in der Laufzeitsicht vorsieht. Auf die Frage „wer ist Client, wer
+Server?" musste ich die Antwort aus dem Code zusammensuchen, statt sie im
+Architekturdokument zu finden. Vier sind neu:
+
+- wie Agent und Zentrale miteinander reden (der Agent ist ausschließlich Client)
+- eine PIN vom Browser bis zur Karte
+- Wiederherstellung einer Sicherung mit Neustart
+- der zusammengesetzte PEviM-Ablauf in der TI-Analyse
+
+Neu: `pruefungen/diagramme-pruefen.sh` im Hauptlauf. Es **rendert jedes
+Diagramm wirklich** — ein Tippfehler in der Syntax fiele sonst erst auf, wenn
+jemand das Dokument öffnet, und dort stünde dann eine Fehlermeldung statt eines
+Diagramms. Das wäre schlimmer als die ASCII-Zeichnung davor.
+
+Die zwei Diagramme in den ADRs bleiben unverändert: Nach CLAUDE.md werden ADRs
+nicht überschrieben, auch nicht kosmetisch.

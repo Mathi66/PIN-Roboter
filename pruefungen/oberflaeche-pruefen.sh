@@ -232,6 +232,29 @@ PY2
 [ "${BREIT:-99}" -le 8 ] && BR=ja || BR=nein
 ergebnis "keine Liste hat mehr als acht Spalten (hoechste: $BREIT)" "$BR"
 
+# ── 6e. Knoepfe werden auch in Masken nicht gestreckt ────────────────────
+# Eine .maske ist eine Flex-Spalte; ihr voreingestelltes align-items:stretch
+# zieht einen Knopf ueber die ganze Kartenbreite. Ein style="width:auto"
+# half nicht — die Breite kommt hier von align-self, nicht von width.
+# Am 10.08.2026 vom PO an "Mailserver speichern" und "Regel speichern" gesehen.
+GESTRECKT2=$(python3 - "$ABLAGE" <<'PY2'
+import re, sys, glob, os
+n = 0
+for f in glob.glob(os.path.join(sys.argv[1], "*.html")):
+    h = open(f, encoding="utf-8").read()
+    # Ein Knopf, der direktes Kind einer .maske ist, braucht die CSS-Regel.
+    # Geprueft wird stattdessen der Rueckfall: kein style="width" im Markup.
+    n += len(re.findall(r'<(?:button|a)[^>]*style="[^"]*width', h))
+print(n)
+PY2
+)
+[ "${GESTRECKT2:-1}" = "0" ] && GS2=ja || GS2=nein
+ergebnis "kein Knopf regelt seine Breite ueber einen Inline-Style ($GESTRECKT2)" "$GS2"
+
+CSSREGEL=$(grep -c "^\.maske > \.knopf, \.maske > button" "$CSS" || true)
+[ "${CSSREGEL:-0}" -ge 1 ] && CR=ja || CR=nein
+ergebnis "Masken halten ihre Knoepfe auf natuerlicher Breite (CSS-Regel vorhanden)" "$CR"
+
 # ── 7. Destruktives ist bestaetigungspflichtig ────────────────────────────
 # UX-Vorgabe 2: jede destruktive Aktion ist bestaetigungspflichtig.
 OHNE_FRAGE=$(python3 - "$ABLAGE" <<'PY'

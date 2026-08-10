@@ -608,7 +608,7 @@ final class Bestandsseiten {
                     <input id="b-aktiv" name="aktiv" type="checkbox" value="ja" %s>
                     <label for="b-aktiv">Aktiv — der Roboter darf diesen Konnektor ansprechen</label>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto" title="Übernimmt die geänderten Angaben in den Bestand" aria-label="Änderungen speichern">Änderungen speichern</button>
+                  <button class="knopf haupt" type="submit" title="Übernimmt die geänderten Angaben in den Bestand" aria-label="Änderungen speichern">Änderungen speichern</button>
                 </form></div>"""
                 .formatted(k.id(), esc(k.bezeichnung()), esc(k.adresse()), esc(nz(k.modell())),
                         aufrufkontextFelder(kontext, "b", k.mandantId(), k.clientsystemId(),
@@ -762,7 +762,7 @@ final class Bestandsseiten {
                     <input id="m-aktiv" name="aktiv" type="checkbox" value="ja" %s>
                     <label for="m-aktiv">Aktiv — dieses Gerät wird überwacht</label>
                   </div>
-                  <button class="knopf haupt" type="submit" style="width:auto" title="Übernimmt die geänderten Angaben in den Bestand" aria-label="Änderungen speichern">Änderungen speichern</button>
+                  <button class="knopf haupt" type="submit" title="Übernimmt die geänderten Angaben in den Bestand" aria-label="Änderungen speichern">Änderungen speichern</button>
                 </form></div>"""
                 .formatted(t.id(), esc(t.bezeichnung()), esc(nz(t.standortangabe())),
                         esc(nz(t.adresse())), esc(nz(t.modell())), esc(nz(t.seriennummer())),
@@ -894,13 +894,13 @@ final class Bestandsseiten {
                         Versuch bricht der Roboter ab, statt die Sperre zu riskieren.
                       </p>
                       <p id="pinAenderMeldung" class="hilfe" role="status" aria-live="polite"></p>
-                      <button class="knopf haupt" type="submit" style="width:auto" title="Setzt eine neue PIN auf der Karte; die Zentrale sieht dabei weder alte noch neue PIN" aria-label="PIN ändern">PIN ändern</button>
+                      <button class="knopf haupt" type="submit" title="Setzt eine neue PIN auf der Karte; die Zentrale sieht dabei weder alte noch neue PIN" aria-label="PIN ändern">PIN ändern</button>
                     </form></details>
 
                     <form method="post" action="/bestand/terminal/%d/pin-loeschen" class="maske"
                           onsubmit="return confirm('Hinterlegte PIN wirklich löschen? Der Roboter kann diese SMC-B danach nicht mehr verifizieren.')">
                       <input type="hidden" name="kartenhandle" value="%s">
-                      <button class="knopf" type="submit" style="width:auto" title="Entfernt die hinterlegte PIN aus der Ablage; die Karte selbst bleibt unverändert" aria-label="Hinterlegte PIN löschen">PIN löschen</button>
+                      <button class="knopf" type="submit" title="Entfernt die hinterlegte PIN aus der Ablage; die Karte selbst bleibt unverändert" aria-label="Hinterlegte PIN löschen">PIN löschen</button>
                     </form>
                     <p class="hilfe">Löschen wirkt sofort in der Anzeige und beim nächsten
                        Durchgang beim Agenten. Der Roboter verifiziert diese Karte danach
@@ -1353,7 +1353,7 @@ final class Bestandsseiten {
                     <p id="k-web-hilfe" class="hilfe">Herstellerspezifisch und immer optional.
                        Ohne sie bleibt alles von Hand erfassbar.</p>
                   </fieldset>
-                  <button class="knopf haupt" type="submit" style="width:auto" title="Legt den Konnektor mit diesen Angaben an" aria-label="Konnektor speichern">Konnektor speichern</button>
+                  <button class="knopf haupt" type="submit" title="Legt den Konnektor mit diesen Angaben an" aria-label="Konnektor speichern">Konnektor speichern</button>
                 </form></div>""".formatted(organisationsOptionen(organisationen, null),
                         aufrufkontextFelder(kontext, "k", null, null, null));
     }
@@ -1418,7 +1418,7 @@ final class Bestandsseiten {
                        (gematik A_24080). Für Terminals ohne SMC-B bleibt sie abgewählt —
                        diese Geräte werden erfasst und überwacht, aber nie verifiziert.</p>
                   </fieldset>
-                  <button class="knopf haupt" type="submit" style="width:auto" title="Legt das Kartenterminal mit diesen Angaben an" aria-label="Kartenterminal speichern">Kartenterminal speichern</button>
+                  <button class="knopf haupt" type="submit" title="Legt das Kartenterminal mit diesen Angaben an" aria-label="Kartenterminal speichern">Kartenterminal speichern</button>
                 </form></div>""".formatted(konnektorOptionen(konnektoren, null));
     }
 }

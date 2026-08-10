@@ -2803,6 +2803,14 @@ ergebnis "Barrierefreiheitspruefung ohne Befund (WCAG 2.2 AA, maschinell pruefba
 if PR_BASIS="$BASIS" bash pruefungen/oberflaeche-pruefen.sh "$KEKSE"; then UX=ja; else UX=nein; fi
 ergebnis "Oberflaeche einheitlich (Kurzhinweise, klickbare Zeilen, Raster)" "$UX"
 
+# Die Diagramme der Dokumentation werden wirklich gerendert. Ein Tippfehler in
+# der Mermaid-Syntax faellt sonst erst auf, wenn jemand das Dokument oeffnet —
+# und dort steht dann eine Fehlermeldung statt eines Diagramms.
+if bash pruefungen/diagramme-pruefen.sh >/tmp/pr-diag.txt 2>&1; then DG=ja; else DG=nein; fi
+ANZ=$(grep -oE "alle [0-9]+ Diagramme" /tmp/pr-diag.txt | grep -oE "[0-9]+" || echo "?")
+ergebnis "alle Diagramme der Dokumentation rendern ($ANZ)" "$DG"
+[ "$DG" = "nein" ] && sed 's/\x1b\[[0-9;]*m//g' /tmp/pr-diag.txt | tail -8
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten pr-sicherungen >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"

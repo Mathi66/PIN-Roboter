@@ -9,15 +9,24 @@
 Der Schutz sitzt an **einer** Stelle (`Zentrale.starten`, `app.before`) und ist
 als Sperre gebaut, nicht als Freigabe je Seite:
 
+```mermaid
+flowchart LR
+    A(["Jede Anfrage"]) --> P{"Pfad?"}
+    P -->|"/statisch/*"| FREI["frei<br/><i>Stylesheet, HTMX</i>"]
+    P -->|"/anmelden"| FREI
+    P -->|"/ersteinrichtung"| EIN["frei, solange<br/>kein Konto existiert"]
+    P -->|"/api/registrieren"| GEH["frei — der Schutz liegt im<br/>Registrierungsgeheimnis"]
+    P -->|"/api/agent/*"| TOK["Agent-Token<br/>statt Sitzung"]
+    P -->|"alles Übrige"| SITZ{"gültige Sitzung?"}
+    SITZ -->|"nein"| UM(["Weiterleitung zur Anmeldung"])
+    SITZ -->|"ja"| OK(["Seite"])
+
+    classDef frei fill:#e7ebf1,stroke:#45505f,color:#101623
+    classDef gut fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class FREI,EIN,GEH,TOK frei
+    class OK gut
 ```
-alles gesperrt
-  ├── /statisch/*          frei (Stylesheet, HTMX)
-  ├── /anmelden            frei
-  ├── /ersteinrichtung     frei, solange kein Konto existiert
-  ├── /api/registrieren    frei (Schutz liegt im Registrierungsgeheimnis)
-  ├── /api/agent/*         Agent-Token statt Sitzung
-  └── alles andere         Sitzung erforderlich
-```
+
 
 **Warum diese Richtung:** Eine neue Seite ist damit von sich aus geschützt.
 Andersherum wäre sie offen, bis jemand daran denkt — und irgendwann denkt

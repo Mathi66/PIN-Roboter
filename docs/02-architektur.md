@@ -100,25 +100,28 @@ nachvollziehbar.
 
 ## 3. Kontextabgrenzung
 
+```mermaid
+graph LR
+    A["Administrator / Benutzer<br/>(Browser)"] --> PR
+    PR --> KON["Konnektor / HSK<br/>SOAP, TLS 1.2 Brainpool"]
+    PR --> KT["Kartenterminal<br/>Managementschnittstelle, PEviM"]
+    PR --> MAIL["SMTP-Relay<br/>Benachrichtigung"]
+    PR --> REG["Container-Registry<br/>Versionsprüfung"]
+    KON --> SMCB["SMC-B<br/>im Terminal"]
+    KT --> SMCB
+
+    subgraph PR["PIN-ROBOTER"]
+        Z["Zentrale"]
+        AG["Standort-Agent"]
+        AG -.->|"ausgehend"| Z
+    end
+
+    classDef aussen fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    classDef karte fill:#fbf0dd,stroke:#8a5300,color:#101623
+    class A,KON,KT,MAIL,REG aussen
+    class SMCB karte
 ```
-                 ┌──────────────────────────────────────────┐
-   Administrator │                                          │
-   Benutzer   ───┤            PIN-ROBOTER                   │
-   (Browser)     │                                          │
-                 └───┬───────────────┬──────────────┬───────┘
-                     │ SOAP          │ HTTPS        │ HTTPS
-                     ▼               ▼              ▼
-              ┌────────────┐  ┌─────────────┐  ┌─────────┐
-              │ Konnektor  │  │Kartenterminal│  │  GHCR   │
-              │  bzw. HSK  │  │              │  │ (Images)│
-              └─────┬──────┘  └──────┬───────┘  └─────────┘
-                    │ SICCT/TLS      │
-                    └────────────────┘
-                          ▼
-                     ┌─────────┐
-                     │  SMC-B  │
-                     └─────────┘
-```
+
 
 ### Externe Schnittstellen
 
@@ -155,22 +158,38 @@ Kundennetz eingehende Firewall-Freigaben.
 
 ### 5.1 Ebene 1 — Die beiden Bausteine
 
+```mermaid
+graph TB
+    subgraph ZEN["ZENTRALE — beim Betreiber"]
+        direction LR
+        Z1["Weboberfläche"]
+        Z2["Identität &amp; Rechte"]
+        Z3["Mandanten &amp; Bestand"]
+        Z4["Regelwerk &amp; Zeitpläne"]
+        Z5["Fachprotokoll"]
+        Z6["Alarmierung"]
+        Z7["Datensicherung"]
+        Z8["Agentenvermittlung"]
+    end
+
+    subgraph AGT["STANDORT-AGENT — im Netz der Einrichtung"]
+        direction LR
+        A1["Auftragsausführung"]
+        A2["Ablaufsteuerung"]
+        A3["Konnektor-Anbindung"]
+        A4["Terminal-Anbindung"]
+        A5["Geheimnisspeicher"]
+        A6["Sicherungslogik"]
+    end
+
+    AGT -->|"HTTPS, ausgehend<br/>meldet · holt Aufträge ab"| ZEN
+
+    classDef zentrale fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    classDef agent fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class Z1,Z2,Z3,Z4,Z5,Z6,Z7,Z8 zentrale
+    class A1,A2,A3,A4,A5,A6 agent
 ```
-┌───────────────────────────── ZENTRALE ─────────────────────────────┐
-│  Weboberfläche · Identität & Rechte · Mandanten & Bestand          │
-│  Regelwerk & Zeitpläne · Fachprotokoll · Alarmierung               │
-│  Update-Manager · Agentenvermittlung                               │
-│  ── kennt KEINE SMC-B-PIN und KEINE Terminal-Zugänge ──            │
-└───────────────────────────────▲────────────────────────────────────┘
-                                │  Agentenprotokoll
-                                │  (ausgehend vom Agenten,
-                                │   beidseitig authentifiziert)
-┌───────────────────────────────┴──── STANDORT-AGENT ────────────────┐
-│  Auftragsausführung · Konnektor-Anbindung (SOAP)                   │
-│  Terminal-Anbindung (HTTPS, herstellerspezifisch gekapselt)        │
-│  Geheimnisspeicher · Ereignispuffer · lokale Ablaufsteuerung       │
-└────────────────────────────────────────────────────────────────────┘
-```
+
 
 **Die Trennlinie ist die Vertrauensgrenze.** Sie verläuft nicht nach technischer
 Schichtung, sondern danach, wo Geheimnisse liegen dürfen: Die Zentrale steuert
@@ -242,22 +261,21 @@ Hintergrundaufgaben. Die 81 Routen sind in zehn thematische Methoden gebündelt
 Herstellerspezifisches Verhalten tritt an **zwei** Stellen auf. Beide werden nach
 demselben Muster hinter einer einheitlichen inneren Schnittstelle gekapselt:
 
+```mermaid
+graph TB
+    AS["Ablaufsteuerung"] --> KS["Konnektor-Schnittstelle<br/><i>herstellerneutral</i>"]
+    AS --> TS["Terminal-Schnittstelle<br/><i>herstellerneutral</i>"]
+    KS --> K1["KoCo"]
+    KS -.-> K2["andere<br/><i>später</i>"]
+    TS --> T1["CHERRY"]
+    TS -.-> T2["Ingenico<br/><i>später</i>"]
+
+    classDef neutral fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    classDef offen fill:#e7ebf1,stroke:#45505f,color:#101623,stroke-dasharray:4 3
+    class KS,TS neutral
+    class K2,T2 offen
 ```
-                    Ablaufsteuerung
-                    │              │
-        ┌───────────┘              └───────────┐
-        ▼                                      ▼
-┌─────────────────────────┐    ┌───────────────────────────────┐
-│  Terminal-Anbindung     │    │  Konnektor-Anbindung          │
-│  anmelden · pinLiefern  │    │  pinStatus · pinVerifizieren  │
-│  firmwareLesen          │    │  kartenErmitteln              │
-│  firmwareEinspielen     │    │  terminalsErmitteln           │
-├───────┬────────┬────────┤    ├───────────────┬───────────────┤
-│CHERRY │Ingenico│  …     │    │ Fachschnitt-  │  Webadmin     │
-│       │        │        │    │ stelle (gema- │  (hersteller- │
-│       │        │        │    │ tik, generisch│   spezifisch) │
-└───────┴────────┴────────┘    └───────────────┴───────────────┘
-```
+
 
 **Terminal-Seite:** Ein neuer Hersteller ist eine neue Umsetzung der Schnittstelle
 plus ein Eintrag in der Gerätematrix (NFA-QS-030) — **ohne Eingriff in die
@@ -287,32 +305,31 @@ Umbau.
 
 ### 6.1 Automatische Verifikation — der Kernablauf
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AG as Standort-Agent
+    participant KON as Konnektor
+    participant KT as Kartenterminal
+    participant C as SMC-B
+
+    AG->>KON: GetPinStatus
+    KON->>KT: weiterreichen
+    KT-->>AG: VERIFIABLE, LeftTries = 3
+
+    Note over AG: Sicherungslogik prüft ZUERST:<br/>LeftTries > 1? Not-Aus aus?<br/>Kein KSR-Update aktiv?
+
+    AG->>KT: Sitzung aufbauen (TLS 1.2, Brainpool)
+    AG->>KT: PIN über Managementschnittstelle (PEviM)
+    KT->>C: PIN prüfen
+    C-->>KT: OK
+    KT-->>AG: verifiziert
+    AG->>KON: GetPinStatus (Gegenprobe)
+    KON-->>AG: VERIFIED
+
+    Note over AG: Erst jetzt gilt der Vorgang als<br/>erfolgreich — die eigene Meldung<br/>des Terminals genügt nicht.
 ```
-Agent                          Konnektor        Terminal
-  │                                │                │
-  │─ GetPinStatus ────────────────▶│───────────────▶│
-  │◀─ VERIFIABLE, LeftTries=3 ─────│                │
-  │                                │                │
-  │  ┌─────────── Sicherungsprüfung (lokal) ──────┐ │
-  │  │ Not-Aus aktiv?        → Abbruch            │ │
-  │  │ Zustand aktualisierend? → Abbruch          │ │
-  │  │ Automatik angehalten? → Abbruch            │ │
-  │  │ LeftTries verringert? → Abbruch + Alarm    │ │
-  │  │ PIN hinterlegt?       → sonst Meldung      │ │
-  │  └────────────────────────────────────────────┘ │
-  │                                │                │
-  │─ Sitzung als SMC-B_Nutzer ─────┼───────────────▶│
-  │─ VerifyPin (PIN.SMC) ─────────▶│                │
-  │                                │─ SICCT PERFORM│
-  │                                │  VERIFICATION ▶│
-  │─ PIN über Managementschnittstelle ─────────────▶│
-  │◀─ PinResult ───────────────────│                │
-  │                                │                │
-  │─ GetPinStatus (Bestätigung) ──▶│───────────────▶│
-  │◀─ VERIFIED ────────────────────│                │
-  │                                │                │
-  └─ Ereignisse an die Zentrale (eine Vorgangsnummer)
-```
+
 
 **Zwei Dinge sind an diesem Ablauf nicht verhandelbar:**
 
@@ -337,44 +354,152 @@ wird. Überall sonst gilt Wiederholung mit wachsendem Abstand — hier wäre sie
 direkte Weg zur gesperrten Karte. Der Sonderweg ist im Code als solcher zu
 kennzeichnen und durch einen verpflichtenden Test abgesichert (FA-PIN-030).
 
+### 6.2a Wie Agent und Zentrale miteinander reden
+
+**Der Agent ist ausschließlich Client.** Er öffnet keinen Port — im ganzen
+Agentenmodul gibt es keine Serverklasse. Alles läuft ausgehend von ihm, im
+Grundtakt (Vorgabe 10 s).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant AG as Standort-Agent
+    participant Z as Zentrale
+
+    rect rgb(227, 233, 248)
+        Note over AG,Z: Einmalig — Registrierung
+        AG->>Z: POST /api/registrieren (X-Registrierung)
+        Z-->>AG: dauerhaftes Token
+        Note over AG: Token in TOKEN_DATEI ablegen
+    end
+
+    loop Grundtakt, Vorgabe 10 s
+        AG->>Z: GET /api/agent/notaus
+        Z-->>AG: Automatik an oder aus?
+        AG->>Z: GET /api/agent/intervalle
+        Z-->>AG: Prüfintervall je Gerät
+        AG->>Z: POST /api/agent/melden
+        Note right of AG: Zustand je Gerät —<br/>nur Änderungen landen<br/>im Protokoll
+        AG->>Z: GET /api/agent/pin-auftraege
+        Z-->>AG: offene Aufträge (verschlüsselt)
+        AG->>Z: POST /api/agent/pin-quittung
+    end
+```
+
+> **Auch Befehle werden abgeholt, nicht zugestellt.** Wer in der Oberfläche eine
+> PIN hinterlegt, legt einen Auftrag ab; der Agent findet ihn beim nächsten
+> Takt. Das kostet Latenz — und erspart jeder Praxis eine eingehende
+> Firewall-Freigabe.
+
+Der Agent hat **keine Oberfläche**. Er steht im Praxisnetz, nah an den Geräten,
+und ist der einzige Ort, an dem die PIN im Klartext existieren kann. Jede
+Oberfläche dort wäre eine zusätzliche Angriffsfläche an der empfindlichsten
+Stelle. Konfiguriert wird er über Umgebungsvariablen, sichtbar ist er in der
+Zentrale.
+
+---
+
+### 6.2b Eine PIN vom Browser bis zur Karte
+
+Die Zentrale sieht die PIN **nie im Klartext** — auch nicht kurzzeitig
+([ADR-0009](adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md)).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant Z as Zentrale
+    participant AG as Agent
+    participant KT as Kartenterminal
+
+    B->>Z: öffentlicher Schlüssel des Agenten?
+    Z-->>B: RSA-3072 (öffentlich)
+    Note over B: PIN im Browser verschlüsseln<br/>RSA-OAEP, SHA-256 für Hash und MGF1
+    B->>Z: POST Chiffrat
+    Note over Z: reicht weiter, kann es nicht lesen
+
+    AG->>Z: GET /api/agent/pin-auftraege
+    Z-->>AG: Chiffrat
+    Note over AG: entschlüsseln mit privatem Schlüssel<br/>Ablage: AES-256-GCM
+    AG->>KT: PIN über PEviM
+    KT-->>AG: verifiziert
+    AG->>Z: POST /api/agent/pin-quittung
+    Note over Z: Chiffrat wird gelöscht.<br/>Im Protokoll steht DASS,<br/>nie WELCHE.
+```
+
+---
+
+### 6.2c Wiederherstellung einer Sicherung
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Administrator
+    participant Z as Zentrale
+    participant DB as Datenbank
+    participant D as Docker
+
+    A->>Z: Stand einspielen (mit Rückfrage)
+    Z->>DB: pg_dump — Sicherheitskopie des JETZIGEN Standes
+    Note over Z: Schlägt sie fehl, wird gar nicht<br/>erst begonnen.
+    Z->>DB: pg_restore --single-transaction
+    alt erfolgreich
+        DB-->>Z: eingespielt
+        Z-->>A: Bestätigung samt Ankündigung des Neustarts
+        Z->>Z: System.exit(0)
+        D->>Z: Neustart (restart: unless-stopped)
+    else fehlgeschlagen
+        DB-->>Z: Transaktion zurückgerollt
+        Z-->>A: Fehlermeldung — bisheriger Stand unverändert
+    end
+```
+
+> **Warum der Neustart:** Die Zentrale hält Zustand im Arbeitsspeicher, der zum
+> *alten* Datenstand gehört. Die Kernfunktion läuft im Agenten weiter und ist
+> nicht betroffen.
+
+---
+
 ### 6.3 Firmware-Rollout im Zeitfenster
 
+```mermaid
+flowchart TB
+    START(["Zeitfenster öffnet"]) --> KAN["Kanarienvogel:<br/>erstes Gerät, immer einzeln"]
+    KAN --> P1{"Neustart, Version,<br/>PIN-Status geprüft?"}
+    P1 -->|"nein"| STOP(["Rollout hält an —<br/>Alarm, kein weiteres Gerät"])
+    P1 -->|"ja"| REST["übrige Geräte,<br/>begrenzt nebenläufig"]
+    REST --> P2{"Fenster noch offen?"}
+    P2 -->|"ja"| REST
+    P2 -->|"nein"| ENDE(["Start weiterer Geräte endet.<br/>Laufende Updates werden<br/>ZU ENDE geführt."])
+
+    classDef warn fill:#fbe7e7,stroke:#a51f1f,color:#101623
+    classDef gut fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class STOP warn
+    class ENDE gut
 ```
-Fenster öffnet
-   │
-   ├─ Kanarienvogel: erstes Gerät, immer einzeln
-   │     Update → Neustart abwarten → Version prüfen
-   │     → PIN-Status prüfen → SMC-B verifizieren
-   │     └─ Fehlschlag → Rollout der Gruppe STOPPT + Alarm
-   │
-   ├─ übrige Geräte, bis zur eingestellten Parallelität
-   │     je Gerät dieselbe Nachbehandlung
-   │     nicht erreichbar → überspringen, Versuch zählen
-   │
-   ├─ vor jedem Start: passt die erwartete Dauer noch ins Fenster?
-   │     nein → keine weiteren Geräte starten
-   │
-   └─ Fenster endet
-         laufende Geräteupdates werden ZU ENDE GEFÜHRT
-         Rest bleibt in der Warteschlange → nächstes Fenster
-```
+
+> **Ein begonnenes Geräteupdate wird immer zu Ende geführt.** Das Fenster
+> begrenzt den *Start* weiterer Geräte — ein abgebrochenes Firmware-Update ist
+> der einzige Weg, ein Terminal doch zu beschädigen.
+
 
 Der Rollout ist ein **langlebiger Vorgang über mehrere Fenster**, kein einmaliger
 Lauf. Sein Zustand ist persistent und übersteht einen Neustart (NFA-VER-020).
 
 ### 6.4 Ausfall der Zentrale
 
+```mermaid
+flowchart LR
+    AB(["Verbindung bricht ab"]) --> W["Agent arbeitet WEITER:<br/>Überwachung, Verifikation,<br/>Sicherungslogik"]
+    W --> PUF["Ereignisse werden gepuffert<br/>(begrenzt; älteste Routine<br/>zuerst verworfen)"]
+    PUF --> NEIN["Keine neuen Aufträge —<br/>er holt sie ja bei der<br/>Zentrale ab"]
+    NEIN --> ZURUECK(["Zentrale wieder da"])
+    ZURUECK --> NACH["Gepufferte Ereignisse<br/>werden nachgeliefert"]
+
+    classDef gut fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class W,NACH gut
 ```
-Verbindung bricht ab
-   │
-   ├─ Agent arbeitet WEITER: Überwachung, Verifikation, Sicherungslogik
-   ├─ Ereignisse werden gepuffert (begrenzt, älteste Routine zuerst verworfen)
-   ├─ Kein neuer Rollout wird begonnen (Freigabe kommt aus der Zentrale)
-   │
-   └─ Verbindung kehrt zurück
-         Ereignisse werden vollständig und geordnet nachgeliefert
-         Zustandsabgleich, dann Normalbetrieb
-```
+
 
 Begründung: Die Kernfunktion sichert den TI-Zugang und darf nicht von der
 Zentrale abhängen. Ein Firmware-Rollout ist dagegen ein geplanter Eingriff — den
@@ -386,31 +511,53 @@ ohne Aufsicht zu beginnen wäre falsch.
 
 ### Verteilter Betrieb — Einzelpraxis, MVZ
 
+```mermaid
+graph TB
+    subgraph PN["Praxisnetz — ein Compose-Stack"]
+        Z["Zentrale"]
+        A["Agent"]
+        D["Datenbank"]
+    end
+    A -->|"lokales Netz"| KON["Konnektor + Kartenterminals"]
+
+    classDef stack fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    class Z,A,D stack
 ```
-┌──── Praxisnetz ──── ein Compose-Stack ─────┐
-│  Zentrale · Agent · Datenbank              │
-└───────────────┬────────────────────────────┘
-                │ lokales Netz
-      Konnektor ─── Kartenterminals ─── SMC-B
-```
+
 Ein Startbefehl, eine Adresse, eine Oberfläche. Die Ebene der
 Serviceorganisationen bleibt im Datenmodell vorhanden, in der Oberfläche jedoch
 ausgeblendet (FA-INS-030).
 
 ### Zentraler Betrieb — Serviceorganisation, Klinik
 
+```mermaid
+graph TB
+    subgraph RZ["Rechenzentrum der Serviceorganisation"]
+        Z["Zentrale"]
+        D["Datenbank"]
+    end
+    subgraph P1["Praxis A"]
+        A1["Agent"]
+    end
+    subgraph P2["Praxis B"]
+        A2["Agent"]
+    end
+    subgraph P3["Praxis C"]
+        A3["Agent"]
+    end
+    A1 -.->|"ausgehend"| Z
+    A2 -.->|"ausgehend"| Z
+    A3 -.->|"ausgehend"| Z
+
+    classDef zentrale fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    classDef agent fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class Z,D zentrale
+    class A1,A2,A3 agent
 ```
-┌── Rechenzentrum ──┐
-│  Zentrale         │
-│  Datenbank        │
-└─────────▲─────────┘
-          │ ausgehend vom jeweiligen Agenten
-   ┌──────┼───────┬──────────────┐
- Agent  Agent   Agent        Agent
-Praxis1 Praxis2  MVZ3     Klinik Abt. A
-   │      │       │            │
-   └─ je lokal: Konnektor/HSK + Terminals + SMC-B
-```
+
+> **In keiner der drei Praxen ist eine eingehende Freigabe nötig.** Das ist der
+> Grund für die Richtung des Verbindungsaufbaus.
+
 
 Nur die Zentrale muss erreichbar sein; in den Kundennetzen ist **keine einzige
 eingehende Freigabe** nötig. Die Last der Geräteabfragen bleibt verteilt — das
@@ -491,18 +638,36 @@ gepflegte Zuordnung, kein Zufallsprodukt — auch für Konnektor-Fehlercodes wie
 
 ### 8.6 Datenmodell — tragende Beziehungen
 
-```
-Serviceorganisation ─1:n─ Einrichtung ─1:n─ Gerätegruppe ─1:n─ Kartenterminal
-                                │                 │                 │
-                                │                 │                 └─1:n─ Karte (SMC-B)
-                                ├─1:n─ Konnektor/HSK ──────────────────────┘
-                                ├─1:n─ Standort-Agent
-                                └─1:n─ Benutzer (mit Rolle und Geltungsbereich)
+```mermaid
+erDiagram
+    SERVICEORGANISATION ||--o{ EINRICHTUNG : "betreut"
+    EINRICHTUNG ||--o{ GERAETEGRUPPE : "gliedert"
+    EINRICHTUNG ||--o{ KONNEKTOR : "betreibt"
+    GERAETEGRUPPE ||--o{ KARTENTERMINAL : "bündelt"
+    KONNEKTOR ||--o{ KARTENTERMINAL : "kennt"
+    KARTENTERMINAL ||--o| SMCB : "enthält"
+    EINRICHTUNG ||--o{ BENUTZER : "hat"
+    EINRICHTUNG ||--o{ PROTOKOLLEINTRAG : "erzeugt"
 
-Gerätegruppe ─1:n─ Rollout-Plan ─1:n─ Zeitfenster
-Rollout ─1:n─ Rollout-Auftrag (je Gerät, mit Zustand und Versuchszählung)
-Protokollereignis ─n:1─ Einrichtung, optional ─n:1─ Gerät, ─n:1─ Vorgang
+    GERAETEGRUPPE {
+        int pruefintervall_sekunden
+        bool ist_vorgabe
+    }
+    KARTENTERMINAL {
+        string terminal_id
+        bool pevim_aktiv
+    }
+    SMCB {
+        string kartenhandle
+        int verbleibende_versuche
+    }
 ```
+
+> **Jede Beziehung trägt die Mandantengrenze mit.** Eine Gerätegruppe liegt in
+> genau einer Einrichtung, ein Konnektor ebenso — deshalb lässt sich der
+> Geltungsbereich eines Benutzers in jeder Abfrage auf dieselbe Weise
+> durchsetzen.
+
 
 Bewusste Festlegungen:
 - **Die Einrichtung ist der Mandantenanker.** Jedes fachliche Objekt hängt direkt

@@ -23,12 +23,18 @@ Instanz ausrollen.
 
 ## Die Ebenen
 
+```mermaid
+graph TB
+    I["Instanzbetreiber<br/><i>Administrator ohne Organisationszuordnung</i>"] --> V["Verbund"]
+    V --> S["Standort"]
+    S --> E["Einrichtung"]
+
+    classDef oben fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    class I oben
 ```
-Instanzbetreiber   Administrator ohne Organisationszuordnung
- └── Verbund
-      └── Standort
-           └── Einrichtung
-```
+
+> Wer auf einer Ebene zuständig ist, sieht alles darunter — und nichts daneben.
+
 
 Die Ebene ergibt sich aus der **Art** der zugeordneten Organisationseinheit,
 nicht aus einem eigenen Feld. Ein zusätzliches Feld wäre eine zweite Wahrheit,

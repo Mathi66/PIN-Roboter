@@ -121,13 +121,25 @@ bei 5.000 Geräten nicht mehr funktioniert.
 Der MVZ-Verbund bildet jetzt auch die **Arbeitsplatzstruktur** nach, die der
 Konnektor führt (`[gemSpec_Kon]`, Aufrufkontext `TUC_KON_000`):
 
+```mermaid
+graph TB
+    P["Praxis"] --> E["Arbeitsplatz Empfang"]
+    P --> B1["Arbeitsplatz Behandlung 1"]
+    P --> B2["Arbeitsplatz Behandlung 2"]
+    P --> B3["Arbeitsplatz Behandlung 3"]
+    E --> KE["Kartenterminal<br/><b>MIT SMC-B</b>"]
+    B1 --> K1["Kartenterminal<br/>ohne SMC-B"]
+    B2 --> K2["Kartenterminal<br/>ohne SMC-B"]
+    B3 --> K3["Kartenterminal<br/>ohne SMC-B"]
+
+    classDef smcb fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class KE smcb
 ```
-Praxis
- ├── Arbeitsplatz Empfang       → 1 Kartenterminal MIT SMC-B
- ├── Arbeitsplatz Behandlung 1  → 1 Kartenterminal ohne SMC-B
- ├── Arbeitsplatz Behandlung 2  → 1 Kartenterminal ohne SMC-B
- └── Arbeitsplatz Behandlung 3  → 1 Kartenterminal ohne SMC-B
-```
+
+> Für die PIN-Automatik ist damit **genau ein** Terminal je Praxis von Belang.
+> Die übrigen werden überwacht, aber nie verifiziert — sie haben nichts
+> freizuschalten.
+
 
 Im gesamten Verbund: **36 Arbeitsplätze, 36 Terminals, davon 9 mit SMC-B** —
 eine je Praxis. Alle Terminals haben die Managementschnittstelle freigeschaltet

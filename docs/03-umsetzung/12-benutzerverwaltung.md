@@ -16,17 +16,21 @@ das selbsttätig handelt und dessen Auslösung nachvollziehbar sein muss
 
 Der Ablauf stattdessen:
 
+```mermaid
+sequenceDiagram
+    participant A as Administrator
+    participant Z as Zentrale
+    participant N as Eingeladene Person
+
+    A->>Z: lädt ein
+    Z-->>A: Zugangscode (erscheint genau einmal)
+    A->>N: Code auf einem anderen Weg
+    N->>Z: Code einlösen
+    N->>Z: setzt Kennwort selbst
+    N->>Z: richtet zweiten Faktor ein
+    Note over A,N: Der Administrator kennt das Kennwort nie.<br/>Ein gesetztes Kennwort kennen zwei.
 ```
-Administrator          Eingeladene Person
-     │
-     ├─ lädt ein ──────►  Zugangscode (erscheint genau einmal)
-     │                         │
-     │                         ├─ setzt Kennwort selbst
-     │                         ├─ richtet zweiten Faktor ein
-     │                         └─ bestätigt ihn
-     │
-     └─ sieht das Kennwort nie
-```
+
 
 ## Der Zugangscode
 

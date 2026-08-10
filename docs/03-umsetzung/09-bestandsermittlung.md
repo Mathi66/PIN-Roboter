@@ -19,13 +19,24 @@ erreichen.
 
 Also: **Der Agent ermittelt und meldet, die Zentrale gleicht ab.**
 
+```mermaid
+sequenceDiagram
+    participant KON as Konnektor
+    participant AG as Agent
+    participant Z as Zentrale
+    participant A as Administrator
+
+    AG->>KON: GetCardTerminals
+    KON-->>AG: bekannte Terminals
+    AG->>KON: Webadmin — Informationsmodell
+    KON-->>AG: Arbeitsplätze, Aufrufkontext
+    AG->>Z: POST /api/agent/bestand
+    Note over Z: Abgleich mit dem erfassten Bestand
+    Z-->>A: Vorschlagsliste
+    A->>Z: Übernahme — einzeln oder als Auswahl
+    Note over Z: Nichts wird ohne Bestätigung erfasst.
 ```
-Konnektor  ──GetCardTerminals──►  Agent  ──POST /api/agent/bestand──►  Zentrale
-           ──Webadmin/Modell───►                                        │
-                                                                        ▼
-                                                          Abgleich mit dem Bestand
-                                                          → Vorschlagsliste
-```
+
 
 **Gemeldet wird nur, was sich geändert hat.** Der Agent bildet einen Abdruck
 über Terminalliste und Informationsmodell; bleibt er gleich, unterbleibt die

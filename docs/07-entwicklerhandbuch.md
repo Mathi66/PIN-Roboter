@@ -360,6 +360,41 @@ Eine unvollständige Liste aus der Projektgeschichte. Jede hat Stunden gekostet:
 
 ---
 
+## 11a. Diagramme
+
+**Mermaid, kein PNG.** Die Quelle steht im Markdown, GitHub rendert sie im
+Browser. Ein Bild, dessen Quelle woanders liegt, veraltet als Erstes: Der Code
+ändert sich, das Bild bleibt.
+
+```bash
+bash pruefungen/diagramme-pruefen.sh
+```
+
+Rendert **jedes** Diagramm wirklich (über `minlag/mermaid-cli`). Ein Tippfehler
+in der Syntax fällt sonst erst auf, wenn jemand das Dokument öffnet — und dort
+steht dann eine Fehlermeldung statt eines Diagramms. Das wäre schlimmer als die
+ASCII-Zeichnung davor.
+
+Die Prüfung läuft im Hauptlauf mit und wacht zusätzlich darüber, dass keine
+neuen ASCII-Zeichnungen entstehen. **Ausgenommen sind die ADRs:** Sie sind nach
+CLAUDE.md unveränderlich — eine getroffene Entscheidung wird nicht nachträglich
+umgeschrieben, auch nicht kosmetisch.
+
+Welcher Diagrammtyp wofür:
+
+| Typ | Wofür |
+|---|---|
+| `sequenceDiagram` | Abläufe über die Zeit — wer ruft wen, in welcher Reihenfolge |
+| `flowchart` | Entscheidungen und Verzweigungen |
+| `graph` | Struktur: was gehört wozu, was spricht mit wem |
+| `erDiagram` | Datenmodell mit Kardinalitäten |
+
+Farben kommen aus derselben Palette wie die Oberfläche (`--akzent` `#1e3a8f`,
+`--ok` `#0f7b3f`, `--warnung` `#8a5300`) — damit ein Diagramm neben einem
+Bildschirmfoto nicht wie aus einem anderen Produkt aussieht.
+
+---
+
 ## 12. Wo was steht
 
 | Frage | Datei |

@@ -17,22 +17,25 @@ Jetzt geht es über die Oberfläche. **Ohne dass die Zentrale die PIN je sieht.*
 
 ## Der Weg der PIN
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant Z as Zentrale
+    participant AG as Standort-Agent
+
+    AG->>Z: meldet seinen öffentlichen Schlüssel<br/>mit dem Bestandsbericht
+    B->>Z: fragt den Schlüssel dieses Agenten ab
+    Z-->>B: RSA-3072 (öffentlich)
+    Note over B: verschlüsselt die PIN —<br/>RSA-OAEP, SHA-256 für Hash UND MGF1
+    B->>Z: Chiffrat
+    Note over Z: speichert weiter, kann nicht lesen
+    AG->>Z: holt Aufträge ab
+    Z-->>AG: Chiffrat
+    Note over AG: entschlüsselt, legt AES-256-GCM ab
+    AG->>Z: Quittung
+    Note over Z: Chiffrat wird gelöscht
 ```
-Browser                       Zentrale                     Standort-Agent
-   │                             │                               │
-   │  holt öffentlichen ─────────┤                               │
-   │  Schlüssel des Agenten      │◄──── meldet ihn mit dem ──────┤
-   │                             │      Bestandsbericht          │
-   │  verschlüsselt die PIN      │                               │
-   │  lokal (RSA-OAEP)           │                               │
-   │                             │                               │
-   ├── nur das Chiffrat ────────►│  legt Auftrag an              │
-   │                             │  (kann ihn nicht lesen)       │
-   │                             │◄──── holt Aufträge ab ────────┤
-   │                             │  löscht das Chiffrat          │
-   │                             │                               │  entschlüsselt,
-   │                             │◄──── quittiert ───────────────┤  legt verschlüsselt ab
-```
+
 
 Der Klartext existiert an genau zwei Stellen: im Browser des Bedieners, für
 Sekundenbruchteile, und im Agenten. **Nirgends dazwischen.**

@@ -73,14 +73,27 @@ SICCT-Kommando des Konnektors bearbeitet. Beide Seiten müssen zusammenspielen.
 Bei einem `SICCT PERFORM VERIFICATION` mit eingebettetem `VERIFY`-Kartenkommando
 ermittelt das Terminal die Quelle des PIN-Werts nach dieser Prüfkette:
 
+```mermaid
+flowchart TB
+    A{"PEviM aktiviert?"} -->|nein| PAD
+    A -->|ja| B{"SMC-B im<br/>adressierten Slot?"}
+    B -->|nein| PAD
+    B -->|ja| C{"Netzwerkbasierte Management-<br/>schnittstelle aktiv?"}
+    C -->|nein| PAD
+    C -->|ja| D{"Rolle SMC-B_Nutzer<br/>dort authentisiert?"}
+    D -->|nein| PAD
+    D -->|ja| NETZ["PIN-Wert wird über diese<br/>Schnittstelle entgegengenommen"]
+    PAD["PIN-Wert wird über ein<br/>PIN-Pad entgegengenommen"]
+
+    classDef gut fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    classDef neutral fill:#e7ebf1,stroke:#45505f,color:#101623
+    class NETZ gut
+    class PAD neutral
 ```
-PEviM aktiviert?
-  UND im adressierten Slot steckt eine SMC-B?
-  UND eine netzwerkbasierte Managementschnittstelle ist aktiv?
-  UND dort ist die Rolle SMC-B_Nutzer authentisiert?
-        ├── ja  → PIN-Wert wird über diese Schnittstelle entgegengenommen
-        └── nein → PIN-Wert wird über ein PIN-Pad entgegengenommen
-```
+
+> **Alle vier Bedingungen müssen gelten.** Fällt eine weg, verlangt das Terminal
+> die Eingabe am Gerät — der Roboter kann dann nichts ausrichten.
+
 
 Analog `A_24082` für `SICCT MODIFY VERIFICATION DATA` mit
 `CHANGE REFERENCE DATA` — das ist der **PIN-Änderungs**-Fall.
@@ -132,21 +145,38 @@ konfiguriert sein (Mandant, Clientsystem-ID, Arbeitsplatz).
 
 ### 4.3 Zusammengesetzter Ablauf
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant PR as PIN-Roboter
+    participant KON as Konnektor
+    participant KT as Kartenterminal
+    participant C as SMC-B
+
+    rect rgb(227, 233, 248)
+        Note over PR,C: (1) Überwachung
+        PR->>KON: SOAP GetPinStatus
+        KON->>C: Status abfragen
+        C-->>PR: PinStatus = VERIFIABLE
+    end
+
+    rect rgb(226, 242, 233)
+        Note over PR,KT: (2) Vorbereitung
+        PR->>KT: HTTPS, Rolle SMC-B_Nutzer
+        Note over KT: Sitzung an der Management-<br/>schnittstelle, PEviM aktiv
+    end
+
+    rect rgb(251, 240, 221)
+        Note over PR,C: (3) Auslösung
+        PR->>KON: SOAP VerifyPin
+        KON->>KT: PIN-Eingabe anfordern
+        KT->>C: PIN übergeben (PEviM)
+        C-->>KT: OK
+        KT-->>KON: verifiziert
+        KON-->>PR: PinResult = OK
+    end
 ```
- (1) Überwachung   PIN-Roboter ──SOAP GetPinStatus──▶ Konnektor ──▶ SMC-B
-                                 ◀── PinStatus = VERIFIABLE
 
- (2) Vorbereitung  PIN-Roboter ──HTTPS, Rolle SMC-B_Nutzer──▶ Kartenterminal
-                                 (Sitzung an der Managementschnittstelle, PEviM aktiv)
-
- (3) Auslösung     PIN-Roboter ──SOAP VerifyPin────────▶ Konnektor
-                                 Konnektor ──SICCT PERFORM VERIFICATION──▶ Terminal
-
- (4) PIN-Lieferung Terminal nimmt PIN über die Managementschnittstelle entgegen
-                                 (statt über das PIN-Pad)  → A_24081
-
- (5) Kontrolle     PIN-Roboter ──SOAP GetPinStatus──▶ erwartet VERIFIED
-```
 
 Schritt 5 ist nicht optional: Nur der erneute Statusabruf belegt den Erfolg.
 

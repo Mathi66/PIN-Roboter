@@ -21,21 +21,30 @@ produktiv). Der Agent baut die Verbindung zur Zentrale **ausgehend** auf — in 
 Netz der Einrichtung ist keine eingehende Freigabe nötig
 ([ADR-0002](adr/0002-betriebsmodell-und-systemtopologie.md)).
 
+```mermaid
+graph TB
+    subgraph RZ["Rechenzentrum / Praxis-Server"]
+        Z["Zentrale<br/>:8090"]
+        DB[("Datenbank<br/>:5432")]
+        SIC[("Volume<br/>sicherungen")]
+        Z <--> DB
+        Z --> SIC
+    end
+    subgraph PN["Praxisnetz"]
+        AG["Standort-Agent"]
+    end
+    AG -->|"ausgehend, HTTPS<br/>keine eingehende Freigabe nötig"| Z
+    AG -->|"TLS 1.2, brainpoolP256r1"| KON["Konnektor / HSK"]
+    AG -->|"Managementschnittstelle, PEviM"| KT["Kartenterminal"]
+
+    classDef zentrale fill:#e3e9f8,stroke:#1e3a8f,color:#101623
+    classDef agent fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    classDef daten fill:#fbf0dd,stroke:#8a5300,color:#101623
+    class Z zentrale
+    class AG agent
+    class DB,SIC daten
 ```
-Internet/WAN
-     │  (ausgehend, HTTPS)
-     ▼
-┌──────────────┐        ┌────────────┐
-│  Zentrale    │◀──────▶│  Datenbank │      Rechenzentrum / Praxis-Server
-│  :8090       │        │  :5432     │
-└──────────────┘        └────────────┘
-     ▲
-     │  Agent meldet sich (ausgehend)
-┌──────────────┐
-│ Standort-    │──▶ Konnektor / HSK  (TLS 1.2, brainpoolP256r1)
-│ Agent        │──▶ Kartenterminals  (Managementschnittstelle, PEviM)
-└──────────────┘        Praxisnetz
-```
+
 
 ---
 

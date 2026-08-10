@@ -8,21 +8,24 @@ Kartensperrung), FA-UEB-010 (Statusüberwachung), FA-UEB-050 (Zustand
 
 ## Der Ablauf im Code
 
+```mermaid
+flowchart TB
+    S(["Überwachung — Agent.durchgang"]) --> A["KonnektorClient.pinStatus()<br/><i>GetPinStatus, PinTyp = PIN.SMC</i>"]
+    A --> P{"Sicherungspruefung.pruefe()<br/>Not-Aus? Automatik angehalten?<br/>Terminal aktualisierend? LeftTries?"}
+    P -->|"abbrechen"| STOP(["Kein Versuch —<br/>gemeldet, nicht geraten"])
+    P -->|"weiter"| V["TerminalClient: Sitzung,<br/>PIN über PEviM"]
+    V --> G["Gegenprobe: GetPinStatus"]
+    G --> OK(["VERIFIED"])
+
+    classDef warn fill:#fbe7e7,stroke:#a51f1f,color:#101623
+    classDef gut fill:#e2f2e9,stroke:#0f7b3f,color:#101623
+    class STOP warn
+    class OK gut
 ```
-Ueberwachung (Agent.durchgang)
-   │
-   ├─ KonnektorClient.pinStatus()          GetPinStatus, PinTyp = PIN.SMC
-   │
-   ├─ Sicherungspruefung.pruefe(…)         ← hier wird abgebrochen, nicht später
-   │     Not-Aus? Automatik angehalten? Terminal aktualisierend?
-   │     Karte gesperrt? LeftTries gesunken? Nur noch ein Versuch?
-   │
-   └─ Verifikationsablauf.ausfuehren()
-         ├─ TerminalClient.anmelden()      Rolle SMC-B_Nutzer  (A_24081!)
-         ├─ KonnektorClient.verifyPin()    löst SICCT PERFORM VERIFICATION aus
-         ├─ TerminalClient.pinLiefern()    PIN über die Managementschnittstelle
-         └─ KonnektorClient.pinStatus()    Bestätigung — ohne sie gilt nichts
-```
+
+> Die Sicherungsprüfung steht **vor** dem Versuch, nicht danach. Ein Abbruch
+> kostet nichts; ein Versuch zu viel kann die Karte sperren.
+
 
 ## Drei Entscheidungen, die nicht verhandelbar sind
 

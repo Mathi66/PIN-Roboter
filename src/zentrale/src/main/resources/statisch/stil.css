@@ -441,6 +441,13 @@ code {
 /* ─────────────────────────────────────────────────────────────── Formulare */
 
 .maske { padding:var(--r4); display:flex; flex-direction:column; gap:var(--r4); }
+/* Ein Knopf ist so breit wie seine Beschriftung — auch in einer Maske.
+   Ohne diese Regel zieht das voreingestellte align-items:stretch der
+   Flex-Spalte ihn über die ganze Kartenbreite. Ein style="width:auto" half
+   dagegen nicht: Die Breite kommt hier von align-self, nicht von width.
+   Am 10.08.2026 vom PO an "Mailserver speichern" und "Regel speichern"
+   gesehen. */
+.maske > .knopf, .maske > button, .maske > form > .knopf { align-self:flex-start; }
 .feldgruppe { display:flex; flex-direction:column; gap:var(--r1); flex:1 1 14rem; min-width:0; }
 .feldgruppe label { font-size:.81rem; font-weight:600; }
 .feldreihe { display:flex; gap:var(--r4); flex-wrap:wrap; }
@@ -718,3 +725,15 @@ tr > th:last-child,  tr > td:last-child  { padding-right:var(--karte-x); }
    rückt. In einem Karteninhalt gibt es kein Feld, an dessen Ende sich ein
    Knopf ausrichten könnte. */
 .knopfreihe-links { display:flex; gap:var(--r2); align-items:center; flex-wrap:wrap; }
+
+/* Ein Feld für eine Zahl braucht keine 14 Rem. Die Vorgabe der .feldgruppe
+   ist auf Text ausgelegt; "60" darin sieht aus wie ein vergessenes Feld —
+   und schiebt den Knopf daneben aus dem Blickfeld. */
+.feldgruppe.zahlenfeld { flex:0 0 9rem; }
+
+/* In einer Reihe, die mit einem Knopf endet, dürfen die Felder schmaler
+   beginnen. Sonst übersteigt die Summe der Mindestbreiten die Zeile um
+   wenige Pixel — und der Knopf rutscht in die nächste Zeile, sichtbar
+   losgelöst von dem, was er tut. Gemessen am 10.08.2026: 794 px Bedarf bei
+   761 px Platz. */
+.reihe-enden .feldgruppe:not(.zahlenfeld) { flex:1 1 12rem; }
