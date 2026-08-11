@@ -280,7 +280,7 @@ final class Bestandsseiten {
                     </tr></thead><tbody>"""
                     .formatted(
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.BEZEICHNUNG),
-                            spaltenkopf(a, Bestandsverwaltung.Sortierung.KONNEKTOR),
+                            spaltenkopf(a, Bestandsverwaltung.Sortierung.EINRICHTUNG),
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.MODELL),
                             spaltenkopf(a, Bestandsverwaltung.Sortierung.ERREICHBARKEIT)));
             for (var t : seite.eintraege()) {
@@ -292,7 +292,7 @@ final class Bestandsseiten {
                                  title="Öffnet Stammdaten, Zugang und PIN dieses Kartenterminals">%s</a>%s
                               <span class="kennung zweitzeile" title="Kennung des Terminals">%s</span>
                               <span class="kennung zweitzeile adresse" title="Netzwerkadresse">%s</span></td>
-                          <td>%s</td>
+                          <td>%s<span class="kennung zweitzeile" title="Konnektor">%s</span></td>
                           <td class="klein einzeilig" title="%s">%s%s</td>
                           <td>%s</td>
                           <td>%s</td>
@@ -317,7 +317,7 @@ final class Bestandsseiten {
                                 esc(t.terminalId()),
                                 t.standortangabe() == null || t.standortangabe().isBlank()
                                         ? "—" : esc(t.standortangabe()),
-                                esc(t.konnektor()),
+                                esc(t.organisation()), konnektorZelle(t),
                                 esc(nz(t.modell()))
                                         + (t.firmware() == null ? "" : " / " + esc(t.firmware())),
                                 esc(nz(t.modell())),
@@ -709,11 +709,51 @@ final class Bestandsseiten {
     static String terminalMaske(Bestandsverwaltung.Terminal t, List<Ermittlung.Karte> karten,
                                 String fehler, String smcbHandle, String oeffentlicherSchluessel,
                                 boolean pinHinterlegt, boolean auftragOffen) {
+        return terminalMaske(t, karten, fehler, smcbHandle, oeffentlicherSchluessel,
+                pinHinterlegt, auftragOffen, null);
+    }
+
+    static String terminalMaske(Bestandsverwaltung.Terminal t, List<Ermittlung.Karte> karten,
+                                String fehler, String smcbHandle, String oeffentlicherSchluessel,
+                                boolean pinHinterlegt, boolean auftragOffen,
+                                List<Bestandsverwaltung.Konnektor> konnektoren) {
         StringBuilder s = new StringBuilder();
         s.append(Zentrale.detailkopf("/bestand", "Alle Kartenterminals", t.bezeichnung(), null, null));
         s.append("<p class=\"unterzeile\">Kennung <code>").append(esc(t.terminalId()))
-         .append("</code> am Konnektor ").append(esc(t.konnektor()))
+         .append("</code> · ").append(esc(t.organisation()))
+         .append(t.konnektorId() == null
+                 ? " · <strong>kein Konnektor zugeordnet</strong>"
+                 : " · am Konnektor " + esc(t.konnektor()))
          .append(" · <a href=\"/bestand\">&larr; Zurück zum Bestand</a></p>");
+        // Ein Geraet ohne Konnektor nimmt nicht an der Automatik teil. Das
+        // gehoert an den Anfang der Seite, nicht in eine Fussnote: Sonst wartet
+        // jemand darauf, dass eine Karte freigeschaltet wird, die niemand
+        // freischalten kann.
+        if (t.automatikHindernis() != null && t.hatSmcb()) {
+            s.append("<div class=\"hinweis\"><strong>Keine PIN-Automatik</strong>")
+             .append(esc(t.automatikHindernis()))
+             .append("</div>");
+        }
+        // Zuordnung nachtragen — genau dort, wo der Hinweis darauf steht.
+        // Ein Verweis auf eine andere Seite waere eine Zumutung: Wer den
+        // Hinweis liest, will ihn genau jetzt erledigen.
+        if (konnektoren != null && !konnektoren.isEmpty()) {
+            s.append("""
+                    <div class="tafel">
+                    <form method="post" action="/bestand/terminal/%d/konnektor" class="maske">
+                      <div class="feldreihe">
+                        <div class="feldgruppe">
+                          <label for="m-konn">Konnektor</label>
+                          <select id="m-konn" name="konnektorId">
+                            <option value="">— keiner —</option>%s</select>
+                        </div>
+                      </div>
+                      <button class="knopf" type="submit"
+                              title="Ordnet dieses Kartenterminal dem gewählten Konnektor zu"
+                              aria-label="Konnektor zuordnen">Zuordnung speichern</button>
+                    </form></div>"""
+                    .formatted(t.id(), konnektorOptionen(konnektoren, t.konnektorId())));
+        }
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
 
         s.append("""
@@ -1273,6 +1313,19 @@ final class Bestandsseiten {
         return s.toString();
     }
 
+    /**
+     * Die Konnektorspalte der Geräteliste.
+     *
+     * <p>Ein leeres Feld wäre die schlechteste Antwort: Man sähe nicht, ob die
+     * Angabe fehlt oder die Anzeige klemmt. „Nicht zugeordnet" sagt, was Sache
+     * ist — und dass es kein Fehler ist, sondern ein Zustand.
+     */
+    private static String konnektorZelle(Bestandsverwaltung.Terminal t) {
+        if (t.konnektorId() != null) return esc(t.konnektor());
+        return "<span class=\"gedaempft\" title=\"Ohne Konnektor nimmt das Gerät nicht an "
+             + "der PIN-Automatik teil\">nicht zugeordnet</span>";
+    }
+
     private static String konnektorOptionen(List<Bestandsverwaltung.Konnektor> liste, Long gewaehlt) {
         StringBuilder s = new StringBuilder();
         for (var k : liste) {
@@ -1358,16 +1411,29 @@ final class Bestandsseiten {
                         aufrufkontextFelder(kontext, "k", null, null, null));
     }
 
-    static String terminalNeuMaske(List<Bestandsverwaltung.Konnektor> konnektoren) {
+    /**
+     * Maske zum Erfassen eines Kartenterminals.
+     *
+     * <p><b>Die Einrichtung ist das Pflichtfeld, der Konnektor die Ergänzung</b>
+     * (Vorgabe PO, 11.08.2026). Vorher war es umgekehrt, und ein Gerät ließ sich
+     * nicht erfassen, solange es nicht am Konnektor hing — in der Praxis wird es
+     * aber geliefert und aufgestellt, bevor das geschieht.
+     *
+     * <p>Deshalb steht die Einrichtung auch <b>zuerst</b>: Sie ist die Frage,
+     * die jeder beantworten kann. Der Konnektor darf offenbleiben.
+     */
+    static String terminalNeuMaske(List<Bestandsverwaltung.Konnektor> konnektoren,
+                                   List<Organisationsauswahl> einrichtungen) {
         return Zentrale.detailkopf("/bestand", "Bestand", "Kartenterminal hinzufügen",
-                "Das Gerät wird einem Konnektor zugeordnet.", null)
+                "Das Gerät gehört zu einer Einrichtung. Ein Konnektor kann später "
+                + "nachgetragen werden.", null)
               + """
                 <div class="tafel">
                 <form method="post" action="/bestand/terminal" class="maske">
                   <div class="feldreihe">
                     <div class="feldgruppe">
-                      <label for="t-konnektor">Konnektor</label>
-                      <select id="t-konnektor" name="konnektorId" required>%s</select>
+                      <label for="t-org">Einrichtung</label>
+                      <select id="t-org" name="organisationId" required>%s</select>
                     </div>
                     <div class="feldgruppe">
                       <label for="t-id">Kennung</label>
@@ -1377,6 +1443,17 @@ final class Bestandsseiten {
                   </div>
                   <p id="t-id-hilfe" class="hilfe">Die Kennung, unter der der Konnektor das Gerät
                      führt. Sie muss eindeutig sein.</p>
+                  <div class="feldreihe">
+                    <div class="feldgruppe">
+                      <label for="t-konnektor">Konnektor <span class="optional">(optional)</span></label>
+                      <select id="t-konnektor" name="konnektorId" aria-describedby="t-k-hilfe">
+                        <option value="">— noch keiner zugeordnet —</option>%s</select>
+                    </div>
+                  </div>
+                  <p id="t-k-hilfe" class="hilfe">Ohne Konnektor wird das Gerät erfasst und
+                     verwaltet, nimmt aber <strong>nicht an der PIN-Automatik teil</strong>:
+                     Die Verifikation löst der Konnektor aus. Sobald das Gerät dort angemeldet
+                     ist, lässt sich der Konnektor hier nachtragen.</p>
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="t-bez">Bezeichnung</label>
                       <input id="t-bez" name="bezeichnung" required maxlength="120"
@@ -1419,6 +1496,7 @@ final class Bestandsseiten {
                        diese Geräte werden erfasst und überwacht, aber nie verifiziert.</p>
                   </fieldset>
                   <button class="knopf haupt" type="submit" title="Legt das Kartenterminal mit diesen Angaben an" aria-label="Kartenterminal speichern">Kartenterminal speichern</button>
-                </form></div>""".formatted(konnektorOptionen(konnektoren, null));
+                </form></div>""".formatted(organisationsOptionen(einrichtungen, null),
+                        konnektorOptionen(konnektoren, null));
     }
 }

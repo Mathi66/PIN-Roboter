@@ -163,6 +163,49 @@ public class Alarmverwaltung {
      * Bestand und Betriebszustand einer Einrichtung. Die Mandantengrenze gilt
      * hier genauso wie beim Bestand selbst.
      */
+    /**
+     * Alle offenen Alarme im Geltungsbereich — über <b>alle</b> Einrichtungen.
+     *
+     * <h2>Warum es diese Methode geben muss</h2>
+     *
+     * Die Lage-Übersicht rief bis zum 11.08.2026 {@link #offene(String,
+     * Geltungsbereich)} mit fest {@code "Praxis"} auf. In einer Installation
+     * mit mehreren Betriebsstätten zeigte die wichtigste Seite des Produkts
+     * damit <b>keinen einzigen Alarm</b> — es sei denn, eine Einrichtung hieß
+     * zufällig „Praxis".
+     *
+     * <p>Der Geltungsbereich ist die richtige und einzige Grenze: Er sagt
+     * bereits, was jemand sehen darf. Eine zusätzliche Einschränkung auf eine
+     * einzelne Einrichtung war nie eine Sicherheitsmaßnahme, sondern ein Rest
+     * aus der Zeit, als es nur eine gab.
+     */
+    public List<Alarm> offene(Geltungsbereich bereich) {
+        List<Alarm> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT id, objekt, art, schweregrad, meldung, handlung, seit,
+                       quittiert_von, quittiert_am, einrichtung
+                FROM alarm WHERE behoben_am IS NULL"""
+                + bereich.bedingung("organisation_id")
+                + " ORDER BY CASE schweregrad WHEN 'KRITISCH' THEN 0 WHEN 'WARNUNG' THEN 1"
+                + " ELSE 2 END, quittiert_von NULLS FIRST, seit")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) {
+                    Timestamp q = rs.getTimestamp("quittiert_am");
+                    liste.add(new Alarm(rs.getLong("id"), rs.getString("objekt"),
+                            Art.valueOf(rs.getString("art")),
+                            Schweregrad.valueOf(rs.getString("schweregrad")),
+                            rs.getString("meldung"), rs.getString("handlung"),
+                            rs.getTimestamp("seit").toInstant(),
+                            rs.getString("quittiert_von"), q == null ? null : q.toInstant()));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Alarme nicht lesbar: " + e.getMessage());
+        }
+        return liste;
+    }
+
     public List<Alarm> offene(String einrichtung, Geltungsbereich bereich) {
         List<Alarm> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""

@@ -682,13 +682,19 @@ public class Zentrale {
      * vergessen.
      */
     private String terminalMaske(Bestandsverwaltung.Terminal t, String fehler) {
+        return terminalMaske(t, fehler, null);
+    }
+
+    private String terminalMaske(Bestandsverwaltung.Terminal t, String fehler,
+                                 Geltungsbereich bereich) {
         var karten = ermittlung.karten(t.terminalId());
         String smcb = karten.stream().filter(Ermittlung.Karte::verwaltet)
                 .map(Ermittlung.Karte::kartenhandle).findFirst().orElse(null);
         return Bestandsseiten.terminalMaske(t, karten, fehler, smcb,
                 smcb == null ? null : pins.schluesselFuerTerminal(t.terminalId()).orElse(null),
                 smcb != null && pins.hinterlegtFuer(smcb).isPresent(),
-                smcb != null && pins.auftragOffen(smcb));
+                smcb != null && pins.auftragOffen(smcb),
+                bereich == null ? null : bestand.konnektoren(bereich));
     }
 
     private String benachrichtigungsSeite(io.javalin.http.Context c, String meldung,
@@ -1020,12 +1026,33 @@ public class Zentrale {
      * Geräte einer fremden Einrichtung unterschieben.
      */
     private String agentAnlegenFormular(Geltungsbereich bereich) {
+        var einheiten = bestand.organisationen(bereich);
+
+        // Ohne Organisationseinheit kein Agent — und das gehoert gesagt, nicht
+        // durch eine leere Auswahlliste angedeutet.
+        //
+        // Bis zum 11.08.2026 stand hier ersatzweise „Praxis (ohne Zuordnung)".
+        // Ein damit registrierter Agent meldete Geraete unter einem Namen, zu
+        // dem es keine Organisationseinheit gibt: Solche Daten sind fuer jede
+        // mandantengebundene Abfrage unsichtbar und lassen sich niemandem
+        // zeigen. „Ohne Zuordnung" klang nach einer Wahlmoeglichkeit und war in
+        // Wahrheit eine Sackgasse.
+        if (einheiten.isEmpty()) {
+            return """
+                    <div class="hinweis abstand-oben">
+                      <strong>Zuerst eine Einrichtung anlegen</strong>
+                      Ein Agent arbeitet für genau eine Einrichtung — alles, was er meldet,
+                      gehört dorthin. Solange keine angelegt ist, ließen sich seine Geräte
+                      niemandem zuordnen.
+                      <a href="/organisation">Zur Organisationsstruktur &rarr;</a>
+                    </div>""";
+        }
+
         StringBuilder auswahl = new StringBuilder();
-        for (var o : bestand.organisationen(bereich)) {
+        for (var o : einheiten) {
             auswahl.append("<option value=\"").append(esc(o.bezeichnung())).append("\">")
                    .append(esc(o.bezeichnung())).append("</option>");
         }
-        auswahl.append("<option value=\"Praxis\">Praxis (ohne Zuordnung)</option>");
         return """
                 <div class="maske" style="border-top:1px solid var(--rand)">
                 <form method="post" action="/agenten/geheimnis" class="maske karte-blank"
@@ -1282,6 +1309,19 @@ public class Zentrale {
     }
 
     private String gruppenSeite(Context c, String fehler) {
+        return gruppenSeite(c, fehler, null);
+    }
+
+    /**
+     * Die Gruppenseite.
+     *
+     * @param erfolg Rückmeldung nach einer gelungenen Änderung. Bis zum
+     *        11.08.2026 gab es keine: Wer das Prüfintervall änderte, sah die
+     *        Seite neu aufgebaut und musste in der Tabelle nachsehen, ob der
+     *        Wert angekommen war. UX-Vorgabe 3 verlangt sichtbaren Zustand für
+     *        jeden Vorgang.
+     */
+    private String gruppenSeite(Context c, String fehler, String erfolg) {
         return seitenkopf("Gerätegruppen",
                 "Gruppen tragen das Prüfintervall — und später die Zeitfenster für "
                 + "Firmware-Updates. Neu erkannte Geräte landen zunächst in der Vorgabegruppe.",
@@ -1307,7 +1347,8 @@ public class Zentrale {
                   %s
                   <div id="gruppen">%s</div>
                 </div>"""
-                .formatted(fehler == null ? "" : Anmeldeseiten.meldung(fehler, "warnend"),
+                .formatted(fehler != null ? Anmeldeseiten.meldung(fehler, "warnend")
+                                 : erfolg != null ? Anmeldeseiten.meldung(erfolg, "gut") : "",
                            einrichtungsauswahl(c),
                            Bedienelemente.absenden("Gruppe anlegen",
                                    "Legt eine neue Gerätegruppe mit diesem Prüfintervall an",
@@ -1364,7 +1405,10 @@ public class Zentrale {
 
     private String sortierSchluessel(Context c) {
         String s = param(c, "sortier");
-        return s == null || s.isBlank() ? "gruppe" : s;
+        // Vorgabe „einrichtung": Nach Gruppennamen sortiert stehen neun Zeilen
+        // „Alle Geräte" untereinander — die Vorgabegruppe jeder Einrichtung
+        // heisst so.
+        return s == null || s.isBlank() ? "einrichtung" : s;
     }
 
     private boolean sortierAb(Context c) {
@@ -1405,15 +1449,25 @@ public class Zentrale {
             liste.removeIf(g -> !g.bezeichnung().toLowerCase().contains(s)
                              && !g.einrichtung().toLowerCase().contains(s));
         }
+        // Vorgabe ist die EINRICHTUNG, nicht die Bezeichnung: Die Vorgabegruppe
+        // jeder Einrichtung heisst „Alle Geräte", und danach sortiert stehen
+        // neun gleichnamige Zeilen untereinander, waehrend die Einrichtung
+        // daneben springt (Befund PO, 11.08.2026). Dieselbe Ueberlegung wie bei
+        // der Geraeteliste.
         java.util.Comparator<Gruppenverwaltung.Gruppe> ord = switch (nach) {
-            case "einrichtung" -> java.util.Comparator.comparing(
-                    Gruppenverwaltung.Gruppe::einrichtung, String.CASE_INSENSITIVE_ORDER);
-            case "geraete"  -> java.util.Comparator.comparingInt(Gruppenverwaltung.Gruppe::geraetezahl);
-            case "takt"     -> java.util.Comparator.comparingInt(
+            case "gruppe"  -> java.util.Comparator.comparing(
+                    Gruppenverwaltung.Gruppe::bezeichnung, String.CASE_INSENSITIVE_ORDER);
+            case "geraete" -> java.util.Comparator.comparingInt(Gruppenverwaltung.Gruppe::geraetezahl);
+            case "takt"    -> java.util.Comparator.comparingInt(
                     Gruppenverwaltung.Gruppe::pruefintervallSekunden);
             default -> java.util.Comparator.comparing(
-                    Gruppenverwaltung.Gruppe::bezeichnung, String.CASE_INSENSITIVE_ORDER);
+                    Gruppenverwaltung.Gruppe::einrichtung, String.CASE_INSENSITIVE_ORDER);
         };
+        // Zweites Kriterium ist Pflicht: Ohne eindeutige Reihenfolge wechseln
+        // Zeilen bei jeder Aktualisierung die Plaetze, sobald zwei Gruppen
+        // denselben Wert haben — und „Alle Geräte" haben sie fast alle.
+        ord = ord.thenComparing(Gruppenverwaltung.Gruppe::einrichtung, String.CASE_INSENSITIVE_ORDER)
+                 .thenComparing(Gruppenverwaltung.Gruppe::bezeichnung, String.CASE_INSENSITIVE_ORDER);
         liste.sort(ab ? ord.reversed() : ord);
 
         String basis = "/teil/gruppen?suche=" + urlKodiert(suche) + "&";
@@ -1434,18 +1488,28 @@ public class Zentrale {
         }
         for (var g : liste) {
             s.append("<tr class=\"klickbar\">");
-            s.append(Bedienelemente.zeilenziel(g.bezeichnung(), "/bestand?gruppe=" + g.id(),
-                    "Zeigt die Geräte der Gruppe „" + g.bezeichnung() + "“"));
+            // Die Zeile fuehrt auf die Detailseite der Gruppe — dort wird
+            // umbenannt, das Intervall gesetzt und die Vorgabe gewechselt.
+            //
+            // Ein Eingabefeld IN der Zeile waere der naheliegende Weg gewesen,
+            // vertruege sich aber nicht mit einer klickbaren Zeile: Ein Klick
+            // ins Feld wuerde navigieren. Und eine Liste ist der falsche Ort
+            // fuer alles, was mehr als einen Wert hat.
+            s.append(Bedienelemente.zeilenziel(g.bezeichnung(), "/gruppen/" + g.id(),
+                    "Öffnet die Gruppe „" + g.bezeichnung() + "“ zum Bearbeiten"));
+            s.setLength(s.length() - "</td>".length());
             if (g.istVorgabe()) {
                 // Die Marke steht IN der Namenszelle, nicht in einer eigenen
                 // Spalte: Eine Spalte, die bei neun von zehn Zeilen leer ist,
                 // kostet Breite und trägt nichts.
-                s.setLength(s.length() - "</td>".length());
                 s.append(" <span class=\"marke unbekannt\" title=\"Neu erkannte Geräte "
-                       + "dieser Einrichtung landen hier\">Vorgabe</span></td>");
+                       + "dieser Einrichtung landen hier\">Vorgabe</span>");
             }
+            s.append("</td>");
             s.append("""
-                    <td>%s</td><td class="zahl-zelle">%d</td>
+                    <td>%s</td>
+                    <td class="zahl-zelle"><a href="/bestand?gruppe=%d"
+                        title="Zeigt die Geräte dieser Gruppe im Bestand">%d</a></td>
                     <td><form method="post" action="/gruppen/%d/intervall" class="reihe-eng">
                           <label class="nurLeser" for="iv-%d">Prüfintervall für %s in Sekunden</label>
                           <input id="iv-%d" name="intervall" type="text" inputmode="numeric"
@@ -1457,7 +1521,7 @@ public class Zentrale {
                           <noscript><button class="knopf klein" type="submit" title="Übernimmt die Eingaben" aria-label="Übernimmt die Eingaben">Speichern</button></noscript>
                         </form></td>
                     <td class="aktionen">%s</td></tr>"""
-                    .formatted(esc(g.einrichtung()), g.geraetezahl(), g.id(),
+                    .formatted(esc(g.einrichtung()), g.id(), g.geraetezahl(), g.id(),
                             g.id(), esc(g.bezeichnung()), g.id(), g.pruefintervallSekunden(),
                             g.id(),
                             g.istVorgabe() ? "" :
@@ -1472,6 +1536,118 @@ public class Zentrale {
                                + "</form>")));
         }
         return s.append("</tbody></table></div>").toString();
+    }
+
+    /**
+     * Die Detailseite einer Gerätegruppe (Befund PO, 11.08.2026).
+     *
+     * <p>Es gab sie nicht — als einziger Bereich hatte die Gruppenverwaltung
+     * keine. Alles musste in die Listenzeile passen, und was nicht hineinpasste,
+     * fehlte schlicht: Umbenennen, Vorgabe wechseln, die Geräte sehen.
+     *
+     * <p>Die Seite folgt derselben Ordnung wie Gerät und Organisationseinheit:
+     * oben die Stammdaten zum Bearbeiten, darunter die Beziehungen, unten das
+     * Löschen.
+     */
+    private String gruppenDetail(Context c, long id, String fehler, String erfolg) {
+        var g = gruppen.gruppe(id, bereich(c));
+        if (g.isEmpty()) {
+            return seitenkopf("Gerätegruppe", "Diese Gruppe gibt es nicht mehr.", null)
+                 + "<div class=\"tafel\"><p class=\"leer\">Die Gruppe wurde gelöscht oder liegt "
+                 + "außerhalb Ihres Zuständigkeitsbereichs. "
+                 + "<a href=\"/gruppen\">Zurück zur Übersicht</a></p></div>";
+        }
+        var gr = g.get();
+        StringBuilder s = new StringBuilder(detailkopf("/gruppen", "Gerätegruppen",
+                gr.bezeichnung(), "in " + esc(gr.einrichtung()), null));
+
+        if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
+        else if (erfolg != null) s.append(Anmeldeseiten.meldung(erfolg, "gut"));
+
+        s.append("""
+                <div class="tafel"><h3>Stammdaten</h3>
+                <form method="post" action="/gruppen/%d/aendern" class="maske">
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="d-bez">Bezeichnung</label>
+                      <input id="d-bez" name="bezeichnung" type="text" required maxlength="120"
+                             value="%s"></div>
+                    <div class="feldgruppe zahlenfeld">
+                      <label for="d-iv" title="Wie oft der Agent die Geräte dieser Gruppe prüft">Prüfintervall (s)</label>
+                      <input id="d-iv" name="intervall" type="text" inputmode="numeric"
+                             size="6" value="%d"></div>
+                  </div>
+                  <p class="hilfe">Die Einrichtung <strong>%s</strong> lässt sich nicht ändern:
+                     Eine Gruppe liegt in genau einer Einrichtung (FA-GER-050), und ein Wechsel
+                     würde ihre Geräte über die Mandantengrenze tragen. Für einen anderen
+                     Standort bitte dort eine eigene Gruppe anlegen.</p>
+                  %s
+                </form></div>""".formatted(gr.id(), esc(gr.bezeichnung()),
+                        gr.pruefintervallSekunden(), esc(gr.einrichtung()),
+                        Bedienelemente.absenden("Änderungen speichern",
+                                "Übernimmt Bezeichnung und Prüfintervall dieser Gruppe",
+                                Bedienelemente.Art.HAUPT, null)));
+
+        // Vorgabe: der Ort, an dem neu erkannte Geraete landen.
+        s.append("<div class=\"tafel\"><h3>Vorgabegruppe</h3>");
+        if (gr.istVorgabe()) {
+            s.append("""
+                    <p class="hilfe">Neu erkannte Geräte dieser Einrichtung landen in dieser
+                       Gruppe. Um das zu ändern, öffnen Sie die Gruppe, die es künftig sein
+                       soll — jede Einrichtung hat genau eine Vorgabegruppe.</p>""");
+        } else {
+            s.append("""
+                    <form method="post" action="/gruppen/%d/vorgabe" class="maske">
+                      <p class="hilfe">Neu erkannte Geräte dieser Einrichtung landen zurzeit in
+                         einer anderen Gruppe. Diese hier zur Vorgabe zu machen, ändert nichts
+                         an den vorhandenen Zuordnungen — nur daran, wo künftige Geräte
+                         auftauchen.</p>
+                      %s
+                    </form>""".formatted(gr.id(),
+                            Bedienelemente.absenden("Zur Vorgabegruppe machen",
+                                    "Neu erkannte Geräte dieser Einrichtung landen künftig hier",
+                                    Bedienelemente.Art.NEBEN, null)));
+        }
+        s.append("</div>");
+
+        // Die Geraete der Gruppe — nicht nur ihre Zahl.
+        var geraeteDerGruppe = gruppen.geraeteDerGruppe(gr.id());
+        s.append("<div class=\"tafel\"><h3>Geräte <span class=\"zaehler\">")
+         .append(geraeteDerGruppe.size()).append("</span></h3>");
+        if (geraeteDerGruppe.isEmpty()) {
+            s.append("<p class=\"leer\">Dieser Gruppe ist noch kein Gerät zugeordnet. "
+                   + "Im <a href=\"/bestand\">Bestand</a> lassen sich Geräte auswählen und "
+                   + "einer Gruppe zuweisen.</p>");
+        } else {
+            s.append("<div class=\"rollbar\"><table><thead><tr><th scope=\"col\">Gerät</th>"
+                   + "<th scope=\"col\">Kennung</th></tr></thead><tbody>");
+            for (var eintrag : geraeteDerGruppe) {
+                s.append("<tr class=\"klickbar\">")
+                 .append(Bedienelemente.zeilenziel(eintrag.bezeichnung(),
+                         "/geraete/" + eintrag.terminalId() + "/verlauf",
+                         "Öffnet den Zeitstrahl dieses Geräts"))
+                 .append("<td><code>").append(esc(eintrag.terminalId())).append("</code></td></tr>");
+            }
+            s.append("</tbody></table></div>");
+            s.append("<p class=\"hilfe\">Zuordnen und Umhängen geschieht im "
+                   + "<a href=\"/bestand?gruppe=").append(gr.id())
+             .append("\">Bestand</a> — dort lassen sich mehrere Geräte auf einmal auswählen.</p>");
+        }
+        s.append("</div>");
+
+        if (!gr.istVorgabe()) {
+            s.append("""
+                    <div class="tafel"><h3>Gruppe löschen</h3>
+                    <p class="hilfe">Die %d zugeordneten Geräte ziehen in die Vorgabegruppe von
+                       „%s" um — kein Gerät fällt durch eine Löschung aus der Überwachung.</p>
+                    <form method="post" action="/gruppen/%d/loeschen"
+                          data-nachfrage="Gruppe &bdquo;%s&ldquo; wirklich löschen?">%s</form>
+                    </div>""".formatted(gr.geraetezahl(), esc(gr.einrichtung()), gr.id(),
+                            esc(gr.bezeichnung()),
+                            Bedienelemente.absenden("Gruppe löschen",
+                                    "Löscht diese Gruppe; ihre Geräte ziehen in die Vorgabegruppe um",
+                                    Bedienelemente.Art.WARNEND, null)));
+        }
+        return s.toString();
     }
 
     private static String urlKodiert(String s) {
@@ -1679,7 +1855,14 @@ public class Zentrale {
 
     /** Offene Alarme ganz oben — sie sind das Erste, was jemand sehen muss. */
     private String alarmblock(Context c) {
-        var offen = alarme.offene("Praxis", bereich(c));
+        // ALLE Einrichtungen im Geltungsbereich, nicht fest „Praxis".
+        //
+        // Bis zum 11.08.2026 stand hier ein Einrichtungsname. In einer
+        // Installation mit mehreren Betriebsstätten zeigte die Lage-Übersicht
+        // damit keinen einzigen Alarm — die wichtigste Seite des Produkts war
+        // im Mehrmandantenbetrieb blind. Aufgefallen ist es erst, als die
+        // Prüfeinrichtung nicht mehr „Praxis" hieß.
+        var offen = alarme.offene(bereich(c));
         if (offen.isEmpty()) return "";
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>Alarme <span class=\"zaehler\">"
@@ -1773,16 +1956,65 @@ public class Zentrale {
         return s.append("</div>").toString();
     }
 
-    private String geraeteSeite() {
+    /**
+     * Sortierfelder der Betriebs-Geräteliste.
+     *
+     * <p><b>Vorgabe ist die Praxis</b> (PO, 11.08.2026). In einem MVZ heißen die
+     * Geräte in jeder Betriebsstätte gleich; nach Kennung sortiert stand
+     * „Behandlung 1" viermal untereinander, ohne dass erkennbar war, zu wem.
+     */
+    private enum Geraetesortierung {
+        // ACHTUNG: Diese Reihenfolge IST die Spaltenreihenfolge der Tabelle —
+        // die Koepfe entstehen aus values(). Wer hier umsortiert, verschiebt die
+        // Ueberschriften gegen die Zellen. Genau das ist am 11.08.2026 passiert:
+        // Ueber "Behandlung 1" stand "Praxis". Beim Aendern also IMMER auch die
+        // Zellenreihenfolge in geraeteTabelle() mitziehen.
+        GERAET("Gerät"), PRAXIS("Praxis"), MODELL("Modell"), FIRMWARE("Firmware"),
+        ZUSTAND("Zustand"), AUTOMATIK("Automatik"), VERSUCHE("Versuche"), GEPRUEFT("geprüft");
+
+        final String anzeige;
+        Geraetesortierung(String a) { anzeige = a; }
+
+        static Geraetesortierung aus(String name) {
+            if (name == null) return PRAXIS;
+            try { return valueOf(name.toUpperCase()); }
+            catch (IllegalArgumentException e) { return PRAXIS; }
+        }
+    }
+
+    private String geraeteSeite(Context c) {
+        String suche = c.queryParam("suche");
+        var sort = Geraetesortierung.aus(c.queryParam("sortierung"));
+        boolean ab = "ab".equals(c.queryParam("richtung"));
+
+        // Suchfeld und Sortierung stehen AUSSERHALB des Bereichs, der alle 5 s
+        // ausgetauscht wird. Sonst verlöre das Feld bei jeder Aktualisierung
+        // Inhalt und Schreibmarke — dieselbe Überlegung wie in der
+        // Bestandsliste. Die aktuellen Werte reisen über hx-include mit, damit
+        // die Aktualisierung dieselbe Sicht zeigt wie der Seitenaufbau.
+        String filter = """
+                <div class="filter geraetefilter">
+                  <label class="nurLeser" for="g-suche">Geräte durchsuchen</label>
+                  <input id="g-suche" name="suche" type="search" value="%s"
+                         placeholder="Gerät, Kennung, Praxis oder Modell suchen …"
+                         title="Sucht in Gerätename, Kennung, Praxis und Modell"
+                         hx-get="/teil/geraete" hx-target="#geraete" hx-swap="innerHTML"
+                         hx-include=".geraetefilter" hx-trigger="input changed delay:200ms">
+                  <input type="hidden" name="sortierung" value="%s">
+                  <input type="hidden" name="richtung" value="%s">
+                </div>""".formatted(esc(suche == null ? "" : suche), sort.name(), ab ? "ab" : "auf");
+
         // Takt von 3 s auf 5 s: Der Zustand aendert sich ohnehin nur im
         // Pruefintervall der Gruppe (im Betrieb 60 s). Haeufiger zu fragen
         // erzeugt nur Unruhe und Last.
         return seitenkopf("Kartenterminals",
                 "Zustand aller überwachten Geräte. Aktualisiert sich selbsttätig.", null) + """
                 <div class="tafel"><h3>Geräte <span class="zaehler"><span class="puls"></span> live</span></h3>
-                <div id="geraete" hx-get="/teil/geraete" hx-trigger="load, every 5s" hx-swap="innerHTML">%s</div></div>
                 %s
-                """.formatted(geraeteTabelle(), flottenuebersicht());
+                <div id="geraete" hx-get="/teil/geraete" hx-trigger="load, every 5s"
+                     hx-include=".geraetefilter" hx-swap="innerHTML">%s</div></div>
+                %s
+                """.formatted(filter, geraeteTabelle(suche, sort, ab), flottenuebersicht());
     }
 
     /**
@@ -1807,22 +2039,104 @@ public class Zentrale {
         return "<div class=\"handlung\">" + esc(text) + "</div>";
     }
 
-    private String geraeteTabelle() {
+    private String geraeteTabelle(String suche, Geraetesortierung sort, boolean absteigend) {
         if (geraete.isEmpty()) return "<p class=\"leer\">Noch keine Geräte gemeldet. "
                 + "Sobald der Standort-Agent verbunden ist, erscheinen sie hier.</p>";
-        StringBuilder s = new StringBuilder("<div class=\"rollbar\"><table><thead><tr>"
-                + "<th>Gerät</th><th>Modell</th><th>Firmware</th><th>Zustand</th>"
-                + "<th>Automatik</th><th>Versuche</th><th>geprüft</th></tr></thead><tbody>");
-        geraete.values().stream().sorted(Comparator.comparing(g -> g.terminalId)).forEach(g -> s.append("""
+
+        // Die Praxis kommt aus dem BESTAND, nicht aus der Meldung des Agenten:
+        // Ein Agent kennt nur EINE Einrichtung, betreut in einem MVZ aber
+        // Geraete mehrerer Betriebsstaetten. Einmal je Aufbau geholt, nicht je
+        // Zeile — bei 5.000 Geraeten waeren das sonst 5.000 Abfragen.
+        Map<String, String> praxen = gruppen.einrichtungJeTerminal();
+        java.util.function.Function<Geraetezustand, String> praxis =
+                g -> praxen.getOrDefault(g.terminalId, g.einrichtung);
+
+        String suchwort = suche == null ? "" : suche.trim().toLowerCase(java.util.Locale.ROOT);
+        var treffer = geraete.values().stream()
+                .filter(g -> suchwort.isEmpty()
+                        || enthaelt(anzeigename(g), suchwort)
+                        || enthaelt(g.terminalId, suchwort)
+                        || enthaelt(praxis.apply(g), suchwort)
+                        || enthaelt(g.modell, suchwort))
+                .sorted(geraeteordnung(sort, absteigend, praxis))
+                .toList();
+
+        if (treffer.isEmpty()) {
+            return "<p class=\"leer\">Kein Gerät passt zu „" + esc(suche) + "“. "
+                 + "Gesucht wird in Gerätename, Kennung, Praxis und Modell.</p>";
+        }
+
+        StringBuilder s = new StringBuilder();
+        s.append("<p class=\"suchstand\" role=\"status\" aria-live=\"polite\">")
+         .append(treffer.size()).append(treffer.size() == 1 ? " Gerät" : " Geräte")
+         .append(suchwort.isEmpty() ? "" : " gefunden").append("</p>");
+        s.append("<div class=\"rollbar\"><table><thead><tr>");
+        for (Geraetesortierung sp : Geraetesortierung.values()) s.append(geraetekopf(sp, sort, absteigend, suche));
+        s.append("</tr></thead><tbody>");
+
+        for (Geraetezustand g : treffer) {
+            s.append("""
                 <tr><td class="geraet"><a href="/geraete/%s/verlauf" style="color:inherit">%s</a><br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
+                <td>%s</td>
                 <td>%s</td><td><code>%s</code></td><td>%s%s</td><td>%s</td>
                 <td style="font-variant-numeric:tabular-nums">%s</td><td class="zeit">%s</td></tr>"""
                 .formatted(esc(g.terminalId), esc(anzeigename(g)), esc(g.terminalId),
+                        esc(praxis.apply(g)),
                         esc(nz(g.modell)), esc(nz(g.firmware)),
                         marke(g), handlungshinweis(g), automatikMarke(g),
                         g.verbleibendeVersuche < 0 ? "—" : String.valueOf(g.verbleibendeVersuche),
-                        g.zuletztGeprueftText())));
+                        g.zuletztGeprueftText()));
+        }
         return s.append("</tbody></table></div>").toString();
+    }
+
+    private static boolean enthaelt(String wert, String suchwort) {
+        return wert != null && wert.toLowerCase(java.util.Locale.ROOT).contains(suchwort);
+    }
+
+    /**
+     * Die Reihenfolge der Geräteliste.
+     *
+     * <p>Jede Sortierung endet auf der <b>Kennung</b>. Ohne dieses zweite
+     * Kriterium wechseln Zeilen bei jeder Aktualisierung die Plätze, sobald zwei
+     * Geräte denselben Wert haben — und die Liste aktualisiert sich alle fünf
+     * Sekunden von selbst. Eine springende Liste ist unbedienbar.
+     */
+    private Comparator<Geraetezustand> geraeteordnung(
+            Geraetesortierung sort, boolean absteigend,
+            java.util.function.Function<Geraetezustand, String> praxis) {
+        Comparator<Geraetezustand> c = switch (sort) {
+            case PRAXIS    -> Comparator.comparing(g -> praxis.apply(g), String.CASE_INSENSITIVE_ORDER);
+            case GERAET    -> Comparator.comparing(g -> anzeigename(g), String.CASE_INSENSITIVE_ORDER);
+            case MODELL    -> Comparator.comparing(g -> nz(g.modell), String.CASE_INSENSITIVE_ORDER);
+            case FIRMWARE  -> Comparator.comparing(g -> nz(g.firmware), String.CASE_INSENSITIVE_ORDER);
+            case ZUSTAND   -> Comparator.comparing(Geraetezustand::zustandstext, String.CASE_INSENSITIVE_ORDER);
+            case AUTOMATIK -> Comparator.comparing(g -> g.pevimAktiv ? 0 : 1);
+            case VERSUCHE  -> Comparator.comparingInt(g -> g.verbleibendeVersuche);
+            case GEPRUEFT  -> Comparator.comparing(g -> g.zuletztGeprueft,
+                    Comparator.nullsLast(Comparator.naturalOrder()));
+        };
+        if (absteigend) c = c.reversed();
+        return c.thenComparing(g -> g.terminalId);
+    }
+
+    /** Ein sortierender Spaltenkopf. Ein zweiter Klick dreht die Richtung um. */
+    private static String geraetekopf(Geraetesortierung sp, Geraetesortierung aktiv,
+                                      boolean absteigend, String suche) {
+        boolean istAktiv = sp == aktiv;
+        String richtung = istAktiv && !absteigend ? "ab" : "auf";
+        String pfeil = !istAktiv ? "" : (absteigend ? " ▾" : " ▴");
+        String q = "?sortierung=" + sp.name() + "&richtung=" + richtung
+                 + (suche == null || suche.isBlank() ? ""
+                    : "&suche=" + java.net.URLEncoder.encode(suche, java.nio.charset.StandardCharsets.UTF_8));
+        // Dieselbe Klasse wie in der Bestandsliste: "sortlink". Ein eigener
+        // Name haette eine zweite Stelle im Stylesheet gebraucht — und
+        // Sortierkoepfe, die auf zwei Seiten verschieden aussehen.
+        // aria-sort teilt Screenreadern mit, wonach gerade sortiert ist (WCAG).
+        return ("<th scope=\"col\" aria-sort=\"%s\"><a class=\"sortlink\" href=\"/geraete%s\" "
+                + "title=\"Nach %s sortieren\">%s%s</a></th>")
+                .formatted(!istAktiv ? "none" : (absteigend ? "descending" : "ascending"),
+                        q, esc(sp.anzeige), esc(sp.anzeige), pfeil);
     }
 
     private String protokollSeite(Context c) {
@@ -2306,7 +2620,7 @@ public class Zentrale {
     private void routenUebersicht(Javalin app) {
         app.get("/", c -> c.html(seite("uebersicht", uebersichtsSeite(c), angemeldeter(c))));
 
-        app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(), angemeldeter(c))));
+        app.get("/geraete", c -> c.html(seite("geraete", geraeteSeite(c), angemeldeter(c))));
 
         app.get("/teil/uebersicht", c -> c.html(uebersicht(c)));
 
@@ -2316,7 +2630,9 @@ public class Zentrale {
 
         app.get("/teil/lage",   c -> c.html(lageblock(c)));
 
-        app.get("/teil/geraete",    c -> c.html(geraeteTabelle()));
+        app.get("/teil/geraete",    c -> c.html(geraeteTabelle(c.queryParam("suche"),
+                Geraetesortierung.aus(c.queryParam("sortierung")),
+                "ab".equals(c.queryParam("richtung")))));
 
         /**
          * Geräte-Zeitstrahl (FA-PRO-050) — aus der Geräteliste in einem Klick.
@@ -2331,14 +2647,21 @@ public class Zentrale {
             // Die Feinauswahl schlaegt die Sicht: Wer einzelne Arten ankreuzt,
             // hat sich bewusst entschieden. Ohne Haekchen entscheidet die
             // Sicht, und ohne Sicht wird nichts gefiltert.
-            var arten = c.queryParams("art");
-            if (arten.isEmpty()) arten = Verlaufsseiten.artenDerSicht(c.queryParam("sicht"));
+            // Feinauswahl und Sicht getrennt halten — sie DUERFEN sich nicht
+            // vermischen. Vorher wurde die Sicht in Arten uebersetzt und diese
+            // Liste wieder in die Ansicht gegeben; dort kreuzte sie die
+            // Feinauswahl an, deren Haekchen beim naechsten Absenden die Sicht
+            // ueberstimmten. Ergebnis: Man kam aus einer Sicht nicht mehr
+            // heraus (Befund PO, 11.08.2026).
+            var feinauswahl = c.queryParams("art");
+            String sicht = c.queryParam("sicht");
+            var arten = feinauswahl.isEmpty() ? Verlaufsseiten.artenDerSicht(sicht) : feinauswahl;
             var seite = protokoll.seite(id, arten, null,
                     Verlaufsseiten.seitFuer(zeitraum), null,
                     Math.max(1, zahl(c.queryParam("seite"), 1)), 200, bereich(c));
             var g = geraete.get(id);
             c.html(seite("geraete", Verlaufsseiten.zeitstrahl(id,
-                    g == null ? id : anzeigename(g), seite, zeitraum, arten),
+                    g == null ? id : anzeigename(g), seite, zeitraum, sicht, feinauswahl),
                     angemeldeter(c)));
         });
 
@@ -2539,25 +2862,126 @@ public class Zentrale {
             int sek;
             try { sek = Integer.parseInt(Anmeldeseiten.feld(c, "intervall")); }
             catch (NumberFormatException e) { sek = 60; }
-            String fehler = gruppen.intervallSetzen(id, sek);
-            if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GEAENDERT, true,
+            // Die Gruppe VOR der Aenderung lesen: Danach braucht das Protokoll
+            // ihren Namen und ihre Einrichtung — und nach dem Loeschen gibt es
+            // sie nicht mehr.
+            var vorher = gruppen.gruppe(id, bereich(c));
+            String fehler = gruppen.intervallSetzen(id, sek, bereich(c));
+            if (fehler == null && vorher.isPresent()) {
+                // Die Einrichtung stand hier fest auf „Praxis" — damit landete
+                // jede Gruppenaenderung unter einem Namen, der mit der Gruppe
+                // nichts zu tun hatte, und war fuer den Zustaendigen unsichtbar.
+                protokoll.anfuegen(vorher.get().einrichtung(), null,
+                        Ereignisart.GRUPPE_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
-                        "Prüfintervall der Gruppe " + id + " auf " + sek + " s gesetzt", null);
+                        "Prüfintervall der Gruppe „" + vorher.get().bezeichnung()
+                                + "“ auf " + sek + " s gesetzt", null);
             }
-            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
+            c.html(seite("gruppen", gruppenSeite(c, fehler,
+                    fehler == null && vorher.isPresent()
+                            ? "Prüfintervall von „" + vorher.get().bezeichnung()
+                              + "“ auf " + sek + " Sekunden gesetzt."
+                            : null),
+                    angemeldeter(c)));
+        });
+
+        // Die Detailseite — bis zum 11.08.2026 hatte die Gruppenverwaltung als
+        // einziger Bereich keine. Alles musste in die Listenzeile passen, und
+        // was nicht hineinpasste, fehlte.
+        app.get("/gruppen/{id}", c -> {
+            long id = Long.parseLong(c.pathParam("id"));
+            c.html(seite("gruppen", gruppenDetail(c, id, null, null), angemeldeter(c)));
+        });
+
+        // Bezeichnung UND Intervall in einem Zug: Auf einer Detailseite ändert
+        // man beides zusammen; zwei getrennte Speichern-Knöpfe wären eine
+        // Zumutung.
+        app.post("/gruppen/{id}/aendern", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = gruppen.gruppe(id, bereich(c));
+            String neuerName = Anmeldeseiten.feld(c, "bezeichnung");
+            int sek;
+            try { sek = Integer.parseInt(Anmeldeseiten.feld(c, "intervall").trim()); }
+            catch (Exception e) { sek = -1; }
+
+            String fehler = null;
+            var meldungen = new ArrayList<String>();
+            if (vorher.isPresent() && !vorher.get().bezeichnung().equals(neuerName)) {
+                fehler = gruppen.umbenennen(id, neuerName, bereich(c));
+                if (fehler == null) meldungen.add("umbenannt");
+            }
+            if (fehler == null && vorher.isPresent() && sek != vorher.get().pruefintervallSekunden()) {
+                fehler = gruppen.intervallSetzen(id, sek, bereich(c));
+                if (fehler == null) meldungen.add("Prüfintervall auf " + sek + " s gesetzt");
+            }
+            if (fehler == null && !meldungen.isEmpty() && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().einrichtung(), null,
+                        Ereignisart.GRUPPE_GEAENDERT, true, angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe „" + vorher.get().bezeichnung() + "“: "
+                                + String.join(", ", meldungen), null);
+            }
+            c.html(seite("gruppen", gruppenDetail(c, id, fehler,
+                    fehler == null
+                            ? (meldungen.isEmpty() ? "Nichts geändert."
+                               : "Gespeichert: " + String.join(", ", meldungen) + ".")
+                            : null),
+                    angemeldeter(c)));
+        });
+
+        app.post("/gruppen/{id}/vorgabe", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var g = gruppen.gruppe(id, bereich(c));
+            String fehler = gruppen.vorgabeSetzen(id, bereich(c));
+            if (fehler == null && g.isPresent()) {
+                protokoll.anfuegen(g.get().einrichtung(), null,
+                        Ereignisart.GRUPPE_GEAENDERT, true, angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe „" + g.get().bezeichnung() + "“ ist jetzt die "
+                                + "Vorgabegruppe — neu erkannte Geräte landen dort", null);
+            }
+            c.html(seite("gruppen", gruppenDetail(c, id, fehler,
+                    fehler == null ? "Diese Gruppe ist jetzt die Vorgabegruppe." : null),
+                    angemeldeter(c)));
+        });
+
+        // Umbenennen als eigener Weg — fuer die Feldbearbeitung ohne Detailseite
+        // und fuer Aufrufe von aussen.
+        app.post("/gruppen/{id}/umbenennen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var vorher = gruppen.gruppe(id, bereich(c));
+            String neu = Anmeldeseiten.feld(c, "bezeichnung");
+            String fehler = gruppen.umbenennen(id, neu, bereich(c));
+            if (fehler == null && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().einrichtung(), null,
+                        Ereignisart.GRUPPE_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Gerätegruppe „" + vorher.get().bezeichnung() + "“ heißt jetzt „"
+                                + neu.trim() + "“", null);
+            }
+            c.html(seite("gruppen", gruppenSeite(c, fehler,
+                    fehler == null ? "Gruppe umbenannt." : null), angemeldeter(c)));
         });
 
         app.post("/gruppen/{id}/loeschen", c -> {
             if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             long id = Long.parseLong(c.pathParam("id"));
-            String fehler = gruppen.loeschen(id, "Praxis");
-            if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.GRUPPE_GELOESCHT, true,
+            var vorher = gruppen.gruppe(id, bereich(c));
+            String fehler = gruppen.loeschen(id, bereich(c));
+            if (fehler == null && vorher.isPresent()) {
+                protokoll.anfuegen(vorher.get().einrichtung(), null,
+                        Ereignisart.GRUPPE_GELOESCHT, true,
                         angemeldeter(c).anzeigename(), null,
-                        "Gerätegruppe " + id + " gelöscht, Geräte in die Vorgabegruppe verschoben", null);
+                        "Gerätegruppe „" + vorher.get().bezeichnung() + "“ gelöscht, "
+                                + vorher.get().geraetezahl()
+                                + " Gerät(e) in die Vorgabegruppe verschoben", null);
             }
-            c.html(seite("gruppen", gruppenSeite(c, fehler), angemeldeter(c)));
+            c.html(seite("gruppen", gruppenSeite(c, fehler,
+                    fehler == null && vorher.isPresent()
+                            ? "Gruppe „" + vorher.get().bezeichnung() + "“ gelöscht."
+                            : null),
+                    angemeldeter(c)));
         });
     }
 
@@ -2745,7 +3169,8 @@ public class Zentrale {
         app.get("/bestand/terminal/neu", c -> {
             if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
             c.html(seite("bestand", Bestandsseiten.terminalNeuMaske(
-                    bestand.konnektoren(bereich(c))), angemeldeter(c)));
+                    bestand.konnektoren(bereich(c)),
+                    bestand.organisationen(bereich(c))), angemeldeter(c)));
         });
 
         app.get("/bestand/konnektor/{id}", c -> {
@@ -2820,15 +3245,41 @@ public class Zentrale {
 
         app.post("/bestand/terminal", c -> {
             if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
-            long konnektorId;
-            try { konnektorId = Long.parseLong(Anmeldeseiten.feld(c, "konnektorId")); }
-            catch (NumberFormatException ex) {
+            // Der Konnektor ist seit dem 11.08.2026 optional — ein Geraet kann
+            // aufgestellt sein, bevor es am Konnektor angemeldet ist. Die
+            // EINRICHTUNG ist stattdessen Pflicht: Ohne sie gaebe es keine
+            // Mandantengrenze fuer diesen Datensatz.
+            Long konnektorId = null;
+            try {
+                String roh = Anmeldeseiten.feld(c, "konnektorId");
+                if (roh != null && !roh.isBlank()) konnektorId = Long.parseLong(roh);
+            } catch (NumberFormatException ex) {
+                konnektorId = null;   // wie „keiner gewaehlt"
+            }
+            Long organisationId = null;
+            try {
+                String rohOrg = Anmeldeseiten.feld(c, "organisationId");
+                if (rohOrg != null && !rohOrg.isBlank()) organisationId = Long.parseLong(rohOrg);
+            } catch (NumberFormatException ex) {
+                organisationId = null;
+            }
+            // Fehlt die Einrichtung, ist aber ein Konnektor gewaehlt, ergibt sie
+            // sich aus ihm — die Angabe waere dann eine Wiederholung. Das ist
+            // KEINE Aufweichung der Mandantengrenze: Der Konnektor wird selbst
+            // gegen den Geltungsbereich geprueft, und seine Einrichtung ist
+            // damit ebenfalls im Bereich.
+            if (organisationId == null && konnektorId != null) {
+                organisationId = bestand.konnektor(konnektorId, bereich(c))
+                        .map(Bestandsverwaltung.Konnektor::organisationId).orElse(null);
+            }
+            if (organisationId == null) {
                 c.html(seite("bestand", bestandsSeite(c,
-                        "Bitte einen Konnektor auswählen, an dem das Terminal betrieben wird.", true),
+                        "Bitte die Einrichtung auswählen, zu der das Kartenterminal gehört.", true),
                         angemeldeter(c)));
                 return;
             }
             var e = bestand.terminalAnlegen(Anmeldeseiten.feld(c, "terminalId"), konnektorId,
+                    organisationId,
                     Anmeldeseiten.feld(c, "bezeichnung"), Anmeldeseiten.feld(c, "standort"),
                     Anmeldeseiten.feld(c, "adresse"), Anmeldeseiten.feld(c, "modell"),
                     Anmeldeseiten.feld(c, "seriennummer"), Anmeldeseiten.feld(c, "adminBenutzer"),
@@ -2857,7 +3308,40 @@ public class Zentrale {
             if (t.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
                     angemeldeter(c))); return; }
-            c.html(seite("bestand", terminalMaske(t.get(), null), angemeldeter(c)));
+            c.html(seite("bestand", terminalMaske(t.get(), null, bereich(c)), angemeldeter(c)));
+        });
+
+        // Konnektor nachtragen (Vorgabe PO, 11.08.2026). Ein Geraet kann ohne
+        // Konnektor erfasst werden; sobald es dort angemeldet ist, gehoert die
+        // Zuordnung nachgeholt — sonst bleibt es dauerhaft von der Automatik
+        // ausgeschlossen, ohne dass jemand sieht, warum.
+        app.post("/bestand/terminal/{id}/konnektor", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            Long konnektorId = null;
+            String roh = Anmeldeseiten.feld(c, "konnektorId");
+            if (roh != null && !roh.isBlank()) {
+                try { konnektorId = Long.parseLong(roh); }
+                catch (NumberFormatException ex) { konnektorId = null; }
+            }
+            var e = bestand.terminalKonnektorSetzen(id, konnektorId, bereich(c));
+            var t = bestand.terminal(id, bereich(c));
+            if (t.isEmpty()) { c.status(404).html(seite("bestand",
+                    bestandsSeite(c, "Dieses Kartenterminal gibt es nicht mehr.", true),
+                    angemeldeter(c))); return; }
+            if (e.geklappt()) {
+                protokoll.anfuegen(t.get().organisation(), t.get().terminalId(),
+                        Ereignisart.TERMINAL_GEAENDERT, true, angemeldeter(c).anzeigename(), null,
+                        konnektorId == null
+                                ? "Konnektor-Zuordnung von „" + t.get().bezeichnung() + "“ entfernt"
+                                : "Kartenterminal „" + t.get().bezeichnung() + "“ dem Konnektor „"
+                                  + t.get().konnektor() + "“ zugeordnet",
+                        konnektorId == null
+                                ? "Ohne Konnektor nimmt das Gerät nicht an der PIN-Automatik teil."
+                                : null);
+            }
+            c.html(seite("bestand", terminalMaske(t.get(), e.geklappt() ? null : e.fehler(),
+                    bereich(c)), angemeldeter(c)));
         });
 
         app.post("/bestand/terminal/{id}", c -> {
@@ -3405,7 +3889,23 @@ public class Zentrale {
             // gehoert dorthin. Sie hier zu waehlen ist der einzige Zeitpunkt,
             // an dem ein Mensch es wissen kann.
             String einr = Anmeldeseiten.feld(c, "einrichtung");
-            if (einr == null || einr.isBlank()) einr = "Praxis";
+
+            // Die Einrichtung muss eine VORHANDENE Organisationseinheit sein.
+            //
+            // Die Maske bietet eine Auswahlliste — aber ein Formularwert ist
+            // manipulierbar, und eine Mandantengrenze, die nur in der
+            // Auswahlliste besteht, ist keine. Bis zum 11.08.2026 ging hier
+            // jeder Freitext durch; der Agent meldete dann Geraete unter einem
+            // Namen, zu dem es keine Organisationseinheit gibt. Solche Daten
+            // sind fuer jede mandantengebundene Abfrage unsichtbar — sie
+            // erscheinen nur dem Instanzbetreiber und lassen sich niemandem
+            // zuordnen.
+            if (einr == null || einr.isBlank() || !bestand.organisationVorhanden(einr)) {
+                c.html(Anmeldeseiten.meldung("Bitte eine vorhandene Organisationseinheit "
+                        + "auswählen. Der Agent meldet alles unter dieser Einheit; gibt es sie "
+                        + "nicht, lassen sich seine Geräte keinem Zuständigen zeigen.", "warnend"));
+                return;
+            }
             String geheimnis = agenten.geheimnisAnlegen(
                     bez.isBlank() ? "Standort-Agent" : bez, einr, angemeldet.anzeigename());
             protokoll.anfuegen(einr, null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,

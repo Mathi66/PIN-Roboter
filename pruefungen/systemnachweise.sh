@@ -69,6 +69,42 @@ ergebnis() {           # ergebnis <name> <bedingung-erfuellt>
 # "uebersprungen: ..." aus. Am Ende meldete der Lauf "2 fehlgeschlagen",
 # waehrend im Protokoll genau einer stand — und die Suche nach dem zweiten
 # kostete mehr Zeit als der eigentliche Befund.
+# spalte_lesen <html-datei> <kopfname>
+#
+# Liest die Werte EINER Tabellenspalte, gefunden ueber ihre Ueberschrift.
+#
+# Warum ueber den Kopf und nicht ueber eine feste Position: Am 11.08.2026 hat
+# eine Spaltenumstellung gleich zwei Nachweise still verfaelscht — sie lasen
+# weiter Spalte 2 und meldeten Ordnung, wo keine war. Ein Nachweis, der die
+# falsche Spalte prueft, ist schlimmer als keiner.
+#
+# Warum Python statt awk: Dieselbe Aufgabe wurde an einem Tag dreimal in awk
+# geloest und zweimal falsch. HTML zeilenweise zu zerlegen setzt voraus, dass
+# die Ausgabe umbricht — die Zentrale baut Tabellen aber teils in einem Stueck
+# zusammen. Siehe pruefungen/tabelle.py.
+spalte_lesen() {
+  python3 pruefungen/tabelle.py "$1" "$2" 2>/dev/null
+}
+
+# treffer_zaehlen <datei> <muster>
+#
+# Zaehlt VORKOMMEN, nicht Zeilen. „grep -c" zaehlt Zeilen mit mindestens einem
+# Treffer — und die Zentrale baut Tabellen teils in einem Stueck zusammen. Acht
+# Sortierkoepfe in einer Zeile ergaben so die Zahl 1, und ein Nachweis meldete
+# eine fehlende Funktion, die vorhanden war (11.08.2026).
+treffer_zaehlen() {
+  grep -o "$2" "$1" 2>/dev/null | grep -c . || true
+}
+
+# sortiert_nach <html-datei> <kopfname> — "ja", "nein" oder "leer".
+sortiert_nach() {
+  local werte sortiert
+  werte=$(spalte_lesen "$1" "$2")
+  [ "$(printf '%s\n' "$werte" | grep -c .)" -lt 2 ] && { echo "leer"; return; }
+  sortiert=$(printf '%s\n' "$werte" | LC_ALL=C sort -f)
+  [ "$werte" = "$sortiert" ] && echo "ja" || echo "nein"
+}
+
 uebersprungen() {      # uebersprungen <grund>
   printf '  \033[1mNICHT PRUEFBAR\033[0m  %s\n' "$1"
   FEHLER=$((FEHLER+1))
@@ -190,8 +226,18 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
   done
 
   # Ab Iteration 6 muss der Agent registriert sein (FA-AGT-010).
+  #
+  # Die Einrichtung muss eine VORHANDENE Organisationseinheit sein — seit dem
+  # 11.08.2026 weist die Registrierung Freitext ab. Ein frisches System hat noch
+  # keine, deshalb wird sie hier angelegt. Das entspricht der Reihenfolge, die
+  # das Produkt vorgibt: erst die Einrichtung, dann der Agent, dann die Geraete.
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "INSERT INTO organisation (bezeichnung, art, ist_demo)
+     SELECT 'Pruefpraxis', 'VERBUND', FALSE
+     WHERE NOT EXISTS (SELECT 1 FROM organisation WHERE bezeichnung = 'Pruefpraxis')" >/dev/null
   GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
-    -d "bezeichnung=Pruefagent" | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
+    -d "bezeichnung=Pruefagent" --data-urlencode "einrichtung=Pruefpraxis" \
+    | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
   docker volume rm pr-agentdaten >/dev/null 2>&1
   docker run -d --name pr-agt --network $NETZ \
     -v "$PWD/src/agent/target/agent.jar":/app.jar -v "$SEC":/sec:ro -v pr-agentdaten:/daten \
@@ -426,7 +472,24 @@ ergebnis "der Alarm nennt eine Handlungsempfehlung" "$HE"
 # Und sie muss auch in der Oberflaeche ankommen.
 curl -s -b "$KEKSE" $BASIS/ -o /tmp/pr-antwort.html
 HO=$(enthaelt /tmp/pr-antwort.html "eingeschaltet und mit dem Netzwerk")
+if [ "$HO" = "nein" ]; then
+  echo "    Diagnose: offene Alarme: $(sql "SELECT count(*) FROM alarm WHERE behoben_am IS NULL")"
+  echo "    Diagnose: Seitengroesse: $(wc -c < /tmp/pr-antwort.html) Byte"
+  echo "    Diagnose: enthaelt \"Was zu tun ist\": $(enthaelt /tmp/pr-antwort.html "Was zu tun ist")"
+  echo "    Diagnose: enthaelt \"antwortet nicht\": $(enthaelt /tmp/pr-antwort.html "antwortet nicht")"
+fi
 ergebnis "sie erscheint in der Lage-Uebersicht" "$HO"
+
+# Und zwar unabhaengig davon, wie die Einrichtung heisst.
+#
+# Bis zum 11.08.2026 fragte die Lage-Uebersicht Alarme fest fuer die
+# Einrichtung „Praxis" ab. In einer Installation mit mehreren Betriebsstaetten
+# zeigte die wichtigste Seite des Produkts damit keinen einzigen Alarm. Der
+# Nachweis war gruen, weil die Prueffeinrichtung zufaellig „Praxis" hiess —
+# ein Name als stiller Bestandteil der Abfrage.
+ALARM_EINR=$(sqltext "SELECT einrichtung FROM alarm WHERE behoben_am IS NULL LIMIT 1")
+[ -n "$ALARM_EINR" ] && [ "$ALARM_EINR" != "Praxis" ] && HN=ja || HN=nein
+ergebnis "der angezeigte Alarm gehoert zu einer anderen Einrichtung als \"Praxis\" ($ALARM_EINR)" "$HN"
 
 # Derselbe Zustand ueber viele Pruefzyklen darf keinen ZWEITEN Alarm erzeugen.
 sleep 25
@@ -481,12 +544,20 @@ for _ in $(seq 40); do curl -sf -o /dev/null $BASIS/anmelden 2>/dev/null && brea
 anmelden
 
 V=$(verifikationen)
-# Karte wiederholt entziehen: erzeugt Verifikationen UND Protokolleintraege
-for i in 1 2 3 4 5 6; do
+# Karte wiederholt entziehen: erzeugt Verifikationen UND Protokolleintraege.
+#
+# Aktiv warten statt fest schlafen: Mit sechs festen Pausen von 11 s haengt das
+# Ergebnis daran, ob die Maschine gerade Luft hat. Am 11.08.2026 wurde der
+# Nachweis rot (2 statt 3 Verifikationen), waehrend parallel ein Bau lief — ein
+# rotes Ergebnis, das nichts ueber das Produkt sagte. Abgebrochen wird, sobald
+# das Ziel erreicht ist, spaetestens nach zwoelf Runden.
+N=$V
+for i in $(seq 12); do
   curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/entziehen >/dev/null
   sleep 11
+  N=$(verifikationen)
+  [ $((N-V)) -ge 3 ] && break
 done
-N=$(verifikationen)
 [ $((N-V)) -ge 3 ] && KF=ja || KF=nein
 ergebnis "Kernfunktion arbeitet bei knappem Speicher weiter ($((N-V)) Verifikationen)" "$KF"
 
@@ -620,6 +691,7 @@ RG=$(enthaelt /tmp/pr-antwort.html "Unbekanntes")
 ergebnis "erfundenes Registrierungsgeheimnis wird abgewiesen" "$RG"
 
 G2=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis -d "bezeichnung=Einmaltest" \
+     --data-urlencode "einrichtung=Pruefpraxis" \
      | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
 curl -s -X POST -H "X-Registrierung: $G2" $BASIS/api/registrieren -o /tmp/pr-antwort.html
 E1=$(enthaelt /tmp/pr-antwort.html "token")
@@ -641,7 +713,23 @@ ergebnis "abgelehnte Registrierungen stehen im Fachprotokoll ($DB Eintraege)" "$
 # Geraete, Alarme und Protokolleintraege aller Standorte denselben Namen, und
 # die Mandantengrenze griff fuer sie nicht. Der Nachweis geht den ganzen Weg:
 # Geheimnis mit Einrichtung -> Token -> Geraetemeldung -> Ablage.
+# Die Einrichtung muss eine VORHANDENE Organisationseinheit sein — seit dem
+# 11.08.2026 weist die Registrierung Freitext ab. Vorher ging jeder Name durch,
+# und der Agent meldete Geraete unter einer Einheit, die es nicht gibt: Solche
+# Daten sind fuer jede mandantengebundene Abfrage unsichtbar.
 EINR="Zahnarztpraxis Sued"
+VERBUND_ID=$(sql "SELECT id FROM organisation WHERE art='VERBUND' ORDER BY id LIMIT 1")
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "INSERT INTO organisation (bezeichnung, art, eltern_id, ist_demo)
+   SELECT '$EINR', 'EINRICHTUNG', $VERBUND_ID, FALSE
+   WHERE NOT EXISTS (SELECT 1 FROM organisation WHERE bezeichnung = '$EINR')" >/dev/null
+
+# Gegenprobe: Eine erfundene Einrichtung darf NICHT durchgehen.
+ERFUNDEN=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
+     --data-urlencode "bezeichnung=Agent Nirgendwo" \
+     --data-urlencode "einrichtung=Gibt Es Nicht $$")
+EF=$(enthaelt "$ERFUNDEN" "vorhandene Organisationseinheit")
+ergebnis "eine erfundene Einrichtung wird bei der Registrierung abgewiesen" "$EF"
 G3=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
      --data-urlencode "bezeichnung=Agent Sued" --data-urlencode "einrichtung=$EINR" \
      | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
@@ -832,6 +920,81 @@ IST=$(sql "SELECT count(*) FROM konnektor WHERE id=$KID")
 [ "$IST" = "1" ] && LB=ja || LB=nein
 ergebnis "der Konnektor ist nach dem Loeschversuch noch da" "$LB"
 
+# ── FA-GER-020: Kartenterminal OHNE Konnektor (Vorgabe PO, 11.08.2026) ──
+# Der Fall aus der Praxis: Das Geraet ist geliefert und aufgestellt, aber am
+# Konnektor noch nicht angemeldet. Wer es dann nicht erfassen kann, fuehrt
+# seinen Bestand nebenher auf Papier.
+ORGID=$(sql "SELECT organisation_id FROM konnektor WHERE id=$KID")
+curl -s -b "$KEKSE" -X POST $BASIS/bestand/terminal \
+  --data-urlencode "organisationId=$ORGID" --data-urlencode "terminalId=KT-OHNE-KONN-01" \
+  --data-urlencode "bezeichnung=Anmeldung ohne Konnektor" \
+  --data-urlencode "adresse=192.0.2.95" -o /tmp/pr-ohnekonn.html
+IST=$(sql "SELECT count(*) FROM kartenterminal
+           WHERE terminal_id='KT-OHNE-KONN-01' AND konnektor_id IS NULL
+             AND organisation_id=$ORGID")
+[ "$IST" = "1" ] && OK1=ja || OK1=nein
+if [ "$OK1" = "nein" ]; then
+  echo "    Diagnose: $(grep -oE 'role="alert">[^<]{0,140}' /tmp/pr-ohnekonn.html | head -1)"
+fi
+ergebnis "ein Terminal laesst sich ohne Konnektor erfassen" "$OK1"
+
+# Es muss in der Liste STEHEN. Die Abfrage verband frueher mit JOIN konnektor —
+# damit waere ausgerechnet das Geraet verschwunden, das noch Aufmerksamkeit
+# braucht.
+curl -s -b "$KEKSE" "$BASIS/bestand?suche=KT-OHNE-KONN-01" -o /tmp/pr-ohnekonn-liste.html
+OK2=$(enthaelt /tmp/pr-ohnekonn-liste.html "KT-OHNE-KONN-01")
+ergebnis "es steht trotz fehlendem Konnektor in der Geraeteliste" "$OK2"
+OK3=$(enthaelt /tmp/pr-ohnekonn-liste.html "nicht zugeordnet")
+ergebnis "die Liste sagt \"nicht zugeordnet\" statt ein Feld leer zu lassen" "$OK3"
+
+# Und die Detailseite muss erklaeren, warum die Automatik nicht greift.
+TID_OK=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='KT-OHNE-KONN-01'")
+curl -s -b "$KEKSE" "$BASIS/bestand/terminal/$TID_OK" -o /tmp/pr-ohnekonn-detail.html
+OK4=$(enthaelt /tmp/pr-ohnekonn-detail.html "kein Konnektor zugeordnet")
+ergebnis "die Geraeteseite nennt den fehlenden Konnektor" "$OK4"
+
+# Nachtragen — und damit ist das Geraet vollwertig.
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_OK/konnektor" \
+  --data-urlencode "konnektorId=$KID" -o /dev/null
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE id=$TID_OK AND konnektor_id=$KID")
+[ "$IST" = "1" ] && OK5=ja || OK5=nein
+ergebnis "der Konnektor laesst sich nachtragen" "$OK5"
+DBP=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='TERMINAL_GEAENDERT'
+           AND text LIKE '%zugeordnet%'")
+[ "${DBP:-0}" -ge 1 ] && OK6=ja || OK6=nein
+ergebnis "die Zuordnung steht im Fachprotokoll" "$OK6"
+
+curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_OK/loeschen" >/dev/null
+rm -f /tmp/pr-ohnekonn.html /tmp/pr-ohnekonn-liste.html /tmp/pr-ohnekonn-detail.html
+
+# ── Standardsortierung: Einrichtung zuerst (Vorgabe PO, 11.08.2026) ──────
+# In einem MVZ heissen die Geraete in jeder Betriebsstaette gleich. Neunmal
+# "Behandlung 1" untereinander ist keine Liste, sondern eine Aufzaehlung.
+curl -s -b "$KEKSE" "$BASIS/bestand" -o /tmp/pr-sortierung.html
+# NUR den Bereich der Terminalliste ansehen. Auf der Bestandsseite steht
+# darueber auch die Konnektorliste — ein grep ueber die ganze Seite mischt
+# beide und meldet eine Unordnung, die es nicht gibt. Genau das ist beim
+# ersten Anlauf passiert.
+sed -n '/<div id="terminalliste"/,$p' /tmp/pr-sortierung.html > /tmp/pr-sort-liste.html
+# Die Einrichtung steht als erster Wert der zweiten Spalte. Sie wird hier ueber
+# die Zeilenfolge geprueft: Kommt die Liste sortiert, ist die Folge der
+# Einrichtungsnamen bereits aufsteigend.
+ORGSPALTE=$(grep -oE '<td>[^<]+<span class="kennung zweitzeile" title="Konnektor"' \
+            /tmp/pr-sort-liste.html | sed 's/<td>//; s/<span.*//')
+ANZ=$(printf '%s\n' "$ORGSPALTE" | grep -c . || true)
+if [ "${ANZ:-0}" -lt 2 ]; then
+  uebersprungen "zu wenige Geraete in der Liste ($ANZ) — Sortierung nicht pruefbar"
+else
+  SORTIERT=$(printf '%s\n' "$ORGSPALTE" | LC_ALL=C sort -f)
+  [ "$ORGSPALTE" = "$SORTIERT" ] && SO=ja || SO=nein
+  if [ "$SO" = "nein" ]; then
+    echo "    Diagnose: erste Einrichtungen in der Reihenfolge der Liste:"
+    printf '%s\n' "$ORGSPALTE" | head -5 | sed 's/^/      /'
+  fi
+  ergebnis "die Geraeteliste kommt nach Einrichtung sortiert ($ANZ Zeilen)" "$SO"
+fi
+rm -f /tmp/pr-sortierung.html /tmp/pr-sort-liste.html
+
 TID=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='KT-NACHWEIS-01'")
 curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID/loeschen" >/dev/null
 curl -s -b "$KEKSE" -X POST "$BASIS/bestand/konnektor/$KID/loeschen" >/dev/null
@@ -939,9 +1102,130 @@ ergebnis "Ermittlung und Uebernahme sind protokolliert ($IST Eintraege)" "$EP"
 curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/pevim/true >/dev/null
 rm -f /tmp/pr-erm.html /tmp/pr-erm2.html
 
+# ── Die BETRIEBSLISTE unter „Kartenterminals" (Vorgabe PO, 11.08.2026) ──
+# Nicht zu verwechseln mit der Bestandsliste darunter: Diese hier zeigt den
+# LAUFENDEN Zustand und aktualisiert sich alle 5 s selbst. Sie hatte weder
+# Suche noch Sortierung noch die Praxis — bei einem MVZ mit neun
+# Betriebsstaetten stand „Behandlung 1" viermal untereinander, ohne dass
+# erkennbar war, zu wem.
+hinweis "Betriebsliste der Kartenterminals — Suche, Sortierung, Praxis"
+curl -s -b "$KEKSE" "$BASIS/geraete" -o /tmp/pr-betrieb.html
+BP=$(enthaelt /tmp/pr-betrieb.html "Praxis")
+ergebnis "die Liste hat eine Spalte Praxis" "$BP"
+KOEPFE=$(treffer_zaehlen /tmp/pr-betrieb.html 'class="sortlink"')
+[ "${KOEPFE:-0}" -ge 6 ] && BS=ja || BS=nein
+ergebnis "die Spalten sind sortierbar ($KOEPFE Koepfe)" "$BS"
+BF=$(enthaelt /tmp/pr-betrieb.html 'name="suche"')
+ergebnis "die Liste hat ein Suchfeld" "$BF"
+
+# Steht unter jedem Kopf auch das, was er ankuendigt?
+#
+# Bis zum 11.08.2026 nicht: Die Koepfe entstanden aus der Enum-Reihenfolge, die
+# Zellen aus dem Template — zwei Listen, die uebereinstimmen mussten. Ueber
+# "Behandlung 1" stand "Praxis". Der bestehende Nachweis prueft nur, dass eine
+# Zeile so viele Zellen hat wie ihr Kopf; die BEDEUTUNG der Spalten sah niemand
+# nach. Aufgefallen ist es dem PO an einem Screenshot.
+# Unter „Gerät" gehoert eine Terminalkennung, unter „Praxis" ein Praxisname.
+Z_GERAET=$(spalte_lesen /tmp/pr-betrieb.html "Gerät" | head -1)
+Z_PRAXIS=$(spalte_lesen /tmp/pr-betrieb.html "Praxis" | head -1)
+printf '%s' "$Z_GERAET" | grep -qE 'KT-[A-Z]+' && BZ1=ja || BZ1=nein
+printf '%s' "$Z_PRAXIS" | grep -qE 'praxis|Praxis|Kardiologie|Orthop|Innere|Radiologie|Gynäk|Chirurgie|Medizin' && BZ2=ja || BZ2=nein
+[ "$BZ1" = "ja" ] && [ "$BZ2" = "ja" ] && BZ=ja || BZ=nein
+if [ "$BZ" = "nein" ]; then
+  echo "    Diagnose: Kopfzeile: $(python3 - <<'PY'
+import sys
+sys.path.insert(0, "pruefungen")
+from tabelle import Tabellenleser
+leser = Tabellenleser()
+leser.feed(open("/tmp/pr-betrieb.html", encoding="utf-8", errors="replace").read())
+print(" | ".join(leser.kopf))
+PY
+)"
+  echo "    Diagnose: unter „Gerät\" steht: $Z_GERAET"
+  echo "    Diagnose: unter „Praxis\" steht: $Z_PRAXIS"
+  echo "    Diagnose: Geraete in der Datenbank: $(sql "SELECT count(*) FROM geraet")"
+  echo "    Diagnose: erste Einrichtung: $(sqltext "SELECT einrichtung FROM geraet LIMIT 1")"
+fi
+ergebnis "unter jedem Kopf steht, was er ankuendigt (Geraet/Praxis nicht vertauscht)" "$BZ"
+
+# Standardsortierung: Die Praxisspalte muss beim Aufruf OHNE Parameter
+# aufsteigend sortiert sein.
+BV=$(enthaelt /tmp/pr-betrieb.html 'aria-sort="ascending"')
+ergebnis "beim Aufruf ohne Parameter ist eine Spalte als sortiert ausgezeichnet" "$BV"
+# Die Praxisspalte ueber ihren KOPFINDEX lesen, nicht ueber eine feste
+# Position: Sonst prueft der Nachweis nach einer Spaltenumstellung stillschweigend
+# die falsche Spalte — und meldet Ordnung, wo keine ist.
+BO=$(sortiert_nach /tmp/pr-betrieb.html "Praxis")
+if [ "$BO" = "leer" ]; then
+  uebersprungen "zu wenige Geraete in der Betriebsliste"
+else
+  if [ "$BO" = "nein" ]; then
+    echo "    Diagnose: Praxen in der Reihenfolge der Liste:"
+    spalte_lesen /tmp/pr-betrieb.html "Praxis" | head -5 | sed 's/^/      /'
+  fi
+  ergebnis "die Betriebsliste kommt nach Praxis sortiert" "$BO"
+fi
+
+# Die Suche muss WIRKLICH einschraenken, nicht nur ein Feld anbieten.
+GESAMT=$(spalte_lesen /tmp/pr-betrieb.html "Praxis" | grep -c . || true)
+curl -s -b "$KEKSE" "$BASIS/teil/geraete?suche=EMPFANG" -o /tmp/pr-betrieb-suche.html
+MIT=$(spalte_lesen /tmp/pr-betrieb-suche.html "Praxis" | grep -c . || true)
+if [ "${GESAMT:-0}" -le 1 ]; then
+  uebersprungen "zu wenige Geraete, um die Suche zu pruefen ($GESAMT)"
+else
+  [ "${MIT:-0}" -lt "${GESAMT:-0}" ] && [ "${MIT:-0}" -ge 1 ] && BQ=ja || BQ=nein
+  ergebnis "die Suche schraenkt die Liste ein ($GESAMT ohne, $MIT mit Suchwort)" "$BQ"
+fi
+curl -s -b "$KEKSE" "$BASIS/teil/geraete?suche=GibtEsNichtXYZ" -o /tmp/pr-betrieb-leer.html
+BL=$(enthaelt /tmp/pr-betrieb-leer.html "Kein Gerät passt")
+ergebnis "eine erfolglose Suche erklaert sich statt leer zu bleiben" "$BL"
+rm -f /tmp/pr-betrieb.html /tmp/pr-betrieb-suche.html /tmp/pr-betrieb-leer.html
+
+# ── Gerätegruppen: eine Zahl, nicht zwei (Befund PO, 11.08.2026) ────────
+# Die Uebersicht meldete 9 Gruppen, die Gruppenliste zeigte 19. Beide hatten
+# recht: Gruppen ohne organisation_id sind fuer jede mandantengebundene
+# Abfrage unsichtbar (NULL = ANY(...) ist niemals wahr), erscheinen aber dem
+# Instanzbetreiber. Ein Datensatz ohne Mandantenzuordnung gehoert in diesem
+# Produkt nicht in die Datenbank.
+hinweis "Gerätegruppen — jede Gruppe gehoert zu einer Organisationseinheit"
+OHNE=$(sql "SELECT count(*) FROM geraetegruppe WHERE organisation_id IS NULL")
+[ "${OHNE:-1}" = "0" ] && GO=ja || GO=nein
+ergebnis "keine Gruppe ohne Organisationseinheit (gefunden: $OHNE)" "$GO"
+
+# Die Spalte ist NOT NULL — der Fall kann nicht wiederkommen.
+NN=$(sql "SELECT is_nullable FROM information_schema.columns
+          WHERE table_name='geraetegruppe' AND column_name='organisation_id'")
+[ "$NN" = "NO" ] && GN=ja || GN=nein
+ergebnis "die Spalte ist NOT NULL, der Fall ist ausgeschlossen ($NN)" "$GN"
+
+# Beide Zaehlungen muessen uebereinstimmen: die der Uebersicht (ueber
+# organisation_id) und die der Liste.
+ZAEHL_DB=$(sql "SELECT count(*) FROM geraetegruppe")
+curl -s -b "$KEKSE" "$BASIS/gruppen" -o /tmp/pr-gruppen.html
+ZAEHL_LISTE=$(sed -n '/<tbody>/,/<\/tbody>/p' /tmp/pr-gruppen.html | grep -c "<tr" || true)
+[ "${ZAEHL_DB:-0}" = "${ZAEHL_LISTE:-0}" ] && GZ=ja || GZ=nein
+ergebnis "Liste und Datenbank zaehlen gleich viele Gruppen ($ZAEHL_LISTE / $ZAEHL_DB)" "$GZ"
+
+# Standardsortierung nach Einrichtung: Die Vorgabegruppe jeder Einrichtung
+# heisst „Alle Geräte" — nach Bezeichnung sortiert steht neunmal dasselbe
+# untereinander, waehrend die Einrichtung daneben springt.
+# Nur den Listenbereich: Auf der Seite steht darueber das Anlege-Formular.
+sed -n '/<div id="gruppen"/,$p' /tmp/pr-gruppen.html > /tmp/pr-gruppenliste.html
+GS=$(sortiert_nach /tmp/pr-gruppenliste.html "Einrichtung")
+if [ "$GS" = "leer" ]; then
+  uebersprungen "zu wenige Gruppen, um die Sortierung zu pruefen"
+else
+  if [ "$GS" = "nein" ]; then
+    echo "    Diagnose: Einrichtungen in der Reihenfolge der Liste:"
+    spalte_lesen /tmp/pr-gruppenliste.html "Einrichtung" | head -5 | sed 's/^/      /'
+  fi
+  ergebnis "die Gruppenliste kommt nach Einrichtung sortiert" "$GS"
+fi
+rm -f /tmp/pr-gruppen.html /tmp/pr-gruppenliste.html
+
 hinweis "FA-GER-060 — Sortierung, Filter und Massenaktionen"
 curl -s -b "$KEKSE" "$BASIS/bestand" > /tmp/pr-best.html
-[ "$(grep -c 'class="sortlink"' /tmp/pr-best.html)" -ge 5 ] && SO=ja || SO=nein
+[ "$(treffer_zaehlen /tmp/pr-best.html 'class="sortlink"')" -ge 5 ] && SO=ja || SO=nein
 ergebnis "die Geraeteliste hat sortierbare Spalten" "$SO"
 
 curl -s -b "$KEKSE" "$BASIS/bestand?sortierung=modell&richtung=ab" -o /tmp/pr-antwort.html
@@ -1735,11 +2019,148 @@ rm -f /tmp/pr-org.html
 hinweis "FA-GER-050 — Gerätegruppen anlegen, zuordnen, löschen"
 
 curl -s -b "$KEKSE" $BASIS/gruppen > /tmp/pr-gruppen.html
-grep -q "Nicht zugeordnet" /tmp/pr-gruppen.html && GV=ja || GV=nein
-ergebnis "die Vorgabegruppe existiert und ist sichtbar" "$GV"
+# Die Vorgabegruppe heisst „Alle Geräte" und traegt die Marke „Vorgabe".
+# Frueher wurde hier „Nicht zugeordnet" gesucht — eine Gruppe aus Migration 6
+# ohne Organisationseinheit, die Migration 23 zu Recht entfernt hat.
+VG_DB=$(sql "SELECT count(*) FROM geraetegruppe WHERE ist_vorgabe")
+[ "${VG_DB:-0}" -ge 1 ] && grep -q "Vorgabe" /tmp/pr-gruppen.html && GV=ja || GV=nein
+ergebnis "die Vorgabegruppe existiert und ist als solche gekennzeichnet ($VG_DB)" "$GV"
 
+# ── Die Befunde vom 11.08.2026 ──────────────────────────────────────────
+# Umbenennen gab es gar nicht: Wer sich vertippte, musste loeschen und neu
+# anlegen — und verlor dabei jede Geraetezuordnung.
+GID=$(sql "SELECT id FROM geraetegruppe WHERE NOT ist_vorgabe ORDER BY id LIMIT 1")
+if [ -z "$GID" ]; then
+  EINR_G=$(sqltext "SELECT einrichtung FROM geraetegruppe ORDER BY id LIMIT 1")
+  curl -s -b "$KEKSE" -X POST $BASIS/gruppen \
+    --data-urlencode "bezeichnung=Umbenenntest" --data-urlencode "einrichtung=$EINR_G" \
+    --data-urlencode "intervall=60" -o /dev/null
+  GID=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Umbenenntest'")
+fi
+if [ -z "$GID" ]; then
+  uebersprungen "keine Gruppe zum Umbenennen vorhanden"
+else
+  curl -s -b "$KEKSE" -X POST "$BASIS/gruppen/$GID/umbenennen" \
+    --data-urlencode "bezeichnung=Frisch benannt" -o /tmp/pr-umb.html
+  IST=$(sqltext "SELECT bezeichnung FROM geraetegruppe WHERE id=$GID")
+  [ "$IST" = "Frischbenannt" ] || [ "$IST" = "Frisch benannt" ] && UB=ja || UB=nein
+  ergebnis "eine Gruppe laesst sich umbenennen (jetzt: $IST)" "$UB"
+  UR=$(enthaelt /tmp/pr-umb.html "umbenannt")
+  ergebnis "die Oberflaeche bestaetigt die Aenderung" "$UR"
+  rm -f /tmp/pr-umb.html
+fi
+
+# Das Loeschen darf Geraete NICHT ueber die Mandantengrenze schieben. Frueher
+# uebergab die Oberflaeche fest „Praxis" als Einrichtung: Die Geraete einer
+# fremden Praxis waeren in deren Vorgabegruppe gewandert — oder das Loeschen
+# scheiterte mit „Es gibt keine Vorgabegruppe".
+# Die Vorbedingung wird HERGESTELLT, nicht abgewartet.
+#
+# „Uebersprungen, weil die Lage gerade nicht passt" ist bei einem Nachweis,
+# der eine Mandantengrenze prueft, keine Antwort — und er lief so nie.
+GMIT=$(sql "SELECT g.id FROM geraetegruppe g
+            WHERE NOT g.ist_vorgabe
+              AND EXISTS (SELECT 1 FROM geraet t WHERE t.gruppe_id = g.id) LIMIT 1")
+if [ -z "$GMIT" ]; then
+  # Ein Geraet mit Einrichtung suchen, dort eine zweite Gruppe anlegen und das
+  # Geraet hineinschieben.
+  KT_M=$(sqltext "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 1")
+  EINR_M=$(sqltext "SELECT einrichtung FROM geraet WHERE terminal_id='$KT_M'")
+  if [ -n "$KT_M" ]; then
+    curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
+      --data-urlencode "bezeichnung=Loeschtest Mandant" \
+      --data-urlencode "einrichtung=$EINR_M" --data-urlencode "intervall=60"
+    GMIT=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Loeschtest Mandant'")
+    [ -n "$GMIT" ] && curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/geraete/$KT_M/gruppe" \
+      --data-urlencode "gruppe=$GMIT"
+  fi
+fi
+if [ -z "$GMIT" ]; then
+  uebersprungen "Vorbedingung liess sich nicht herstellen (kein Geraet mit Einrichtung)"
+else
+  EINR_L=$(sqltext "SELECT einrichtung FROM geraetegruppe WHERE id=$GMIT")
+  curl -s -b "$KEKSE" -X POST "$BASIS/gruppen/$GMIT/loeschen" -o /dev/null
+  FREMD=$(sql "SELECT count(*) FROM geraet t
+               JOIN geraetegruppe g ON g.id = t.gruppe_id
+               WHERE t.einrichtung = '$EINR_L' AND g.einrichtung <> '$EINR_L'")
+  [ "${FREMD:-1}" = "0" ] && GL=ja || GL=nein
+  ergebnis "beim Loeschen wandert kein Geraet in eine fremde Einrichtung ($FREMD)" "$GL"
+fi
+
+# Die Detailseite: bis zum 11.08.2026 hatte die Gruppenverwaltung als einziger
+# Bereich keine. Alles musste in die Listenzeile passen — und was nicht
+# hineinpasste, fehlte: Umbenennen, Vorgabe wechseln, die Geraete sehen.
+GDET=$(sql "SELECT id FROM geraetegruppe ORDER BY id LIMIT 1")
+if [ -z "$GDET" ]; then
+  uebersprungen "keine Gruppe fuer die Detailseite vorhanden"
+else
+  CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-gdet.html -w '%{http_code}' "$BASIS/gruppen/$GDET")
+  [ "$CODE" = "200" ] && GD=ja || GD=nein
+  ergebnis "die Gruppe hat eine Detailseite (HTTP $CODE)" "$GD"
+  GD1=$(enthaelt /tmp/pr-gdet.html "Stammdaten")
+  ergebnis "sie zeigt die Stammdaten zum Bearbeiten" "$GD1"
+  GD2=$(enthaelt /tmp/pr-gdet.html "Vorgabegruppe")
+  ergebnis "sie erklaert die Vorgabegruppe" "$GD2"
+  GD3=$(enthaelt /tmp/pr-gdet.html "Geräte")
+  ergebnis "sie zeigt die Geraete der Gruppe, nicht nur ihre Zahl" "$GD3"
+
+  # Aendern in EINEM Zug: Bezeichnung und Intervall zusammen.
+  curl -s -b "$KEKSE" -X POST "$BASIS/gruppen/$GDET/aendern" \
+    --data-urlencode "bezeichnung=Detailtest" --data-urlencode "intervall=45" \
+    -o /tmp/pr-gaend.html
+  IST_B=$(sqltext "SELECT bezeichnung FROM geraetegruppe WHERE id=$GDET")
+  IST_I=$(sql "SELECT pruefintervall_sekunden FROM geraetegruppe WHERE id=$GDET")
+  [ "$IST_B" = "Detailtest" ] && [ "$IST_I" = "45" ] && GA=ja || GA=nein
+  ergebnis "Bezeichnung und Intervall lassen sich zusammen aendern ($IST_B / $IST_I s)" "$GA"
+  GR=$(enthaelt /tmp/pr-gaend.html "Gespeichert")
+  ergebnis "die Oberflaeche bestaetigt, WAS gespeichert wurde" "$GR"
+  rm -f /tmp/pr-gdet.html /tmp/pr-gaend.html
+fi
+
+# Vorgabe wechseln — ging bisher gar nicht.
+G_NV=$(sql "SELECT id FROM geraetegruppe WHERE NOT ist_vorgabe ORDER BY id LIMIT 1")
+if [ -z "$G_NV" ]; then
+  uebersprungen "keine Gruppe ohne Vorgabe-Kennzeichen vorhanden"
+else
+  EINR_V=$(sqltext "SELECT einrichtung FROM geraetegruppe WHERE id=$G_NV")
+  # Die bisherige Vorgabe merken — dieser Nachweis MUSS sie wiederherstellen.
+  #
+  # Ein Nachweis, der den Zustand veraendert und ihn nicht zuruecknimmt, misst
+  # nicht mehr das Produkt, sondern seine eigenen Spuren. Genau das ist am
+  # 11.08.2026 zweimal passiert: erst bei FA-INS-040 (kuenstlicher
+  # Schluesselwechsel blieb stehen), dann hier — der Vorgabewechsel liess die
+  # alte Vorgabegruppe loeschbar zurueck, und der naechste Nachweis meldete
+  # „die Vorgabegruppe laesst sich nicht loeschen" als fehlgeschlagen.
+  VORHER_V=$(sql "SELECT id FROM geraetegruppe WHERE einrichtung='$EINR_V' AND ist_vorgabe")
+  curl -s -b "$KEKSE" -X POST "$BASIS/gruppen/$G_NV/vorgabe" -o /dev/null
+  IST=$(sql "SELECT count(*) FROM geraetegruppe WHERE id=$G_NV AND ist_vorgabe")
+  [ "$IST" = "1" ] && GW=ja || GW=nein
+  ergebnis "eine andere Gruppe laesst sich zur Vorgabe machen" "$GW"
+  # Und es darf nur EINE je Einrichtung geben.
+  ANZ=$(sql "SELECT count(*) FROM geraetegruppe WHERE einrichtung='$EINR_V' AND ist_vorgabe")
+  [ "${ANZ:-0}" = "1" ] && GE=ja || GE=nein
+  ergebnis "je Einrichtung bleibt genau eine Vorgabegruppe ($ANZ)" "$GE"
+  # Zuruecksetzen — ueber die Oberflaeche, nicht per SQL: So wird zugleich
+  # geprueft, dass der Wechsel in beide Richtungen funktioniert.
+  [ -n "$VORHER_V" ] && curl -s -b "$KEKSE" -X POST "$BASIS/gruppen/$VORHER_V/vorgabe" -o /dev/null
+  ZURUECK=$(sql "SELECT count(*) FROM geraetegruppe WHERE id=${VORHER_V:-0} AND ist_vorgabe")
+  [ "${ZURUECK:-0}" = "1" ] && GZ=ja || GZ=nein
+  ergebnis "und wieder zurueck — der Nachweis raeumt seinen Zustand auf" "$GZ"
+fi
+
+# Das Protokoll traegt die richtige Einrichtung — nicht fest „Praxis".
+FALSCH=$(sql "SELECT count(*) FROM fachprotokoll
+              WHERE art IN ('GRUPPE_GEAENDERT','GRUPPE_GELOESCHT')
+                AND einrichtung = 'Praxis'
+                AND zeitpunkt > now() - interval '5 minutes'")
+[ "${FALSCH:-1}" = "0" ] && GP=ja || GP=nein
+ergebnis "Gruppenereignisse stehen unter ihrer eigenen Einrichtung ($FALSCH unter \"Praxis\")" "$GP"
+
+# Jede Gruppe braucht eine Organisationseinheit (Migration 23) — sonst waere
+# sie fuer jede mandantengebundene Abfrage unsichtbar.
 curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
-  --data-urlencode "bezeichnung=Nachweis Notaufnahme" --data-urlencode "intervall=30"
+  --data-urlencode "bezeichnung=Nachweis Notaufnahme" \
+  --data-urlencode "einrichtung=Pruefpraxis" --data-urlencode "intervall=30"
 GID=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Notaufnahme'")
 [ -n "$GID" ] && GA=ja || GA=nein
 ergebnis "eine Gruppe laesst sich mit eigenem Pruefintervall anlegen" "$GA"
@@ -1760,8 +2181,14 @@ ergebnis "ein unzulaessig kurzes Intervall wird nicht uebernommen" "$GK"
 # Ausdruecklich ein Geraet des Simulators, nicht irgendeines: Die
 # Agentennachweise legen vorher Geraete anderer Einrichtungen an, und die
 # Zuordnung ueber Einrichtungsgrenzen hinweg waere ein anderer Test.
-KT_G=$(sqltext "SELECT terminal_id FROM geraet WHERE einrichtung='Praxis'
-                ORDER BY terminal_id LIMIT 1")
+# Irgendein Geraet mit Vorgabegruppe — nicht an einen festen
+# Einrichtungsnamen gebunden. Vorher stand hier 'Praxis'; nach der Umbenennung
+# der Pruefeinrichtung lieferte die Abfrage nichts, VORGABE blieb leer und das
+# folgende SQL brach mit einem Syntaxfehler ab. Ein Nachweis darf nicht an
+# einem hartkodierten Namen haengen.
+KT_G=$(sqltext "SELECT ge.terminal_id FROM geraet ge
+                JOIN geraetegruppe gg ON gg.einrichtung = ge.einrichtung AND gg.ist_vorgabe
+                ORDER BY ge.terminal_id LIMIT 1")
 # Die Vorgabegruppe DES GERAETS, nicht "die eine im System": Seit jede
 # Einrichtung eine eigene bekommt (09.08.2026), liefert eine Abfrage ohne
 # Einrichtung mehrere Zeilen — und der Vergleich unten scheiterte an einer
@@ -2054,9 +2481,11 @@ hinweis "FA-UEB-010 — das Prüfintervall je Gerätegruppe wirkt"
 
 # Zwei Gruppen mit deutlich verschiedenen Intervallen.
 curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
-  --data-urlencode "bezeichnung=Nachweis Schnell" --data-urlencode "intervall=10"
+  --data-urlencode "bezeichnung=Nachweis Schnell" \
+  --data-urlencode "einrichtung=Pruefpraxis" --data-urlencode "intervall=10"
 curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
-  --data-urlencode "bezeichnung=Nachweis Langsam" --data-urlencode "intervall=120"
+  --data-urlencode "bezeichnung=Nachweis Langsam" \
+  --data-urlencode "einrichtung=Pruefpraxis" --data-urlencode "intervall=120"
 G_SCHNELL=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Schnell'")
 G_LANGSAM=$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Langsam'")
 
@@ -2185,6 +2614,10 @@ curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/sperren >/dev/null
 sleep 25
 curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-nb2.html
 [ "$(enthaelt /tmp/pr-nb2.html "gesperrt")" = "ja" ] && PB=ja || PB=nein
+if [ "$PB" = "nein" ]; then
+  echo "    Diagnose: Zustand laut Datenbank: $(sqltext "SELECT string_agg(DISTINCT art, ', ') FROM fachprotokoll WHERE zeitpunkt > now() - interval '2 minutes'")"
+  echo "    Diagnose: Zustandsspalte der Liste: $(spalte_lesen /tmp/pr-nb2.html 'Zustand' | head -3 | tr '\n' '|')"
+fi
 ergebnis "gesperrte Karte wird als solche angezeigt" "$PB"
 [ "$(enthaelt /tmp/pr-nb2.html "PUK")" = "ja" ] && PB2=ja || PB2=nein
 ergebnis "die Meldung nennt die PUK als einzigen Weg" "$PB2"
@@ -2837,7 +3270,7 @@ ergebnis "ein Pfadausbruch ueber den Dateinamen wird abgewehrt (HTTP $CODE)" "$B
 sql "SELECT count(*) FROM geraetegruppe" > /dev/null
 curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/gruppen" \
   --data-urlencode "bezeichnung=Nach der Sicherung" \
-  --data-urlencode "einrichtung=Praxis" --data-urlencode "intervall=99"
+  --data-urlencode "einrichtung=Pruefpraxis" --data-urlencode "intervall=99"
 VORHER=$(sql "SELECT count(*) FROM geraetegruppe WHERE bezeichnung='Nach der Sicherung'")
 [ "${VORHER:-0}" = "1" ] && BK15=ja || BK15=nein
 ergebnis "Vorbedingung: eine Aenderung nach der Sicherung" "$BK15"

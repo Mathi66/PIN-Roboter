@@ -40,13 +40,46 @@ public class Bestandsverwaltung {
                             Boolean zuletztErreichbar, String zuletztGeprueft,
                             String pruefhinweis, int terminalzahl) {}
 
-    public record Terminal(long id, String terminalId, long konnektorId, String konnektor,
+    /**
+     * Ein Kartenterminal im Bestand.
+     *
+     * @param konnektorId {@code null}, wenn das Gerät noch keinem Konnektor
+     *        zugeordnet ist. Seit dem 11.08.2026 möglich: Ein Gerät wird
+     *        geliefert und aufgestellt, bevor es am Konnektor angemeldet ist —
+     *        wer es dann nicht erfassen kann, führt seinen Bestand nebenher auf
+     *        Papier.
+     * @param organisationId die Einrichtung. <b>Immer gesetzt</b>, denn ohne sie
+     *        gäbe es keine Mandantengrenze für diesen Datensatz.
+     */
+    public record Terminal(long id, String terminalId, Long konnektorId, String konnektor,
                            long organisationId, String organisation, Long gruppeId, String gruppe,
                            String bezeichnung, String standortangabe, String adresse,
                            String modell, String seriennummer, String firmware,
                            String adminBenutzer, boolean adminPasswortHinterlegt,
                            boolean hatSmcb, boolean pevimAktiv, boolean aktiv, boolean istDemo,
-                           Boolean zuletztErreichbar, String zuletztGeprueft, String pruefhinweis) {}
+                           Boolean zuletztErreichbar, String zuletztGeprueft, String pruefhinweis) {
+
+        /**
+         * Ob dieses Gerät an der PIN-Automatik teilnehmen kann.
+         *
+         * <p>Ohne Konnektor nicht: Das SICCT-Kommando sendet der Konnektor, und
+         * ohne Verifikation gibt es nichts zu beantworten (ADR-0011). Ohne
+         * SMC-B ebenfalls nicht — dann ist nichts freizuschalten.
+         */
+        public boolean automatikMoeglich() {
+            return konnektorId != null && hatSmcb;
+        }
+
+        /** Warum die Automatik nicht greift, im Klartext. {@code null}, wenn sie greift. */
+        public String automatikHindernis() {
+            if (konnektorId == null) {
+                return "Dieses Gerät ist keinem Konnektor zugeordnet. Die PIN-Automatik "
+                     + "braucht einen: Die Verifikation löst der Konnektor aus.";
+            }
+            if (!hatSmcb) return "In diesem Gerät steckt keine SMC-B — es gibt nichts freizuschalten.";
+            return null;
+        }
+    }
 
     /** Ergebnis einer Erreichbarkeitsprüfung — für die Anzeige gedacht, nicht für Logik. */
     public record Erreichbarkeit(boolean erreichbar, String hinweis, long dauerMs) {}
@@ -284,10 +317,21 @@ public class Bestandsverwaltung {
      * niemals ein Wert aus der Anfrage in die Abfrage, sondern immer nur ein
      * Ausdruck aus dieser Aufzählung.
      */
+    /**
+     * Sortierfelder der Geräteliste.
+     *
+     * <p><b>Vorgabe ist {@link #EINRICHTUNG}</b> (PO, 11.08.2026). Alphabetisch
+     * nach Gerätenamen war die falsche Grundordnung: In einem MVZ heißen die
+     * Geräte in jeder Betriebsstätte gleich, und „Behandlung 1" neunmal
+     * hintereinander ist keine Liste, sondern eine Aufzählung. Nach Einrichtung
+     * sortiert steht zusammen, was zusammengehört — und man findet ein Gerät
+     * dort, wo man es sucht: bei seiner Praxis.
+     */
     public enum Sortierung {
+        EINRICHTUNG("Einrichtung",   "lower(o.bezeichnung), lower(coalesce(k.bezeichnung,'')), lower(t.bezeichnung)"),
         BEZEICHNUNG("Bezeichnung",   "lower(t.bezeichnung)"),
         KENNUNG("Kennung",           "lower(t.terminal_id)"),
-        KONNEKTOR("Konnektor",       "lower(k.bezeichnung)"),
+        KONNEKTOR("Konnektor",       "lower(coalesce(k.bezeichnung,'')), lower(t.bezeichnung)"),
         STANDORT("Standort",         "lower(coalesce(t.standortangabe,''))"),
         MODELL("Modell",             "lower(coalesce(t.modell,''))"),
         FIRMWARE("Firmware",         "coalesce(t.firmware,'')"),
@@ -299,9 +343,9 @@ public class Bestandsverwaltung {
         Sortierung(String a, String s) { anzeige = a; ausdruck = s; }
 
         static Sortierung aus(String name) {
-            if (name == null) return BEZEICHNUNG;
+            if (name == null) return EINRICHTUNG;
             try { return valueOf(name.toUpperCase()); }
-            catch (IllegalArgumentException e) { return BEZEICHNUNG; }
+            catch (IllegalArgumentException e) { return EINRICHTUNG; }
         }
     }
 
@@ -374,12 +418,13 @@ public class Bestandsverwaltung {
 
         int gesamt = 0;
         try (PreparedStatement p = db.verbindung().prepareStatement(
-                "SELECT count(*) FROM kartenterminal t JOIN konnektor k ON k.id = t.konnektor_id" + wo)) {
+                "SELECT count(*) FROM kartenterminal t "
+                + "LEFT JOIN konnektor k ON k.id = t.konnektor_id" + wo)) {
             fuellen(p, werte);
             try (ResultSet rs = p.executeQuery()) { if (rs.next()) gesamt = rs.getInt(1); }
         } catch (SQLException e) { System.err.println("Bestandsabfrage fehlgeschlagen: " + e.getMessage()); }
 
-        Sortierung s = sortierung == null ? Sortierung.BEZEICHNUNG : sortierung;
+        Sortierung s = sortierung == null ? Sortierung.EINRICHTUNG : sortierung;
         // Zweites Sortierfeld ist Pflicht: Ohne eindeutige Reihenfolge wandern
         // Zeilen zwischen den Seiten, sobald zwei Geraete denselben Wert haben.
         String ordnung = s.ausdruck + (absteigend ? " DESC" : " ASC") + ", t.id ASC";
@@ -389,7 +434,7 @@ public class Bestandsverwaltung {
                 SELECT t.*, k.bezeichnung AS konn_bez, o.bezeichnung AS org_bez,
                        g.bezeichnung AS grp_bez
                 FROM kartenterminal t
-                JOIN konnektor k    ON k.id = t.konnektor_id
+                LEFT JOIN konnektor k ON k.id = t.konnektor_id
                 JOIN organisation o ON o.id = t.organisation_id
                 LEFT JOIN geraetegruppe g ON g.id = t.gruppe_id
                 """ + wo + " ORDER BY " + ordnung + " LIMIT ? OFFSET ?")) {
@@ -429,7 +474,7 @@ public class Bestandsverwaltung {
                 SELECT t.*, k.bezeichnung AS konn_bez, o.bezeichnung AS org_bez,
                        g.bezeichnung AS grp_bez
                 FROM kartenterminal t
-                JOIN konnektor k    ON k.id = t.konnektor_id
+                LEFT JOIN konnektor k ON k.id = t.konnektor_id
                 JOIN organisation o ON o.id = t.organisation_id
                 LEFT JOIN geraetegruppe g ON g.id = t.gruppe_id
                 WHERE t.id = ?""" + bereich.bedingung("t.organisation_id"))) {
@@ -441,18 +486,86 @@ public class Bestandsverwaltung {
         } catch (SQLException e) { return Optional.empty(); }
     }
 
+    /**
+     * Legt ein Kartenterminal an einem bekannten Konnektor an.
+     *
+     * <p>Die Einrichtung ergibt sich dabei aus dem Konnektor — der gewohnte
+     * Weg, wenn das Gerät bereits am Konnektor hängt. Ist er noch nicht
+     * bekannt, führt {@link #terminalAnlegen(String, Long, long, String, String,
+     * String, String, String, String, String, boolean, boolean, Geltungsbereich)}
+     * über die Einrichtung.
+     */
     public Ergebnis terminalAnlegen(String terminalId, long konnektorId, String bezeichnung,
+                                    String standort, String adresse, String modell,
+                                    String seriennummer, String adminBenutzer, String adminPasswort,
+                                    boolean hatSmcb, boolean pevimAktiv, Geltungsbereich bereich) {
+        var k = konnektor(konnektorId, bereich);
+        if (k.isEmpty()) {
+            return Ergebnis.fehler("Bitte einen Konnektor auswählen, an dem das Terminal "
+                    + "betrieben wird — oder das Gerät zunächst ohne Konnektor erfassen.");
+        }
+        return terminalAnlegen(terminalId, konnektorId, k.get().organisationId(), bezeichnung,
+                standort, adresse, modell, seriennummer, adminBenutzer, adminPasswort,
+                hatSmcb, pevimAktiv, bereich);
+    }
+
+    /**
+     * Legt ein Kartenterminal an.
+     *
+     * <h2>Der Konnektor ist optional (Vorgabe PO, 11.08.2026)</h2>
+     *
+     * Bis dahin war er Pflicht, und die Einrichtung ergab sich aus ihm. In der
+     * Praxis passt das nicht immer: Ein Gerät wird geliefert und aufgestellt,
+     * <b>bevor</b> es am Konnektor angemeldet ist. Wer es dann nicht erfassen
+     * kann, führt seinen Bestand nebenher auf Papier — und ab da stimmt der
+     * Bestand hier nicht mehr.
+     *
+     * <p>Damit wird die <b>Einrichtung zur eigenständigen Pflichtangabe</b>.
+     * Sie stand technisch schon immer in der Zeile, war aber vom Konnektor
+     * abgeleitet.
+     *
+     * <p>Ist ein Konnektor angegeben, muss seine Einrichtung zur gewählten
+     * passen. Ein Terminal, das organisatorisch zu Praxis A gehört und
+     * technisch an Konnektor B von Praxis C hängt, wäre in keiner der beiden
+     * Sichten richtig einsortiert.
+     *
+     * @param konnektorId {@code null} oder {@code 0}, wenn noch keiner zugeordnet ist
+     * @param organisationId die Einrichtung — Pflicht
+     */
+    public Ergebnis terminalAnlegen(String terminalId, Long konnektorId, long organisationId,
+                                    String bezeichnung,
                                     String standort, String adresse, String modell,
                                     String seriennummer, String adminBenutzer, String adminPasswort,
                                     boolean hatSmcb, boolean pevimAktiv, Geltungsbereich bereich) {
         if (leer(terminalId))   return Ergebnis.fehler("Bitte die Kennung des Kartenterminals angeben (z. B. KT-EMPFANG-01).");
         if (leer(bezeichnung))  return Ergebnis.fehler("Bitte eine Bezeichnung angeben, unter der das Gerät wiedererkannt wird.");
         if (leer(adresse))      return Ergebnis.fehler("Bitte die Adresse des Kartenterminals angeben (Name oder IP-Adresse, optional mit Port).");
-        // Die Einrichtung des Terminals kommt vom Konnektor. Liegt der
-        // ausserhalb des Bereichs, ist er fuer diesen Benutzer nicht vorhanden -
-        // damit auch kein Terminal daran.
-        var k = konnektor(konnektorId, bereich);
-        if (k.isEmpty()) return Ergebnis.fehler("Bitte einen Konnektor auswählen, an dem das Terminal betrieben wird.");
+
+        // Die Einrichtung kommt aus einem Formularfeld und ist damit
+        // manipulierbar. Eine Mandantengrenze, die nur in der Auswahlliste
+        // besteht, ist keine.
+        if (!bereich.umfasst(organisationId)) {
+            return Ergebnis.fehler("Die gewählte Einrichtung liegt außerhalb Ihres "
+                    + "Zuständigkeitsbereichs.");
+        }
+        if (!organisationVorhanden(organisationId)) {
+            return Ergebnis.fehler("Bitte die Einrichtung auswählen, zu der das Kartenterminal gehört.");
+        }
+
+        Long konn = (konnektorId == null || konnektorId == 0L) ? null : konnektorId;
+        if (konn != null) {
+            var k = konnektor(konn, bereich);
+            if (k.isEmpty()) {
+                return Ergebnis.fehler("Der gewählte Konnektor ist nicht verfügbar. "
+                        + "Bitte die Seite neu laden und erneut auswählen — oder das Gerät "
+                        + "zunächst ohne Konnektor erfassen.");
+            }
+            if (k.get().organisationId() != organisationId) {
+                return Ergebnis.fehler("Der Konnektor „" + k.get().bezeichnung() + "“ gehört zu "
+                        + "„" + k.get().organisation() + "“. Bitte entweder dieselbe Einrichtung "
+                        + "wählen oder einen Konnektor dieser Einrichtung.");
+            }
+        }
 
         // A_24080: PEviM ist ausschliesslich fuer SMC-B zulaessig. Ein Terminal
         // ohne SMC-B mit aktiver PIN-Automatik waere ein Widerspruch - und im
@@ -472,8 +585,8 @@ public class Bestandsverwaltung {
                     hat_smcb, pevim_aktiv)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""")) {
             p.setString(1, terminalId.trim());
-            p.setLong(2, konnektorId);
-            p.setLong(3, k.get().organisationId());
+            if (konn == null) p.setNull(2, Types.BIGINT); else p.setLong(2, konn);
+            p.setLong(3, organisationId);
             p.setString(4, bezeichnung.trim());
             p.setString(5, leerZuNull(standort));
             p.setString(6, adresse.trim());
@@ -493,6 +606,44 @@ public class Bestandsverwaltung {
                         + "vergeben. Jede Terminal-Kennung darf nur einmal vorkommen.");
             }
             return Ergebnis.fehler("Das Kartenterminal konnte nicht gespeichert werden: " + klartext(e));
+        }
+    }
+
+    /**
+     * Trägt den Konnektor eines Kartenterminals nach.
+     *
+     * <p>Gegenstück zum Erfassen ohne Konnektor: Sobald das Gerät dort
+     * angemeldet ist, gehört die Zuordnung nachgeholt — sonst bleibt es
+     * dauerhaft von der PIN-Automatik ausgeschlossen, und niemand sieht,
+     * warum.
+     *
+     * <p>Die Einrichtung muss übereinstimmen. Ein Terminal, das
+     * organisatorisch zu Praxis A gehört und technisch an Konnektor B von
+     * Praxis C hängt, wäre in keiner Sicht richtig einsortiert.
+     */
+    public Ergebnis terminalKonnektorSetzen(long id, Long konnektorId, Geltungsbereich bereich) {
+        var t = terminal(id, bereich);
+        if (t.isEmpty()) return Ergebnis.fehler("Dieses Kartenterminal gibt es nicht mehr.");
+
+        Long konn = (konnektorId == null || konnektorId == 0L) ? null : konnektorId;
+        if (konn != null) {
+            var k = konnektor(konn, bereich);
+            if (k.isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
+            if (k.get().organisationId() != t.get().organisationId()) {
+                return Ergebnis.fehler("Der Konnektor „" + k.get().bezeichnung() + "“ gehört zu "
+                        + "„" + k.get().organisation() + "“, das Gerät zu „"
+                        + t.get().organisation() + "“. Bitte einen Konnektor dieser "
+                        + "Einrichtung wählen.");
+            }
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE kartenterminal SET konnektor_id = ? WHERE id = ?")) {
+            if (konn == null) p.setNull(1, Types.BIGINT); else p.setLong(1, konn);
+            p.setLong(2, id);
+            p.executeUpdate();
+            return Ergebnis.erfolg(id);
+        } catch (SQLException e) {
+            return Ergebnis.fehler("Die Zuordnung konnte nicht gespeichert werden: " + klartext(e));
         }
     }
 
@@ -861,6 +1012,24 @@ public class Bestandsverwaltung {
         return namen;
     }
 
+    /**
+     * Ob es eine Organisationseinheit dieses Namens gibt — und zwar genau eine.
+     *
+     * <p>Gebraucht überall dort, wo eine Einrichtung als <b>Name</b> verarbeitet
+     * wird statt als Kennung: bei der Agent-Registrierung und bei
+     * Gerätegruppen. Mehrdeutig ist so schlecht wie gar nicht: Bei zwei
+     * gleichnamigen Einheiten ließe sich nicht entscheiden, zu welcher die
+     * Daten gehören.
+     */
+    public boolean organisationVorhanden(String bezeichnung) {
+        if (bezeichnung == null || bezeichnung.isBlank()) return false;
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT count(*) FROM organisation WHERE bezeichnung = ?")) {
+            p.setString(1, bezeichnung);
+            try (ResultSet rs = p.executeQuery()) { return rs.next() && rs.getInt(1) == 1; }
+        } catch (SQLException e) { return false; }
+    }
+
     private boolean organisationVorhanden(long id) {
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "SELECT 1 FROM organisation WHERE id=?")) {
@@ -884,9 +1053,14 @@ public class Bestandsverwaltung {
     private Terminal terminalLesen(ResultSet rs) throws SQLException {
         Timestamp gp = rs.getTimestamp("zuletzt_geprueft");
         boolean erreichbar = rs.getBoolean("zuletzt_erreichbar");
+        // Reihenfolge beachten: wasNull() bezieht sich immer auf das ZULETZT
+        // gelesene Feld. Beide Kennungen deshalb einzeln lesen und sofort
+        // prüfen, sonst gilt die Prüfung dem falschen Wert.
+        long konnId = rs.getLong("konnektor_id");
+        Long konnektorId = rs.wasNull() ? null : konnId;
         long gruppeId = rs.getLong("gruppe_id");
         return new Terminal(rs.getLong("id"), rs.getString("terminal_id"),
-                rs.getLong("konnektor_id"), rs.getString("konn_bez"),
+                konnektorId, rs.getString("konn_bez"),
                 rs.getLong("organisation_id"), rs.getString("org_bez"),
                 rs.wasNull() ? null : gruppeId, rs.getString("grp_bez"),
                 rs.getString("bezeichnung"), rs.getString("standortangabe"), rs.getString("adresse"),

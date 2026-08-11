@@ -711,6 +711,70 @@ public class Datenbank implements AutoCloseable {
             ALTER TABLE geraetegruppe ADD COLUMN IF NOT EXISTS ist_demo BOOLEAN NOT NULL DEFAULT FALSE;
             ALTER TABLE geraet        ADD COLUMN IF NOT EXISTS ist_demo BOOLEAN NOT NULL DEFAULT FALSE;
             """);
+
+        migration(22, """
+            -- Kartenterminals ohne Konnektor erfassen (Vorgabe PO, 11.08.2026).
+            --
+            -- Bisher war ein Konnektor Pflicht, und die Einrichtung des
+            -- Terminals ergab sich aus ihm. In der Praxis passt das nicht immer:
+            -- Ein Gerät wird geliefert und aufgestellt, BEVOR es am Konnektor
+            -- angemeldet ist. Wer es dann nicht erfassen kann, führt seinen
+            -- Bestand nebenher auf Papier — und der Bestand in diesem Produkt
+            -- ist ab da unvollständig.
+            --
+            -- Die Einrichtung wird damit zur eigenständigen Angabe. Sie war es
+            -- technisch schon (organisation_id stand immer in der Zeile), aber
+            -- fachlich abgeleitet. Jetzt ist sie das Pflichtfeld und der
+            -- Konnektor die Ergänzung.
+            --
+            -- Was ein Terminal ohne Konnektor NICHT kann: an der PIN-Automatik
+            -- teilnehmen. Das SICCT-Kommando sendet der Konnektor; ohne ihn
+            -- gibt es keine Verifikation, die zu beantworten wäre. Die
+            -- Oberfläche sagt das ausdrücklich, statt ein Gerät stumm nie
+            -- freizuschalten.
+            ALTER TABLE kartenterminal ALTER COLUMN konnektor_id DROP NOT NULL;
+            """);
+
+        migration(23, """
+            -- Gerätegruppen ohne Organisation: aufräumen und künftig verhindern.
+            --
+            -- BEFUND (PO, 11.08.2026): Die Übersicht meldete 9 Gruppen, die
+            -- Gruppenliste zeigte 19. Beide hatten recht — sie zählten
+            -- Verschiedenes.
+            --
+            -- Ursache: geraetegruppe.organisation_id war optional, und
+            -- vorgabegruppeAnlegen() setzte sie über eine Unterabfrage. Fand die
+            -- keine eindeutige Organisation, entstand die Gruppe trotzdem, nur
+            -- eben mit NULL. Eine solche Zeile ist für JEDE mandantengebundene
+            -- Abfrage unsichtbar (NULL = ANY(...) ist niemals wahr) — sie
+            -- erscheint nur dem Instanzbetreiber, dessen Geltungsbereich keine
+            -- Bedingung erzeugt. Daher die zwei Zahlen.
+            --
+            -- Das ist mehr als ein Anzeigefehler: Ein Datensatz ohne
+            -- Mandantenzuordnung gehört in diesem Produkt nicht in die
+            -- Datenbank. Er lässt sich weder einer Einrichtung zurechnen noch
+            -- einem Zuständigen zeigen.
+
+            -- 1. Was sich zuordnen lässt, wird zugeordnet: über den
+            --    Einrichtungsnamen, aber nur wenn er eindeutig ist.
+            UPDATE geraetegruppe g SET organisation_id = o.id
+              FROM organisation o
+             WHERE g.organisation_id IS NULL
+               AND o.bezeichnung = g.einrichtung
+               AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = g.einrichtung) = 1;
+
+            -- 2. Der Rest ist Altlast ohne Bezug. Gelöscht wird NUR, was leer
+            --    ist — eine Gruppe mit Geräten anzufassen wäre Datenverlust.
+            DELETE FROM geraetegruppe g
+             WHERE g.organisation_id IS NULL
+               AND NOT EXISTS (SELECT 1 FROM geraet t WHERE t.gruppe_id = g.id);
+
+            -- 3. Ab jetzt unmöglich. Sollte hier noch eine Zeile übrig sein —
+            --    ohne Organisation, aber MIT Geräten —, schlägt die Migration
+            --    fehl. Das ist gewollt: Dieser Fall braucht eine Entscheidung
+            --    des Betreibers und darf nicht stillschweigend weiterlaufen.
+            ALTER TABLE geraetegruppe ALTER COLUMN organisation_id SET NOT NULL;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

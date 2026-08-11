@@ -106,18 +106,31 @@ public class Gruppenverwaltung {
             return "Das Prüfintervall muss mindestens 10 Sekunden betragen. "
                  + "Kürzere Abstände belasten Konnektor und Terminals unnötig.";
         }
+        // INSERT ... SELECT statt VALUES: Ohne eindeutige Organisationseinheit
+        // entsteht KEINE Zeile — eine Gruppe ohne Mandantenzuordnung waere fuer
+        // jede eingeschraenkte Abfrage unsichtbar (Migration 23).
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO geraetegruppe (bezeichnung, einrichtung, pruefintervall_sekunden,
                                            organisation_id)
-                VALUES (?,?,?,
-                        (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
-                         AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))""")) {
+                SELECT ?, ?, ?, o.id
+                  FROM organisation o
+                 WHERE o.bezeichnung = ?
+                   AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1""")) {
             p.setString(1, bezeichnung.trim());
             p.setString(2, einrichtung);
             p.setInt(3, intervall);
             p.setString(4, einrichtung);
             p.setString(5, einrichtung);
-            p.executeUpdate();
+            if (p.executeUpdate() == 0) {
+                // Sagt, WAS fehlt. „Die Gruppe konnte nicht angelegt werden"
+                // liess jemanden ratlos zurueck, der nur die Einrichtung
+                // vergessen hatte.
+                return einrichtung == null || einrichtung.isBlank()
+                        ? "Bitte die Einrichtung wählen, zu der die Gruppe gehört."
+                        : "Zur Einrichtung „" + einrichtung + "“ gibt es keine eindeutige "
+                          + "Organisationseinheit. Eine Gruppe ohne Einrichtung ließe sich "
+                          + "niemandem zuordnen.";
+            }
             return null;
         } catch (SQLException e) {
             if ("23505".equals(e.getSQLState())) {
@@ -127,8 +140,39 @@ public class Gruppenverwaltung {
         }
     }
 
-    public String intervallSetzen(long gruppeId, int sekunden) {
-        if (sekunden < 10) return "Das Prüfintervall muss mindestens 10 Sekunden betragen.";
+    /**
+     * Eine Gruppe — aber nur, wenn sie im Geltungsbereich liegt.
+     *
+     * <p>Grundlage jeder ändernden Handlung. Bis zum 11.08.2026 gab es sie
+     * nicht: {@code intervallSetzen} und {@code loeschen} nahmen eine
+     * Kennung entgegen und arbeiteten damit, ohne zu prüfen, wem die Gruppe
+     * gehört. Eine manipulierte Kennung genügte, um das Prüfintervall einer
+     * fremden Einrichtung zu verstellen — und damit deren Überwachung
+     * auszuhebeln.
+     */
+    public Optional<Gruppe> gruppe(long id, Geltungsbereich bereich) {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT g.id, g.bezeichnung, g.einrichtung, g.pruefintervall_sekunden,
+                       g.ist_vorgabe, count(t.terminal_id) AS anzahl
+                FROM geraetegruppe g
+                LEFT JOIN geraet t ON t.gruppe_id = g.id
+                WHERE g.id = ?""" + bereich.bedingung("g.organisation_id")
+                + " GROUP BY g.id")) {
+            p.setLong(1, id);
+            bereich.wertSetzen(db.verbindung(), p, 2);
+            try (ResultSet rs = p.executeQuery()) {
+                return rs.next() ? Optional.of(lesen(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) { return Optional.empty(); }
+    }
+
+    public String intervallSetzen(long gruppeId, int sekunden, Geltungsbereich bereich) {
+        if (sekunden < 10) return "Das Prüfintervall muss mindestens 10 Sekunden betragen. "
+                + "Kürzere Abstände belasten Konnektor und Terminals unnötig.";
+        if (gruppe(gruppeId, bereich).isEmpty()) {
+            return "Diese Gruppe gibt es nicht — oder sie liegt außerhalb Ihres "
+                 + "Zuständigkeitsbereichs.";
+        }
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "UPDATE geraetegruppe SET pruefintervall_sekunden = ? WHERE id = ?")) {
             p.setInt(1, sekunden);
@@ -138,15 +182,74 @@ public class Gruppenverwaltung {
     }
 
     /**
-     * Löscht eine Gruppe. Zugeordnete Geräte ziehen in die Vorgabegruppe um —
-     * kein Gerät darf durch eine Löschung aus der Überwachung fallen (FA-GER-050).
+     * Benennt eine Gruppe um (Befund PO, 11.08.2026).
+     *
+     * <p>Es gab diese Möglichkeit schlicht nicht. Wer sich vertippt hatte,
+     * musste die Gruppe löschen und neu anlegen — und verlor dabei jede
+     * Gerätezuordnung, weil die Geräte beim Löschen in die Vorgabegruppe
+     * umziehen. Für einen Tippfehler ist das ein hoher Preis.
      */
-    public String loeschen(long gruppeId, String einrichtung) {
-        var vorgabe = vorgabegruppe(einrichtung);
-        if (vorgabe.isEmpty()) return "Es gibt keine Vorgabegruppe.";
-        if (vorgabe.get().id() == gruppeId) {
+    public String umbenennen(long gruppeId, String bezeichnung, Geltungsbereich bereich) {
+        if (bezeichnung == null || bezeichnung.isBlank()) {
+            return "Bitte eine Bezeichnung für die Gruppe angeben.";
+        }
+        if (gruppe(gruppeId, bereich).isEmpty()) {
+            return "Diese Gruppe gibt es nicht — oder sie liegt außerhalb Ihres "
+                 + "Zuständigkeitsbereichs.";
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE geraetegruppe SET bezeichnung = ? WHERE id = ?")) {
+            p.setString(1, bezeichnung.trim());
+            p.setLong(2, gruppeId);
+            return p.executeUpdate() == 1 ? null : "Diese Gruppe gibt es nicht.";
+        } catch (SQLException e) {
+            if ("23505".equals(e.getSQLState())) {
+                return "In dieser Einrichtung gibt es bereits eine Gruppe „"
+                     + bezeichnung.trim() + "“.";
+            }
+            return "Die Gruppe konnte nicht umbenannt werden.";
+        }
+    }
+
+    /**
+     * Löscht eine Gruppe. Zugeordnete Geräte ziehen in die Vorgabegruppe
+     * <b>ihrer eigenen Einrichtung</b> um — kein Gerät darf durch eine Löschung
+     * aus der Überwachung fallen (FA-GER-050).
+     *
+     * <h2>Was hier falsch war (Befund PO, 11.08.2026)</h2>
+     *
+     * Die Einrichtung kam als Parameter von außen, und die Oberfläche übergab
+     * fest {@code "Praxis"}. Zwei Folgen, beide schlecht:
+     *
+     * <ul>
+     *   <li>Gibt es keine Gruppe in „Praxis", scheiterte jedes Löschen mit
+     *       „Es gibt keine Vorgabegruppe" — unabhängig davon, welche Gruppe
+     *       gemeint war.</li>
+     *   <li>Gibt es eine, wanderten die Geräte einer fremden Praxis in deren
+     *       Vorgabegruppe. Eine Löschung hätte Geräte <b>über die
+     *       Mandantengrenze</b> verschoben.</li>
+     * </ul>
+     *
+     * Die Einrichtung wird deshalb aus der Gruppe selbst gelesen. Sie ist kein
+     * Parameter mehr — was man nicht übergeben kann, kann man auch nicht falsch
+     * übergeben.
+     */
+    public String loeschen(long gruppeId, Geltungsbereich bereich) {
+        var g = gruppe(gruppeId, bereich);
+        if (g.isEmpty()) {
+            return "Diese Gruppe gibt es nicht — oder sie liegt außerhalb Ihres "
+                 + "Zuständigkeitsbereichs.";
+        }
+        if (g.get().istVorgabe()) {
             return "Die Vorgabegruppe lässt sich nicht löschen. Neu erkannte Geräte "
                  + "brauchen eine Gruppe, in der sie landen können.";
+        }
+        var vorgabe = vorgabegruppe(g.get().einrichtung());
+        if (vorgabe.isEmpty()) vorgabe = vorgabegruppeAnlegen(g.get().einrichtung());
+        if (vorgabe.isEmpty()) {
+            return "Für die Einrichtung „" + g.get().einrichtung() + "“ gibt es keine "
+                 + "Vorgabegruppe, in die die Geräte umziehen könnten. Bitte zuerst eine "
+                 + "Gruppe in dieser Einrichtung anlegen.";
         }
         try {
             try (PreparedStatement p = db.verbindung().prepareStatement(
@@ -161,6 +264,69 @@ public class Gruppenverwaltung {
                 return p.executeUpdate() == 1 ? null : "Diese Gruppe gibt es nicht.";
             }
         } catch (SQLException e) { return "Die Gruppe konnte nicht gelöscht werden."; }
+    }
+
+    /** Ein Gerät in einer Gruppe — für die Detailseite. */
+    public record Geraeteeintrag(String terminalId, String bezeichnung) {}
+
+    /**
+     * Die Geräte einer Gruppe.
+     *
+     * <p>Die Liste zeigte bisher nur ihre <b>Zahl</b>. „4 Geräte" beantwortet
+     * aber nicht die Frage, die man an einer Gruppe hat: welche?
+     */
+    public List<Geraeteeintrag> geraeteDerGruppe(long gruppeId) {
+        List<Geraeteeintrag> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT terminal_id, coalesce(bezeichnung, terminal_id) AS bez "
+                + "FROM geraet WHERE gruppe_id = ? ORDER BY lower(coalesce(bezeichnung, terminal_id))")) {
+            p.setLong(1, gruppeId);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) liste.add(new Geraeteeintrag(rs.getString(1), rs.getString(2)));
+            }
+        } catch (SQLException e) {
+            System.err.println("Geräte der Gruppe nicht lesbar: " + e.getMessage());
+        }
+        return liste;
+    }
+
+    /**
+     * Macht eine Gruppe zur Vorgabegruppe ihrer Einrichtung.
+     *
+     * <p>Beides in einer Transaktion: Erst die bisherige Vorgabe abwählen, dann
+     * die neue setzen. Ein eindeutiger Index erlaubt nur eine je Einrichtung —
+     * in der falschen Reihenfolge scheitert die zweite Anweisung, und die
+     * Einrichtung stünde ohne Vorgabegruppe da.
+     */
+    public String vorgabeSetzen(long gruppeId, Geltungsbereich bereich) {
+        var g = gruppe(gruppeId, bereich);
+        if (g.isEmpty()) {
+            return "Diese Gruppe gibt es nicht — oder sie liegt außerhalb Ihres "
+                 + "Zuständigkeitsbereichs.";
+        }
+        if (g.get().istVorgabe()) return null;   // schon so, nichts zu tun
+        boolean vorherAuto = true;
+        try {
+            vorherAuto = db.verbindung().getAutoCommit();
+            db.verbindung().setAutoCommit(false);
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "UPDATE geraetegruppe SET ist_vorgabe = FALSE WHERE einrichtung = ? AND ist_vorgabe")) {
+                p.setString(1, g.get().einrichtung());
+                p.executeUpdate();
+            }
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "UPDATE geraetegruppe SET ist_vorgabe = TRUE WHERE id = ?")) {
+                p.setLong(1, gruppeId);
+                p.executeUpdate();
+            }
+            db.verbindung().commit();
+            return null;
+        } catch (SQLException e) {
+            try { db.verbindung().rollback(); } catch (SQLException ignored) { }
+            return "Die Vorgabegruppe konnte nicht gewechselt werden.";
+        } finally {
+            try { db.verbindung().setAutoCommit(vorherAuto); } catch (SQLException ignored) { }
+        }
     }
 
     // ---------------------------------------------------------------- Geräte
@@ -233,12 +399,21 @@ public class Gruppenverwaltung {
      * inzwischen vorhandene Gruppe.
      */
     Optional<Gruppe> vorgabegruppeAnlegen(String einrichtung) {
+        // INSERT ... SELECT statt VALUES mit Unterabfrage: Findet sich keine
+        // eindeutige Organisation, entsteht KEINE Zeile.
+        //
+        // Vorher wurde sie mit organisation_id = NULL angelegt. Eine solche
+        // Gruppe ist fuer jede mandantengebundene Abfrage unsichtbar
+        // (NULL = ANY(...) ist niemals wahr) und erscheint nur dem
+        // Instanzbetreiber — daher meldete die Uebersicht 9 Gruppen und die
+        // Liste 19 (Befund PO, 11.08.2026, Migration 23).
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
                                            pruefintervall_sekunden, organisation_id)
-                VALUES ('Alle Geräte', ?, TRUE, 60,
-                        (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
-                         AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))
+                SELECT 'Alle Geräte', ?, TRUE, 60, o.id
+                  FROM organisation o
+                 WHERE o.bezeichnung = ?
+                   AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1
                 ON CONFLICT DO NOTHING""")) {
             p.setString(1, einrichtung);
             p.setString(2, einrichtung);
@@ -283,7 +458,24 @@ public class Gruppenverwaltung {
             System.err.println("Vorgabegruppe für " + einrichtung
                     + " konnte nicht bestimmt werden: " + e.getMessage());
         }
-        return vorgabegruppe(einrichtung);
+
+        var ergebnis = vorgabegruppe(einrichtung);
+        if (ergebnis.isEmpty()) {
+            // Der haeufigste Grund ist jetzt: Es gibt keine Organisationseinheit
+            // mit diesem Namen. Frueher entstand hier stillschweigend eine
+            // Gruppe ohne Organisation — sichtbar nur fuer den
+            // Instanzbetreiber, unsichtbar fuer alle anderen.
+            //
+            // Still zu scheitern ist die schlechtere Wahl, aber falsche Daten
+            // anzulegen ist die schlechteste. Deshalb: kein Datensatz, dafuer
+            // eine Meldung, die den Grund nennt.
+            System.err.println("Keine Vorgabegruppe für Einrichtung „" + einrichtung
+                    + "“: Es gibt keine eindeutige Organisationseinheit dieses Namens. "
+                    + "Gemeldete Geräte dieser Einrichtung können nicht zugeordnet werden. "
+                    + "Bitte die Organisationseinheit anlegen oder den Agenten auf die "
+                    + "richtige Einrichtung registrieren.");
+        }
+        return ergebnis;
     }
 
     public String zuordnen(String terminalId, long gruppeId) {

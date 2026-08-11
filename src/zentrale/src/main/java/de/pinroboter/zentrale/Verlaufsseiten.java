@@ -39,14 +39,14 @@ final class Verlaufsseiten {
 
     static String zeitstrahl(String terminalId, String bezeichnung,
                              Fachprotokoll.Seite seite, String zeitraum,
-                             List<String> gewaehlteArten) {
+                             String sicht, List<String> feinauswahl) {
         StringBuilder s = new StringBuilder(Zentrale.detailkopf(
                 "/geraete", "Kartenterminals", bezeichnung,
                 "Verlauf von <code>" + esc(terminalId) + "</code>", null));
 
         s.append("<div class=\"tafel\"><h3>Zeitstrahl <span class=\"zaehler\">")
          .append(seite.gesamt()).append("</span></h3>");
-        s.append(filterleiste(terminalId, zeitraum, gewaehlteArten));
+        s.append(filterleiste(terminalId, zeitraum, sicht, feinauswahl));
 
         if (seite.eintraege().isEmpty()) {
             s.append("""
@@ -157,8 +157,15 @@ final class Verlaufsseiten {
                 .filter(s::passt).map(Enum::name).toList();
     }
 
+    /**
+     * Zeitraum, Sicht und Feinauswahl.
+     *
+     * @param sicht      die ausdrücklich gewählte Sicht ({@code null} = Alles)
+     * @param feinauswahl die vom Benutzer <b>selbst</b> angekreuzten Arten —
+     *                   NICHT die, die sich aus der Sicht ergeben
+     */
     private static String filterleiste(String terminalId, String zeitraum,
-                                       List<String> gewaehlt) {
+                                       String sicht, List<String> feinauswahl) {
         StringBuilder z = new StringBuilder();
         for (var zr : ZEITRAEUME) {
             z.append("<option value=\"").append(zr.kennung()).append("\"")
@@ -166,29 +173,44 @@ final class Verlaufsseiten {
              .append(esc(zr.anzeige())).append("</option>");
         }
 
-        // Welche Sicht ist aktiv? Abgeleitet aus der Auswahl, damit ein Wechsel
-        // in die Feinauswahl und zurueck nichts verliert.
-        String aktiv = "ALLES";
-        for (Sicht s : Sicht.values()) {
-            if (s != Sicht.ALLES && !gewaehlt.isEmpty()
-                    && gewaehlt.size() == artenDerSicht(s.name()).size()
-                    && gewaehlt.containsAll(artenDerSicht(s.name()))) {
-                aktiv = s.name();
-            }
-        }
+        // Die aktive Sicht steht im Parameter — sie wird NICHT mehr aus der
+        // Artenliste zurueckgerechnet.
+        //
+        // Der Fehler dahinter (Befund PO, 11.08.2026): Die Sicht kreuzte die
+        // zugehoerigen Arten in der Feinauswahl an. Beim naechsten Absenden
+        // gingen diese Haekchen mit — und weil die Feinauswahl die Sicht
+        // ueberstimmt, blieb die Ansicht stehen, egal welche Kachel man klickte.
+        // Eine Sackgasse: Wer einmal „Nur Probleme" gewaehlt hatte, kam nicht
+        // mehr heraus.
+        boolean feinAktiv = !feinauswahl.isEmpty();
+        String aktiv = feinAktiv ? "" : Sicht.aus(sicht).name();
 
+        // Die Sichten sind LINKS, keine Radios im Formular.
+        //
+        // Ein Link traegt nur den Zeitraum und die Sicht — die Feinauswahl
+        // faellt dabei weg, und genau das ist gemeint: „Sicht waehlen" setzt
+        // eine Feinauswahl ausser Kraft. Als Formularfelder liesse sich das
+        // ohne JavaScript nicht ausdruecken, und ein onchange-Handler hat den
+        // Widerspruch oben nur verdeckt.
         StringBuilder sichten = new StringBuilder();
         for (Sicht s : Sicht.values()) {
+            boolean ist = s.name().equals(aktiv);
             sichten.append("""
-                    <label class="sicht%s">
-                      <input type="radio" name="sicht" value="%s"%s
-                             onchange="this.form.requestSubmit()">
+                    <a class="sicht%s" href="/geraete/%s/verlauf?zeitraum=%s&sicht=%s"%s
+                       title="%s">
                       <span class="sicht-name">%s</span>
                       <span class="sicht-was">%s</span>
-                    </label>"""
-                    .formatted(s.name().equals(aktiv) ? " gewaehlt" : "", s.name(),
-                            s.name().equals(aktiv) ? " checked" : "",
-                            esc(s.anzeige), esc(s.erklaerung)));
+                    </a>"""
+                    .formatted(ist ? " gewaehlt" : "", esc(terminalId), esc(zeitraum), s.name(),
+                            ist ? " aria-current=\"true\"" : "",
+                            esc(s.erklaerung), esc(s.anzeige), esc(s.erklaerung)));
+        }
+        if (feinAktiv) {
+            sichten.append("""
+                    <p class="hilfe sichten-fuss">
+                      Zurzeit gilt die Feinauswahl unten (%d Ereignisart(en)).
+                      Ein Klick auf eine Sicht setzt sie zurück.
+                    </p>""".formatted(feinauswahl.size()));
         }
 
         // Die Feinauswahl: nach Themenbereich gruppiert, zugeklappt. Sie ist
@@ -200,7 +222,7 @@ final class Verlaufsseiten {
                 .append(esc(b.anzeige())).append("</legend>");
             for (var art : de.pinroboter.gemeinsam.Ereignisart.values()) {
                 if (art.bereich() != b) continue;
-                boolean an = gewaehlt.contains(art.name());
+                boolean an = feinauswahl.contains(art.name());
                 fein.append("<label class=\"ankreuz nebeneinander\">")
                     .append("<input type=\"checkbox\" name=\"art\" value=\"")
                     .append(art.name()).append("\"").append(an ? " checked" : "")
@@ -217,22 +239,20 @@ final class Verlaufsseiten {
                   </div>
                   <div class="feldaktion">
                     <button class="knopf" type="submit"
-                            title="Wendet Zeitraum und Sicht auf den Zeitstrahl an"
+                            title="Wendet Zeitraum und Feinauswahl auf den Zeitstrahl an"
                             aria-label="Filter anwenden">Anwenden</button>
                   </div>
-                  <fieldset class="sichten">
-                    <legend class="nurLeser">Welche Ereignisse sollen erscheinen?</legend>
-                    %s
-                  </fieldset>
                   <details class="ausklapp feinauswahl">
                     <summary>Einzelne Ereignisarten wählen</summary>
                     <div class="feinauswahl-leib">
                       <p class="hilfe">Setzt die Sicht oben außer Kraft. Ohne Häkchen
-                         erscheinen alle Arten.</p>
+                         entscheidet die Sicht.</p>
                       %s
                     </div>
                   </details>
-                </form>""".formatted(esc(terminalId), z, sichten, fein);
+                </form>
+                <nav class="sichten" aria-label="Welche Ereignisse sollen erscheinen?">%s</nav>"""
+                .formatted(esc(terminalId), z, fein, sichten);
     }
 
     // ─────────────────────────────────────────────── Vorgangsansicht

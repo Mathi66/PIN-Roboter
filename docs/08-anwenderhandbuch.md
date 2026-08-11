@@ -84,7 +84,7 @@ Links steht die Navigation, getrennt in **Betrieb** (Tagesgeschäft) und
 | Bereich | Wofür |
 |---|---|
 | **Lage** | Der Blick am Morgen: Was braucht Aufmerksamkeit? |
-| **Kartenterminals** | Alle Geräte mit ihrem aktuellen Zustand |
+| **Kartenterminals** | Alle Geräte mit ihrem aktuellen Zustand — sortiert nach Einrichtung |
 | **Gerätegruppen** | Geräte bündeln und festlegen, wie oft geprüft wird |
 | **Benachrichtigung** | Wer bekommt eine E-Mail, wenn etwas nicht stimmt |
 | **Protokoll** | Was ist wann passiert |
@@ -149,6 +149,20 @@ Zwei Wege:
 - **Ermittelte Geräte** — der Roboter fragt den Konnektor, welche Terminals er
   kennt, und Sie übernehmen sie mit einem Klick. Das ist der übliche Weg.
 - **Kartenterminal hinzufügen** — von Hand, wenn ein Gerät nicht gemeldet wird.
+
+Beim Erfassen von Hand ist die **Einrichtung** die Pflichtangabe: zu welcher
+Praxis oder Betriebsstätte gehört das Gerät? Ein **Konnektor** kann angegeben
+werden, muss aber nicht.
+
+> **Warum das wichtig ist:** Ein neues Gerät steht oft schon in der Praxis,
+> bevor es am Konnektor angemeldet wurde. Sie können es trotzdem erfassen — dann
+> steht es im Bestand statt auf einem Zettel.
+>
+> Solange kein Konnektor zugeordnet ist, **schaltet der Roboter die Karte in
+> diesem Gerät nicht frei**. Das ist keine Störung: Die Freischaltung wird vom
+> Konnektor ausgelöst, und ohne ihn gibt es nichts auszulösen. Auf der
+> Geräteseite steht das oben, und die Zuordnung lässt sich dort direkt
+> nachtragen, sobald das Gerät am Konnektor angemeldet ist.
 
 ### Schritt 3: PIN hinterlegen
 

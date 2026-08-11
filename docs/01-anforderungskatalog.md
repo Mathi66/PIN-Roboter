@@ -66,7 +66,8 @@ Aufrufkontext (Mandant-ID, Clientsystem-ID, Arbeitsplatz-ID) erfasst.
 
 ### FA-GER-020 — Kartenterminals erfassen · MUSS · V1 · PO
 Kartenterminals werden mit Adresse, Bezeichnung, Standort, Zuordnung zu
-Konnektor und Gerätegruppe sowie Administrationszugang erfasst.
+**Einrichtung** und Gerätegruppe sowie Administrationszugang erfasst. Die
+Zuordnung zu einem Konnektor ist möglich, aber **nicht Voraussetzung**.
 
 *Akzeptanz:*
 - Anlegen, Ändern, Deaktivieren, Löschen möglich.
@@ -75,6 +76,17 @@ Konnektor und Gerätegruppe sowie Administrationszugang erfasst.
   Seriennummer soweit verfügbar.
 - Administrationszugangsdaten sind nach dem Speichern nicht mehr auslesbar.
 - Ein Terminal ist genau einem Mandanten und genau einer Gerätegruppe zugeordnet.
+- **Ein Terminal lässt sich ohne Konnektor erfassen** und direkt einer
+  Einrichtung zuordnen (Vorgabe PO, 11.08.2026). Es wird dann überwacht und
+  verwaltet, nimmt aber nicht an der PIN-Automatik teil — das muss die
+  Oberfläche im Klartext sagen, nicht stillschweigend geschehen.
+- **Der Konnektor lässt sich nachtragen**, sobald das Gerät dort angemeldet ist.
+- Terminal und Konnektor müssen zur **selben Einrichtung** gehören; eine
+  Zuordnung über Mandantengrenzen hinweg wird mit Begründung abgelehnt.
+- **Standardsortierung der Geräteliste ist die Einrichtung**, danach Konnektor,
+  danach Gerätename. Grund: In einem MVZ heißen die Geräte in jeder
+  Betriebsstätte gleich; alphabetisch nach Gerätenamen entsteht eine Liste, in
+  der neunmal „Behandlung 1" untereinander steht.
 
 ### FA-GER-030 — Kartenterminals automatisch ermitteln · SOLL · V1 · PO ✓ (freigegeben 06.08.2026)
 Über den Konnektor (`GetCardTerminals`) werden vorhandene Terminals ermittelt
@@ -135,7 +147,20 @@ Prüfintervalle, Rollout-Pläne und Benachrichtigungsregeln.
 - Jedes Terminal gehört zu genau einer Gruppe; es existiert eine Vorgabegruppe.
 - Eine Gruppe liegt innerhalb genau einer Einrichtung.
 - Das Löschen einer Gruppe mit zugeordneten Terminals ist nur mit Umzug der
-  Geräte möglich.
+  Geräte möglich — **in die Vorgabegruppe ihrer eigenen Einrichtung**. Ein Umzug
+  über die Mandantengrenze ist unzulässig (ergänzt 11.08.2026).
+- **Jede Gruppe gehört zu einer Organisationseinheit.** Ohne sie wäre sie für
+  jede mandantengebundene Abfrage unsichtbar und ließe sich niemandem zeigen.
+  Technisch erzwungen (`NOT NULL`, Migration 23).
+- **Jede ändernde Handlung prüft den Geltungsbereich** — Umbenennen, Intervall,
+  Vorgabe, Löschen. Eine manipulierte Kennung darf keine fremde Gruppe treffen.
+- **Die Vorgabegruppe ist wechselbar**; je Einrichtung gibt es genau eine.
+
+> **Nachtrag 11.08.2026:** „Umbenennbar" stand seit jeher hier, war aber **nie
+> umgesetzt**. Wer sich vertippt hatte, musste die Gruppe löschen und neu
+> anlegen — und verlor dabei ihre Gerätezuordnung. Der Umsetzungsstand führte
+> die Anforderung trotzdem als erfüllt: Kein Nachweis hat je versucht,
+> umzubenennen. Eine Akzeptanzliste nützt nur so viel, wie geprüft wird.
 
 ### FA-GER-060 — Bestandsübersicht bei großen Stückzahlen · MUSS · V1 · PO
 Die Geräteübersicht bleibt bei 5.000 Terminals bedienbar.

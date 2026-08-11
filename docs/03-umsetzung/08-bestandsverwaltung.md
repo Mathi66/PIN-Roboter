@@ -424,3 +424,166 @@ existierende Karten.
 
 Das Löschen nimmt sie jetzt mit, und zwar **vor** den Terminals: Danach sind die
 Kartenhandles nicht mehr auffindbar.
+
+---
+
+## Nachtrag 11.08.2026: Kartenterminals ohne Konnektor, Sortierung nach Einrichtung
+
+Zwei Vorgaben des PO, die zusammengehören: Beide betreffen die Frage, **woran
+ein Kartenterminal eigentlich hängt**.
+
+### Der Konnektor war Pflicht — und das ging an der Praxis vorbei
+
+Bis dahin galt: Erst der Konnektor, dann das Terminal, und die Einrichtung
+ergab sich aus dem Konnektor. Das setzt eine Reihenfolge voraus, die es im
+Alltag nicht gibt:
+
+> Ein Gerät wird geliefert und aufgestellt, **bevor** es am Konnektor angemeldet
+> ist. Wer es dann nicht erfassen kann, führt seinen Bestand nebenher auf
+> Papier — und ab da stimmt der Bestand hier nicht mehr.
+
+Deshalb ist jetzt die **Einrichtung das Pflichtfeld und der Konnektor die
+Ergänzung**. Technisch stand die Einrichtung immer schon in der Zeile
+(`organisation_id`), sie war nur fachlich abgeleitet.
+
+| | vorher | jetzt |
+|---|---|---|
+| Pflichtangabe | Konnektor | **Einrichtung** |
+| Einrichtung | aus dem Konnektor abgeleitet | eigene Angabe |
+| Konnektor | Pflicht | optional, nachtragbar |
+
+**Was ein Terminal ohne Konnektor nicht kann:** an der PIN-Automatik teilnehmen.
+Das SICCT-Kommando sendet der Konnektor; ohne ihn gibt es keine Verifikation,
+die zu beantworten wäre ([ADR-0011](../adr/0011-pin-uebergabe-ist-eine-anfrage-des-terminals.md)).
+
+Das steht **oben auf der Geräteseite**, nicht in einer Fußnote — und direkt
+darunter die Auswahl, um den Konnektor nachzutragen. Wer den Hinweis liest, will
+ihn genau jetzt erledigen; ein Verweis auf eine andere Seite wäre eine Zumutung.
+
+In der Liste steht „nicht zugeordnet" statt eines leeren Feldes. Leer wäre die
+schlechteste Antwort: Man sähe nicht, ob die Angabe fehlt oder die Anzeige
+klemmt.
+
+**Die Einrichtung muss übereinstimmen.** Ein Terminal, das organisatorisch zu
+Praxis A gehört und technisch an Konnektor B von Praxis C hängt, wäre in keiner
+der beiden Sichten richtig einsortiert — die Zuordnung wird mit Begründung
+abgelehnt.
+
+> **Eine Falle, die dabei zuschnappen wollte:** Die Abfrage der Geräteliste
+> verknüpfte mit `JOIN konnektor`. Ein Terminal ohne Konnektor wäre damit aus
+> der Liste gefallen — ausgerechnet das Gerät, das noch Aufmerksamkeit braucht.
+> Jetzt `LEFT JOIN`, und ein Test hält es fest.
+
+### Standardsortierung: Einrichtung, dann Konnektor, dann Gerät
+
+Vorher alphabetisch nach Gerätenamen. Das war die falsche Grundordnung: In einem
+MVZ heißen die Geräte in jeder Betriebsstätte gleich, und neunmal „Behandlung 1"
+untereinander ist keine Liste, sondern eine Aufzählung.
+
+Nach Einrichtung sortiert steht zusammen, was zusammengehört — und man findet
+ein Gerät dort, wo man es sucht: bei seiner Praxis. Der Konnektor ist das zweite
+Kriterium, weil er innerhalb einer Einrichtung die technische Gliederung trägt.
+
+Alle anderen Sortierungen bleiben über die Spaltenköpfe erreichbar.
+
+### Nachweise
+
+**Modultests** (6 neu in `BestandsverwaltungTest`, 1 angepasst in
+`BestandslisteTest`):
+
+| Test | Aussage |
+|---|---|
+| `ohneKonnektorErfassen` | geht, mit Einrichtung, und nennt das Hindernis |
+| `ohneEinrichtungNicht` | die Mandantengrenze ist nicht verhandelbar |
+| `fremderKonnektorAbgewiesen` | Terminal und Konnektor in derselben Einrichtung |
+| `konnektorNachtragen` | hin und wieder zurück |
+| `ohneKonnektorInDerListe` | `LEFT JOIN`, kein `JOIN` |
+| `standardsortierung` | die Liste kommt nach Einrichtung sortiert |
+
+> **Ein Testfehler, der wie ein Produktfehler aussah:** Zwei der neuen Tests
+> scheiterten mit „Diesen Konnektor gibt es nicht mehr". Ursache war nicht der
+> Code, sondern die Testreihenfolge — der Konnektor aus dem Aufbau wird von
+> einem früheren Test gelöscht. Die neuen Tests legen sich jetzt einen eigenen
+> an. Ein Test, dessen Ergebnis von der Reihenfolge abhängt, meldet früher oder
+> später einen Fehler, den es nicht gibt.
+
+---
+
+## Nachtrag 11.08.2026: Die Gerätegruppen — drei Fehler und eine fehlende Seite
+
+**Auslöser:** „In der Übersicht werden 9 Gruppen verauskunftet. In der
+Gruppenliste stehen 19." Und, danach: „analysiere die Gruppenverwaltung von KT.
+Das funktioniert nicht und hat keine usebility."
+
+### Warum zwei Zahlen — beide richtig
+
+Zehn Gruppen hatten **keine Organisationseinheit**. Die Übersicht zählt über
+`organisation_id` und ließ sie weg; die Liste zeigte dem Instanzbetreiber alles.
+
+Das ist mehr als ein Anzeigefehler. Eine Zeile ohne Mandantenzuordnung ist für
+**jede** eingeschränkte Abfrage unsichtbar — `NULL = ANY(...)` ist niemals wahr.
+Sie existiert nur für den, dessen Geltungsbereich keine Bedingung erzeugt.
+
+`vorgabegruppeAnlegen()` suchte die Organisation über den Einrichtungsnamen und
+legte die Gruppe auch dann an, wenn sich keine fand. **Migration 23** ordnet zu,
+was sich zuordnen lässt, entfernt die leeren Reste und setzt `organisation_id`
+auf `NOT NULL`. Gruppen mit Geräten werden nie gelöscht — dann scheitert die
+Migration lieber und verlangt eine Entscheidung.
+
+### Drei Fehler in der Verwaltung selbst
+
+| Fehler | Wirkung |
+|---|---|
+| `loeschen(id, "Praxis")` | Die Einrichtung kam als fester Parameter. Ohne Gruppe in „Praxis" scheiterte **jedes** Löschen; mit einer wanderten Geräte **über die Mandantengrenze** in deren Vorgabegruppe. |
+| kein Geltungsbereich | `intervallSetzen` und `loeschen` prüften nicht, wem die Gruppe gehört. Eine manipulierte Kennung genügte, um das Prüfintervall einer fremden Einrichtung zu verstellen — und damit deren Überwachung auszuhebeln. |
+| Protokoll fest „Praxis" | Jede Gruppenänderung landete unter einer Einrichtung, die mit der Gruppe nichts zu tun hatte. |
+
+Die Einrichtung ist beim Löschen **kein Parameter mehr**, sondern wird aus der
+Gruppe gelesen: Was man nicht übergeben kann, kann man nicht falsch übergeben.
+
+### Die Detailseite, die fehlte
+
+Die Gruppenverwaltung war der einzige Bereich ohne Detailseite. Alles musste in
+die Listenzeile passen — und was nicht hineinpasste, fehlte:
+
+- **Umbenennen** gab es nicht. Ein Tippfehler kostete die Gruppe *und* ihre
+  Gerätezuordnung, weil die Geräte beim Löschen in die Vorgabegruppe umziehen.
+- **Vorgabe wechseln** gab es nicht.
+- **Welche** Geräte in der Gruppe sind, sah man nicht — nur wie viele.
+- Das Intervall speicherte **stumm**; man musste in der Tabelle nachsehen.
+
+Ein Zwischenschritt war falsch: Erst machte ich den Namen zu einem Eingabefeld
+*in der Liste*. Das brach den Nachweis „klickbare Zeilen" — zu Recht, denn ein
+Klick ins Feld würde navigieren. Beides zusammen geht nicht, und eine Liste ist
+der falsche Ort für etwas, das mehr als einen Wert hat.
+
+**Beim Vorgabewechsel** läuft beides in einer Transaktion, alte Vorgabe zuerst:
+Ein eindeutiger Index erlaubt nur eine je Einrichtung — in der anderen
+Reihenfolge scheitert die zweite Anweisung, und die Einrichtung stünde ohne
+Vorgabegruppe da. Dann fallen neu erkannte Geräte durch.
+
+### Die Lage-Übersicht war im Mehrmandantenbetrieb blind
+
+Gefunden beim Aufräumen, und der schwerste Befund des Tages:
+
+```java
+var offen = alarme.offene("Praxis", bereich(c));
+```
+
+Die wichtigste Seite des Produkts fragte Alarme **fest für eine Einrichtung**
+ab. In einem MVZ mit neun Betriebsstätten hätte sie keinen einzigen Alarm
+gezeigt — gesperrte Karte, totes Terminal, und die Lage meldet „nichts offen".
+
+Der Geltungsbereich war längst da und ist die richtige Grenze. Die zusätzliche
+Einschränkung war ein Rest aus der Zeit, als es nur eine Einrichtung gab.
+
+> **Warum 379 Nachweise das gedeckt haben:** Die Prüfeinrichtung hieß „Praxis".
+> Der Name war stiller Bestandteil der Abfrage — der Nachweis prüfte gegen genau
+> den Wert, der im Code stand. Erst die Umbenennung der Prüfeinrichtung in
+> „Pruefpraxis" machte es sichtbar. Der neue Nachweis prüft deshalb
+> ausdrücklich, dass der angezeigte Alarm **nicht** zu „Praxis" gehört.
+
+**Offen:** `grep '"Praxis"'` findet 54 weitere Stellen — Protokoll- und
+Alarmaufrufe aus Hintergrundaufgaben (Sicherung, Pseudonymisierung,
+Startkonto). Bei instanzweiten Ereignissen ist eine Einrichtung fachlich
+fragwürdig; „Praxis" als Platzhalter ist es in einem MVZ allemal.

@@ -336,4 +336,112 @@ class BestandsverwaltungTest {
         assertFalse(e.erreichbar());
         assertTrue(e.hinweis().contains("keine Adresse"), e.hinweis());
     }
+
+    // ── Kartenterminals ohne Konnektor (Vorgabe PO, 11.08.2026) ─────────────
+
+    /**
+     * Ein eigener Konnektor für diese Testgruppe.
+     *
+     * <p>Der aus {@code aufbauen()} wird von einem früheren Test gelöscht. Sich
+     * darauf zu verlassen, dass er noch da ist, machte diese Tests von der
+     * Reihenfolge abhängig — und der Fehlschlag hätte wie ein Produktfehler
+     * ausgesehen („Diesen Konnektor gibt es nicht mehr").
+     */
+    private long eigenerKonnektor() {
+        var e = bv.konnektorAnlegen(orgId, "Konnektor Zuordnungstests",
+                "192.0.2.200:443", "KoCo Konnektor", "Mandant1", "PIN-Roboter",
+                "Arbeitsplatz1", null, null, null, ALLES);
+        assertTrue(e.geklappt(), e.fehler());
+        return e.id();
+    }
+
+    @Test @Order(40)
+    @DisplayName("Ein Terminal lässt sich ohne Konnektor erfassen, direkt an einer Einrichtung")
+    void ohneKonnektorErfassen() {
+        // Der Fall aus der Praxis: Das Gerät ist geliefert und aufgestellt,
+        // aber am Konnektor noch nicht angemeldet. Wer es dann nicht erfassen
+        // kann, führt seinen Bestand nebenher auf Papier.
+        var e = bv.terminalAnlegen("KT-OHNE-KONN", null, orgId, "Anmeldung",
+                "Foyer", "192.0.2.90", "CHERRY ST-1506", null, null, null,
+                false, false, ALLES);
+        assertTrue(e.geklappt(), e.fehler());
+
+        var t = bv.terminal(e.id(), ALLES).orElseThrow();
+        assertNull(t.konnektorId(), "kein Konnektor zugeordnet");
+        assertEquals(orgId, t.organisationId(), "die Einrichtung ist trotzdem gesetzt");
+        assertFalse(t.automatikMoeglich());
+        assertNotNull(t.automatikHindernis(),
+                "Es muss im Klartext dastehen, warum die Automatik nicht greift — "
+                + "sonst wartet jemand auf eine Freischaltung, die niemand auslöst.");
+    }
+
+    @Test @Order(41)
+    @DisplayName("Ohne Einrichtung geht es nicht — sie ist die Mandantengrenze")
+    void ohneEinrichtungNicht() {
+        var e = bv.terminalAnlegen("KT-OHNE-ORG", null, 0L, "Irgendwo",
+                null, "192.0.2.91", null, null, null, null, false, false, ALLES);
+        assertFalse(e.geklappt(), "Ein Gerät ohne Einrichtung hätte keine Mandantengrenze");
+        assertTrue(e.fehler().contains("Einrichtung"), e.fehler());
+    }
+
+    @Test @Order(42)
+    @DisplayName("Ein Konnektor aus einer FREMDEN Einrichtung wird abgewiesen")
+    void fremderKonnektorAbgewiesen() throws Exception {
+        long fremdeOrg;
+        try (Statement st = db.verbindung().createStatement();
+             ResultSet rs = st.executeQuery("""
+                     INSERT INTO organisation (bezeichnung, art, eltern_id, ist_demo)
+                     SELECT 'Fremde Einrichtung Bestand', 'EINRICHTUNG', eltern_id, FALSE
+                     FROM organisation WHERE id = """ + orgId + " RETURNING id")) {
+            rs.next(); fremdeOrg = rs.getLong(1);
+        }
+        // Terminal soll zur fremden Einrichtung gehören, der Konnektor gehört
+        // aber zur eigenen. Das wäre in keiner der beiden Sichten richtig
+        // einsortiert.
+        var e = bv.terminalAnlegen("KT-QUER", eigenerKonnektor(), fremdeOrg, "Quergestellt",
+                null, "192.0.2.92", null, null, null, null, false, false, ALLES);
+        assertFalse(e.geklappt(), "Terminal und Konnektor müssen zur selben Einrichtung gehören");
+        assertTrue(e.fehler().contains("gehört zu"), e.fehler());
+    }
+
+    @Test @Order(43)
+    @DisplayName("Der Konnektor lässt sich nachtragen — und wieder entfernen")
+    void konnektorNachtragen() {
+        var e = bv.terminalAnlegen("KT-NACHTRAG", null, orgId, "Wartezimmer",
+                null, "192.0.2.93", null, null, null, null, false, false, ALLES);
+        assertTrue(e.geklappt(), e.fehler());
+        long id = e.id();
+
+        long konn = eigenerKonnektor();
+        var z = bv.terminalKonnektorSetzen(id, konn, ALLES);
+        assertTrue(z.geklappt(), z.fehler());
+        assertEquals(konn, bv.terminal(id, ALLES).orElseThrow().konnektorId());
+
+        // Auch der umgekehrte Weg muss gehen: Ein Gerät wird umgesetzt, der
+        // alte Konnektor stimmt nicht mehr, der neue steht noch nicht fest.
+        assertTrue(bv.terminalKonnektorSetzen(id, null, ALLES).geklappt());
+        assertNull(bv.terminal(id, ALLES).orElseThrow().konnektorId());
+    }
+
+    @Test @Order(44)
+    @DisplayName("Ein Terminal ohne Konnektor steht trotzdem in der Liste")
+    void ohneKonnektorInDerListe() {
+        var seite = bv.terminals(Bestandsverwaltung.Filter.leer(), null, false, 1, 200, ALLES);
+        assertTrue(seite.eintraege().stream().anyMatch(t -> "KT-OHNE-KONN".equals(t.terminalId())),
+                "Ein LEFT JOIN, kein JOIN: Sonst verschwindet genau das Gerät aus der "
+                + "Übersicht, das noch Aufmerksamkeit braucht.");
+    }
+
+    @Test @Order(45)
+    @DisplayName("Die Liste ist standardmäßig nach Einrichtung sortiert")
+    void standardsortierung() {
+        var seite = bv.terminals(Bestandsverwaltung.Filter.leer(), null, false, 1, 200, ALLES);
+        var namen = seite.eintraege().stream()
+                .map(Bestandsverwaltung.Terminal::organisation).toList();
+        var sortiert = namen.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
+        assertEquals(sortiert, namen,
+                "Alphabetisch nach Gerätenamen war die falsche Grundordnung: In einem MVZ "
+                + "heißen die Geräte in jeder Betriebsstätte gleich. Nach Einrichtung "
+                + "sortiert steht zusammen, was zusammengehört.");
+    }
 }

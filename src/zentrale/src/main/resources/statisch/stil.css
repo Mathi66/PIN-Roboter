@@ -701,7 +701,16 @@ tr > th:last-child,  tr > td:last-child  { padding-right:var(--karte-x); }
   transition: border-color .15s, background .15s;
 }
 .sicht:hover { border-color:var(--akzent); background:var(--akzent-hg); }
+/* Die Sichten sind seit dem 11.08.2026 Links, keine Radios: Ein Link traegt
+   nur Zeitraum und Sicht, und genau das setzt eine Feinauswahl zurueck. Die
+   Regel fuer das versteckte Radio bleibt fuer aeltere Markup-Reste stehen. */
+.sicht { text-decoration:none; color:inherit; }
 .sicht input { position:absolute; opacity:0; width:1px; height:1px; }
+.sicht:focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }
+/* Hinweis unter den Sichten, ueber die volle Breite des Rasters. */
+.sichten-fuss { grid-column:1/-1; margin:0; }
+/* Abstand aus dem Raster statt aus einem Inline-Style. */
+.abstand-oben { margin-top:var(--r4); }
 .sicht:focus-within { outline:3px solid var(--akzent); outline-offset:2px; }
 .sicht.gewaehlt { border-color:var(--akzent); background:var(--akzent-hg); border-width:2px; padding:calc(var(--r3) - 1px); }
 .sicht-name { font-weight:640; font-size:.9rem; }

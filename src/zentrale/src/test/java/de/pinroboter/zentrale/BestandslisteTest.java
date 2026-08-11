@@ -94,6 +94,8 @@ class BestandslisteTest {
                     DELETE FROM konnektor WHERE organisation_id IN (SELECT id FROM organisation
                       WHERE bezeichnung LIKE '%Liste')""");
             s.executeUpdate("DELETE FROM geraetegruppe WHERE bezeichnung LIKE 'Testgruppe%'");
+            s.executeUpdate("DELETE FROM geraetegruppe WHERE einrichtung LIKE '%Einrichtung Liste'");
+            s.executeUpdate("DELETE FROM organisation WHERE bezeichnung = 'Fremde Einrichtung Liste'");
             s.executeUpdate("DELETE FROM organisation WHERE bezeichnung = 'Testeinrichtung Liste'");
             s.executeUpdate("DELETE FROM organisation WHERE bezeichnung = 'Testverbund Liste'");
         }
@@ -146,11 +148,14 @@ class BestandslisteTest {
     void unbekannteSortierung() {
         // Der Wert kommt aus der URL und geht unmittelbar in die Abfrage ein -
         // ohne Weissliste waere das eine SQL-Einschleusung.
-        assertEquals(Bestandsverwaltung.Sortierung.BEZEICHNUNG,
+        // Vorgabe ist seit dem 11.08.2026 die EINRICHTUNG, nicht mehr die
+        // Bezeichnung: In einem MVZ heissen die Geraete in jeder
+        // Betriebsstaette gleich (Vorgabe PO).
+        assertEquals(Bestandsverwaltung.Sortierung.EINRICHTUNG,
                 Bestandsverwaltung.Sortierung.aus("gibtesnicht"));
-        assertEquals(Bestandsverwaltung.Sortierung.BEZEICHNUNG,
+        assertEquals(Bestandsverwaltung.Sortierung.EINRICHTUNG,
                 Bestandsverwaltung.Sortierung.aus(null));
-        assertEquals(Bestandsverwaltung.Sortierung.BEZEICHNUNG,
+        assertEquals(Bestandsverwaltung.Sortierung.EINRICHTUNG,
                 Bestandsverwaltung.Sortierung.aus("bezeichnung; DROP TABLE kartenterminal"));
         assertEquals(Bestandsverwaltung.Sortierung.MODELL,
                 Bestandsverwaltung.Sortierung.aus("MODELL"), "Groß- und Kleinschreibung egal");
@@ -268,7 +273,7 @@ class BestandslisteTest {
 
     @Test @Order(23)
     @DisplayName("Eine Gruppe nimmt nur Geräte ihrer eigenen Einrichtung auf")
-    void gruppeBleibtInIhrerEinrichtung() {
+    void gruppeBleibtInIhrerEinrichtung() throws Exception {
         // FA-GER-050: Eine Gruppe liegt innerhalb genau einer Einrichtung.
         // Waere das ueber eine Massenaktion aushebelbar, waere die
         // Mandantentrennung offen.
@@ -281,8 +286,16 @@ class BestandslisteTest {
         assertEquals(4, e.geaendert(), () -> "Hinweise: " + e.hinweise());
         assertTrue(e.vollstaendig());
 
-        assertNull(gv.anlegen("Testgruppe Fremd", "Ganz andere Einrichtung", 60));
-        long fremdeGruppe = gv.alle("Ganz andere Einrichtung", ALLES).get(0).id();
+        // Die fremde Einrichtung muss eine ECHTE Organisationseinheit sein:
+        // Seit Migration 23 gibt es keine Gruppen ohne Mandantenzuordnung mehr.
+        try (Statement st = db.verbindung().createStatement()) {
+            st.executeUpdate("""
+                    INSERT INTO organisation (bezeichnung, art, eltern_id, ist_demo)
+                    SELECT 'Fremde Einrichtung Liste', 'EINRICHTUNG', eltern_id, FALSE
+                    FROM organisation WHERE bezeichnung = 'Testeinrichtung Liste'""");
+        }
+        assertNull(gv.anlegen("Testgruppe Fremd", "Fremde Einrichtung Liste", 60));
+        long fremdeGruppe = gv.alle("Fremde Einrichtung Liste", ALLES).get(0).id();
         var f = bv.massenGruppeZuweisen(ids, fremdeGruppe, ALLES);
         assertEquals(0, f.geaendert(), "kein Gerät darf in eine fremde Einrichtung wandern");
         assertFalse(f.hinweise().isEmpty());

@@ -2413,3 +2413,152 @@ nach einem Fehler in der Anzeige.
 Neuaufbauten standen dort sechzehn Kennzeichen für neun existierende Karten. Das
 Löschen nimmt sie jetzt mit — und zwar vor den Terminals, danach sind die
 Kartenhandles nicht mehr auffindbar.
+
+---
+
+## Kartenterminals ohne Konnektor — und eine Liste, die sich nach der Praxis ordnet
+
+**Vorgaben PO, 11.08.2026:**
+1. „Es sollen auch KT manuell aufgenommen werden die nicht aus einem Infomodell
+   aus einem Konnektor ausgelesen wurden. Dann soll die Datenbeziehung zu einer
+   zugeordneten Praxis erfolgen."
+2. „Die Standardsortierung der KT Liste soll nach Konnektor oder Praxis
+   erfolgen."
+
+### Der Konnektor war Pflicht — und das ging an der Praxis vorbei
+
+Bis dahin galt: erst der Konnektor, dann das Terminal, und die Einrichtung ergab
+sich aus dem Konnektor. Das setzt eine Reihenfolge voraus, die es im Alltag
+nicht gibt: Ein Gerät wird geliefert und aufgestellt, **bevor** es am Konnektor
+angemeldet ist.
+
+Jetzt ist die **Einrichtung das Pflichtfeld und der Konnektor die Ergänzung**.
+Technisch stand die Einrichtung immer schon in der Zeile — sie war nur fachlich
+abgeleitet.
+
+Ein Gerät ohne Konnektor nimmt nicht an der PIN-Automatik teil; das SICCT-
+Kommando sendet der Konnektor. Das steht **oben auf der Geräteseite**, mit der
+Auswahl zum Nachtragen direkt darunter. Wer den Hinweis liest, will ihn genau
+jetzt erledigen.
+
+### Eine Falle, die zuschnappen wollte
+
+Die Abfrage der Geräteliste verband mit `JOIN konnektor`. Ein Terminal ohne
+Konnektor wäre damit **aus der Liste gefallen** — ausgerechnet das Gerät, das
+noch Aufmerksamkeit braucht. Jetzt `LEFT JOIN`, und ein Test hält es fest.
+
+Dieselbe Sorgfalt an der Anzeige: In der Spalte steht „nicht zugeordnet" statt
+eines leeren Feldes. Leer wäre die schlechteste Antwort — man sähe nicht, ob die
+Angabe fehlt oder die Anzeige klemmt.
+
+### Sortierung: die Praxis zuerst
+
+Vorgabe war alphabetisch nach Gerätenamen. Das ist die falsche Grundordnung,
+seit das Demoszenario ein MVZ ist: Neunmal „Behandlung 1" untereinander ist
+keine Liste. Jetzt Einrichtung, dann Konnektor, dann Gerätename — man findet ein
+Gerät dort, wo man es sucht.
+
+### Zwei Testfehler, die wie Produktfehler aussahen
+
+**„Diesen Konnektor gibt es nicht mehr."** Zwei neue Tests scheiterten daran.
+Ursache war nicht der Code, sondern die Testreihenfolge: Der Konnektor aus dem
+Aufbau wird von einem früheren Test gelöscht. Die neuen Tests legen sich jetzt
+einen eigenen an.
+
+**Die alten Nachweise sendeten kein `organisationId`.** Meine erste Fassung der
+Route verlangte es strikt — damit wären auf einen Schlag mehrere bestehende
+Nachweise rot geworden, ohne dass am Produkt etwas falsch ist. Die Route leitet
+die Einrichtung jetzt aus dem Konnektor ab, wenn nur dieser angegeben ist. Das
+ist keine Aufweichung der Mandantengrenze: Der Konnektor wird selbst gegen den
+Geltungsbereich geprüft.
+
+### Die Sortierung war unsichtbar
+
+Der neue Nachweis „die Geräteliste kommt nach Einrichtung sortiert" wurde rot —
+und deckte auf, dass **die Einrichtung in der Geräteliste gar nicht stand**. Die
+Sortierung griff, aber niemand konnte sie sehen: Die Liste wirkte willkürlich
+geordnet.
+
+Die Einrichtung steht jetzt in der zweiten Spalte, der Konnektor als Zweitzeile
+darunter — organisatorische und technische Zugehörigkeit an einer Stelle. Keine
+neue Spalte: Die Achtspaltengrenze der Oberfläche gilt weiter, und ein
+Prüfstandsnachweis wacht darüber.
+
+Mein erster Nachweis war dabei selbst falsch gebaut: Er suchte über die **ganze
+Seite**, und darüber steht die Konnektorliste. Er meldete eine Unordnung, die es
+nicht gab. Jetzt liest er nur den Abschnitt der Terminalliste.
+
+### Und ein Nachweis, der bei Last umfiel
+
+`FA-PRO-070` („volles Protokoll hält die Kernfunktion nicht an") wurde rot: 2
+statt 3 Verifikationen. Kein Produktfehler — parallel lief ein Bau, und der
+Nachweis schlief sechsmal fest 11 Sekunden.
+
+Das Prinzip steht seit Tagen im Skript: *„Feste Wartezeiten machen Tests
+wetterfühlig — sie werden rot, wenn eine Maschine langsamer ist, und das sagt
+nichts über das Produkt aus."* An dieser Stelle war es trotzdem nicht angewandt.
+Jetzt wird aktiv gewartet, bis das Ziel erreicht ist, höchstens zwölf Runden.
+
+---
+
+## Die Gruppenverwaltung — was eine einfache Frage freilegte
+
+**Ausgangspunkt (PO, 11.08.2026):** „In der Übersicht werden 9 Gruppen
+verauskunftet. In der Gruppenliste stehen 19. Die Gruppen heissen alle 'Alle
+Geräte'. Was ist da falsch?" Und kurz darauf: „analysiere die Gruppenverwaltung
+von KT. Das funktioniert nicht und hat keine usebility."
+
+### Die Kette
+
+Beide Zahlen waren richtig — sie zählten Verschiedenes. Zehn Gruppen hatten
+keine Organisationseinheit und waren damit für jede mandantengebundene Abfrage
+unsichtbar. Von dort führte jede Antwort eine Schicht tiefer:
+
+| Frage | Was dahinter lag |
+|---|---|
+| Warum haben Gruppen keine Organisation? | `vorgabegruppeAnlegen` legte sie auch ohne an |
+| Warum fand sich keine Organisation? | Die Agent-Registrierung ließ **erfundene** Einrichtungen zu |
+| Warum ließ sie das zu? | Die Auswahlliste bot „Praxis (ohne Zuordnung)" an — eine Sackgasse, die wie eine Wahlmöglichkeit aussah |
+| Warum funktioniert Löschen nicht? | Die Oberfläche übergab fest `"Praxis"` als Einrichtung |
+| Und wenn es „Praxis" gibt? | Dann wandern Geräte **über die Mandantengrenze** |
+| Was noch? | Keine Rechteprüfung bei Intervall und Löschen |
+| Und die Lage-Übersicht? | Fragt Alarme fest für „Praxis" ab — im MVZ **blind** |
+
+### Der schwerste Fund
+
+Die Lage-Übersicht ist die Kernsicht des Produkts: *Muss ich jetzt etwas tun?*
+Sie fragte Alarme fest für die Einrichtung „Praxis" ab. In einer Installation
+mit mehreren Betriebsstätten hätte sie **keinen einzigen Alarm** gezeigt.
+
+Aufgefallen ist das nur, weil ich die Prüfeinrichtung umbenannt hatte — von
+„Praxis" auf „Pruefpraxis". Der Name war stiller Bestandteil der Abfrage; der
+Nachweis prüfte gegen genau den Wert, der im Code stand.
+
+**Das ist die Lehre dieser Runde:** Ein Nachweis, dessen Testdaten zufällig
+denselben Wert tragen wie eine fest verdrahtete Annahme, prüft nichts. Er ist
+grün, weil beide Seiten denselben Fehler machen — dasselbe Muster wie beim
+RSA-OAEP und beim PIN-Übergabemodell.
+
+### Was die Gruppenverwaltung jetzt kann
+
+Detailseite mit Stammdaten, Vorgabewechsel, Geräteliste und Löschen; Umbenennen
+ohne Verlust der Zuordnung; Rückmeldung, was gespeichert wurde; Sortierung nach
+Einrichtung; Geltungsbereich bei jeder ändernden Handlung.
+
+### Fünf Fehler in den eigenen Prüfungen
+
+1. **`grep -c` zählt Zeilen, nicht Treffer.** Acht Sortierköpfe in einer Zeile
+   ergaben „1". Eingeführt hatte ich `grep -c` heute selbst — als Ersatz für
+   `grep -q`, das unter `pipefail` die Pipeline sprengt. Eine Falle durch eine
+   andere ersetzt.
+2. **Dieselbe Spaltenlogik dreimal in awk**, zweimal falsch: einmal über die
+   ganze Seite statt über eine Tabelle, einmal mit fester Spaltenposition.
+   Jetzt `pruefungen/tabelle.py` mit echtem HTML-Parser, Spalte über die
+   Überschrift.
+3. **Der aktive Sortierkopf heißt „Praxis ▴"** — das Werkzeug fand ausgerechnet
+   die Spalte nicht, nach der sortiert wird.
+4. **Ein Nachweis räumte seinen Zustand nicht auf** (Vorgabewechsel) — zum
+   dritten Mal an einem Tag dasselbe Muster. Das Zurücksetzen ist jetzt selbst
+   ein Nachweis: „und wieder zurück".
+5. **„Übersprungen, weil die Lage nicht passt"** bei einem Nachweis, der eine
+   Mandantengrenze prüft. Er stellt die Vorbedingung jetzt selbst her.
