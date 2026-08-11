@@ -91,7 +91,11 @@ public class Zentrale {
         this.agenten = new Agentenverwaltung(db);
         this.gruppen = new Gruppenverwaltung(db);
         this.alarme = new Alarmverwaltung(db);
-        this.demodaten = new Demodaten(db);
+        // Der Tresor wird gleich unten aus der Umgebung geholt; hier wird er
+        // vorgezogen, damit der Demodatensatz die Zugangsdaten seiner Geräte
+        // verschlüsselt ablegen kann — auf demselben Weg wie echte.
+        var demoTresor = de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung();
+        this.demodaten = new Demodaten(db, demoTresor);
         // Ein Tresor fuer beide: Geraete-Zugangsdaten (ADR-0008) und das
         // Mailserver-Kennwort (FA-ALA-020) liegen unter demselben Schluessel.
         var tresor = de.pinroboter.gemeinsam.Geheimnisspeicher.ausUmgebung();
@@ -1608,9 +1612,21 @@ public class Zentrale {
                     </div>""".formatted(sp.prozent(), sp.belegtLesbar(), sp.budgetLesbar()));
         }
 
+        // Nur was WIRKLICH Aufmerksamkeit braucht. Bis zum 11.08.2026 stand
+        // hier "alles ausser OK" — damit landete jedes Behandlungsterminal
+        // ohne SMC-B in der Liste, mit "Der Zustand konnte nicht ermittelt
+        // werden". Bei einem MVZ mit 36 Geraeten waren das 27 Zeilen, hinter
+        // denen keine einzige Handlung stand. Eine Liste, in der fast alles
+        // steht, kann niemand mehr lesen.
+        // Einmal je Seitenaufbau, nicht je Zeile: Bei 5.000 Geraeten waeren
+        // das sonst 5.000 Abfragen fuer eine Tabelle mit 20 Zeilen.
+        Map<String, String> einrichtungen = gruppen.einrichtungJeTerminal();
+
         var auffaellig = alle.stream()
-                .filter(g -> g.ampel() != Ampel.OK)
-                .sorted(Comparator.comparing(g -> g.terminalId)).toList();
+                .filter(g -> g.ampel() == Ampel.WARNUNG || g.ampel() == Ampel.FEHLER)
+                .sorted(Comparator.<Geraetezustand, String>comparing(
+                                g -> einrichtungen.getOrDefault(g.terminalId, g.einrichtung))
+                        .thenComparing(g -> g.terminalId)).toList();
 
         s.append("<div class=\"tafel\"><h3>Was zu tun ist <span class=\"zaehler\">")
          .append(auffaellig.isEmpty() ? "nichts offen" : auffaellig.size() + " Punkte").append("</span></h3>");
@@ -1619,12 +1635,21 @@ public class Zentrale {
         } else {
             s.append("<div class=\"rollbar\"><table><thead><tr><th>Gerät</th><th>Zustand</th><th>Was zu tun ist</th></tr></thead><tbody>");
             for (Geraetezustand g : auffaellig) {
+                // Die Einrichtung gehoert in die ZWEITE Zeile, nicht in eine
+                // eigene Spalte: In einem MVZ heissen neun Geraete "Behandlung
+                // 1". Ohne die Betriebsstaette daneben ist die Zeile wertlos —
+                // man weiss, dass etwas ist, aber nicht wo (Vorgabe PO,
+                // 11.08.2026). Die technische Kennung steht dahinter, weil sie
+                // beim Anruf beim Dienstleister gebraucht wird, im Alltag aber
+                // niemandem etwas sagt.
                 s.append("""
                         <tr><td class="geraet"><a href="/geraete/%s/verlauf" style="color:inherit">%s</a><br><span style="font-weight:400;color:var(--gedaempft);font-size:.85em">%s</span></td>
                         <td>%s</td><td>%s%s</td></tr>"""
-                        .formatted(esc(g.terminalId), esc(anzeigename(g)), esc(g.terminalId),
+                        .formatted(esc(g.terminalId), esc(anzeigename(g)),
+                                esc(einrichtungen.getOrDefault(g.terminalId, g.einrichtung)
+                                        + " · " + g.terminalId),
                                 marke(g),
-                                esc(g.hinweis != null ? g.hinweis : g.pinStatus.erklaerung()),
+                                esc(g.zustandserklaerung()),
                                 g.handlung == null ? "" : "<div class=\"handlung\">" + esc(g.handlung) + "</div>"));
             }
             s.append("</tbody></table></div>");
@@ -3637,6 +3662,15 @@ public class Zentrale {
             Object schluessel = m.get("oeffentlicherSchluessel");
             if (schluessel instanceof String s && !s.isBlank()) {
                 pins.schluesselMerken(agent.id(), s);
+            }
+
+            // Welche PINs der Agent tatsaechlich hat (nur Kartenhandles).
+            // Bis zum 11.08.2026 leitete die Zentrale das allein aus ihren
+            // eigenen Auftraegen ab und zeigte "keine PIN hinterlegt", waehrend
+            // der Agent Karten freischaltete.
+            if (m.get("pinsVorhanden") instanceof List<?> vorhanden) {
+                pins.bestandMelden(agent.id(), vorhanden.stream()
+                        .map(String::valueOf).filter(h -> !h.isBlank()).toList());
             }
 
             boolean modellDa = Boolean.TRUE.equals(m.get("informationsmodellVerfuegbar"));

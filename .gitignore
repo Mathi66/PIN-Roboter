@@ -83,3 +83,6 @@ desktop.ini
 # Projektvorgaben (CLAUDE.md) werden versioniert.
 # Lokale, maschinenspezifische Einstellungen nicht.
 .claude/settings.local.json
+
+# Prüfumgebung für den Excel-Nachweis (openpyxl) — lokal, nicht im Repository
+pruefungen/.venv/

@@ -32,7 +32,24 @@ public class Simulator {
 
     public static void main(String[] args) throws Exception {
         BrainpoolFreischaltung.anwenden();   // muss als Erstes laufen
-        Zustand zustand = Zustand.standardaufbau();
+
+        // Zwei Ausgangslagen, die einander ausschließen:
+        //
+        //   Standardaufbau — vier Geräte, darunter zwei Problemfälle. Grundlage
+        //     aller Systemnachweise. Ein Simulator, der nur gelingende Abläufe
+        //     kennt, erzeugt trügerische Sicherheit (ADR-0007).
+        //
+        //   Demoaufbau — die 36 Geräte des Demodatensatzes, alle erreichbar und
+        //     betriebsbereit. Er zeigt das Produkt im Regelbetrieb.
+        //
+        // Beide nebeneinander wären das Schlechteste von beidem: Die vier
+        // Problemgeräte landen in der Einrichtung des Agenten und stehen dort
+        // ohne Bezug herum, während sie zugleich die Zählungen der Nachweise
+        // verschieben.
+        boolean demo = "an".equalsIgnoreCase(String.valueOf(System.getenv("DEMO_TERMINALS")));
+        Zustand zustand = demo
+                ? Zustand.mitDemoteilnehmern(new Zustand())
+                : Zustand.standardaufbau();
 
         System.out.println("""
                 ────────────────────────────────────────────────────────────

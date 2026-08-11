@@ -116,9 +116,52 @@ bei 5.000 Geräten nicht mehr funktioniert.
 
 ---
 
-## Demodatensatz: das Informationsmodell des Konnektors
+## Demodatensatz: ein MVZ, wie es sie gibt
 
-Der MVZ-Verbund bildet jetzt auch die **Arbeitsplatzstruktur** nach, die der
+**Vorgabe PO, 11.08.2026:** ein realistisches MVZ-Szenario mit erfundenen
+Praxisnamen.
+
+Ein MVZ ist kein Verbund gleichförmiger Praxen. Es hat einen Träger, mehrere
+**Betriebsstätten** an verschiedenen Standorten, gemischte Fachrichtungen und
+sehr unterschiedliche Größen:
+
+| Standort | Betriebsstätte | Fach | Terminals |
+|---|---|---|---:|
+| Nord | Hausarztpraxis Nordstadt | Allgemeinmedizin | 6 |
+| Nord | Kardiologie am Nordring | Kardiologie | 4 |
+| Nord | Orthopädie Nordpark | Orthopädie | 3 |
+| Mitte | Hausärztliche Praxis am Markt | Allgemeinmedizin | 5 |
+| Mitte | Innere Medizin Stadtmitte | Innere Medizin | 4 |
+| Mitte | Radiologie Musterstadt | Radiologie | 2 |
+| Süd | Hausarztpraxis Südhang | Allgemeinmedizin | 5 |
+| Süd | Gynäkologie Südpark | Gynäkologie | 3 |
+| Süd | Chirurgie und Unfallambulanz Süd | Chirurgie | 4 |
+
+**Die unterschiedlichen Größen sind der Punkt.** Eine Oberfläche, die mit neun
+gleichförmigen Vierergruppen gut aussieht, sagt nichts über eine Betriebsstätte
+mit sechs Geräten und eine mit zwei. Dass die hausärztlichen Stätten die
+größten sind, entspricht der Wirklichkeit.
+
+Alle Namen sind erfunden; „Musterstadt" macht das an jeder Stelle sichtbar.
+
+> **Fachlich entscheidend:** Die SMC-B ist die **Institutionskarte einer
+> Betriebsstätte**, nicht die Karte eines Arztes. Jede Stätte hat deshalb genau
+> eine, und sie steckt am Empfang.
+
+### Eine Beschreibung, zwei Verwender
+
+Das Szenario steht in `gemeinsam/Demoszenario.java`. Von dort lesen **beide**:
+die Zentrale, um den Bestand anzulegen, und der Simulator, um dieselben Geräte
+nachzubilden.
+
+Zwei gepflegte Listen laufen irgendwann auseinander — und die Folge wäre
+sichtbar gewesen: Der Agent hätte Geräte gemeldet, die zu keiner Betriebsstätte
+gehören, und neben jedem Demogerät stünde ein zweites, unbekanntes. Dieselbe
+Überlegung wie bei `SmcbProtokoll` (ADR-0011).
+
+### Das Informationsmodell des Konnektors
+
+Der Demodatensatz bildet auch die **Arbeitsplatzstruktur** nach, die der
 Konnektor führt (`[gemSpec_Kon]`, Aufrufkontext `TUC_KON_000`):
 
 ```mermaid
@@ -141,14 +184,83 @@ graph TB
 > freizuschalten.
 
 
-Im gesamten Verbund: **36 Arbeitsplätze, 36 Terminals, davon 9 mit SMC-B** —
-eine je Praxis. Alle Terminals haben die Managementschnittstelle freigeschaltet
-(Vorgabe PO, 07.08.2026).
+Im gesamten MVZ: **36 Arbeitsplätze, 36 Terminals, davon 9 mit SMC-B** — eine
+je Betriebsstätte. Alle Terminals haben die Managementschnittstelle
+freigeschaltet (Vorgabe PO, 07.08.2026).
 
 Warum die Arbeitsplätze im eigenen Datenmodell stehen und nicht nur im
 Konnektor: Der Aufrufkontext entscheidet, **welches** Terminal der Konnektor
 anspricht. Ohne die Zuordnung im eigenen Bestand könnte der Agent nicht
 bestimmen, mit welcher Arbeitsplatz-Kennung er eine bestimmte SMC-B erreicht.
+
+### Der Simulator bildet diese Geräte nach (Vorgabe PO, 11.08.2026)
+
+Bis dahin war der Demodatensatz reine Bestandsverwaltung: 36 Geräte in der
+Datenbank, aber kein einziges davon antwortete. Die Oberfläche zeigte 36 Zeilen
+im Zustand „unbekannt" — man konnte die Mandantentrennung darin prüfen, aber
+nicht sehen, was das Produkt eigentlich tut.
+
+`Zustand.mitDemoteilnehmern()` bildet dieselben 36 Geräte im Simulator nach —
+aus derselben Beschreibung, aus der die Zentrale ihren Bestand anlegt
+(`Demoszenario`). Die Kennungen können damit gar nicht mehr auseinanderlaufen.
+
+Damit gilt im Demoaufbau: alle Geräte erreichbar, Firmware 4.3.0,
+Managementschnittstelle frei, neun SMC-B mit hinterlegter PIN. Die neun
+Empfangsterminals werden binnen eines Prüfintervalls freigeschaltet und halten
+danach je eine offene Verbindung zur Remote SMCB API.
+
+**Der Demoaufbau ersetzt den Standardaufbau, er ergänzt ihn nicht.** Zwei Gründe:
+
+1. Die Systemnachweise zählen gegen die vier Geräte des Standardaufbaus und
+   gegen dessen Fehlerfälle. 36 weitere würden diese Zählungen verschieben.
+2. Umgekehrt landen die vier Problemgeräte in der Einrichtung, für die der Agent
+   registriert ist. Sie stünden dort ohne Bezug herum — in der Vorführung sah
+   „Kardiologie Nord" dadurch acht Geräte, vier davon mit Fehlerbildern, die zu
+   keiner Praxis gehörten.
+
+Geschaltet wird über `DEMO_TERMINALS=an`. Das setzt `docker-compose.yml`; der
+Prüfstand setzt es nicht und misst weiter gegen den Standardaufbau mit seinen
+unangenehmen Fällen.
+
+### Zugangsdaten und PIN-Kennzeichen (Vorgabe PO, 11.08.2026)
+
+Zwei Dinge fehlten dem Demodatensatz, obwohl er 36 Geräte hatte:
+
+**Die Zugangsdaten der Geräte.** Jedes Demo-Terminal hat jetzt einen
+Administrationszugang, jeder Demo-Konnektor ein Kennwort — **verschlüsselt
+abgelegt, auf demselben Weg wie ein echtes** (AES-256-GCM über den
+Geheimnisspeicher, [ADR-0008](../adr/0008-ablage-von-geraete-zugangsdaten.md)).
+Ein Demodatensatz, der sein Kennwort im Klartext ablegte, würde genau die
+Stelle ungeprüft lassen, auf die es ankommt. Fehlt der `GEHEIMNIS_SCHLUESSEL`,
+entstehen die Daten trotzdem — nur ohne Zugangsdaten. Wer den Demodatensatz
+ausprobieren will, hat den Schlüssel oft noch nicht gesetzt.
+
+**Das Kennzeichen „PIN hinterlegt".** Hier lag ein echter Fehler, nicht nur eine
+Lücke im Demodatensatz:
+
+> Die Zentrale leitete das Kennzeichen allein aus **ihren eigenen Aufträgen**
+> ab. Eine PIN, die auf einem anderen Weg zum Agenten kam — aus seiner
+> verschlüsselten Ablage nach einem Neustart, aus der Umgebung im Testaufbau —,
+> war für sie unsichtbar. Die Oberfläche zeigte „keine PIN hinterlegt", während
+> der Agent Karten freischaltete.
+
+Der Agent meldet jetzt in jedem Bestandsbericht mit, **für welche Karten er eine
+PIN hat** — nur die Kartenhandles, nie ein Wert und nie ein Chiffrat. Er ist an
+dieser Stelle die Wahrheit: Er hat die PIN oder nicht.
+
+Der gemeldete Bestand **ergänzt nur, er löscht nie**. Ein Eintrag, den der Agent
+nicht mehr meldet, bleibt stehen — das ist die Warnung „PIN neu zu hinterlegen"
+nach einem Agentwechsel (FA-INS-040). Würde hier gelöscht, verschwände die
+Warnung zusammen mit dem Problem, das sie meldet. Gelöscht wird eine PIN
+weiterhin ausschließlich über einen ausdrücklichen Auftrag.
+
+> **Die PINs der neun Demokarten stehen als Umgebungsvariablen im
+> `docker-compose.yml`.** Das ist der dokumentierte Testaufbau-Weg, und der
+> Agent warnt beim Start ausdrücklich davor. Im Betrieb wird die PIN über die
+> Oberfläche hinterlegt und Ende-zu-Ende verschlüsselt übertragen
+> ([ADR-0009](../adr/0009-pin-hinterlegen-ueber-die-oberflaeche.md)); eine so
+> hinterlegte PIN hat Vorrang. Beim Einsatz mit echter Hardware sind die neun
+> Zeilen zu entfernen.
 
 ---
 
@@ -253,3 +365,62 @@ filterte und drei Treffer erwartete.
 Zweiter Befund derselben Klasse: `List.toArray()` liefert `Object[]`, der
 PostgreSQL-Treiber braucht `Long[]` — die Massenaktion scheiterte zur Laufzeit
 und meldete „0 geändert".
+
+---
+
+## Nachtrag 11.08.2026: Was die Lage-Übersicht unbrauchbar machte
+
+Beim Ausprobieren des Demoszenarios fiel zweierlei auf — der PO hat das erste
+benannt, das zweite stand daneben im Bild.
+
+### 1. Neun Geräte heißen „Behandlung 1"
+
+In einem MVZ trägt jede Betriebsstätte dieselben Raumbezeichnungen. Die
+Lage-Übersicht zeigte neunmal „Behandlung 1" mit der Kennung `KT-MALL-B1`
+darunter — man sah, dass etwas ist, aber nicht **wo**.
+
+Die Zeile trägt jetzt die Betriebsstätte:
+
+```
+Behandlung 1
+Hausarztpraxis Nordstadt · KT-NHAU-B1
+```
+
+**Die Zuordnung kommt aus dem Bestand, nicht aus der Meldung des Agenten.** Das
+ist der entscheidende Punkt: Ein Agent kennt genau **eine** Einrichtung — die
+aus seiner Registrierung. In einem MVZ betreut er Geräte mehrerer
+Betriebsstätten, und dann trügen in der Oberfläche alle denselben Namen.
+
+Geladen wird die Zuordnung **einmal je Seitenaufbau** (`einrichtungJeTerminal`),
+nicht je Zeile. Bei 5.000 Geräten wären das sonst 5.000 Abfragen für eine
+Tabelle mit zwanzig Zeilen.
+
+### 2. 27 Zeilen unter „Was zu tun ist", hinter denen nichts zu tun war
+
+Die Tafel zeigte **alles außer OK** — damit landete jedes Behandlungsterminal
+darin, mit der Meldung „Der Zustand konnte nicht ermittelt werden".
+
+Diese Geräte haben gar keine SMC-B. Es gibt bei ihnen nichts freizuschalten,
+und „unbekannt" ist keine Unsicherheit, sondern die richtige Antwort: Es gibt
+nichts zu wissen.
+
+| | vorher | jetzt |
+|---|---|---|
+| Tafel „Was zu tun ist" | alles außer OK (27 Zeilen) | nur WARNUNG und FEHLER (0 Zeilen) |
+| Zustand ohne SMC-B | „unbekannt" | „keine SMC-B" |
+| Erklärung | „Der Zustand konnte nicht ermittelt werden." | „In diesem Gerät steckt keine SMC-B. Es wird überwacht, aber es gibt nichts freizuschalten." |
+
+**Eine Liste, in der fast alles steht, sagt nichts mehr.** Der Zweck der
+Lage-Übersicht nach [ADR-0005](../adr/0005-protokollierung-und-nachvollziehbarkeit.md)
+ist, dass jemand unter Zeitdruck in Sekunden erkennt, ob etwas zu tun ist. 27
+Zeilen ohne Handlung machen genau das unmöglich.
+
+### 3. Karteileichen beim Neuaufbau des Demodatensatzes
+
+`pin_hinterlegt` blieb beim Löschen stehen. Die Einträge stammen nicht aus dem
+Demodatensatz, sondern vom Agenten — er meldet, für welche Karten er eine PIN
+hat. Nach zwei Neuaufbauten standen dort sechzehn Kennzeichen für neun
+existierende Karten.
+
+Das Löschen nimmt sie jetzt mit, und zwar **vor** den Terminals: Danach sind die
+Kartenhandles nicht mehr auffindbar.

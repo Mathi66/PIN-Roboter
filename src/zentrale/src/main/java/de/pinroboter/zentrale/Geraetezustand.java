@@ -29,10 +29,29 @@ public class Geraetezustand {
      * es wird überwacht, nur nicht automatisiert (A_24074). Das muss die
      * Oberfläche unterscheiden, sonst wirkt eine gesunde Anlage alarmiert.
      */
+    /**
+     * Ob in diesem Terminal eine SMC-B steckt.
+     *
+     * <p>Der Unterschied ist größer, als er aussieht: Ein Gerät <b>ohne</b>
+     * SMC-B hat nichts freizuschalten. Es wird überwacht, aber es kann bei ihm
+     * nichts zu tun geben. Ohne diese Unterscheidung stand jedes
+     * Behandlungsterminal mit „Der Zustand konnte nicht ermittelt werden" in
+     * der Liste „Was zu tun ist" — bei einem MVZ mit 36 Geräten waren das 27
+     * Zeilen, hinter denen keine einzige Handlung stand. Eine Liste, in der
+     * fast alles steht, sagt nichts mehr (Vorgabe PO, 11.08.2026).
+     */
+    public boolean hatSmcb() {
+        return kartenhandle != null && !kartenhandle.isBlank();
+    }
+
     public Ampel ampel() {
         if (!erreichbar) return Ampel.FEHLER;
         if (automatikAngehalten) return Ampel.FEHLER;
         if (aktualisierend) return Ampel.WARNUNG;
+        // Ohne SMC-B gibt es keinen PIN-Zustand, den man bewerten könnte.
+        // „Unbekannt" ist hier keine Unsicherheit, sondern schlicht die
+        // richtige Antwort: Es gibt nichts zu wissen.
+        if (!hatSmcb()) return Ampel.UNBEKANNT;
         return pinStatus.ampel();
     }
 
@@ -40,7 +59,24 @@ public class Geraetezustand {
         if (!erreichbar) return "nicht erreichbar";
         if (aktualisierend) return "wird aktualisiert";
         if (automatikAngehalten) return "Automatik angehalten";
+        if (!hatSmcb()) return "keine SMC-B";
         return pinStatus.anzeige();
+    }
+
+    /**
+     * Erklärung des Zustands im Klartext — für die Spalte „Was zu tun ist".
+     *
+     * <p>Bei einem Gerät ohne SMC-B ist die Antwort keine Fehlermeldung,
+     * sondern eine Feststellung. „Der Zustand konnte nicht ermittelt werden"
+     * klingt nach einer Störung, wo keine ist.
+     */
+    public String zustandserklaerung() {
+        if (hinweis != null && !hinweis.isBlank()) return hinweis;
+        if (!hatSmcb()) {
+            return "In diesem Gerät steckt keine SMC-B. Es wird überwacht, "
+                 + "aber es gibt nichts freizuschalten.";
+        }
+        return pinStatus.erklaerung();
     }
 
     public String zuletztGeprueftText() {

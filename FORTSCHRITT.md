@@ -2218,3 +2218,198 @@ kein belegter Verbindungsplatz an einem Gerät ohne PIN.
 Zeitverhalten und Verbindungsdauer an echter Hardware, 1.250 offene Verbindungen
 unter Last, die Worldline-Variante, `FA-PIN-060`. Der Umbau macht die Messung am
 Testaufbau nicht überflüssig — er gibt ihr einen konkreten Gegenstand.
+
+---
+
+## Der Demodatensatz wird lebendig
+
+**Vorgabe PO, 11.08.2026:** In allen neun Praxen steht am Empfang ein
+Kartenterminal mit eingelegter SMC-B, alle Geräte laufen auf der neuesten
+Firmware und unterstützen Remote-PIN, für alle Karten sind PINs hinterlegt, alle
+Geräte antworten.
+
+### Was fehlte
+
+Der Demodatensatz war reine Bestandsverwaltung: 36 Geräte in der Datenbank, aber
+kein einziges antwortete. Die Oberfläche zeigte 36 Zeilen im Zustand
+„unbekannt". Man konnte darin die Mandantentrennung prüfen — aber nicht sehen,
+was das Produkt eigentlich tut.
+
+### Was gebaut wurde
+
+`Zustand.mitDemoteilnehmern()` bildet dieselben 36 Geräte im Simulator nach. Die
+Kennungen müssen dabei genau zu `Demodaten.kuerzel()` passen (`KT-NKAR-EMP`,
+Kartenhandle `card-smcb-NKAR`) — sonst meldet der Agent Geräte, die zu keiner
+Praxis gehören, und neben jedem Demogerät stünde ein zweites, unbekanntes.
+
+Ergebnis nach einem Prüfintervall: neun Verbindungen zur Remote SMCB API stehen,
+neun Karten sind freigeschaltet, **genau eine PIN-Übergabe je Karte**. Danach
+Ruhe — die Verbindungen bleiben, weitere Übergaben gibt es nicht.
+
+### Was beim Ausprobieren auffiel
+
+**„Kardiologie Nord" hatte plötzlich acht Geräte.** Der Agent ist für diese
+Einrichtung registriert, also landeten die vier Geräte des Standardaufbaus dort
+— darunter das Terminal ohne PEviM und das mit abgeschaltetem PEviM. Sie
+gehörten zu keiner Praxis und widersprachen genau dem, was der Demodatensatz
+zeigen soll.
+
+Der Demoaufbau **ersetzt** den Standardaufbau deshalb, statt ihn zu ergänzen.
+Umgekehrt gilt dasselbe: Der Prüfstand setzt `DEMO_TERMINALS` nicht und misst
+weiter gegen die vier Geräte mit ihren Fehlerfällen. Zwei Ausgangslagen, die
+einander ausschließen — und jede hat ihren Zweck.
+
+### Dieselbe Falle zum zweiten Mal
+
+Der Durchstichnachweis wurde plötzlich rot bei „der Simulator bietet die Remote
+SMCB API an" — obwohl er sie offensichtlich anbot, weil alle folgenden Nachweise
+sie nutzten.
+
+Ursache: `docker logs … | grep -q` unter `set -o pipefail`. grep beendet nach
+dem ersten Treffer, `docker logs` bekommt SIGPIPE, die Pipeline gilt als
+gescheitert. Beim ersten Lauf ging es zufällig gut, weil die Ausgabe noch kurz
+war.
+
+**Diese Falle steht seit Tagen im Entwicklerhandbuch — sie hat schon einmal 25
+Nachweise erwischt.** Ich habe sie trotzdem wieder eingebaut. Jetzt steht die
+Warnung zusätzlich direkt im Skript, an der Stelle, wo sie zuschlug. Ein
+Eintrag in einer Fallenliste hilft nur dem, der die Liste vorher liest.
+
+---
+
+## PINs und Zugangsdaten im Demodatensatz — und ein Anzeigefehler
+
+**Vorgabe PO, 11.08.2026:** „Kannst du dann bitte auch die SMC-B PIN und die
+Zugangsdaten zu den KT in die Demo-Datenbank ablegen. Ich sehe dort keine PINs."
+
+### Der Anzeigefehler dahinter
+
+Die PINs *waren* da — der Agent hatte sie und schaltete damit neun Karten frei.
+Die Oberfläche zeigte trotzdem „keine PIN hinterlegt". Ursache:
+
+> Die Zentrale leitete das Kennzeichen allein aus **ihren eigenen Aufträgen** ab.
+> Eine PIN, die auf einem anderen Weg zum Agenten kam — aus seiner
+> verschlüsselten Ablage nach einem Neustart, aus der Umgebung im Testaufbau —,
+> war für sie unsichtbar.
+
+Das ist kein Demo-Problem. Es trifft jede Instanz nach einem Neustart des
+Agenten: Er lädt seine PINs aus der Ablage, die Zentrale weiß nichts davon.
+
+**Behoben:** Der Agent meldet in jedem Bestandsbericht mit, für welche Karten er
+eine PIN hat — nur Kartenhandles, nie ein Wert, nie ein Chiffrat. Er ist an
+dieser Stelle die Wahrheit.
+
+Der gemeldete Bestand **ergänzt nur, er löscht nie.** Ein Eintrag, den der Agent
+nicht mehr meldet, bleibt stehen — genau das ist die Warnung „PIN neu zu
+hinterlegen" nach einem Agentwechsel (FA-INS-040). Würde hier gelöscht,
+verschwände die Warnung zusammen mit dem Problem, das sie meldet. Ein eigener
+Test hält das fest, samt Begründung im Fehlertext.
+
+### Zugangsdaten
+
+Jedes Demo-Terminal hat jetzt einen Administrationszugang, jeder Demo-Konnektor
+ein Kennwort — **verschlüsselt, auf demselben Weg wie ein echtes** (ADR-0008).
+Ein Demodatensatz, der sein Kennwort im Klartext ablegte, ließe genau die Stelle
+ungeprüft, auf die es ankommt. Der Test prüft beides: dass das Chiffrat da ist,
+und dass das Kennwort nirgends im Klartext in der Datenbank steht.
+
+Fehlt der `GEHEIMNIS_SCHLUESSEL`, entstehen die Demodaten trotzdem — nur ohne
+Zugangsdaten. Wer den Datensatz ausprobieren will, hat den Schlüssel oft noch
+nicht gesetzt; ein Abbruch wäre die schlechtere Wahl.
+
+### Ein Nachweis, der von der Sitzung abhing
+
+Der Excel-Nachweis wurde rot: `ModuleNotFoundError: No module named 'openpyxl'`.
+Die Python-Umgebung lag im Scratchpad **einer Sitzung**, mit der Sitzungskennung
+im Pfad. Beim nächsten Lauf war das Verzeichnis weg.
+
+Ein Nachweis, dessen Ergebnis davon abhängt, *wer* ihn startet, ist kein
+Nachweis. Die Umgebung liegt jetzt unter `pruefungen/.venv` und wird bei Bedarf
+selbst angelegt. Lässt sie sich nicht herstellen, meldet der Nachweis
+**„NICHT PRUEFBAR"** statt rot — „bestanden" wäre gelogen, „fehlgeschlagen" eine
+Falschmeldung über das Produkt.
+
+### Zwei Nachweise, die den Fix erst richtig gemacht haben
+
+Der Vollauf meldete danach zwei rote Nachweise — beide berechtigt.
+
+**„Ohne fehlende PIN erscheint die Tafel gar nicht" (FA-INS-040).** Die Warnung
+„PIN neu zu hinterlegen" erschien, obwohl nichts fehlte. Ursache war nicht der
+neue Meldeweg, sondern eine Schwäche, die er sichtbar machte:
+
+> `schluessel_gemeldet` wurde bei **jeder** Bestandsmeldung fortgeschrieben. Das
+> Feld hieß damit faktisch „zuletzt gesehen", nicht „seit wann ein anderer
+> Schlüssel". Die Warnung vergleicht es aber mit dem Zeitpunkt der PIN — und
+> galt so binnen eines Prüfintervalls für jede vorhandene PIN.
+
+Ein Fehlalarm, der die echte Warnung wertlos macht. Der Zeitpunkt wird jetzt nur
+bei einer **tatsächlichen Änderung** des Schlüssels gesetzt. Drei Tests halten
+das fest, samt Gegenprobe: Nach einem echten Schlüsselwechsel muss die Warnung
+kommen.
+
+Der Nachweis selbst hatte einen zweiten Fehler: Er setzte `schluessel_gemeldet`
+künstlich auf jetzt, um einen Agentwechsel nachzustellen — und räumte das nicht
+wieder auf. Alles danach maß einen Zustand, den er selbst erzeugt hatte.
+
+**„Die PIN erreicht den Standort-Agenten und wird quittiert".** Der Nachweis
+zählte `pin_hinterlegt` über **alle** Agenten. Das Kennzeichen hängt aber an
+(agent_id, kartenhandle), und ein Prüflauf registriert mehrere Agenten
+nacheinander — seit dem neuen Meldeweg melden sie alle dieselbe Karte. Der
+Nachweis fragt jetzt nach dem Agenten dieses Laufs. Das ist präziser, nicht
+schwächer: Die Aussage lautet „dieser Agent hat die PIN bekommen".
+
+---
+
+## Ein realistisches MVZ — und was dabei an der Oberfläche auffiel
+
+**Vorgaben PO, 11.08.2026:** Praxisnamen durch erfundene Arztpraxennamen
+ersetzen, ein realistisches MVZ-Szenario nachbilden. Dazu der Befund aus einem
+Screenshot: „Mit der Bezeichnung der KT in dieser Liste kann niemand was
+anfangen. Zum einen heissen die KT alle gleich, und ich weiß nicht zu welcher
+organisatorischen Einheit das KT gehört."
+
+### Das Szenario
+
+Neun Betriebsstätten eines MVZ, drei Standorte, gemischte Fachrichtungen und
+**unterschiedliche Größen** — von der Radiologie mit zwei Geräten bis zur
+Hausarztpraxis mit sechs. Das ist der eigentliche Punkt: Eine Oberfläche, die
+mit neun gleichförmigen Vierergruppen gut aussieht, sagt nichts über eine
+Betriebsstätte mit sechs Geräten und eine mit zwei.
+
+Das Szenario steht in `gemeinsam/Demoszenario.java`. Von dort lesen **beide**
+Seiten: die Zentrale für den Bestand, der Simulator für die Geräte. Zwei
+gepflegte Listen wären auseinandergelaufen, und die Folge wäre sichtbar
+gewesen — neben jedem Demogerät ein zweites, unbekanntes.
+
+### Der Befund des PO
+
+Neun Geräte hießen „Behandlung 1". Die Zeile trägt jetzt die Betriebsstätte,
+und zwar **aus dem Bestand, nicht aus der Meldung des Agenten**. Ein Agent kennt
+genau eine Einrichtung — die aus seiner Registrierung. In einem MVZ betreut er
+Geräte mehrerer Betriebsstätten, und dann trügen in der Oberfläche alle
+denselben Namen.
+
+### Was daneben im Bild stand
+
+27 von 36 Geräten unter „Was zu tun ist", jedes mit „Der Zustand konnte nicht
+ermittelt werden". Es sind die Behandlungsterminals — sie haben gar keine
+SMC-B. Es gibt bei ihnen nichts freizuschalten, und „unbekannt" ist hier keine
+Unsicherheit, sondern die richtige Antwort: Es gibt nichts zu wissen.
+
+Die Tafel zeigt jetzt nur WARNUNG und FEHLER. Ein Gerät ohne SMC-B meldet
+sachlich „keine SMC-B" statt einer Formulierung, die nach Störung klingt.
+
+**Eine Liste, in der fast alles steht, sagt nichts mehr.** Der Zweck der
+Lage-Übersicht ist, dass jemand unter Zeitdruck in Sekunden erkennt, ob etwas zu
+tun ist. Das war mit 27 handlungslosen Zeilen unmöglich — und es stand seit
+Tagen so da, ohne dass es jemandem aufgefallen wäre. Auffällig wurde es erst,
+als der Demodatensatz echte Zustände bekam. Vorher zeigte die Oberfläche 36
+Zeilen „unbekannt", und das sah nach einer Eigenart des Datensatzes aus statt
+nach einem Fehler in der Anzeige.
+
+### Karteileichen
+
+`pin_hinterlegt` blieb beim Löschen des Demodatensatzes stehen. Nach zwei
+Neuaufbauten standen dort sechzehn Kennzeichen für neun existierende Karten. Das
+Löschen nimmt sie jetzt mit — und zwar vor den Terminals, danach sind die
+Kartenhandles nicht mehr auffindbar.

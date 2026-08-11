@@ -491,6 +491,19 @@ public class Agent {
         if (schluessel != null) meldung.put("oeffentlicherSchluessel", schluessel.oeffentlichBase64());
         if (modell != null) meldung.put("informationsmodell", modell);
 
+        // Fuer welche Karten eine PIN vorliegt - NUR die Kartenhandles, nie ein
+        // Wert und nie ein Chiffrat.
+        //
+        // Warum das noetig ist: Die Zentrale leitete "PIN hinterlegt" bisher
+        // allein aus IHREN EIGENEN Auftraegen ab. Eine PIN, die auf einem
+        // anderen Weg zum Agenten kam - aus der Ablage nach einem Neustart,
+        // aus der Umgebung im Testaufbau -, war fuer sie unsichtbar. Die
+        // Oberflaeche zeigte dann "keine PIN hinterlegt", waehrend der Agent
+        // Karten freischaltete. Ein Zustand, den niemand zusammenbringt.
+        //
+        // Der Agent ist hier die Wahrheit: Er hat die PIN oder nicht.
+        meldung.put("pinsVorhanden", new ArrayList<>(pins.keySet()));
+
         if (senden("/api/agent/bestand", alsJson(meldung))) {
             letzterBestandsabdruck = abdruck;
             System.out.printf("  Bestand gemeldet: %d Terminals, Informationsmodell %s%n",

@@ -38,13 +38,27 @@ public class Pinverwaltung {
 
     // -------------------------------------------------- Schlüssel des Agenten
 
-    /** Nimmt den öffentlichen Schlüssel entgegen. Er ist nicht geheim. */
+    /**
+     * Nimmt den öffentlichen Schlüssel entgegen. Er ist nicht geheim.
+     *
+     * <p><b>{@code schluessel_gemeldet} wird nur bei einer tatsächlichen
+     * Änderung fortgeschrieben.</b> Der Agent meldet seinen Schlüssel in jedem
+     * Durchgang — würde der Zeitpunkt jedes Mal erneuert, hieße das Feld
+     * „zuletzt gesehen" statt „seit wann ein anderer". Genau darauf beruht aber
+     * {@link #neuZuHinterlegen()}: Ein Schlüssel, der neuer ist als das
+     * Kennzeichen, bedeutet „der Agent wurde neu aufgesetzt, seine PINs sind
+     * unlesbar". Bei jedem Durchgang erneuert, meldete die Oberfläche binnen
+     * eines Prüfintervalls jede vorhandene PIN als fehlend — ein Fehlalarm, der
+     * die echte Warnung wertlos macht.
+     */
     public void schluesselMerken(long agentId, String oeffentlich) {
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "UPDATE agent SET oeffentlicher_schluessel = ?, schluessel_gemeldet = now()"
-                + " WHERE id = ?")) {
+                + " WHERE id = ? AND (oeffentlicher_schluessel IS NULL"
+                + "                   OR oeffentlicher_schluessel <> ?)")) {
             p.setString(1, oeffentlich);
             p.setLong(2, agentId);
+            p.setString(3, oeffentlich);
             p.executeUpdate();
         } catch (SQLException e) {
             System.err.println("Öffentlicher Schlüssel nicht speicherbar: " + e.getMessage());
@@ -278,6 +292,50 @@ public class Pinverwaltung {
     }
 
     // ------------------------------------------------------------- Kennzeichen
+
+    /**
+     * Übernimmt, für welche Karten der Agent tatsächlich eine PIN hat.
+     *
+     * <h2>Warum der Agent das melden muss</h2>
+     *
+     * Bis zum 11.08.2026 leitete die Zentrale das Kennzeichen allein aus
+     * <b>ihren eigenen Aufträgen</b> ab. Eine PIN, die auf einem anderen Weg zum
+     * Agenten kam — aus seiner verschlüsselten Ablage nach einem Neustart, aus
+     * der Umgebung im Testaufbau —, war für sie unsichtbar. Die Oberfläche
+     * zeigte „keine PIN hinterlegt", während der Agent Karten freischaltete.
+     * Ein Widerspruch, den niemand zusammenbringt.
+     *
+     * <h2>Warum nur ergänzt und nie gelöscht wird</h2>
+     *
+     * Ein Eintrag, den der Agent nicht mehr meldet, bleibt stehen. Das ist
+     * Absicht und trägt {@link #neuZuHinterlegen()}: Wurde der Agent neu
+     * aufgesetzt, sind seine PINs weg — und genau <b>dieser</b> Unterschied
+     * zwischen „war versorgt" und „hat sie nicht mehr" ist die Warnung, die die
+     * Praxis braucht (FA-INS-040). Würde hier gelöscht, verschwände die Warnung
+     * zusammen mit dem Problem, das sie meldet.
+     *
+     * <p>Gelöscht wird eine PIN weiterhin ausschließlich über einen
+     * ausdrücklichen Auftrag.
+     *
+     * @param kartenhandles nur Kennungen — die Meldung enthält nie einen Wert
+     */
+    public void bestandMelden(long agentId, List<String> kartenhandles) {
+        if (kartenhandles.isEmpty()) return;
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO pin_hinterlegt (agent_id, kartenhandle) VALUES (?,?)
+                ON CONFLICT (agent_id, kartenhandle) DO NOTHING""")) {
+            for (String handle : kartenhandles) {
+                p.setLong(1, agentId);
+                p.setString(2, handle);
+                p.addBatch();
+            }
+            p.executeBatch();
+        } catch (SQLException e) {
+            // Nicht verschlucken: Bleibt das Kennzeichen aus, zeigt die
+            // Oberflaeche dauerhaft einen falschen Zustand an.
+            System.err.println("Pinverwaltung.bestandMelden: " + e.getMessage());
+        }
+    }
 
     /** Ob für dieses Kartenhandle eine PIN hinterlegt ist. Nur das — nie der Wert. */
     public Optional<Hinterlegt> hinterlegtFuer(String kartenhandle) {

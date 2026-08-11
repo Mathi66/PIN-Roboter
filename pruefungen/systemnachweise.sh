@@ -61,6 +61,18 @@ ergebnis() {           # ergebnis <name> <bedingung-erfuellt>
   if [ "$2" = "ja" ]; then printf '  \033[32mBESTANDEN\033[0m  %s\n' "$1"
   else printf '  \033[31mFEHLGESCHLAGEN\033[0m  %s\n' "$1"; FEHLER=$((FEHLER+1)); fi
 }
+
+# Ein Nachweis, der nicht laufen KANN — fehlende Vorbedingung, fehlendes
+# Werkzeug. Er zaehlt als Fehler, MUSS sich aber zeigen.
+#
+# Bis zum 11.08.2026 erhoehten mehrere Stellen den Zaehler stumm und gaben nur
+# "uebersprungen: ..." aus. Am Ende meldete der Lauf "2 fehlgeschlagen",
+# waehrend im Protokoll genau einer stand — und die Suche nach dem zweiten
+# kostete mehr Zeit als der eigentliche Befund.
+uebersprungen() {      # uebersprungen <grund>
+  printf '  \033[1mNICHT PRUEFBAR\033[0m  %s\n' "$1"
+  FEHLER=$((FEHLER+1))
+}
 verifikationen() { docker logs pr-agt 2>&1 | grep -c "starte Verifikation"; }
 
 # Datenbankabfragen. Muessen HIER stehen, nicht weiter unten: Bash kennt
@@ -509,9 +521,30 @@ ergebnis "Export liefert eine Datei (HTTP $CODE, $(wc -c < "$XLSX" 2>/dev/null |
 
 # Der eigentliche Nachweis: eine UNABHAENGIGE Umsetzung liest die Datei.
 # Das eigene Format gegen die eigene Umsetzung zu pruefen waere zirkulaer.
-PYBIN=/private/tmp/claude-501/-Users-mni-Projekte-KT-PIN-Roboter/fb51524a-e2f5-4cb6-ad89-0656d47c45a8/scratchpad/venv/bin/python
-if [ -x "$PYBIN" ] && "$PYBIN" pruefungen/xlsx-pruefen.py "$XLSX"; then OP=ja; else OP=nein; fi
-ergebnis "openpyxl (unabhaengige Bibliothek) liest die Datei fehlerfrei" "$OP"
+#
+# Die Umgebung liegt unter pruefungen/.venv, NICHT im Scratchpad der Sitzung.
+# Dort stand sie bis zum 11.08.2026 - mit der Sitzungskennung im Pfad. Beim
+# naechsten Lauf war das Verzeichnis weg, der Nachweis rot, und das rote
+# Ergebnis sagte nichts ueber das Produkt. Ein Nachweis, dessen Ergebnis davon
+# abhaengt, WER ihn startet, ist kein Nachweis.
+PYVENV="$PWD/pruefungen/.venv"
+PYBIN="$PYVENV/bin/python"
+if [ ! -x "$PYBIN" ]; then
+  echo "  openpyxl-Umgebung fehlt, wird einmalig angelegt ..."
+  python3 -m venv "$PYVENV" >/dev/null 2>&1 \
+    && "$PYVENV/bin/pip" install -q openpyxl >/dev/null 2>&1
+fi
+if [ ! -x "$PYBIN" ] || ! "$PYBIN" -c "import openpyxl" >/dev/null 2>&1; then
+  # Ehrlich benennen statt rot melden: Ohne die Bibliothek ist die Aussage
+  # nicht pruefbar. Als "bestanden" zu zaehlen waere gelogen, als
+  # "fehlgeschlagen" waere es eine Falschmeldung ueber das Produkt.
+  printf '  %sNICHT PRUEFBAR%s  openpyxl fehlt und liess sich nicht nachinstallieren\n' \
+      "$fett" "$aus"
+  echo "     Abhilfe:  python3 -m venv pruefungen/.venv && pruefungen/.venv/bin/pip install openpyxl"
+else
+  "$PYBIN" pruefungen/xlsx-pruefen.py "$XLSX" && OP=ja || OP=nein
+  ergebnis "openpyxl (unabhaengige Bibliothek) liest die Datei fehlerfrei" "$OP"
+fi
 
 # Getrennt gefragt wie bei Not-Aus und Registrierung: Der Nachweis flatterte,
 # solange er "steht im Protokoll" und "steht in der Ansicht" in einem Griff
@@ -620,7 +653,7 @@ ergebnis "Registrierung mit gewaehlter Einrichtung liefert ein Token" "$TR"
 # Ein Geraet melden — und in der Meldung ausdruecklich eine FREMDE Einrichtung
 # behaupten. Die Zentrale muss sie verwerfen.
 curl -s -X POST -H "X-Agent-Token: $TOK3" -H "Content-Type: application/json" \
-     -d '{"terminalId":"KT-SUED-1","name":"Terminal Sued","einrichtung":"Kardiologie Nord",
+     -d '{"terminalId":"KT-SUED-1","name":"Terminal Sued","einrichtung":"Hausarztpraxis Nordstadt",
           "erreichbar":true,"pinStatus":"VERIFIED","modell":"Testgeraet","firmware":"1.0"}' \
      $BASIS/api/agent/melden -o /dev/null
 
@@ -656,7 +689,7 @@ if [ "$PA" = "nein" ] && [ "${DB:-0}" -gt 0 ]; then
 fi
 ergebnis "abgelehnte Registrierungen erscheinen in der Protokollansicht" "$PA"
 
-hinweis "Demodatensatz — MVZ-Verbund (Block C)"
+hinweis "Demodatensatz — MVZ mit neun Betriebsstaetten (Block C)"
 # Der Demodatensatz ist Werkzeug, nicht Beiwerk: An ihm wird die Oberflaeche
 # bei realistischen Stueckzahlen geprueft, bevor echte Bestandsdaten da sind.
 # Fuer Zahlen und Kennungen: entfernt alle Leerzeichen.
@@ -1488,9 +1521,8 @@ HANDLE=$(sql "SELECT e.kartenhandle FROM kartenterminal k
               WHERE e.kartentyp = 'SMC-B' AND NOT k.ist_demo ORDER BY k.id LIMIT 1")
 
 if [ -z "$TID_P" ] || [ -z "$PUBB64" ]; then
-  echo "  uebersprungen: kein erfasstes Terminal mit SMC-B oder kein Agentenschluessel"
+  uebersprungen "kein erfasstes Terminal mit SMC-B oder kein Agentenschluessel"
   echo "    Diagnose: TID_P='$TID_P' HANDLE='$HANDLE' Schluessel vorhanden: $PS"
-  FEHLER=$((FEHLER+1))
 else
   curl -s -b "$KEKSE" "$BASIS/bestand/terminal/$TID_P" > /tmp/pr-pin.html
 
@@ -1530,10 +1562,25 @@ else
     [ "${Q:-0}" -ge 1 ] && break
     sleep 2
   done
-  HINT=$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")
+  # Auf den Agenten einschraenken, DER DIESES TERMINAL BETREUT — genau so
+  # sucht ihn auch das Produkt (Pinverwaltung.agentFuerTerminal).
+  #
+  # "count ueber alle Agenten" ging schief, seit der Agent seinen PIN-Bestand
+  # meldet: Ein Prueflauf registriert mehrere Agenten nacheinander, alte
+  # bleiben aktiv, und jeder meldet dieselbe Karte. "Der juengste Agent" ist
+  # ebenfalls falsch — der juengste muss dieses Terminal nicht gemeldet haben.
+  HINT=$(sql "SELECT count(*) FROM pin_hinterlegt h
+              WHERE h.kartenhandle = '$HANDLE'
+                AND h.agent_id = (SELECT a.id FROM agent a
+                                  JOIN ermittelt_terminal e ON e.agent_id = a.id
+                                  WHERE a.aktiv AND e.terminal_id = (
+                                      SELECT terminal_id FROM kartenterminal WHERE id = $TID_P)
+                                  ORDER BY a.zuletzt_gesehen DESC NULLS LAST LIMIT 1)")
   [ "${HINT:-0}" = "1" ] && PH=ja || PH=nein
   if [ "$PH" = "nein" ]; then
-    echo "    Diagnose: $(sql "SELECT id||' zugestellt='||coalesce(zugestellt::text,'-')||' quittiert='||coalesce(quittiert::text,'-')||' fehler='||coalesce(fehler,'-') FROM pin_auftrag ORDER BY id" | tr '\n' '|')"
+    echo "    Diagnose Auftrag: $(sql "SELECT id||' zugestellt='||coalesce(zugestellt::text,'-')||' quittiert='||coalesce(quittiert::text,'-')||' fehler='||coalesce(fehler,'-') FROM pin_auftrag ORDER BY id" | tr '\n' '|')"
+    echo "    Diagnose Kennzeichen: $(sql "SELECT string_agg(agent_id||':'||kartenhandle, ' ') FROM pin_hinterlegt")"
+    echo "    Diagnose Agent des Terminals: $(sql "SELECT coalesce((SELECT a.id::text FROM agent a JOIN ermittelt_terminal e ON e.agent_id = a.id WHERE a.aktiv AND e.terminal_id = (SELECT terminal_id FROM kartenterminal WHERE id = $TID_P) ORDER BY a.zuletzt_gesehen DESC NULLS LAST LIMIT 1),'keiner')")"
   fi
   ergebnis "die PIN erreicht den Standort-Agenten und wird quittiert" "$PH"
 
@@ -1573,16 +1620,27 @@ else
   # Nur pruefbar, wenn vorher wirklich etwas hinterlegt war - sonst bestaetigen
   # sich die folgenden Nachweise selbst.
   if [ "$PH" = "nein" ]; then
-   echo "  Loeschen nicht pruefbar: es war keine PIN hinterlegt."
-   FEHLER=$((FEHLER+1))
+   uebersprungen "Loeschen nicht pruefbar: es war keine PIN hinterlegt (Folge des Befunds davor)"
   else
   curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_P/pin-loeschen" \
     -d "kartenhandle=$HANDLE" > /dev/null
+  # Wie beim Hinterlegen auf den zustaendigen Agenten einschraenken. Ein
+  # Loeschauftrag gilt fuer EINEN Agenten; Eintraege frueher registrierter
+  # Agenten desselben Prueflaufs bleiben stehen. Das ist ein bekannter offener
+  # Punkt (Karteileichen abgemeldeter Agenten), aber nicht die Aussage dieses
+  # Nachweises.
+  ZUSTAENDIG="(SELECT a.id FROM agent a
+               JOIN ermittelt_terminal e ON e.agent_id = a.id
+               WHERE a.aktiv AND e.terminal_id = (
+                   SELECT terminal_id FROM kartenterminal WHERE id = $TID_P)
+               ORDER BY a.zuletzt_gesehen DESC NULLS LAST LIMIT 1)"
   for _ in $(seq 60); do
-    [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")" = "0" ] && break
+    [ "$(sql "SELECT count(*) FROM pin_hinterlegt
+              WHERE kartenhandle = '$HANDLE' AND agent_id = $ZUSTAENDIG")" = "0" ] && break
     sleep 2
   done
-  [ "$(sql "SELECT count(*) FROM pin_hinterlegt WHERE kartenhandle = '$HANDLE'")" = "0" ] && PL=ja || PL=nein
+  [ "$(sql "SELECT count(*) FROM pin_hinterlegt
+            WHERE kartenhandle = '$HANDLE' AND agent_id = $ZUSTAENDIG")" = "0" ] && PL=ja || PL=nein
   ergebnis "FA-PIN-060: die hinterlegte PIN laesst sich wieder loeschen" "$PL"
   ABL2=$(docker exec pr-agt sh -c 'cat /daten/pins 2>/dev/null' || true)
   printf '%s' "$ABL2" | grep -q "^$HANDLE=" && PL2=nein || PL2=ja
@@ -1608,8 +1666,7 @@ ergebnis "der Instanzbetreiber bekommt das Anlegeformular" "$OF"
 STANDORT=$(sql "SELECT id FROM organisation WHERE art='STANDORT' ORDER BY id LIMIT 1")
 VERBUND=$(sql "SELECT id FROM organisation WHERE art='VERBUND' ORDER BY id LIMIT 1")
 if [ -z "$STANDORT" ] || [ -z "$VERBUND" ]; then
-  echo "  uebersprungen: kein Standort/Verbund im Demodatensatz"
-  FEHLER=$((FEHLER+1))
+  uebersprungen "kein Standort/Verbund im Demodatensatz"
 else
   curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/organisation \
     --data-urlencode "bezeichnung=Nachweis Praxis" --data-urlencode "art=EINRICHTUNG" \
@@ -1825,8 +1882,7 @@ ORG_D=$(sql "SELECT o.id FROM organisation o
              WHERE EXISTS (SELECT 1 FROM kartenterminal t WHERE t.organisation_id = o.id)
              ORDER BY o.id LIMIT 1")
 if [ -z "$ORG_D" ]; then
-  echo "  uebersprungen: keine Einrichtung mit Geraeten"
-  FEHLER=$((FEHLER+1))
+  uebersprungen "keine Einrichtung mit Geraeten"
 else
   CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-ux-detail.html -w '%{http_code}' \
          "$BASIS/organisation/$ORG_D")
@@ -2011,8 +2067,7 @@ mapfile -t KT_IDS < <(sql "SELECT terminal_id FROM geraet ORDER BY terminal_id" 
             "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 2" | tr -d ' \r'))
 
 if [ -z "$G_SCHNELL" ] || [ -z "$G_LANGSAM" ] || [ "${#KT_IDS[@]}" -lt 2 ]; then
-  echo "  uebersprungen: Gruppen oder Geraete fehlen (${#KT_IDS[@]} Geraete)"
-  FEHLER=$((FEHLER+1))
+  uebersprungen "Gruppen oder Geraete fehlen (${#KT_IDS[@]} Geraete)"
 else
   KT_A=${KT_IDS[0]}; KT_B=${KT_IDS[1]}
   curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/geraete/$KT_A/gruppe" \
@@ -2256,8 +2311,13 @@ ergebnis "die Meldung erklaert die Ursache" "$RE"
 [ "$(enthaelt /tmp/pr-restore.html "erneut eingegeben")" = "ja" ] && RH=ja || RH=nein
 ergebnis "und sagt, was zu tun ist" "$RH"
 
+# Aufraeumen — BEIDES. Der Nachweis hat oben "schluessel_gemeldet" kuenstlich
+# auf jetzt gesetzt, um einen Agentwechsel nachzustellen. Bleibt das stehen,
+# gelten anschliessend ALLE hinterlegten PINs als fehlend, und der naechste
+# Nachweis misst einen Zustand, den dieser hier erzeugt hat.
 docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
-  "DELETE FROM pin_hinterlegt WHERE kartenhandle='card-nachweis-restore'" >/dev/null
+  "DELETE FROM pin_hinterlegt WHERE kartenhandle='card-nachweis-restore';
+   UPDATE agent SET schluessel_gemeldet = NULL WHERE id = $AID2" >/dev/null
 curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-restore2.html
 [ "$(enthaelt /tmp/pr-restore2.html "PINs neu zu hinterlegen")" = "nein" ] && RW=ja || RW=nein
 ergebnis "ohne fehlende PIN erscheint die Tafel gar nicht" "$RW"
@@ -2314,8 +2374,7 @@ H_C=$(sqltext "SELECT e.kartenhandle FROM kartenterminal k
                WHERE e.kartentyp='SMC-B' AND NOT k.ist_demo ORDER BY k.id LIMIT 1")
 
 if [ -z "$PUB" ] || [ -z "$TID_C" ]; then
-  echo "  uebersprungen: kein Agentenschluessel oder kein Terminal mit SMC-B"
-  FEHLER=$((FEHLER+1))
+  uebersprungen "kein Agentenschluessel oder kein Terminal mit SMC-B"
 else
   printf -- "-----BEGIN PUBLIC KEY-----\n%s\n-----END PUBLIC KEY-----\n" \
     "$(echo "$PUB" | fold -w 64)" > /tmp/pr-pub-c.pem
@@ -2428,8 +2487,7 @@ hinweis "FA-PRO-050 / FA-PRO-060 — Geräte-Zeitstrahl und Vorgangsansicht"
 
 KT_V=$(sqltext "SELECT terminal_id FROM geraet ORDER BY terminal_id LIMIT 1")
 if [ -z "$KT_V" ]; then
-  echo "  uebersprungen: kein Geraet gemeldet"
-  FEHLER=$((FEHLER+1))
+  uebersprungen "kein Geraet gemeldet"
 else
   # Aus der Geraeteliste in EINEM Klick erreichbar.
   curl -s -b "$KEKSE" $BASIS/geraete -o /tmp/pr-gl.html
@@ -2472,8 +2530,7 @@ else
   VG=$(sqltext "SELECT vorgang FROM fachprotokoll WHERE vorgang IS NOT NULL
                 GROUP BY vorgang ORDER BY count(*) DESC LIMIT 1")
   if [ -z "$VG" ]; then
-    echo "  uebersprungen: kein Vorgang im Protokoll"
-    FEHLER=$((FEHLER+1))
+    uebersprungen "kein Vorgang im Protokoll"
   else
     N_VG=$(sql "SELECT count(*) FROM fachprotokoll WHERE vorgang='$VG'")
     CODE=$(curl -s -b "$KEKSE" -o /tmp/pr-vg.html -w '%{http_code}' \

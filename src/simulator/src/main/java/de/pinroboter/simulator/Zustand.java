@@ -1,5 +1,7 @@
 package de.pinroboter.simulator;
 
+import de.pinroboter.gemeinsam.Demoszenario;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -66,5 +68,61 @@ public class Zustand {
         z.terminalHinzufuegen(t4);
 
         return z;
+    }
+
+    // ------------------------------------------------------------- Demoaufbau
+
+    /**
+     * Bildet die Geräte des Demoszenarios nach (Vorgabe PO, 11.08.2026).
+     *
+     * <p>Ein MVZ mit neun Betriebsstätten unterschiedlicher Größe. Welche das
+     * sind, steht in {@link de.pinroboter.gemeinsam.Demoszenario} — derselben
+     * Beschreibung, aus der die Zentrale ihren Bestand anlegt. Zwei gepflegte
+     * Listen liefen irgendwann auseinander; eine geteilte kann es nicht.
+     *
+     * <p>Am Empfang jeder Betriebsstätte steckt die SMC-B, die
+     * Behandlungsterminals lesen nur eGK. Alle Geräte sind erreichbar, laufen
+     * auf der neuesten Firmware und haben die Managementschnittstelle
+     * freigeschaltet.
+     *
+     * <p><b>Statt des Standardaufbaus, nicht zusätzlich.</b> Eingeschaltet wird
+     * über {@code DEMO_TERMINALS=an}; das setzt {@code docker-compose.yml}, der
+     * Prüfstand nicht. Zwei Gründe:
+     *
+     * <ul>
+     *   <li>Die Systemnachweise messen gegen den Standardaufbau und dessen
+     *       Fehlerfälle, die es hier bewusst nicht gibt. 36 weitere Geräte
+     *       würden diese Zählungen verschieben.</li>
+     *   <li>Umgekehrt landen die vier Problemgeräte des Standardaufbaus in der
+     *       Einrichtung, für die der Agent registriert ist. Sie stünden dort
+     *       ohne Bezug herum und widersprächen dem, was das Szenario zeigen
+     *       soll.</li>
+     * </ul>
+     */
+    public static Zustand mitDemoteilnehmern(Zustand z) {
+        int lauf = 0;
+        for (var b : Demoszenario.BETRIEBSSTAETTEN) {
+            lauf++;
+            SimuliertesTerminal empfang = new SimuliertesTerminal(
+                    b.empfangsterminal(), "Empfang",
+                    Demoszenario.MODELL, Demoszenario.FIRMWARE, true, true);
+            empfang.karteEinlegen(1, new SimulierteKarte(
+                    b.kartenhandle(), iccsn(lauf), "SMC-B", Demoszenario.PIN, "2028-12-31"));
+            z.terminalHinzufuegen(empfang);
+
+            for (int i = 1; i <= b.behandlungsraeume(); i++) {
+                // Keine SMC-B — hier gibt es nichts freizuschalten. Das Gerät
+                // wird überwacht und gemeldet, mehr nicht.
+                z.terminalHinzufuegen(new SimuliertesTerminal(
+                        b.behandlungsterminal(i), "Behandlung " + i,
+                        Demoszenario.MODELL, Demoszenario.FIRMWARE, true, true));
+            }
+        }
+        return z;
+    }
+
+    /** Eine ICCSN, die es zweimal nicht gibt: 20 Stellen, je Karte verschieden. */
+    private static String iccsn(int lauf) {
+        return "8027600101169990%04d".formatted(1100 + lauf);
     }
 }

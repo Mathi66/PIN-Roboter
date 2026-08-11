@@ -166,6 +166,37 @@ public class Gruppenverwaltung {
     // ---------------------------------------------------------------- Geräte
 
     /**
+     * Welche Einrichtung zu welchem Kartenterminal gehört.
+     *
+     * <h2>Warum nicht aus der Meldung des Agenten</h2>
+     *
+     * Der Agent kennt <b>eine</b> Einrichtung — die aus seiner Registrierung.
+     * In einem MVZ betreut er aber Geräte mehrerer Betriebsstätten, und dann
+     * trügen in der Oberfläche alle denselben Namen. Die richtige Zuordnung
+     * steht im Bestand, und nur dort.
+     *
+     * <p>Wird einmal je Seitenaufbau geholt, nicht je Zeile: Bei 5.000 Geräten
+     * wären das sonst 5.000 Abfragen für eine Tabelle mit zwanzig Zeilen.
+     */
+    public java.util.Map<String, String> einrichtungJeTerminal() {
+        var karte = new java.util.HashMap<String, String>();
+        try (Statement s = db.verbindung().createStatement();
+             ResultSet rs = s.executeQuery("""
+                     SELECT t.terminal_id, o.bezeichnung
+                     FROM kartenterminal t
+                     JOIN organisation o ON o.id = t.organisation_id
+                     UNION
+                     SELECT g.terminal_id, g.einrichtung FROM geraet g""")) {
+            while (rs.next()) karte.putIfAbsent(rs.getString(1), rs.getString(2));
+        } catch (SQLException e) {
+            // Kein Abbruch: Ohne die Karte zeigt die Oberflaeche die Einrichtung
+            // aus der Agentenmeldung. Ungenau, aber besser als eine leere Seite.
+            System.err.println("Gruppenverwaltung.einrichtungJeTerminal: " + e.getMessage());
+        }
+        return karte;
+    }
+
+    /**
      * Trägt ein gemeldetes Gerät ein, falls es noch unbekannt ist.
      * Neue Geräte landen in der Vorgabegruppe.
      *

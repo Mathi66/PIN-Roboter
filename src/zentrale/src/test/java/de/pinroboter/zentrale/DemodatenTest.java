@@ -50,8 +50,10 @@ class DemodatenTest {
 
         assertEquals(13, b.organisationen(), "1 Verbund + 3 Standorte + 9 Praxen");
         assertEquals(9, b.konnektoren(), "je Praxis ein Konnektor");
-        assertEquals(36, b.arbeitsplaetze(), "je Praxis 1 Empfang + 3 Behandlung");
-        assertEquals(36, b.terminals(), "je Arbeitsplatz ein Terminal");
+        int gesamt = de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt();
+        assertEquals(gesamt, b.arbeitsplaetze(),
+                "je Betriebsstätte 1 Empfang + ihre Behandlungsräume");
+        assertEquals(gesamt, b.terminals(), "je Arbeitsplatz ein Terminal");
         assertEquals(16, b.benutzer(), "9 Ebene 1 + 3 Ebene 2 + 1 Ebene 3 + 3 Administratoren");
         assertEquals(16, konten.size(), "alle Konten werden zurückgegeben");
     }
@@ -74,7 +76,8 @@ class DemodatenTest {
     @Test @Order(3)
     @DisplayName("Alle Terminals haben die Managementschnittstelle freigeschaltet")
     void pevimUeberall() throws Exception {
-        assertEquals(36, zaehle("SELECT count(*) FROM kartenterminal WHERE ist_demo AND pevim_aktiv"));
+        assertEquals(de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt(),
+                zaehle("SELECT count(*) FROM kartenterminal WHERE ist_demo AND pevim_aktiv"));
     }
 
     @Test @Order(4)
@@ -156,6 +159,79 @@ class DemodatenTest {
     @DisplayName("Nach dem Löschen lässt sich der Datensatz neu anlegen")
     void wiederherstellbar() throws Exception {
         dd.anlegen();
-        assertEquals(36, dd.bestand().terminals());
+        assertEquals(de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt(),
+                dd.bestand().terminals());
+    }
+
+    @Test @Order(8_1)
+    @DisplayName("Das Szenario bildet ein MVZ mit unterschiedlich großen Betriebsstätten ab")
+    void mvzSzenario() throws Exception {
+        if (!dd.bestand().vorhanden()) dd.anlegen();
+
+        assertEquals(de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt(),
+                dd.bestand().terminals(), "Der Bestand muss dem Szenario entsprechen");
+        assertEquals(9, dd.bestand().terminalsMitSmcb(),
+                "Die SMC-B ist die Institutionskarte EINER Betriebsstätte — genau eine je Stätte");
+
+        // Der Punkt des Szenarios: verschieden große Einheiten. Eine Oberfläche,
+        // die mit lauter Vierergruppen gut aussieht, sagt nichts über eine
+        // Betriebsstätte mit sechs Geräten und eine mit zweien.
+        assertTrue(zaehle("SELECT count(DISTINCT anzahl) FROM ("
+                + "SELECT organisation_id, count(*) AS anzahl FROM kartenterminal "
+                + "WHERE ist_demo GROUP BY organisation_id) x") >= 3,
+                "Mindestens drei verschiedene Größen — sonst ist es kein Szenario, "
+                + "sondern eine Tabelle");
+
+        // Kein Name darf doppelt vorkommen: In der Lage-Übersicht steht die
+        // Betriebsstätte neben dem Gerätenamen, und neun Zeilen "Behandlung 1"
+        // sind nur unterscheidbar, wenn die Stätte es ist.
+        assertEquals(9, zaehle("SELECT count(DISTINCT bezeichnung) FROM organisation "
+                + "WHERE ist_demo AND art = 'EINRICHTUNG'"));
+    }
+
+    @Test @Order(9)
+    @DisplayName("Zugangsdaten liegen verschlüsselt vor, nie im Klartext")
+    void zugangsdatenVerschluesselt() throws Exception {
+        if (dd.bestand().vorhanden()) dd.loeschen();
+        var tresor = de.pinroboter.gemeinsam.Geheimnisspeicher.ausBase64(
+                de.pinroboter.gemeinsam.Geheimnisspeicher.neuerSchluesselBase64());
+        new Demodaten(db, tresor).anlegen();
+
+        assertEquals(de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt(),
+                zaehle("SELECT count(*) FROM kartenterminal "
+                + "WHERE ist_demo AND admin_chiffrat IS NOT NULL"),
+                "Jedes Demo-Terminal braucht einen Administrationszugang");
+        assertEquals(9, zaehle("SELECT count(*) FROM konnektor "
+                + "WHERE ist_demo AND passwort_chiffrat IS NOT NULL"));
+
+        // Der Kern: Das Kennwort darf NIRGENDS im Klartext stehen. Ein
+        // Demodatensatz, der es unverschlüsselt ablegt, ließe genau die Stelle
+        // ungeprüft, auf die es ankommt (ADR-0008).
+        assertEquals(0, zaehle("SELECT count(*) FROM kartenterminal WHERE ist_demo "
+                + "AND admin_chiffrat LIKE '%" + Demodaten.DEMO_TERMINALKENNWORT + "%'"),
+                "Das Kennwort steht im Klartext in der Datenbank");
+
+        // Und es muss sich zurückgewinnen lassen — verschlüsselt abgelegt ist
+        // wertlos, wenn der Agent es nicht wieder herausbekommt.
+        try (Statement st = db.verbindung().createStatement();
+             ResultSet rs = st.executeQuery("SELECT admin_chiffrat FROM kartenterminal "
+                     + "WHERE ist_demo AND admin_chiffrat IS NOT NULL LIMIT 1")) {
+            assertTrue(rs.next());
+            assertEquals(Demodaten.DEMO_TERMINALKENNWORT, tresor.entschluesseln(rs.getString(1)));
+        }
+    }
+
+    @Test @Order(10)
+    @DisplayName("Ohne Geheimnisspeicher entstehen Demodaten ohne Zugangsdaten — nicht gar keine")
+    void ohneTresorTrotzdemDaten() throws Exception {
+        if (dd.bestand().vorhanden()) dd.loeschen();
+        new Demodaten(db, null).anlegen();
+
+        // Ein fehlender GEHEIMNIS_SCHLUESSEL darf den Demodatensatz nicht
+        // verhindern. Wer ihn ausprobieren will, hat ihn oft noch nicht gesetzt.
+        int gesamt = de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt();
+        assertEquals(gesamt, dd.bestand().terminals());
+        assertEquals(gesamt, zaehle("SELECT count(*) FROM kartenterminal "
+                + "WHERE ist_demo AND admin_chiffrat IS NULL"));
     }
 }

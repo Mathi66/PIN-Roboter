@@ -139,7 +139,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-INS-010` Installation über Compose <br><span style="opacity:.7">MUSS</span> |  | `docker compose up`, Migrationen automatisch; seit 07.08. eigens geprüft |
 | **✔** | `FA-INS-020` Einrichtungsassistent <br><span style="opacity:.7">MUSS</span> |  | Ersteinrichtung des ersten Administrators mit TOTP |
 | **◐** | `FA-INS-030` Betriebsart <br><span style="opacity:.7">MUSS</span> |  | verteilt und zentral mit derselben Software. **Offen:** `.env.example` als Vorlage |
-| **✔** | `FA-INS-040` Sicherung und Wiederherstellung <br><span style="opacity:.7">MUSS</span> |  | Wiederherstellung bei jedem Lauf durchgespielt; fehlende PINs werden benannt |
+| **✔** | `FA-INS-040` Sicherung und Wiederherstellung <br><span style="opacity:.7">MUSS</span> |  | Wiederherstellung bei jedem Lauf durchgespielt; fehlende PINs werden benannt. **Korrektur 11.08.2026:** Die Warnung erschien für jede vorhandene PIN, weil der Meldezeitpunkt des Agentenschlüssels bei jedem Durchgang fortgeschrieben wurde. Er wird jetzt nur bei einer tatsächlichen Änderung gesetzt — ein Fehlalarm, der die echte Warnung wertlos gemacht hätte. |
 
 ## A.11 Standort-Agent (FA-AGT)
 

@@ -1,5 +1,7 @@
 package de.pinroboter.zentrale;
 
+import de.pinroboter.gemeinsam.Demoszenario;
+import de.pinroboter.gemeinsam.Geheimnisspeicher;
 import de.pinroboter.gemeinsam.Passwort;
 import de.pinroboter.gemeinsam.Totp;
 
@@ -37,9 +39,39 @@ public class Demodaten {
     /** Einheitliches Kennwort aller Demo-Konten — sie sind zum Ausprobieren da. */
     public static final String DEMO_KENNWORT = "DemoZugangMvzVerbund";
 
+    /**
+     * Administrationskennwort der Demo-Kartenterminals.
+     *
+     * <p>Die Geräte gibt es nur im Simulator; das Kennwort schützt nichts. Es
+     * wird trotzdem <b>auf demselben Weg abgelegt wie ein echtes</b> —
+     * AES-256-GCM über den Geheimnisspeicher ([ADR-0008]). Ein Demodatensatz,
+     * der sein Kennwort im Klartext ablegt, würde genau die Stelle ungeprüft
+     * lassen, auf die es ankommt.
+     */
+    public static final String DEMO_TERMINALKENNWORT = "DemoTerminalAdmin2026";
+
+    /** Benutzername des Administrationszugangs an den Demo-Terminals. */
+    public static final String DEMO_TERMINALBENUTZER = "admin";
+
+    /** Zugang zur Konnektor-Verwaltung — ebenfalls nur im Simulator gültig. */
+    public static final String DEMO_KONNEKTORBENUTZER = "pinroboter";
+    public static final String DEMO_KONNEKTORKENNWORT = "DemoKonnektorZugang2026";
+
     private final Datenbank db;
 
-    public Demodaten(Datenbank db) { this.db = db; }
+    /**
+     * Verschlüsselt die Zugangsdaten. {@code null}, wenn kein
+     * {@code GEHEIMNIS_SCHLUESSEL} gesetzt ist — dann entstehen Demodaten ohne
+     * Zugangsdaten statt gar keiner.
+     */
+    private final Geheimnisspeicher tresor;
+
+    public Demodaten(Datenbank db) { this(db, null); }
+
+    public Demodaten(Datenbank db, Geheimnisspeicher tresor) {
+        this.db = db;
+        this.tresor = tresor;
+    }
 
     public record Bestand(int organisationen, int konnektoren, int arbeitsplaetze,
                           int terminals, int terminalsMitSmcb, int benutzer) {
@@ -85,99 +117,88 @@ public class Demodaten {
         boolean vorherAuto = db.verbindung().getAutoCommit();
         db.verbindung().setAutoCommit(false);
         try {
-            long verbund = organisation("MVZ-Verbund Musterstadt", "VERBUND", null);
-
-            String[] standorte = {"Nord", "Mitte", "Süd"};
-            // Zwei Facharztpraxen und eine Allgemeinpraxis je Standort.
-            String[][] praxen = {
-                    {"Kardiologie",   "FACHARZT"},
-                    {"Orthopädie",    "FACHARZT"},
-                    {"Allgemeinmedizin", "ALLGEMEIN"}
-            };
+            long traeger = organisation(Demoszenario.TRAEGER, "VERBUND", null);
 
             int laufendeNummer = 0;
-            for (String standortname : standorte) {
-                long standort = organisation("Standort " + standortname, "STANDORT", verbund);
+            for (String standortname : Demoszenario.STANDORTE) {
+                long standort = organisation("Standort " + standortname, "STANDORT", traeger);
 
-                for (String[] p : praxen) {
+                for (var b : Demoszenario.anStandort(standortname)) {
                     laufendeNummer++;
-                    String praxisname = p[0] + " " + standortname;
-                    long praxis = organisation(praxisname, "EINRICHTUNG", standort);
+                    long praxis = organisation(b.name(), "EINRICHTUNG", standort);
 
-                    // Ein Konnektor je Praxis, mit eigener SMC-B.
-                    String kuerzel = kuerzel(standortname, p[0]);
-                    long konnektor = konnektor(praxis, "Konnektor " + praxisname,
-                            "https://10.%d.%d.10:443/".formatted(standortIndex(standortname) + 1, laufendeNummer),
-                            "KoCo Konnektor", "Mandant-" + kuerzel);
+                    // Ein Konnektor je Betriebsstaette. Das entspricht der
+                    // Wirklichkeit: Die SMC-B ist die Institutionskarte EINER
+                    // Betriebsstaette, und der Konnektor gehoert dazu.
+                    long konnektor = konnektor(praxis, "Konnektor " + b.name(),
+                            "https://10.%d.%d.10:443/".formatted(
+                                    standortIndex(standortname) + 1, laufendeNummer),
+                            "KoCo Konnektor", "Mandant-" + b.kuerzel());
 
-                    // Informationsmodell des Konnektors (Vorgabe PO, 07.08.2026):
-                    // ein Empfangs-Arbeitsplatz mit SMC-B, drei Behandler-
-                    // Arbeitsplaetze mit je einem Terminal ohne SMC-B.
-                    //
-                    // Das entspricht der Wirklichkeit in einer Praxis: Die SMC-B
-                    // weist die Einrichtung aus und steckt an einer Stelle; die
-                    // Behandlungsraeume lesen eGK und brauchen keine.
+                    // Informationsmodell des Konnektors ([gemSpec_Kon],
+                    // Aufrufkontext TUC_KON_000): ein Empfangs-Arbeitsplatz mit
+                    // SMC-B, dazu Behandler-Arbeitsplaetze ohne.
                     //
                     // Fuer die PIN-Automatik ist damit genau EIN Terminal je
-                    // Praxis von Belang. Die uebrigen werden erfasst und
-                    // ueberwacht, aber nie verifiziert - sie haben nichts
+                    // Betriebsstaette von Belang. Die uebrigen werden erfasst
+                    // und ueberwacht, aber nie verifiziert - sie haben nichts
                     // freizuschalten.
                     int oktett = 20;
 
                     long apEmpfang = arbeitsplatz(konnektor, praxis,
                             "AP-EMPFANG", "Empfang", "EMPFANG");
                     kartenterminal(konnektor, praxis, apEmpfang,
-                            "KT-%s-EMP".formatted(kuerzel), "Empfang",
+                            b.empfangsterminal(), "Empfang",
                             "10.%d.%d.%d".formatted(standortIndex(standortname) + 1,
                                     laufendeNummer, oktett++),
-                            "CHERRY ST-1506", "card-smcb-" + kuerzel,
+                            Demoszenario.MODELL, b.kartenhandle(),
                             true,    // SMC-B steckt hier
                             true);   // Managementschnittstelle freigeschaltet
 
-                    for (int b = 1; b <= 3; b++) {
+                    for (int i = 1; i <= b.behandlungsraeume(); i++) {
                         long apBehandlung = arbeitsplatz(konnektor, praxis,
-                                "AP-BEHANDLUNG-" + b, "Behandlung " + b, "BEHANDLUNG");
+                                "AP-BEHANDLUNG-" + i, "Behandlung " + i, "BEHANDLUNG");
                         kartenterminal(konnektor, praxis, apBehandlung,
-                                "KT-%s-B%d".formatted(kuerzel, b), "Behandlung " + b,
+                                b.behandlungsterminal(i), "Behandlung " + i,
                                 "10.%d.%d.%d".formatted(standortIndex(standortname) + 1,
                                         laufendeNummer, oktett++),
-                                "CHERRY ST-1506", null,
+                                Demoszenario.MODELL, null,
                                 false,   // keine SMC-B
                                 true);   // Managementschnittstelle dennoch freigeschaltet
                     }
 
-                    // Eine Gruppe je Praxis, mit allen ihren Terminals
-                    // (Vorgabe PO, 10.08.2026).
-                    long gruppe = geraetegruppe(praxisname, praxis);
-                    geraeteZuordnen(praxis, praxisname, gruppe);
+                    // Eine Gruppe je Betriebsstaette, mit allen ihren Terminals.
+                    long gruppe = geraetegruppe(b.name(), praxis);
+                    geraeteZuordnen(praxis, b.name(), gruppe);
 
-                    // Ebene 1: zustaendig fuer genau diese Praxis
-                    konten.add(benutzer("praxis." + kuerzel.toLowerCase(),
-                            p[0] + " " + standortname, "BENUTZER", praxis, praxisname));
+                    // Ebene 1: zustaendig fuer genau diese Betriebsstaette
+                    konten.add(benutzer(b.benutzername(),
+                            b.name() + " (" + b.fach() + ")", "BENUTZER", praxis, b.name()));
                 }
 
-                // Ebene 2: zustaendig fuer alle Praxen dieses Standorts
+                // Ebene 2: zustaendig fuer alle Betriebsstaetten dieses Standorts
                 konten.add(benutzer("standort." + standortname.toLowerCase()
                                 .replace("ü", "ue"),
                         "Leitung Standort " + standortname, "BENUTZER", standort,
                         "Standort " + standortname));
             }
 
-            // Ebene 3: zustaendig fuer den gesamten Verbund
-            konten.add(benutzer("verbund.leitung", "Verbundleitung", "BENUTZER",
-                    verbund, "MVZ-Verbund Musterstadt"));
+            // Ebene 3: zustaendig fuer das gesamte MVZ
+            konten.add(benutzer("verbund.leitung", "Geschäftsführung MVZ", "BENUTZER",
+                    traeger, Demoszenario.TRAEGER));
 
             // Drei Administratoren mit unterschiedlichem Geltungsbereich - genau
             // hier zeigt sich, ob das Rechtemodell traegt: Ein Administrator
             // eines Standorts darf dessen Benutzer verwalten, aber keine fremden.
-            konten.add(benutzer("admin.verbund", "Administrator Verbund",
-                    "ADMINISTRATOR", verbund, "MVZ-Verbund Musterstadt"));
+            konten.add(benutzer("admin.verbund", "Administrator MVZ",
+                    "ADMINISTRATOR", traeger, Demoszenario.TRAEGER));
             long standortNord = organisationSuchen("Standort Nord");
-            konten.add(benutzer("admin.nord", "Administrator Nord",
+            konten.add(benutzer("admin.nord", "Administrator Standort Nord",
                     "ADMINISTRATOR", standortNord, "Standort Nord"));
-            long praxisKardioNord = organisationSuchen("Kardiologie Nord");
-            konten.add(benutzer("admin.kardio.nord", "Administrator Kardiologie Nord",
-                    "ADMINISTRATOR", praxisKardioNord, "Kardiologie Nord"));
+            var erste = Demoszenario.BETRIEBSSTAETTEN.get(0);
+            long ersteBetriebsstaette = organisationSuchen(erste.name());
+            konten.add(benutzer("admin.praxis", "Administrator " + erste.name(),
+                    "ADMINISTRATOR", ersteBetriebsstaette, erste.name()));
 
             db.verbindung().commit();
             return konten;
@@ -202,7 +223,20 @@ public class Demodaten {
         boolean vorherAuto = db.verbindung().getAutoCommit();
         db.verbindung().setAutoCommit(false);
         try (Statement s = db.verbindung().createStatement()) {
-            // Zuerst die Zuordnung, dann die Gruppe: geraet verweist auf
+            // ZUERST die PIN-Kennzeichen der Demokarten — danach sind die
+            // Kartenhandles nicht mehr auffindbar.
+            //
+            // Sie stammen nicht aus dieser Klasse, sondern vom Agenten: Er
+            // meldet, fuer welche Karten er eine PIN hat. Bleiben sie stehen,
+            // sammeln sich mit jedem Neuaufbau des Demodatensatzes
+            // Karteileichen zu Karten, die es nicht mehr gibt — und die
+            // Uebersicht zaehlt hinterlegte PINs, die niemand mehr zuordnen
+            // kann.
+            s.executeUpdate("""
+                    DELETE FROM pin_hinterlegt
+                    WHERE kartenhandle IN (SELECT kartenhandle FROM kartenterminal
+                                           WHERE ist_demo AND kartenhandle IS NOT NULL)""");
+            // Dann die Zuordnung, dann die Gruppe: geraet verweist auf
             // geraetegruppe. In umgekehrter Reihenfolge scheitert das Loeschen
             // am Fremdschluessel.
             s.executeUpdate("DELETE FROM geraet          WHERE ist_demo");
@@ -248,13 +282,21 @@ public class Demodaten {
                            String modell, String mandantId) throws SQLException {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO konnektor (organisation_id, bezeichnung, adresse, modell,
-                                       mandant_id, clientsystem_id, arbeitsplatz_id, ist_demo)
-                VALUES (?,?,?,?,?,'PIN-Roboter','Arbeitsplatz1',TRUE) RETURNING id""")) {
+                                       mandant_id, clientsystem_id, arbeitsplatz_id,
+                                       benutzer_name, passwort_chiffrat, ist_demo)
+                VALUES (?,?,?,?,?,'PIN-Roboter','Arbeitsplatz1',?,?,TRUE) RETURNING id""")) {
             p.setLong(1, org);
             p.setString(2, bezeichnung);
             p.setString(3, adresse);
             p.setString(4, modell);
             p.setString(5, mandantId);
+            if (tresor == null) {
+                p.setNull(6, Types.VARCHAR);
+                p.setNull(7, Types.VARCHAR);
+            } else {
+                p.setString(6, DEMO_KONNEKTORBENUTZER);
+                p.setString(7, tresor.verschluesseln(DEMO_KONNEKTORKENNWORT));
+            }
             try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
         }
     }
@@ -361,6 +403,14 @@ public class Demodaten {
         }
     }
 
+    /**
+     * Ein Kartenterminal samt Administrationszugang.
+     *
+     * <p>Der Zugang wird <b>verschlüsselt</b> abgelegt (ADR-0008) — auf
+     * demselben Weg wie ein echter. Fehlt der {@code GEHEIMNIS_SCHLUESSEL},
+     * bleibt das Feld leer und der Rest entsteht trotzdem: Ein Demodatensatz,
+     * der an einer fehlenden Umgebungsvariablen scheitert, hilft niemandem.
+     */
     private void kartenterminal(long konnektor, long org, long arbeitsplatz,
                                 String terminalId, String raum, String adresse,
                                 String modell, String kartenhandle,
@@ -368,8 +418,9 @@ public class Demodaten {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO kartenterminal (terminal_id, konnektor_id, organisation_id,
                         arbeitsplatz_id, bezeichnung, standortangabe, modell,
-                        kartenhandle, hat_smcb, pevim_aktiv, ist_demo)
-                VALUES (?,?,?,?,?,?,?,?,?,?,TRUE)""")) {
+                        kartenhandle, hat_smcb, pevim_aktiv,
+                        admin_benutzer, admin_chiffrat, ist_demo)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,TRUE)""")) {
             p.setString(1, terminalId);
             p.setLong(2, konnektor);
             p.setLong(3, org);
@@ -381,6 +432,13 @@ public class Demodaten {
             else p.setString(8, kartenhandle);
             p.setBoolean(9, hatSmcb);
             p.setBoolean(10, pevimAktiv);
+            if (tresor == null) {
+                p.setNull(11, Types.VARCHAR);
+                p.setNull(12, Types.VARCHAR);
+            } else {
+                p.setString(11, DEMO_TERMINALBENUTZER);
+                p.setString(12, tresor.verschluesseln(DEMO_TERMINALKENNWORT));
+            }
             p.executeUpdate();
         }
     }
@@ -408,13 +466,4 @@ public class Demodaten {
         return switch (name) { case "Nord" -> 0; case "Mitte" -> 1; default -> 2; };
     }
 
-    private static String kuerzel(String standort, String fach) {
-        String s = standort.substring(0, 1);
-        String f = switch (fach) {
-            case "Kardiologie" -> "KAR";
-            case "Orthopädie" -> "ORT";
-            default -> "ALL";
-        };
-        return s + f;
-    }
 }

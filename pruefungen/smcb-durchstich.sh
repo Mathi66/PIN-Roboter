@@ -30,6 +30,11 @@ SEC="$PWD/docker"
 STEUERUNG=http://localhost:8481
 FEHLER=0
 
+# Achtung: NIE "docker logs … | grep -q" mit set -o pipefail. grep beendet
+# nach dem ersten Treffer, docker logs bekommt SIGPIPE, und die Pipeline
+# gilt als fehlgeschlagen — abhaengig davon, wie lang die Ausgabe gerade
+# ist. Dieselbe Falle hat schon einmal 25 Nachweise erwischt. Deshalb
+# ueberall "grep -c" und ein Vergleich.
 gruen=$'\e[32m'; rot=$'\e[31m'; fett=$'\e[1m'; aus=$'\e[0m'
 hinweis() { printf '\n%s%s%s\n' "$fett" "$1" "$aus"; }
 ergebnis() {
@@ -65,7 +70,7 @@ starten() {   # starten <pin> [zusatz-umgebung...]
     "${@:2}" \
     $JRE java $JOPT -jar /app.jar >/dev/null
   for _ in $(seq 60); do
-    docker logs "$AGT" 2>&1 | grep -qE "^  \[.*\] (freigeschaltet|Die hinterlegte PIN|Das Kartenterminal)" && break
+    [ "$(docker logs "$AGT" 2>&1 | grep -cE "^  \[.*\] (freigeschaltet|Die hinterlegte PIN|Das Kartenterminal)")" != "0" ] && break
     sleep 1
   done
   sleep 2
@@ -82,12 +87,12 @@ for _ in $(seq 40); do
   curl -sf -o /dev/null "$STEUERUNG/ca.pem" && break
   sleep 1
 done
-docker logs "$SIM" 2>&1 | grep -q "Remote SMCB API" && S1=ja || S1=nein
+[ "$(docker logs "$SIM" 2>&1 | grep -c "Remote SMCB API")" != "0" ] && S1=ja || S1=nein
 ergebnis "der Simulator bietet die Remote SMCB API an" "$S1"
 
 # ── Der Kernfall ────────────────────────────────────────────────────────
 starten 123456
-docker logs "$AGT" 2>&1 | grep -q "Verbindung zur Remote SMCB API steht" && V=ja || V=nein
+[ "$(docker logs "$AGT" 2>&1 | grep -c "Verbindung zur Remote SMCB API steht")" != "0" ] && V=ja || V=nein
 ergebnis "der Agent meldet sich über Challenge-Response an" "$V"
 
 [ "$(verbunden KT-EMPFANG-01)" = "true" ] && A=ja || A=nein
@@ -97,7 +102,7 @@ U=$(uebergaben KT-EMPFANG-01)
 [ "${U:-0}" -ge 1 ] && P=ja || P=nein
 ergebnis "die PIN kam über cobra-smcb, nicht über den alten Weg (${U:-0}x)" "$P"
 
-docker logs "$AGT" 2>&1 | grep -qE "^  \[.*\] freigeschaltet" && F=ja || F=nein
+[ "$(docker logs "$AGT" 2>&1 | grep -cE "^  \[.*\] freigeschaltet")" != "0" ] && F=ja || F=nein
 ergebnis "die SMC-B ist dadurch freigeschaltet" "$F"
 
 # ── Nur EIN Gerät, obwohl zwei PEviM aktiv haben ────────────────────────
@@ -135,8 +140,8 @@ ergebnis "ohne hinterlegte PIN wird gar nicht erst verbunden" "$O"
 # ── Die PIN darf nirgends auftauchen ────────────────────────────────────
 hinweis "FA-PRO-020 — keine Geheimnisse in Protokollen"
 G=0
-docker logs "$SIM" 2>&1 | grep -q "123456" && G=$((G+1))
-docker logs "$AGT" 2>&1 | grep -q "123456" && G=$((G+1))
+[ "$(docker logs "$SIM" 2>&1 | grep -c "123456")" != "0" ] && G=$((G+1))
+[ "$(docker logs "$AGT" 2>&1 | grep -c "123456")" != "0" ] && G=$((G+1))
 [ "$G" = "0" ] && GG=ja || GG=nein
 ergebnis "die PIN steht weder im Terminal- noch im Agentprotokoll ($G)" "$GG"
 

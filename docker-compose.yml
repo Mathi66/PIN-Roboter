@@ -15,6 +15,16 @@ services:
       dockerfile: docker/Dockerfile
       args: { BAUSTEIN: simulator }
     container_name: pinroboter-simulator
+    environment:
+      # Bildet die 36 Geräte des Demoszenarios nach: ein MVZ mit neun
+      # Betriebsstätten unterschiedlicher Größe, je ein Empfangsterminal mit
+      # SMC-B und ein bis fünf Behandlungsräume. Alle erreichbar, neueste
+      # Firmware, Managementschnittstelle frei.
+      #
+      # ERSETZT den Standardaufbau, ergänzt ihn nicht: Dessen vier Geräte
+      # tragen die Fehlerfälle, an denen die Systemnachweise messen — und sie
+      # landen sonst ohne Bezug in der Einrichtung des Agenten.
+      DEMO_TERMINALS: "an"
     ports:
       - "8443:8443"   # Konnektor, SOAP über Brainpool-TLS
       - "8444:8444"   # Kartenterminal-Management über Brainpool-TLS
@@ -147,6 +157,27 @@ services:
       # Fehlt er, bleiben hinterlegte PINs nur im Arbeitsspeicher und sind nach
       # einem Neustart weg. Nie im Repository (NFA-BET-010).
       PIN_ABLAGE_SCHLUESSEL: ${PIN_ABLAGE_SCHLUESSEL:-}
+      # ---------------------------------------------------------------------
+      # PINs der neun Demo-SMC-B.
+      #
+      # NUR FÜR DEN DEMOAUFBAU. Der Agent warnt beim Start ausdrücklich davor:
+      # Eine PIN in einer Umgebungsvariablen steht im Klartext auf dem Host,
+      # in jeder Sicherung und in "docker inspect". Im Betrieb wird sie über
+      # die Oberfläche hinterlegt und Ende-zu-Ende verschlüsselt übertragen
+      # (ADR-0009); eine so hinterlegte PIN hat Vorrang vor diesen Einträgen.
+      #
+      # Diese Karten gibt es nur im Simulator, ihre PIN ist kein Geheimnis.
+      # Beim Einsatz mit echter Hardware sind alle neun Zeilen zu entfernen.
+      PIN_card_smcb_NHAU: "123456"
+      PIN_card_smcb_NKAR: "123456"
+      PIN_card_smcb_NORT: "123456"
+      PIN_card_smcb_MHAU: "123456"
+      PIN_card_smcb_MINN: "123456"
+      PIN_card_smcb_MRAD: "123456"
+      PIN_card_smcb_SHAU: "123456"
+      PIN_card_smcb_SGYN: "123456"
+      PIN_card_smcb_SCHI: "123456"
+      # ---------------------------------------------------------------------
       # Der Agent muss ≤ 512 MB bleiben (NFA-LEI-030) — er soll später auch auf
       # schwacher oder fremder Hardware mitlaufen können.
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
