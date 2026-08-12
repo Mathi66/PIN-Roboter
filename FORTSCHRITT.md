@@ -2613,3 +2613,46 @@ Aus demselben Grund tragen **alte** Einträge weiterhin „Praxis". Sie
 umzuschreiben wäre der eigentliche Verstoß.
 
 **Stand: 241 Modultests, 392 Systemnachweise — alle grün.**
+
+### Nachtrag: ein Rest, gefunden am laufenden Stack
+
+Nach dem Commit habe ich in der Datenbank nachgesehen — und einen weiteren Fall
+derselben Art gefunden:
+
+```
+einrichtung      | geraet     | art
+Kardiologie Nord | KT-NORT-B2 | GERAET_ERREICHBAR
+```
+
+`KT-NORT-B2` gehört zur Orthopädie. „Kardiologie Nord" ist die Einrichtung, für
+die der **Agent** registriert ist. Erreichbarkeit, Erkennung und
+Firmwarewechsel trugen alle seine Registrierungs-Einrichtung — für den
+Zuständigen der Orthopädie unsichtbar.
+
+**Diesmal zentral gelöst.** Die Regel steht in `Fachprotokoll.anfuegen` selbst:
+Trägt ein Eintrag ein Gerät, gilt dessen Einrichtung — nicht die des Aufrufers.
+Ist das Gerät noch unbekannt, bleibt die genannte stehen; beim Erfassen gibt es
+die Zuordnung ja noch nicht.
+
+Dasselbe Prinzip wie beim `Geltungsbereich` als Pflichtparameter: Was an jeder
+Stelle von Hand richtig gemacht werden muss, wird irgendwo vergessen. Bei den
+Gruppen hatte ich es Stunden zuvor schon angewandt — hier war es überfällig.
+
+### Zwei Fehler beim Beheben
+
+**Ein SQL, dessen Ergebnis von der Laune des Planers abhing.** `UNION ALL … LIMIT 1`
+ohne `ORDER BY` — die Abfrage lieferte mal den Bestand, mal die Meldung des
+Agenten. Jetzt `COALESCE` mit klarer Rangfolge: Der Bestand hat Vorrang, denn er
+ist die gepflegte Zuordnung; die Agentmeldung ist ihr Abbild.
+
+**Ein Nachweis, der Historie gegen Gegenwart verglich.** Er prüfte *alle*
+gerätebezogenen Einträge gegen die *aktuelle* Zuordnung. Ein Protokolleintrag
+ist aber unveränderlich, und ein umgesetztes Gerät macht alle alten Einträge
+scheinbar falsch. Die Regel wird jetzt mit zwei Modultests geprüft — dort, wo
+sie isolierbar ist.
+
+Beim Schreiben dieser Tests stoppten mich zwei Datenbankregeln: die
+Unveränderlichkeit des Protokolls und `gruppe_id NOT NULL`. Beide Male hatte die
+Regel recht, und beide Male war mein Test der bequeme Weg.
+
+**Stand: 243 Modultests, 393 Systemnachweise — alle grün.**

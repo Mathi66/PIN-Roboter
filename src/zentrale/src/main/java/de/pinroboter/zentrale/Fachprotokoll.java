@@ -62,6 +62,45 @@ public class Fachprotokoll {
      */
     public static final String INSTANZ = "(instanzweit)";
 
+    /**
+     * Die Einrichtung, unter der ein Ereignis zu stehen hat.
+     *
+     * <p>Bei einem gerätebezogenen Ereignis die Einrichtung des Geräts, sonst
+     * die vom Aufrufer genannte. Ist das Gerät unbekannt — etwa weil es gerade
+     * erst erfasst wird —, bleibt die genannte stehen: Sie ist dann das Beste,
+     * was es gibt.
+     */
+    private String einrichtungDesGeraets(String geraet, String vorgabe) {
+        if (geraet == null || geraet.isBlank()) return vorgabe;
+        // COALESCE mit zwei Unterabfragen statt UNION ALL + LIMIT: Ohne
+        // ORDER BY ist die Reihenfolge einer Union nicht festgelegt, und die
+        // Abfrage lieferte mal den Bestand, mal die Meldung des Agenten. Ein
+        // Ergebnis, das von der Laune des Planers abhängt, ist keins.
+        //
+        // Der BESTAND hat Vorrang: Er ist die gepflegte Zuordnung, die Meldung
+        // des Agenten nur ihr Abbild.
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT coalesce(
+                    (SELECT o.bezeichnung FROM kartenterminal t
+                       JOIN organisation o ON o.id = t.organisation_id
+                      WHERE t.terminal_id = ? LIMIT 1),
+                    (SELECT g.einrichtung FROM geraet g WHERE g.terminal_id = ? LIMIT 1))""")) {
+            p.setString(1, geraet);
+            p.setString(2, geraet);
+            try (ResultSet rs = p.executeQuery()) {
+                if (rs.next()) {
+                    String e = rs.getString(1);
+                    if (e != null && !e.isBlank()) return e;
+                }
+            }
+        } catch (SQLException e) {
+            // Kein Abbruch: Ein Ereignis gehoert protokolliert, notfalls mit
+            // der genannten Einrichtung.
+            System.err.println("Einrichtung des Geräts nicht ermittelbar: " + e.getMessage());
+        }
+        return vorgabe;
+    }
+
     public Ereignis anfuegen(String einrichtung, String geraet, Ereignisart art,
                              boolean erfolg, String ausloeser, String vorgang,
                              String text, String handlung) {
@@ -76,10 +115,24 @@ public class Fachprotokoll {
                         (SELECT o.id FROM organisation o WHERE o.bezeichnung = ?
                          AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1))
                 RETURNING id, zeitpunkt""";
+        // Trägt der Eintrag ein GERÄT, gilt dessen Einrichtung — nicht die des
+        // Aufrufers.
+        //
+        // Zentral erzwungen statt an jeder Aufrufstelle gepflegt, und zwar aus
+        // Erfahrung: Ein Agent ist für EINE Einrichtung registriert, betreut in
+        // einem MVZ aber Geräte mehrerer Betriebsstätten. Am 12.08.2026 standen
+        // deshalb Erreichbarkeit und Erkennung eines Geräts der Orthopädie
+        // unter „Kardiologie Nord" — dem Namen aus der Agentregistrierung. Für
+        // den Zuständigen der Orthopädie war das Ereignis unsichtbar.
+        //
+        // Dieselbe Überlegung wie beim Geltungsbereich: Was an jeder Stelle von
+        // Hand richtig gemacht werden muss, wird irgendwo vergessen.
+        String tatsaechlich = einrichtungDesGeraets(geraet, einrichtung);
+
         try (PreparedStatement p = db.verbindung().prepareStatement(sql)) {
-            p.setString(10, einrichtung);
-            p.setString(11, einrichtung);
-            p.setString(1, einrichtung);
+            p.setString(10, tatsaechlich);
+            p.setString(11, tatsaechlich);
+            p.setString(1, tatsaechlich);
             p.setString(2, geraet);
             p.setString(3, art.name());
             p.setString(4, art.stufe().name());

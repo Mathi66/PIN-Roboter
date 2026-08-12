@@ -2184,6 +2184,45 @@ NEU_PRAXIS=$(sql "SELECT count(*) FROM fachprotokoll
 [ "${NEU_PRAXIS:-1}" = "0" ] && IP=ja || IP=nein
 ergebnis "kein neuer Eintrag faellt auf \"Praxis\" zurueck ($NEU_PRAXIS)" "$IP"
 
+# Ein geraetebezogenes Ereignis steht unter der Einrichtung SEINES GERAETS.
+#
+# Ein Agent ist fuer EINE Einrichtung registriert, betreut in einem MVZ aber
+# Geraete mehrerer Betriebsstaetten. Am 12.08.2026 standen deshalb
+# Erreichbarkeit und Erkennung eines Geraets der Orthopaedie unter
+# „Kardiologie Nord" — dem Namen aus der Agentregistrierung.
+#
+# Geprueft wird GEZIELT an einem frisch ausgeloesten Ereignis, nicht ueber den
+# gesamten Bestand: Ein Protokolleintrag ist unveraenderlich, die Zuordnung
+# eines Geraets kann sich spaeter aendern. Ein Vergleich „Historie gegen
+# Gegenwart" meldet dann Abweichungen, die keine Fehler sind — der erste Anlauf
+# dieses Nachweises tat genau das.
+KT_E=$(sqltext "SELECT t.terminal_id FROM kartenterminal t WHERE t.ist_demo ORDER BY t.id LIMIT 1")
+if [ -z "$KT_E" ]; then
+  uebersprungen "kein erfasstes Kartenterminal fuer die Zuordnungspruefung"
+else
+  SOLL_E=$(sqltext "SELECT o.bezeichnung FROM kartenterminal t
+                    JOIN organisation o ON o.id = t.organisation_id
+                    WHERE t.terminal_id = '$KT_E'")
+  TID_E=$(sql "SELECT id FROM kartenterminal WHERE terminal_id='$KT_E'")
+  # Eine Aenderung an diesem Geraet erzeugt einen Protokolleintrag mit
+  # Geraetebezug.
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/terminal/$TID_E/pruefen"
+  # Die Erreichbarkeitspruefung allein protokolliert nichts mit Geraetebezug.
+  # Deshalb eine Aenderung, die es tut: Konnektor-Zuordnung setzen.
+  KID_E=$(sql "SELECT konnektor_id FROM kartenterminal WHERE id=$TID_E")
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/terminal/$TID_E/konnektor" \
+    --data-urlencode "konnektorId=${KID_E:-}"
+  IST_E=$(sqltext "SELECT einrichtung FROM fachprotokoll
+                   WHERE geraet = '$KT_E' ORDER BY zeitpunkt DESC LIMIT 1")
+  if [ -z "$IST_E" ]; then
+    uebersprungen "keine Handlung erzeugte einen Protokolleintrag mit Geraetebezug"
+  else
+    [ "$IST_E" = "$SOLL_E" ] && GE=ja || GE=nein
+    [ "$GE" = "nein" ] && echo "    Diagnose: Eintrag steht unter \"$IST_E\", das Geraet gehoert zu \"$SOLL_E\""
+    ergebnis "ein geraetebezogenes Ereignis steht unter der Einrichtung seines Geraets" "$GE"
+  fi
+fi
+
 # Das Protokoll traegt die richtige Einrichtung — nicht fest „Praxis".
 FALSCH=$(sql "SELECT count(*) FROM fachprotokoll
               WHERE art IN ('GRUPPE_GEAENDERT','GRUPPE_GELOESCHT')

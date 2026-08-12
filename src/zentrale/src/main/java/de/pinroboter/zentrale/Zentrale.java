@@ -468,13 +468,15 @@ public class Zentrale {
      */
     private String einrichtungVonTerminal(String terminalId) {
         if (terminalId == null || terminalId.isBlank()) return Fachprotokoll.INSTANZ;
+        // Dieselbe deterministische Form wie in Fachprotokoll: COALESCE statt
+        // UNION ALL + LIMIT. Ohne ORDER BY ist die Reihenfolge einer Union
+        // nicht festgelegt.
         try (var p = db.verbindung().prepareStatement("""
-                SELECT o.bezeichnung FROM kartenterminal t
-                JOIN organisation o ON o.id = t.organisation_id
-                WHERE t.terminal_id = ?
-                UNION ALL
-                SELECT g.einrichtung FROM geraet g WHERE g.terminal_id = ?
-                LIMIT 1""")) {
+                SELECT coalesce(
+                    (SELECT o.bezeichnung FROM kartenterminal t
+                       JOIN organisation o ON o.id = t.organisation_id
+                      WHERE t.terminal_id = ? LIMIT 1),
+                    (SELECT g.einrichtung FROM geraet g WHERE g.terminal_id = ? LIMIT 1))""")) {
             p.setString(1, terminalId);
             p.setString(2, terminalId);
             try (var rs = p.executeQuery()) {

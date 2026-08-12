@@ -219,6 +219,93 @@ class PinverwaltungTest {
         }
     }
 
+    @Test
+    @DisplayName("Ein gerätebezogenes Ereignis steht unter der Einrichtung SEINES Geräts")
+    void geraetSchlaegtAufrufer() throws Exception {
+        // Der Befund vom 12.08.2026: Ein Agent ist für EINE Einrichtung
+        // registriert, betreut in einem MVZ aber Geräte mehrerer
+        // Betriebsstätten. Erreichbarkeit und Erkennung standen deshalb unter
+        // der Einrichtung aus der Agentregistrierung — für den Zuständigen der
+        // betroffenen Betriebsstätte unsichtbar.
+        //
+        // Die Regel greift zentral in Fachprotokoll.anfuegen, nicht an jeder
+        // Aufrufstelle: Was von Hand richtig gemacht werden muss, wird
+        // irgendwo vergessen.
+        String terminal = "KT-REGELTEST-" + Long.toHexString(System.nanoTime());
+        String eigene = "Einrichtung des Geräts " + Long.toHexString(System.nanoTime());
+        // Ein Gerät braucht eine Gruppe (NOT NULL) — jedes Gerät gehört zu
+        // genau einer, damit es ein Prüfintervall hat (FA-GER-050).
+        long orgId, gruppeId;
+        try (Statement st = db.verbindung().createStatement();
+             ResultSet rs = st.executeQuery("""
+                     INSERT INTO organisation (bezeichnung, art, ist_demo)
+                     VALUES ('Verbund Regeltest', 'VERBUND', FALSE) RETURNING id""")) {
+            rs.next(); orgId = rs.getLong(1);
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
+                        pruefintervall_sekunden, organisation_id)
+                VALUES ('Alle Geräte', ?, TRUE, 60, ?) RETURNING id""")) {
+            p.setString(1, eigene);
+            p.setLong(2, orgId);
+            try (ResultSet rs = p.executeQuery()) { rs.next(); gruppeId = rs.getLong(1); }
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung) "
+                + "VALUES (?,?,?,?)")) {
+            p.setString(1, terminal);
+            p.setString(2, eigene);
+            p.setLong(3, gruppeId);
+            p.setString(4, "Regeltest");
+            p.executeUpdate();
+        }
+        try {
+            var protokoll = new Fachprotokoll(db, null);
+            // Der Aufrufer behauptet eine ANDERE Einrichtung — so wie ein Agent,
+            // der unter seiner Registrierung meldet.
+            var e = protokoll.anfuegen("Einrichtung des Agenten", terminal,
+                    de.pinroboter.gemeinsam.Ereignisart.GERAET_ERREICHBAR, true,
+                    "Standort-Agent", null, "Gerät wieder erreichbar", null);
+
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "SELECT einrichtung FROM fachprotokoll WHERE id = ?")) {
+                p.setLong(1, e.id());
+                try (ResultSet rs = p.executeQuery()) {
+                    rs.next();
+                    assertEquals(eigene, rs.getString(1),
+                            "Das Gerät bestimmt die Einrichtung, nicht der Aufrufer — sonst "
+                            + "sieht der Zuständige das Ereignis seines eigenen Geräts nicht.");
+                }
+            }
+        } finally {
+            try (Statement st = db.verbindung().createStatement()) {
+                st.executeUpdate("DELETE FROM geraet WHERE terminal_id = '" + terminal + "'");
+                st.executeUpdate("DELETE FROM geraetegruppe WHERE id = " + gruppeId);
+                st.executeUpdate("DELETE FROM organisation WHERE id = " + orgId);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Ist das Gerät unbekannt, bleibt die genannte Einrichtung stehen")
+    void unbekanntesGeraetBehaeltVorgabe() throws Exception {
+        // Beim Erfassen eines Geräts gibt es die Zuordnung noch nicht. Dann ist
+        // die genannte Einrichtung das Beste, was es gibt — sie zu verwerfen
+        // wäre schlechter als sie zu übernehmen.
+        var protokoll = new Fachprotokoll(db, null);
+        var e = protokoll.anfuegen("Genannte Einrichtung", "KT-GIBTESNICHT-" + System.nanoTime(),
+                de.pinroboter.gemeinsam.Ereignisart.TERMINAL_ANGELEGT, true,
+                "Nachweis", null, "Gerät erfasst", null);
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT einrichtung FROM fachprotokoll WHERE id = ?")) {
+            p.setLong(1, e.id());
+            try (ResultSet rs = p.executeQuery()) {
+                rs.next();
+                assertEquals("Genannte Einrichtung", rs.getString(1));
+            }
+        }
+    }
+
     private Timestamp schluesselGemeldet() throws SQLException {
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "SELECT schluessel_gemeldet FROM agent WHERE id = ?")) {
