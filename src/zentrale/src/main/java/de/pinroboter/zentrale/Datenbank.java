@@ -775,6 +775,73 @@ public class Datenbank implements AutoCloseable {
             --    des Betreibers und darf nicht stillschweigend weiterlaufen.
             ALTER TABLE geraetegruppe ALTER COLUMN organisation_id SET NOT NULL;
             """);
+
+        migration(24, """
+            -- Die Gerätehierarchie folgt der Organisationsstruktur (ADR-0012,
+            -- Vorgabe PO 12.08.2026).
+
+            -- 1. Zwei neue Ebenen.
+            --
+            -- LEISTUNGSERBRINGER: das zugelassene MVZ zwischen Trägergesellschaft
+            -- und Betriebsstätte. FACHBEREICH: unterhalb der Betriebsstätte, denn
+            -- in einer Klinik stehen Kartenterminals nicht „irgendwo in der
+            -- Betriebsstätte".
+            --
+            -- Alle Zwischenebenen bleiben OPTIONAL. Eine Einzelpraxis ist
+            -- weiterhin VERBUND → EINRICHTUNG.
+            ALTER TABLE organisation DROP CONSTRAINT IF EXISTS organisation_art_check;
+            ALTER TABLE organisation ADD CONSTRAINT organisation_art_check
+              CHECK (art IN ('VERBUND','LEISTUNGSERBRINGER','STANDORT',
+                             'EINRICHTUNG','FACHBEREICH'));
+
+            -- 2. Die Betriebsstätte trägt ihre TI-Identität.
+            --
+            -- Beides optional: Beim Einrichten liegen die Angaben oft noch nicht
+            -- vor, und eine Pflichtangabe, die niemand hat, führt zu
+            -- Fantasiewerten. Nur eine EINRICHTUNG ist die LEI — nur dort sind
+            -- die Felder fachlich sinnvoll.
+            ALTER TABLE organisation ADD COLUMN IF NOT EXISTS bsnr TEXT;
+            ALTER TABLE organisation ADD COLUMN IF NOT EXISTS telematik_id TEXT;
+
+            -- 3. Konnektor ↔ Einrichtung wird n:m.
+            --
+            -- Mit Konnektor as a Service im Rechenzentrum teilen sich mehrere
+            -- Leistungserbringer einen Konnektor. Bisher hätte man ihn mehrfach
+            -- erfassen müssen — gleiche Adresse, verschiedene Kennungen, jeder
+            -- Zustandswechsel mehrfach protokolliert.
+            --
+            -- konnektor.organisation_id bleibt und bedeutet ab jetzt den
+            -- BETREIBER: Wer den Konnektor betreibt, verwaltet ihn; wer ihn
+            -- nutzt, sieht ihn. Ohne diese Trennung könnte eine kleine Praxis
+            -- den Konnektor umkonfigurieren, an dem zwanzig andere hängen.
+            CREATE TABLE IF NOT EXISTS konnektor_nutzung (
+              konnektor_id    BIGINT NOT NULL REFERENCES konnektor(id) ON DELETE CASCADE,
+              organisation_id BIGINT NOT NULL REFERENCES organisation(id) ON DELETE CASCADE,
+              angelegt        TIMESTAMPTZ NOT NULL DEFAULT now(),
+              PRIMARY KEY (konnektor_id, organisation_id)
+            );
+            CREATE INDEX IF NOT EXISTS konnektor_nutzung_org_idx
+              ON konnektor_nutzung (organisation_id);
+
+            -- Bestehende Konnektoren: Betreiber bleibt, Nutzung kommt dazu.
+            -- Kein Datensatz verliert seine Zuordnung.
+            INSERT INTO konnektor_nutzung (konnektor_id, organisation_id)
+              SELECT id, organisation_id FROM konnektor
+              ON CONFLICT DO NOTHING;
+
+            -- 4. Konnektor oder HSK — die Zuordnungsregel unterscheidet sich.
+            --
+            -- Bei TI 2.0 gilt eine feste Zuordnung HSK-Instanz → eine LEI; ein
+            -- Konnektor im RZ darf mehrere bedienen. Ohne dieses Merkmal ließe
+            -- sich die Regel nicht durchsetzen.
+            ALTER TABLE konnektor ADD COLUMN IF NOT EXISTS art TEXT NOT NULL DEFAULT 'KONNEKTOR';
+            ALTER TABLE konnektor DROP CONSTRAINT IF EXISTS konnektor_art_check;
+            ALTER TABLE konnektor ADD CONSTRAINT konnektor_art_check
+              CHECK (art IN ('KONNEKTOR','HSK'));
+            -- Aus dem Modellnamen ableiten, wo es eindeutig ist.
+            UPDATE konnektor SET art = 'HSK'
+             WHERE art = 'KONNEKTOR' AND modell ILIKE '%HSK%';
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

@@ -148,6 +148,17 @@ schreibt, kann den Parameter nicht weglassen, ohne dass es auffällt.
 jeder Abfrage **an derselben Stelle** — direkt hinter `WHERE 1=1` —, damit es
 bei einer Durchsicht sofort auffällt, wenn es fehlt.
 
+> **Wenn eine Abfrage großzügiger wird, prüfe die Schreibwege nach.** Seit
+> ADR-0012 zeigt `Bestandsverwaltung.konnektor(...)` einen Konnektor auch den
+> Einrichtungen, die ihn nur **mitnutzen** — sonst könnten sie ihre eigenen
+> Terminals nicht zuordnen. Die Änderungswege prüften bis dahin nur „sehe ich
+> den Datensatz?" und wurden damit still unwirksam. Sie fragen jetzt
+> `darfKonnektorVerwalten(...)`, das ausschließlich auf den Betreiber schaut.
+>
+> Merksatz: Eine Lesbarkeitsprüfung ist keine Schreibberechtigung. Wo beides
+> auseinanderfällt, braucht es zwei Methoden — und einen Test, der den Angriff
+> ausführt.
+
 ### 4.2 Einrichtung: Pflichtparameter in `pruefe()`
 
 Alarme und Protokolleinträge tragen die Einrichtung. Sie stammt **aus der

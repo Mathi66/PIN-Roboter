@@ -117,6 +117,15 @@ public class Bestandsverwaltung {
      * so wird Mandantentrennung zentral erzwungen statt vergessen
      * ({@link Geltungsbereich}).
      */
+    /**
+     * Konnektoren im Geltungsbereich — als Betreiber <b>oder</b> als Nutzer.
+     *
+     * <p>Seit ADR-0012 kann ein Konnektor mehrere Einrichtungen bedienen
+     * (Konnektor as a Service im Rechenzentrum). Eine Einrichtung muss ihn
+     * sehen, um ihre Terminals zuordnen zu können — auch wenn sie ihn nicht
+     * betreibt. <b>Ändern</b> darf ihn nur der Betreiber; das prüft
+     * {@link #darfKonnektorVerwalten}.
+     */
     public List<Konnektor> konnektoren(Geltungsbereich bereich) {
         List<Konnektor> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
@@ -124,9 +133,14 @@ public class Bestandsverwaltung {
                        (SELECT count(*) FROM kartenterminal t WHERE t.konnektor_id = k.id) AS terminalzahl
                 FROM konnektor k
                 JOIN organisation o ON o.id = k.organisation_id
-                WHERE 1=1""" + bereich.bedingung("k.organisation_id")
-                + " ORDER BY lower(o.bezeichnung), lower(k.bezeichnung)")) {
-            bereich.wertSetzen(db.verbindung(), p, 1);
+                WHERE (1=1""" + bereich.bedingung("k.organisation_id") + """
+                    ) OR EXISTS (SELECT 1 FROM konnektor_nutzung n
+                                  WHERE n.konnektor_id = k.id"""
+                + bereich.bedingung("n.organisation_id") + """
+                    )
+                ORDER BY lower(o.bezeichnung), lower(k.bezeichnung)""")) {
+            int i = bereich.wertSetzen(db.verbindung(), p, 1);
+            bereich.wertSetzen(db.verbindung(), p, i);
             try (ResultSet rs = p.executeQuery()) {
                 while (rs.next()) liste.add(konnektorLesen(rs));
             }
@@ -148,9 +162,14 @@ public class Bestandsverwaltung {
                        (SELECT count(*) FROM kartenterminal t WHERE t.konnektor_id = k.id) AS terminalzahl
                 FROM konnektor k
                 JOIN organisation o ON o.id = k.organisation_id
-                WHERE k.id = ?""" + bereich.bedingung("k.organisation_id"))) {
+                WHERE k.id = ? AND ((1=1""" + bereich.bedingung("k.organisation_id") + """
+                    ) OR EXISTS (SELECT 1 FROM konnektor_nutzung n
+                                  WHERE n.konnektor_id = k.id"""
+                + bereich.bedingung("n.organisation_id") + """
+                    ))""")) {
             p.setLong(1, id);
-            bereich.wertSetzen(db.verbindung(), p, 2);
+            int i = bereich.wertSetzen(db.verbindung(), p, 2);
+            bereich.wertSetzen(db.verbindung(), p, i);
             try (ResultSet rs = p.executeQuery()) {
                 return rs.next() ? Optional.of(konnektorLesen(rs)) : Optional.empty();
             }
@@ -203,7 +222,19 @@ public class Bestandsverwaltung {
             p.setString(10, leerZuNull(webadminAdresse));
             try (ResultSet rs = p.executeQuery()) {
                 rs.next();
-                return Ergebnis.erfolg(rs.getLong(1));
+                long id = rs.getLong(1);
+                // Der Betreiber nutzt seinen Konnektor immer — die Zeile ist
+                // keine Option, sondern eine Feststellung (ADR-0012). Ohne sie
+                // wäre die Nutzungsliste unvollständig, sobald ein zweiter
+                // Nutzer dazukommt.
+                try (PreparedStatement n = db.verbindung().prepareStatement(
+                        "INSERT INTO konnektor_nutzung (konnektor_id, organisation_id) "
+                        + "VALUES (?,?) ON CONFLICT DO NOTHING")) {
+                    n.setLong(1, id);
+                    n.setLong(2, organisationId);
+                    n.executeUpdate();
+                }
+                return Ergebnis.erfolg(id);
             }
         } catch (SQLException e) {
             return Ergebnis.fehler("Der Konnektor konnte nicht gespeichert werden: " + klartext(e));
@@ -228,6 +259,9 @@ public class Bestandsverwaltung {
         // Meldung wie bei einem geloeschten. Ein "Zugriff verweigert" wuerde
         // verraten, dass es ihn gibt.
         if (konnektor(id, bereich).isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
+        // ADR-0012: sehen duerfen ihn auch die nutzenden Einrichtungen - aendern
+        // nur der Betreiber.
+        if (!darfKonnektorVerwalten(id, bereich)) return Ergebnis.fehler(NUR_NUTZER);
 
         String chiffrat;
         try { chiffrat = chiffrieren(neuesPasswort); }
@@ -259,6 +293,7 @@ public class Bestandsverwaltung {
 
     public Ergebnis konnektorPasswortEntfernen(long id, Geltungsbereich bereich) {
         if (konnektor(id, bereich).isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
+        if (!darfKonnektorVerwalten(id, bereich)) return Ergebnis.fehler(NUR_NUTZER);
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "UPDATE konnektor SET passwort_chiffrat=NULL WHERE id=?")) {
             p.setLong(1, id);
@@ -278,6 +313,7 @@ public class Bestandsverwaltung {
     public Ergebnis konnektorLoeschen(long id, Geltungsbereich bereich) {
         var k = konnektor(id, bereich);
         if (k.isEmpty()) return Ergebnis.fehler("Diesen Konnektor gibt es nicht mehr.");
+        if (!darfKonnektorVerwalten(id, bereich)) return Ergebnis.fehler(NUR_NUTZER);
         if (k.get().terminalzahl() > 0) {
             List<String> namen = terminalnamen(id, 5);
             return Ergebnis.fehler(
@@ -798,6 +834,111 @@ public class Bestandsverwaltung {
         }
     }
 
+    /**
+     * Ob dieser Geltungsbereich den Konnektor <b>verwalten</b> darf.
+     *
+     * <h2>Betreiben und Nutzen sind verschiedene Dinge (ADR-0012)</h2>
+     *
+     * Im Rechenzentrumsbetrieb gehört der Konnektor dem Dienstleister, und
+     * mehrere Leistungserbringer nutzen ihn. Sie müssen ihn <b>sehen</b> — sonst
+     * könnten sie ihre eigenen Terminals nicht zuordnen. Sie dürfen ihn aber
+     * weder umkonfigurieren noch löschen: Sonst könnte eine kleine Praxis den
+     * Konnektor verstellen, an dem zwanzig andere hängen.
+     *
+     * <p>Verwalten heißt: Zugangsdaten ändern, Aufrufkontext pflegen, löschen.
+     */
+    /**
+     * Meldung, wenn jemand einen Konnektor ändern will, den er nur mitbenutzt.
+     *
+     * <p>Sie nennt den Grund, statt den Datensatz zu verleugnen: Der Nutzer
+     * <em>sieht</em> den Konnektor ja in seiner Liste. Ein „gibt es nicht mehr“
+     * wäre hier eine Lüge, die er sofort widerlegen kann.
+     */
+    private static final String NUR_NUTZER =
+            "Diesen Konnektor betreibt eine andere Einrichtung. Sie können ihm Geräte "
+            + "zuordnen, seine Zugangsdaten aber nicht ändern — sonst könnte eine "
+            + "Einrichtung den Konnektor umkonfigurieren, an dem andere hängen.";
+
+    public boolean darfKonnektorVerwalten(long konnektorId, Geltungsbereich bereich) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT 1 FROM konnektor k WHERE k.id = ?"
+                + bereich.bedingung("k.organisation_id"))) {
+            p.setLong(1, konnektorId);
+            bereich.wertSetzen(db.verbindung(), p, 2);
+            try (ResultSet rs = p.executeQuery()) { return rs.next(); }
+        } catch (SQLException e) { return false; }
+    }
+
+    /** Eine mitnutzende Einrichtung — mit Kennung, damit sie sich austragen lässt. */
+    public record Nutzung(long organisationId, String bezeichnung) {}
+
+    /** Die Einrichtungen, die diesen Konnektor nutzen — ohne ihn zu betreiben. */
+    public List<Nutzung> konnektorNutzer(long konnektorId) {
+        List<Nutzung> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT o.id, o.bezeichnung FROM konnektor_nutzung n
+                JOIN organisation o ON o.id = n.organisation_id
+                JOIN konnektor k ON k.id = n.konnektor_id
+                WHERE n.konnektor_id = ? AND n.organisation_id <> k.organisation_id
+                ORDER BY lower(o.bezeichnung)""")) {
+            p.setLong(1, konnektorId);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) liste.add(new Nutzung(rs.getLong(1), rs.getString(2)));
+            }
+        } catch (SQLException e) {
+            System.err.println("Nutzer des Konnektors nicht lesbar: " + e.getMessage());
+        }
+        return liste;
+    }
+
+    /**
+     * Trägt eine nutzende Einrichtung ein oder aus.
+     *
+     * <p>Nur der Betreiber darf das: Wer den Konnektor bereitstellt,
+     * entscheidet, wer ihn mitbenutzt. Eine Einrichtung, die sich selbst
+     * einträgt, hätte Zugriff auf ein fremdes Gerät.
+     *
+     * <p><b>Der Betreiber selbst lässt sich nicht austragen.</b> Er nutzt
+     * seinen Konnektor immer — die Zeile ist keine Option, sondern eine
+     * Feststellung.
+     */
+    public Ergebnis konnektorNutzungSetzen(long konnektorId, long organisationId,
+                                           boolean nutzen, Geltungsbereich bereich) {
+        if (!darfKonnektorVerwalten(konnektorId, bereich)) {
+            return Ergebnis.fehler(NUR_NUTZER);
+        }
+        if (!bereich.umfasst(organisationId)) {
+            return Ergebnis.fehler("Die gewählte Einrichtung liegt außerhalb Ihres "
+                    + "Zuständigkeitsbereichs.");
+        }
+        try {
+            if (nutzen) {
+                try (PreparedStatement p = db.verbindung().prepareStatement(
+                        "INSERT INTO konnektor_nutzung (konnektor_id, organisation_id) "
+                        + "VALUES (?,?) ON CONFLICT DO NOTHING")) {
+                    p.setLong(1, konnektorId);
+                    p.setLong(2, organisationId);
+                    p.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement p = db.verbindung().prepareStatement(
+                        "DELETE FROM konnektor_nutzung n USING konnektor k "
+                        + "WHERE k.id = n.konnektor_id AND n.konnektor_id = ? "
+                        + "AND n.organisation_id = ? AND n.organisation_id <> k.organisation_id")) {
+                    p.setLong(1, konnektorId);
+                    p.setLong(2, organisationId);
+                    if (p.executeUpdate() == 0) {
+                        return Ergebnis.fehler("Der Betreiber eines Konnektors nutzt ihn immer — "
+                                + "diese Zuordnung lässt sich nicht entfernen.");
+                    }
+                }
+            }
+            return Ergebnis.erfolg(konnektorId);
+        } catch (SQLException e) {
+            return Ergebnis.fehler("Die Zuordnung konnte nicht gespeichert werden: " + klartext(e));
+        }
+    }
+
     /** Einziger Weg zum Klartextpasswort eines Terminal-Administrationszugangs. */
     public String terminalAdminPasswort(long id) {
         return entschluesselnAus("SELECT admin_chiffrat FROM kartenterminal WHERE id=?", id);
@@ -857,13 +998,35 @@ public class Bestandsverwaltung {
     // --------------------------------------------------------- Organisationen
 
     /** Einrichtungen zur Auswahl, in hierarchischer Reihenfolge. */
+    /**
+     * Rangfolge der Organisationsarten für Auswahllisten (ADR-0012).
+     *
+     * <p>Von oben nach unten wie im Baum — eine alphabetische Liste würde den
+     * Fachbereich vor die Betriebsstätte setzen, zu der er gehört.
+     */
+    private static final String RANG = """
+            CASE art WHEN 'VERBUND' THEN 1 WHEN 'LEISTUNGSERBRINGER' THEN 2
+                     WHEN 'STANDORT' THEN 3 WHEN 'EINRICHTUNG' THEN 4 ELSE 5 END""";
+
+    /**
+     * Nur die Betriebsstätten — für die Mitnutzung eines Konnektors (ADR-0012).
+     *
+     * <p>Mitnutzer eines Konnektors ist immer eine Leistungserbringer&shy;institution,
+     * also eine Betriebsstätte. Ein Fachbereich nutzt ihn nicht eigenständig: Er
+     * teilt sich die SMC-B seiner Betriebsstätte.
+     */
+    public List<Bestandsseiten.Organisationsauswahl> betriebsstaetten(Geltungsbereich bereich) {
+        return organisationen(bereich).stream()
+                .filter(o -> Organisationsverwaltung.istBetriebsstaette(o.art()))
+                .toList();
+    }
+
     public List<Bestandsseiten.Organisationsauswahl> organisationen(Geltungsbereich bereich) {
         List<Bestandsseiten.Organisationsauswahl> liste = new ArrayList<>();
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 SELECT id, bezeichnung, art FROM organisation WHERE 1=1"""
                 + bereich.bedingung("id")
-                + " ORDER BY CASE art WHEN 'VERBUND' THEN 1 WHEN 'STANDORT' THEN 2 ELSE 3 END,"
-                + " lower(bezeichnung)")) {
+                + " ORDER BY " + RANG + ", lower(bezeichnung)")) {
             bereich.wertSetzen(db.verbindung(), p, 1);
             try (ResultSet rs = p.executeQuery()) {
             while (rs.next()) {

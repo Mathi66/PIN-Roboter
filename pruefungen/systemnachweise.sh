@@ -265,11 +265,22 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
 # ---------------------------------------------------------------- Modul- und Integrationstests
 hinweis "Modul- und Integrationstests (inkl. Benutzerverwaltung gegen echte Datenbank)"
 datenbank_starten
+# WICHTIG: "package", nicht "test". Alle folgenden Nachweise starten die
+# Bausteine aus target/*.jar. Baute dieser Schritt sie nicht, liefe der ganze
+# Lauf gegen ein Artefakt von irgendwann - und ein gruener Bericht bescheinigte
+# einen Stand, den es im Quellcode nicht mehr gibt. Am 12.08.2026 genau so
+# passiert: Nur weil neue Nachweise fehlschlugen, fiel es auf.
 if docker run --rm --network $NETZ -v "$PWD":/p -v pinroboter-m2:/root/.m2 -w /p \
      -e TEST_DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
      -e TEST_DB_USER=pinroboter -e TEST_DB_PASSWORD=test \
-     maven:3.9-eclipse-temurin-21 mvn -B -q test >/tmp/pr-tests.log 2>&1; then T=ja; else T=nein; fi
+     maven:3.9-eclipse-temurin-21 mvn -B -q package >/tmp/pr-tests.log 2>&1; then T=ja; else T=nein; fi
 ergebnis "alle automatisierten Tests grün" "$T"
+
+# Und der Nachweis, dass die Bausteine wirklich frisch sind: juenger als die
+# neueste Quelldatei. Ein stiller Fehlschlag des Bauens waere sonst unsichtbar.
+NEUESTE=$(find src -name '*.java' -newer src/zentrale/target/zentrale.jar 2>/dev/null | wc -l | tr -d ' ')
+[ "${NEUESTE:-1}" = "0" ] && FR=ja || FR=nein
+ergebnis "die geprueften Bausteine sind auf dem Stand des Quellcodes ($NEUESTE neuere Dateien)" "$FR"
 [ "$T" = "nein" ] && tail -20 /tmp/pr-tests.log
 # Die Integrationstests legen Testbenutzer an. Fuer die folgenden Nachweise
 # wird ein frisches System gebraucht - sonst greift die Ersteinrichtung nicht.
@@ -786,7 +797,10 @@ curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' -X POST \
   $BASIS/verwaltung/demodaten/anlegen | grep -qE '^(200|302)$' && DA=ja || DA=nein
 ergebnis "Demodatensatz laesst sich auf Knopfdruck anlegen" "$DA"
 
-for paar in "organisation:13" "konnektor:9" "arbeitsplatz:36" "kartenterminal:36"; do
+# Seit ADR-0012: 1 Traeger + 3 Standorte + 9 Betriebsstaetten + 2 Fachbereiche
+# = 15 Organisationseinheiten. Konnektoren: 6 eigene + 1 zentraler im
+# Rechenzentrum, den sich drei kleine Betriebsstaetten teilen.
+for paar in "organisation:15" "konnektor:7" "arbeitsplatz:36" "kartenterminal:36"; do
   T=${paar%%:*}; SOLL=${paar##*:}
   IST=$(sql "SELECT count(*) FROM $T WHERE ist_demo")
   [ "$IST" = "$SOLL" ] && R=ja || R=nein
@@ -1437,7 +1451,13 @@ PRAXIS=$(sqltext "SELECT b.benutzername FROM benutzer b
                   JOIN organisation o ON o.id = b.organisation_id
                   WHERE b.ist_demo AND o.art = 'EINRICHTUNG' ORDER BY b.id LIMIT 1")
 ORGID=$(sql "SELECT organisation_id FROM benutzer WHERE benutzername = '$PRAXIS'")
-SOLL=$(sql "SELECT count(*) FROM kartenterminal WHERE organisation_id = $ORGID")
+# Seit ADR-0012 kann eine Betriebsstaette Fachbereiche haben; deren Geraete
+# gehoeren zu ihrem Geltungsbereich. Deshalb ueber den Teilbaum zaehlen -
+# ein Vergleich auf die eine Kennung wuerde je nach Betriebsstaette schwanken.
+SOLL=$(sql "WITH RECURSIVE tb(id) AS (
+              SELECT $ORGID::bigint
+              UNION ALL SELECT o.id FROM organisation o JOIN tb ON o.eltern_id = tb.id)
+            SELECT count(*) FROM kartenterminal WHERE organisation_id IN (SELECT id FROM tb)")
 echo "  Demo-Benutzer $PRAXIS gehoert zu Einrichtung $ORGID mit $SOLL Geraeten"
 
 # Anmelden als dieser Benutzer. Das Kennwort ist bei Demokonten einheitlich.
@@ -2011,6 +2031,126 @@ else
   rm -f /tmp/pr-org-zyklus.html
 fi
 rm -f /tmp/pr-org.html
+
+# ---------------------------------------------------------------- ADR-0012
+# Die Gerätehierarchie folgt der Organisationsstruktur. Geprüft werden die drei
+# Punkte, an denen sie sich vom vorherigen Modell unterscheidet: die neuen
+# Ebenen, die TI-Identität der Betriebsstätte und der geteilte Konnektor.
+hinweis "ADR-0012 — Gerätehierarchie nach Organisationsstruktur"
+
+BS=$(sql "SELECT id FROM organisation WHERE art='EINRICHTUNG' AND ist_demo ORDER BY id LIMIT 1")
+ST=$(sql "SELECT id FROM organisation WHERE art='STANDORT' AND ist_demo ORDER BY id LIMIT 1")
+VB=$(sql "SELECT id FROM organisation WHERE art='VERBUND' AND ist_demo ORDER BY id LIMIT 1")
+if [ -z "$BS" ] || [ -z "$ST" ] || [ -z "$VB" ]; then
+  uebersprungen "Demodatensatz ohne Betriebsstaette/Standort/Verbund"
+else
+  # --- Die neuen Ebenen ---------------------------------------------------
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/organisation     --data-urlencode "bezeichnung=Nachweis Fachbereich" --data-urlencode "art=FACHBEREICH"     --data-urlencode "elternId=$BS"
+  FB=$(sql "SELECT id FROM organisation WHERE bezeichnung='Nachweis Fachbereich'")
+  [ -n "$FB" ] && HF=ja || HF=nein
+  ergebnis "ein Fachbereich laesst sich unterhalb einer Betriebsstaette anlegen" "$HF"
+
+  # Unter einem Standort hat ein Fachbereich nichts zu suchen: Er gliedert den
+  # Geraetepark einer Betriebsstaette, nicht den eines Standorts.
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/organisation     --data-urlencode "bezeichnung=Nachweis Fachbereich falsch"     --data-urlencode "art=FACHBEREICH" --data-urlencode "elternId=$ST"
+  [ "$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='Nachweis Fachbereich falsch'")" = "0" ]     && HF2=ja || HF2=nein
+  ergebnis "ein Fachbereich unter einem Standort wird abgelehnt" "$HF2"
+
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/organisation     --data-urlencode "bezeichnung=Nachweis Leistungserbringer"     --data-urlencode "art=LEISTUNGSERBRINGER" --data-urlencode "elternId=$VB"
+  LE=$(sql "SELECT id FROM organisation WHERE bezeichnung='Nachweis Leistungserbringer'")
+  [ -n "$LE" ] && HL=ja || HL=nein
+  ergebnis "ein Leistungserbringer laesst sich unterhalb des Verbunds anlegen" "$HL"
+
+  # --- BSNR und Telematik-ID ----------------------------------------------
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$BS/ti-identitaet"     --data-urlencode "bsnr=729112233"     --data-urlencode "telematikId=1-SMC-B-Testkarte-883110000999888"
+  [ "$(sqltext "SELECT bsnr FROM organisation WHERE id=$BS")" = "729112233" ] && HB=ja || HB=nein
+  ergebnis "die Betriebsstaette nimmt BSNR und Telematik-ID auf" "$HB"
+
+  # Acht Ziffern sind keine BSNR. Geprueft wird die Form, nicht die Gueltigkeit -
+  # ob es die Nummer wirklich gibt, weiss nur die KV.
+  curl -s -b "$KEKSE" -X POST "$BASIS/organisation/$BS/ti-identitaet"     --data-urlencode "bsnr=72911223" --data-urlencode "telematikId=" > /tmp/pr-bsnr.html
+  [ "$(sqltext "SELECT bsnr FROM organisation WHERE id=$BS")" = "729112233" ] && HB2=ja || HB2=nein
+  ergebnis "eine achtstellige BSNR wird abgelehnt und der Altwert bleibt" "$HB2"
+  grep -q "neun Ziffern" /tmp/pr-bsnr.html && HB3=ja || HB3=nein
+  ergebnis "die Meldung sagt, wie eine BSNR aussehen muss" "$HB3"
+  rm -f /tmp/pr-bsnr.html
+
+  # An einem Standort gibt es keine BSNR - er ist keine Leistungserbringer-
+  # institution. Das muss die Anwendung verweigern, nicht nur verschweigen.
+  curl -s -b "$KEKSE" -X POST "$BASIS/organisation/$ST/ti-identitaet"     --data-urlencode "bsnr=729555555" --data-urlencode "telematikId=" > /tmp/pr-bsnr2.html
+  [ -z "$(sqltext "SELECT bsnr FROM organisation WHERE id=$ST")" ] && HB4=ja || HB4=nein
+  ergebnis "ein Standort nimmt keine BSNR an" "$HB4"
+  grep -q "Betriebsstätte" /tmp/pr-bsnr2.html && HB5=ja || HB5=nein
+  ergebnis "die Meldung nennt die Betriebsstaette als richtigen Ort" "$HB5"
+  rm -f /tmp/pr-bsnr2.html
+
+  # Die Detailseite der Betriebsstaette zeigt die Felder, die des Standorts nicht.
+  curl -s -b "$KEKSE" "$BASIS/organisation/$BS" > /tmp/pr-od.html
+  grep -q "Angaben zur Betriebsstätte" /tmp/pr-od.html && HO=ja || HO=nein
+  ergebnis "die Detailseite der Betriebsstaette bietet die Felder an" "$HO"
+  curl -s -b "$KEKSE" "$BASIS/organisation/$ST" > /tmp/pr-od2.html
+  grep -q "Angaben zur Betriebsstätte" /tmp/pr-od2.html && HO2=nein || HO2=ja
+  ergebnis "die Detailseite des Standorts bietet sie nicht an" "$HO2"
+  rm -f /tmp/pr-od.html /tmp/pr-od2.html
+
+  # Alle Demo-Betriebsstaetten tragen ihre TI-Identitaet; Fachbereiche nicht.
+  OHNE=$(sql "SELECT count(*) FROM organisation
+              WHERE ist_demo AND art='EINRICHTUNG' AND (bsnr IS NULL OR telematik_id IS NULL)")
+  [ "${OHNE:-1}" = "0" ] && HD=ja || HD=nein
+  ergebnis "alle neun Demo-Betriebsstaetten tragen BSNR und Telematik-ID (ohne: $OHNE)" "$HD"
+  MIT=$(sql "SELECT count(*) FROM organisation
+             WHERE ist_demo AND art<>'EINRICHTUNG' AND bsnr IS NOT NULL")
+  [ "${MIT:-1}" = "0" ] && HD2=ja || HD2=nein
+  ergebnis "keine andere Ebene traegt eine BSNR (gefunden: $MIT)" "$HD2"
+
+  # --- Der geteilte Konnektor ---------------------------------------------
+  RZ=$(sql "SELECT id FROM konnektor WHERE bezeichnung LIKE 'Konnektor Rechenzentrum%' AND ist_demo")
+  if [ -z "$RZ" ]; then
+    uebersprungen "kein zentraler Konnektor im Demodatensatz"
+  else
+    NUTZER=$(sql "SELECT count(*) FROM konnektor_nutzung n JOIN konnektor k ON k.id=n.konnektor_id
+                  WHERE n.konnektor_id=$RZ AND n.organisation_id <> k.organisation_id")
+    [ "${NUTZER:-0}" = "3" ] && HK=ja || HK=nein
+    ergebnis "drei Betriebsstaetten nutzen den zentralen Konnektor mit ($NUTZER von 3)" "$HK"
+
+    curl -s -b "$KEKSE" "$BASIS/bestand/konnektor/$RZ" > /tmp/pr-kn.html
+    grep -q "Mitnutzende Einrichtungen" /tmp/pr-kn.html && HK2=ja || HK2=nein
+    ergebnis "die Konnektorseite fuehrt die mitnutzenden Einrichtungen auf" "$HK2"
+    rm -f /tmp/pr-kn.html
+
+    # Der Betreiber selbst laesst sich nicht austragen - er nutzt seinen
+    # Konnektor immer. Eine Zeile, die man loeschen kann, waere eine Falle.
+    BETREIBER=$(sql "SELECT organisation_id FROM konnektor WHERE id=$RZ")
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$RZ/nutzung"       --data-urlencode "organisationId=$BETREIBER" --data-urlencode "nutzen=nein"
+    [ "$(sql "SELECT count(*) FROM konnektor_nutzung WHERE konnektor_id=$RZ AND organisation_id=$BETREIBER")" = "1" ]       && HK3=ja || HK3=nein
+    ergebnis "der Betreiber laesst sich nicht als Nutzer austragen" "$HK3"
+
+    # Eine Mitnutzung erlauben und wieder entziehen - beides muss wirken und
+    # im Fachprotokoll stehen.
+    ANDERE=$(sql "SELECT o.id FROM organisation o WHERE o.ist_demo AND o.art='EINRICHTUNG'
+                  AND NOT EXISTS (SELECT 1 FROM konnektor_nutzung n
+                                  WHERE n.konnektor_id=$RZ AND n.organisation_id=o.id)
+                  ORDER BY o.id LIMIT 1")
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$RZ/nutzung"       --data-urlencode "organisationId=$ANDERE" --data-urlencode "nutzen=ja"
+    [ "$(sql "SELECT count(*) FROM konnektor_nutzung WHERE konnektor_id=$RZ AND organisation_id=$ANDERE")" = "1" ]       && HK4=ja || HK4=nein
+    ergebnis "eine weitere Einrichtung laesst sich zur Mitnutzung zulassen" "$HK4"
+    [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='KONNEKTOR_NUTZUNG_GEAENDERT'")" != "0" ]       && HK5=ja || HK5=nein
+    ergebnis "die Aenderung der Mitnutzung steht im Fachprotokoll" "$HK5"
+
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$RZ/nutzung"       --data-urlencode "organisationId=$ANDERE" --data-urlencode "nutzen=nein"
+    [ "$(sql "SELECT count(*) FROM konnektor_nutzung WHERE konnektor_id=$RZ AND organisation_id=$ANDERE")" = "0" ]       && HK6=ja || HK6=nein
+    ergebnis "die Mitnutzung laesst sich wieder entziehen" "$HK6"
+  fi
+
+  # Aufraeumen: Der Nachweis hinterlaesst keine Einheiten und keine BSNR, die
+  # spaetere Nachweise verwirren wuerden.
+  [ -n "$FB" ] && curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$FB/loeschen"
+  [ -n "$LE" ] && curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$LE/loeschen"
+  BSNR_ALT=$(sqltext "SELECT bsnr FROM organisation WHERE id=$BS")
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/organisation/$BS/ti-identitaet"     --data-urlencode "bsnr=729900001"     --data-urlencode "telematikId=1-SMC-B-Testkarte-8831100000001"
+  [ "$(sql "SELECT count(*) FROM organisation WHERE bezeichnung IN ('Nachweis Fachbereich','Nachweis Leistungserbringer')")" = "0" ]     && HZ=ja || HZ=nein
+  ergebnis "der Nachweis raeumt seine Einheiten wieder ab" "$HZ"
+fi
 
 # ---------------------------------------------------------------- FA-GER-050
 # Gerätegruppen tragen das Prüfintervall. Bisher nur durch Modultests

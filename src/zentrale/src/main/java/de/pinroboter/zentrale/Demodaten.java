@@ -119,21 +119,42 @@ public class Demodaten {
         try {
             long traeger = organisation(Demoszenario.TRAEGER, "VERBUND", null);
 
+            // Der zentrale Konnektor des Traegers (ADR-0012). Drei kleine
+            // Betriebsstaetten teilen ihn sich - fuer zwei Kartenterminals lohnt
+            // kein eigener. Betrieben wird er vom Traeger, genutzt von anderen:
+            // genau die Trennung, die ADR-0012 eingefuehrt hat.
+            long rzKonnektor = konnektor(traeger, Demoszenario.RZ_KONNEKTOR,
+                    "https://10.99.0.10:443/", "KoCo Konnektor", "Mandant-RZ");
+
             int laufendeNummer = 0;
             for (String standortname : Demoszenario.STANDORTE) {
                 long standort = organisation("Standort " + standortname, "STANDORT", traeger);
 
                 for (var b : Demoszenario.anStandort(standortname)) {
                     laufendeNummer++;
-                    long praxis = organisation(b.name(), "EINRICHTUNG", standort);
+                    long praxis = organisation(b.name(), "EINRICHTUNG", standort,
+                            b.bsnr(), b.telematikId());
 
-                    // Ein Konnektor je Betriebsstaette. Das entspricht der
-                    // Wirklichkeit: Die SMC-B ist die Institutionskarte EINER
-                    // Betriebsstaette, und der Konnektor gehoert dazu.
-                    long konnektor = konnektor(praxis, "Konnektor " + b.name(),
-                            "https://10.%d.%d.10:443/".formatted(
-                                    standortIndex(standortname) + 1, laufendeNummer),
-                            "KoCo Konnektor", "Mandant-" + b.kuerzel());
+                    // Ein Konnektor je Betriebsstaette - ausser bei den drei
+                    // kleinen, die den zentralen mitnutzen.
+                    long konnektor;
+                    if (b.imRechenzentrum()) {
+                        konnektor = rzKonnektor;
+                        konnektorNutzung(rzKonnektor, praxis);
+                    } else {
+                        konnektor = konnektor(praxis, "Konnektor " + b.name(),
+                                "https://10.%d.%d.10:443/".formatted(
+                                        standortIndex(standortname) + 1, laufendeNummer),
+                                "KoCo Konnektor", "Mandant-" + b.kuerzel());
+                    }
+
+                    // Fachbereiche, wo es sie gibt (ADR-0012). Sie haben keine
+                    // eigene SMC-B - sie teilen sich die der Betriebsstaette.
+                    Map<String, Long> fachbereiche = new LinkedHashMap<>();
+                    for (var f : b.fachbereiche()) {
+                        fachbereiche.put(f.name(),
+                                organisation(f.name() + " " + b.name(), "FACHBEREICH", praxis));
+                    }
 
                     // Informationsmodell des Konnektors ([gemSpec_Kon],
                     // Aufrufkontext TUC_KON_000): ein Empfangs-Arbeitsplatz mit
@@ -145,8 +166,10 @@ public class Demodaten {
                     // freizuschalten.
                     int oktett = 20;
 
+                    // Die Arbeitsplatzkennung traegt das Kuerzel: Am geteilten
+                    // Konnektor gaebe es sonst dreimal "AP-EMPFANG".
                     long apEmpfang = arbeitsplatz(konnektor, praxis,
-                            "AP-EMPFANG", "Empfang", "EMPFANG");
+                            "AP-" + b.kuerzel() + "-EMPFANG", "Empfang", "EMPFANG");
                     kartenterminal(konnektor, praxis, apEmpfang,
                             b.empfangsterminal(), "Empfang",
                             "10.%d.%d.%d".formatted(standortIndex(standortname) + 1,
@@ -156,9 +179,14 @@ public class Demodaten {
                             true);   // Managementschnittstelle freigeschaltet
 
                     for (int i = 1; i <= b.behandlungsraeume(); i++) {
-                        long apBehandlung = arbeitsplatz(konnektor, praxis,
-                                "AP-BEHANDLUNG-" + i, "Behandlung " + i, "BEHANDLUNG");
-                        kartenterminal(konnektor, praxis, apBehandlung,
+                        // Das Geraet haengt an der untersten passenden Ebene:
+                        // am Fachbereich, wo es einen gibt, sonst an der
+                        // Betriebsstaette selbst (ADR-0012, Entscheidung 4).
+                        long ebene = fachbereiche.getOrDefault(b.fachbereichVon(i), praxis);
+                        long apBehandlung = arbeitsplatz(konnektor, ebene,
+                                "AP-" + b.kuerzel() + "-BEHANDLUNG-" + i,
+                                "Behandlung " + i, "BEHANDLUNG");
+                        kartenterminal(konnektor, ebene, apBehandlung,
                                 b.behandlungsterminal(i), "Behandlung " + i,
                                 "10.%d.%d.%d".formatted(standortIndex(standortname) + 1,
                                         laufendeNummer, oktett++),
@@ -260,12 +288,28 @@ public class Demodaten {
     // ---------------------------------------------------------------- Bausteine
 
     private long organisation(String bezeichnung, String art, Long eltern) throws SQLException {
+        return organisation(bezeichnung, art, eltern, null, null);
+    }
+
+    /**
+     * Eine Organisationseinheit, wahlweise mit TI-Identität (ADR-0012).
+     *
+     * <p>BSNR und Telematik-ID stehen nur an der Betriebsstätte — sie ist die
+     * Leistungserbringerinstitution. Träger, Standort und Fachbereich haben
+     * keine.
+     */
+    private long organisation(String bezeichnung, String art, Long eltern,
+                              String bsnr, String telematikId) throws SQLException {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
-                INSERT INTO organisation (bezeichnung, art, eltern_id, ist_demo)
-                VALUES (?,?,?,TRUE) RETURNING id""")) {
+                INSERT INTO organisation (bezeichnung, art, eltern_id, bsnr, telematik_id,
+                        ist_demo)
+                VALUES (?,?,?,?,?,TRUE) RETURNING id""")) {
             p.setString(1, bezeichnung);
             p.setString(2, art);
             if (eltern == null) p.setNull(3, Types.BIGINT); else p.setLong(3, eltern);
+            if (bsnr == null) p.setNull(4, Types.VARCHAR); else p.setString(4, bsnr);
+            if (telematikId == null) p.setNull(5, Types.VARCHAR);
+            else p.setString(5, telematikId);
             try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
         }
     }
@@ -297,7 +341,27 @@ public class Demodaten {
                 p.setString(6, DEMO_KONNEKTORBENUTZER);
                 p.setString(7, tresor.verschluesseln(DEMO_KONNEKTORKENNWORT));
             }
-            try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
+            try (ResultSet rs = p.executeQuery()) {
+                rs.next();
+                long id = rs.getLong(1);
+                // Der Betreiber nutzt seinen Konnektor immer - dieselbe
+                // Feststellung wie in Bestandsverwaltung.konnektorAnlegen.
+                // Fehlte sie hier, waere die Nutzungstabelle im Demobestand
+                // anders gefuellt als im echten (ADR-0012).
+                konnektorNutzung(id, org);
+                return id;
+            }
+        }
+    }
+
+    /** Trägt eine Betriebsstätte als Mitnutzerin eines Konnektors ein (ADR-0012). */
+    private void konnektorNutzung(long konnektor, long organisation) throws SQLException {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "INSERT INTO konnektor_nutzung (konnektor_id, organisation_id) "
+                + "VALUES (?,?) ON CONFLICT DO NOTHING")) {
+            p.setLong(1, konnektor);
+            p.setLong(2, organisation);
+            p.executeUpdate();
         }
     }
 
@@ -394,7 +458,14 @@ public class Demodaten {
                 INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung,
                         standort, aktiv, ist_demo)
                 SELECT t.terminal_id, ?, ?, t.bezeichnung, t.standortangabe, TRUE, TRUE
-                FROM kartenterminal t WHERE t.organisation_id = ? AND t.ist_demo
+                FROM kartenterminal t
+                WHERE t.organisation_id IN (
+                          WITH RECURSIVE teilbaum(id) AS (
+                              SELECT ?::bigint
+                              UNION ALL
+                              SELECT o.id FROM organisation o JOIN teilbaum tb ON o.eltern_id = tb.id)
+                          SELECT id FROM teilbaum)
+                  AND t.ist_demo
                 ON CONFLICT (terminal_id) DO NOTHING""")) {
             p.setString(1, einrichtung);
             p.setLong(2, gruppe);

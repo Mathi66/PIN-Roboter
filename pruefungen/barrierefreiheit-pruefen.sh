@@ -82,6 +82,24 @@ if [ -n "$VG_A" ]; then
   [ -s "$SEITEN/vorgang.html" ] || rm -f "$SEITEN/vorgang.html"
 fi
 [ -s "$SEITEN/zeitstrahl.html" ] || rm -f "$SEITEN/zeitstrahl.html"
+# ADR-0012: Die Detailseite einer Betriebsstaette traegt zusaetzlich die Felder
+# fuer BSNR und Telematik-ID. Die erste Detailseite im Baum ist der Traeger und
+# hat sie nicht - deshalb gezielt die erste Einheit suchen, die sie zeigt.
+for OID in $(curl -s -b "$KEKSE" $BASIS/organisation \
+             | grep -oE '/organisation/[0-9]+' | sort -u | head -20); do
+  curl -s -b "$KEKSE" "$BASIS$OID" > /tmp/pr-a11y-org.html
+  if grep -q "Angaben zur Betriebsstätte" /tmp/pr-a11y-org.html; then
+    cp /tmp/pr-a11y-org.html "$SEITEN/organisation-betriebsstaette.html"
+    break
+  fi
+done
+rm -f /tmp/pr-a11y-org.html
+
+# Die Konnektor-Detailseite mit der Tafel der mitnutzenden Einrichtungen.
+KID_A=$(curl -s -b "$KEKSE" $BASIS/bestand \
+        | grep -oE '/bestand/konnektor/[0-9]+' | head -1)
+[ -n "$KID_A" ] && curl -s -b "$KEKSE" "$BASIS$KID_A" > "$SEITEN/konnektor-detail.html"
+
 curl -s -b "$KEKSE" $BASIS/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
 curl -s -b "$KEKSE" $BASIS/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 

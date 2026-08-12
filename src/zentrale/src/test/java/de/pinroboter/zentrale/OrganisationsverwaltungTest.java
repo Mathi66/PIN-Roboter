@@ -158,9 +158,27 @@ class OrganisationsverwaltungTest {
     // ------------------------------------------------------- Die Art-Regeln
 
     @Test
-    @DisplayName("Unterhalb einer Einrichtung lässt sich nichts anlegen")
-    void nichtsUnterEinrichtung() {
-        var e = ov.anlegen("OV Zu tief", "EINRICHTUNG", praxisA, bereichNord);
+    @DisplayName("Unterhalb einer Betriebsstätte ist nur ein Fachbereich zulässig")
+    void nurFachbereichUnterEinrichtung() {
+        // Seit ADR-0012 gliedert ein Fachbereich große Betriebsstätten — in
+        // einer Klinik stehen 200 Kartenterminals nicht „irgendwo".
+        var falsch = ov.anlegen("OV Zu tief", "EINRICHTUNG", praxisA, bereichNord);
+        assertFalse(falsch.geklappt(), "Eine Betriebsstätte unter einer Betriebsstätte gibt es nicht");
+        assertTrue(falsch.fehler().contains("Fachbereich"), falsch.fehler());
+
+        var richtig = ov.anlegen("OV Labor", "FACHBEREICH", praxisA, bereichNord);
+        assertTrue(richtig.geklappt(), richtig.meldung());
+    }
+
+    @Test
+    @DisplayName("Unterhalb eines Fachbereichs lässt sich nichts mehr anlegen")
+    void nichtsUnterFachbereich() {
+        assertTrue(ov.anlegen("OV Radiologie", "FACHBEREICH", praxisA, bereichNord).geklappt());
+        long fach = ov.baum(bereichNord).stream()
+                .filter(e -> e.bezeichnung().equals("OV Radiologie"))
+                .findFirst().orElseThrow().id();
+
+        var e = ov.anlegen("OV Noch tiefer", "FACHBEREICH", fach, bereichNord);
         assertFalse(e.geklappt());
         assertTrue(e.fehler().contains("unterste Ebene"), e.fehler());
     }
@@ -223,7 +241,66 @@ class OrganisationsverwaltungTest {
         assertTrue(ov.einheit(west, bereichPraxisA).isEmpty());
     }
 
+    // ------------------------------------------------- TI-Identität (ADR-0012)
+
+    @Test
+    @DisplayName("Die Betriebsstätte nimmt BSNR und Telematik-ID auf")
+    void tiIdentitaetAnDerBetriebsstaette() {
+        var e = ov.tiIdentitaetSetzen(praxisA, "729112233",
+                "1-SMC-B-Testkarte-883110000999888", bereichNord);
+        assertTrue(e.geklappt(), e.meldung());
+        var geladen = ov.einheit(praxisA, bereichNord).orElseThrow();
+        assertEquals("729112233", geladen.bsnr());
+        assertEquals("1-SMC-B-Testkarte-883110000999888", geladen.telematikId());
+    }
+
+    @Test
+    @DisplayName("Ein Standort trägt keine BSNR — er ist keine Leistungserbringerinstitution")
+    void keineTiIdentitaetAmStandort() {
+        var e = ov.tiIdentitaetSetzen(west, "729112233", null, bereichNord);
+        assertFalse(e.geklappt());
+        assertTrue(e.fehler().contains("Betriebsstätte"), e.fehler());
+        assertNull(ov.einheit(west, bereichNord).orElseThrow().bsnr());
+    }
+
+    @Test
+    @DisplayName("Eine BSNR mit acht Ziffern wird abgelehnt, der Altwert bleibt")
+    void bsnrFormWirdGeprueft() {
+        ov.tiIdentitaetSetzen(praxisA, "729112233", null, bereichNord);
+        var e = ov.tiIdentitaetSetzen(praxisA, "72911223", null, bereichNord);
+        assertFalse(e.geklappt());
+        assertTrue(e.fehler().contains("neun Ziffern"), e.fehler());
+        assertEquals("729112233", ov.einheit(praxisA, bereichNord).orElseThrow().bsnr());
+    }
+
+    @Test
+    @DisplayName("Ein leeres Feld löscht die Angabe — sie ist freiwillig")
+    void tiIdentitaetIstFreiwillig() {
+        ov.tiIdentitaetSetzen(praxisA, "729112233", "1-SMC-B-Testkarte-1", bereichNord);
+        var e = ov.tiIdentitaetSetzen(praxisA, "", "", bereichNord);
+        assertTrue(e.geklappt(), e.meldung());
+        var geladen = ov.einheit(praxisA, bereichNord).orElseThrow();
+        assertNull(geladen.bsnr());
+        assertNull(geladen.telematikId());
+    }
+
+    @Test
+    @DisplayName("Eine fremde Betriebsstätte lässt sich nicht mit einer BSNR versehen")
+    void tiIdentitaetNurImEigenenBereich() {
+        var e = ov.tiIdentitaetSetzen(fremd, "729112233", null, bereichNord);
+        assertFalse(e.geklappt());
+        assertNull(bsnrRoh(fremd));
+    }
+
     // ------------------------------------------------------------- Kleinteile
+
+    private String bsnrRoh(long id) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT bsnr FROM organisation WHERE id = ?")) {
+            p.setLong(1, id);
+            try (ResultSet rs = p.executeQuery()) { return rs.next() ? rs.getString(1) : null; }
+        } catch (SQLException e) { throw new IllegalStateException(e); }
+    }
 
     private List<String> bezeichnungen(Geltungsbereich b) {
         return ov.baum(b).stream().map(Organisationsverwaltung.Einheit::bezeichnung).toList();

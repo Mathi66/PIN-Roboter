@@ -48,8 +48,16 @@ class DemodatenTest {
         var konten = dd.anlegen();
         var b = dd.bestand();
 
-        assertEquals(13, b.organisationen(), "1 Verbund + 3 Standorte + 9 Praxen");
-        assertEquals(9, b.konnektoren(), "je Praxis ein Konnektor");
+        // Seit ADR-0012 kommen die Fachbereiche einer Betriebsstätte dazu.
+        int fachbereiche = de.pinroboter.gemeinsam.Demoszenario.BETRIEBSSTAETTEN.stream()
+                .mapToInt(x -> x.fachbereiche().size()).sum();
+        assertEquals(13 + fachbereiche, b.organisationen(),
+                "1 Träger + 3 Standorte + 9 Betriebsstätten + Fachbereiche");
+        // Die drei kleinen Betriebsstätten teilen sich den zentralen Konnektor.
+        int eigene = (int) de.pinroboter.gemeinsam.Demoszenario.BETRIEBSSTAETTEN.stream()
+                .filter(x -> !x.imRechenzentrum()).count();
+        assertEquals(eigene + 1, b.konnektoren(),
+                "je eigenständiger Betriebsstätte ein Konnektor, dazu der zentrale");
         int gesamt = de.pinroboter.gemeinsam.Demoszenario.terminalsGesamt();
         assertEquals(gesamt, b.arbeitsplaetze(),
                 "je Betriebsstätte 1 Empfang + ihre Behandlungsräume");
@@ -201,7 +209,9 @@ class DemodatenTest {
                 zaehle("SELECT count(*) FROM kartenterminal "
                 + "WHERE ist_demo AND admin_chiffrat IS NOT NULL"),
                 "Jedes Demo-Terminal braucht einen Administrationszugang");
-        assertEquals(9, zaehle("SELECT count(*) FROM konnektor "
+        int konnektoren = (int) de.pinroboter.gemeinsam.Demoszenario.BETRIEBSSTAETTEN.stream()
+                .filter(x -> !x.imRechenzentrum()).count() + 1;
+        assertEquals(konnektoren, zaehle("SELECT count(*) FROM konnektor "
                 + "WHERE ist_demo AND passwort_chiffrat IS NOT NULL"));
 
         // Der Kern: Das Kennwort darf NIRGENDS im Klartext stehen. Ein

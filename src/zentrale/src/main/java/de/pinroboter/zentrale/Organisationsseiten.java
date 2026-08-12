@@ -118,6 +118,7 @@ final class Organisationsseiten {
         if (meldung != null) s.append(Anmeldeseiten.meldung(meldung, istFehler ? "warnend" : "gut"));
 
         s.append(beziehungstafel(e, b));
+        if (e.istBetriebsstaette()) s.append(tiIdentitaet(e, darfVerwalten));
         if (darfVerwalten) s.append(aenderungstafel(e, baum));
         else s.append("""
                 <div class="hinweis">Sie sehen diese Einheit, können sie aber nicht ändern.
@@ -172,6 +173,54 @@ final class Organisationsseiten {
                   <span class="zahl">%d</span><span class="was">%s</span>
                   <span class="hin">%s →</span>
                 </a>""".formatted(ziel, zahl, esc(was), esc(hin));
+    }
+
+    /**
+     * BSNR und Telematik-ID — nur an der Betriebsstätte (ADR-0012).
+     *
+     * <p>Sie ist die Leistungserbringerinstitution: Sie trägt die SMC-B, und
+     * über die Telematik-ID wird die institutionelle Identität technisch
+     * abgebildet. An einer Trägergesellschaft oder einem Fachbereich hätten
+     * diese Felder keine Bedeutung — deshalb erscheinen sie dort gar nicht.
+     */
+    private static String tiIdentitaet(Organisationsverwaltung.Einheit e, boolean darfVerwalten) {
+        String werte = """
+                <dl class="angaben">
+                  <dt>Betriebsstättennummer</dt><dd>%s</dd>
+                  <dt>Telematik-ID</dt><dd>%s</dd>
+                </dl>"""
+                .formatted(e.bsnr() == null || e.bsnr().isBlank() ? "— noch nicht hinterlegt"
+                                : "<code>" + esc(e.bsnr()) + "</code>",
+                        e.telematikId() == null || e.telematikId().isBlank()
+                                ? "— noch nicht hinterlegt"
+                                : "<code>" + esc(e.telematikId()) + "</code>");
+
+        if (!darfVerwalten) {
+            return "<div class=\"tafel\"><h3>Angaben zur Betriebsstätte</h3>" + werte + "</div>";
+        }
+        return """
+                <div class="tafel"><h3>Angaben zur Betriebsstätte</h3>
+                <p class="hilfe">Diese Betriebsstätte ist die Leistungserbringerinstitution:
+                   Sie führt eine eigene SMC-B. Über die <strong>Telematik-ID</strong> wird
+                   ihre institutionelle Identität in der TI abgebildet, die
+                   <strong>BSNR</strong> stellt den Bezug zur Abrechnung her.
+                   Beide Angaben sind freiwillig — falls sie noch nicht vorliegen, lassen sie
+                   sich später nachtragen. Die BSNR ist mit der zuständigen KV abzustimmen.</p>
+                <form method="post" action="/organisation/%d/ti-identitaet" class="maske">
+                  <div class="feldreihe">
+                    <div class="feldgruppe"><label for="o-bsnr">Betriebsstättennummer</label>
+                      <input id="o-bsnr" name="bsnr" maxlength="20" value="%s"
+                             inputmode="numeric" placeholder="neun Ziffern"></div>
+                    <div class="feldgruppe"><label for="o-tid">Telematik-ID</label>
+                      <input id="o-tid" name="telematikId" maxlength="120" value="%s"
+                             placeholder="z. B. 1-SMC-B-Testkarte-883110000123456"></div>
+                  </div>
+                  <button class="knopf" type="submit"
+                          title="Speichert BSNR und Telematik-ID dieser Betriebsstätte"
+                          aria-label="Angaben speichern">Angaben speichern</button>
+                </form>%s</div>"""
+                .formatted(e.id(), esc(e.bsnr() == null ? "" : e.bsnr()),
+                        esc(e.telematikId() == null ? "" : e.telematikId()), werte);
     }
 
     /** Umbenennen, Umhängen und Löschen — auf der Detailseite, nicht in der Liste. */
@@ -255,24 +304,40 @@ final class Organisationsseiten {
                              placeholder="z. B. Praxis Nord"></div>
                     <div class="feldgruppe"><label for="n-art">Art</label>
                       <select id="n-art" name="art" aria-describedby="n-art-hilfe">
-                        <option value="EINRICHTUNG">Einrichtung (Praxis, MVZ, Standort einer Klinik)</option>
-                        <option value="STANDORT">Standort (fasst mehrere Einrichtungen zusammen)</option>
+                        <option value="EINRICHTUNG">Betriebsstätte (die LEI — mit BSNR und eigener SMC-B)</option>
+                        <option value="FACHBEREICH">Fachbereich (gliedert eine große Betriebsstätte)</option>
+                        <option value="STANDORT">Standort (fasst mehrere Betriebsstätten räumlich zusammen)</option>
+                        <option value="LEISTUNGSERBRINGER">Leistungserbringer (das zugelassene MVZ)</option>
                       </select></div>
                     <div class="feldgruppe"><label for="n-eltern">Unterhalb von</label>
                       <select id="n-eltern" name="elternId" required>%s</select></div>
                   </div>
-                  <p id="n-art-hilfe" class="hilfe">Ein Standort ist nur unterhalb eines Verbunds
-                     zulässig, eine Einrichtung unterhalb von beidem. Unterhalb einer Einrichtung
-                     lässt sich nichts mehr anlegen.</p>
+                  <p id="n-art-hilfe" class="hilfe">Die <strong>Betriebsstätte</strong> ist die
+                     Leistungserbringerinstitution: Sie trägt BSNR, SMC-B und Telematik-ID.
+                     Alle anderen Ebenen sind freiwillig — eine Einzelpraxis besteht aus
+                     Trägergesellschaft und Betriebsstätte, mehr braucht es nicht.
+                     Ein <strong>Fachbereich</strong> gliedert eine große Betriebsstätte und
+                     steht nur unterhalb von ihr; darunter lässt sich nichts mehr anlegen.</p>
                   <button class="knopf haupt" type="submit" title="Legt die Einheit mit den eingegebenen Angaben an" aria-label="Legt die Einheit mit den eingegebenen Angaben an">Einheit anlegen</button>
                 </form></div>""".formatted(eltern);
     }
 
+    /**
+     * Wohin sich eine Einheit umhängen lässt (ADR-0012).
+     *
+     * <p>Muss mit {@code Organisationsverwaltung.erlaubtUnter} übereinstimmen —
+     * die eine Regel prüft das Umhängen, die andere das Anlegen. Zwei Listen,
+     * die dasselbe meinen: Beim Erweitern IMMER beide anfassen.
+     */
     private static boolean zulaessigesZiel(String elternArt, String kindArt) {
         return switch (elternArt) {
-            case "VERBUND"  -> kindArt.equals("STANDORT") || kindArt.equals("EINRICHTUNG");
-            case "STANDORT" -> kindArt.equals("EINRICHTUNG");
-            default         -> false;
+            case "VERBUND" -> kindArt.equals("LEISTUNGSERBRINGER")
+                           || kindArt.equals("STANDORT") || kindArt.equals("EINRICHTUNG");
+            case "LEISTUNGSERBRINGER" -> kindArt.equals("STANDORT")
+                                      || kindArt.equals("EINRICHTUNG");
+            case "STANDORT"    -> kindArt.equals("EINRICHTUNG");
+            case "EINRICHTUNG" -> kindArt.equals("FACHBEREICH");
+            default            -> false;
         };
     }
 }

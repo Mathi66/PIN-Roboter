@@ -1421,6 +1421,18 @@ public class Zentrale {
     }
 
     /** Die Einrichtungen im Geltungsbereich, als Auswahlliste (FA-GER-050). */
+    /**
+     * Die Konnektor-Detailseite — mit Mitnutzung und Betreiber-Unterscheidung.
+     *
+     * <p>An einer Stelle gebündelt, damit die Frage „darf der das ändern?"
+     * nicht an vier Routen einzeln beantwortet werden muss (ADR-0012).
+     */
+    private String konnektorMaske(Context c, Bestandsverwaltung.Konnektor k, String fehler) {
+        return Bestandsseiten.konnektorMaske(k, ermittlung.aufrufkontextAuswahl(), fehler,
+                bestand.darfKonnektorVerwalten(k.id(), bereich(c)),
+                bestand.konnektorNutzer(k.id()), bestand.betriebsstaetten(bereich(c)));
+    }
+
     private String einrichtungsauswahl(Context c) {
         StringBuilder s = new StringBuilder();
         for (var o : bestand.organisationen(bereich(c))) {
@@ -3255,7 +3267,7 @@ public class Zentrale {
             var k = bestand.konnektor(Long.parseLong(c.pathParam("id")), bereich(c));
             if (k.isEmpty()) { c.status(404).html(seite("bestand",
                     bestandsSeite(c, "Diesen Konnektor gibt es nicht mehr.", true), angemeldeter(c))); return; }
-            c.html(seite("bestand", Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), null), angemeldeter(c)));
+            c.html(seite("bestand", konnektorMaske(c, k.get(), null), angemeldeter(c)));
         });
 
         app.post("/bestand/konnektor/{id}", c -> {
@@ -3270,7 +3282,7 @@ public class Zentrale {
             if (!e.geklappt()) {
                 var k = bestand.konnektor(id, bereich(c));
                 c.html(seite("bestand", k.isPresent()
-                        ? Bestandsseiten.konnektorMaske(k.get(), ermittlung.aufrufkontextAuswahl(), e.fehler())
+                        ? konnektorMaske(c, k.get(), e.fehler())
                         : bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
                 return;
             }
@@ -3280,6 +3292,32 @@ public class Zentrale {
                     "Konnektor „" + k.bezeichnung() + "“ geändert"
                             + (k.aktiv() ? "" : ", Gerät deaktiviert"), null);
             c.html(seite("bestand", bestandsSeite(c, "Änderungen gespeichert.", false), angemeldeter(c)));
+        });
+
+        // ADR-0012: Wer den Konnektor betreibt, entscheidet, wer ihn mitnutzt.
+        app.post("/bestand/konnektor/{id}/nutzung", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(), "Das Pflegen des Bestands")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            boolean nutzen = "ja".equals(Anmeldeseiten.feld(c, "nutzen"));
+            long orgId = Long.parseLong(Anmeldeseiten.feld(c, "organisationId"));
+            var e = bestand.konnektorNutzungSetzen(id, orgId, nutzen, bereich(c));
+            var k = bestand.konnektor(id, bereich(c));
+            if (e.geklappt() && k.isPresent()) {
+                protokoll.anfuegen(k.get().organisation(), null,
+                        Ereignisart.KONNEKTOR_NUTZUNG_GEAENDERT, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Mitnutzung des Konnektors „" + k.get().bezeichnung() + "“ "
+                                + (nutzen ? "erlaubt" : "entzogen"),
+                        nutzen ? "Die Einrichtung sieht den Konnektor und kann ihm eigene "
+                                 + "Kartenterminals zuordnen."
+                               : "Bereits zugeordnete Kartenterminals bleiben bestehen.");
+            }
+            if (k.isEmpty()) {
+                c.html(seite("bestand", bestandsSeite(c, e.fehler(), true), angemeldeter(c)));
+                return;
+            }
+            c.html(seite("bestand", konnektorMaske(c, k.get(), e.geklappt() ? null : e.fehler()),
+                    angemeldeter(c)));
         });
 
         app.post("/bestand/konnektor/{id}/kennwort-entfernen", c -> {
@@ -3599,6 +3637,26 @@ public class Zentrale {
                 protokoll.anfuegen(bereich(c).bezeichnung(), null,
                         Ereignisart.ORGANISATION_UMBENANNT, true, angemeldeter(c).anzeigename(),
                         null, e.meldung(), null);
+            }
+            c.html(seite("organisation", organisationsDetail(c, id,
+                    e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),
+                    angemeldeter(c)));
+        });
+
+        // ADR-0012: BSNR und Telematik-ID gehoeren zur Betriebsstaette, weil nur
+        // sie die Leistungserbringerinstitution ist.
+        app.post("/organisation/{id}/ti-identitaet", c -> {
+            if (abgewiesen(c, rechte(c).darfOrganisationVerwalten(),
+                    "Das Ändern von Organisationseinheiten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var e = organisationen.tiIdentitaetSetzen(id, Anmeldeseiten.feld(c, "bsnr"),
+                    Anmeldeseiten.feld(c, "telematikId"), bereich(c));
+            if (e.geklappt()) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ORGANISATION_TI_IDENTITAET, true,
+                        angemeldeter(c).anzeigename(), null, e.meldung(),
+                        "Betriebsstättennummer und Telematik-ID bestimmen, welche "
+                        + "Leistungserbringerinstitution hinter dieser Einheit steht.");
             }
             c.html(seite("organisation", organisationsDetail(c, id,
                     e.geklappt() ? e.meldung() : e.fehler(), !e.geklappt()),

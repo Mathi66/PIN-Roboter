@@ -574,11 +574,21 @@ final class Bestandsseiten {
     // ------------------------------------------------------- Einzelbearbeitung
 
     static String konnektorMaske(Bestandsverwaltung.Konnektor k, Ermittlung.Auswahl kontext,
-                                 String fehler) {
+                                 String fehler, boolean darfVerwalten,
+                                 List<Bestandsverwaltung.Nutzung> nutzer,
+                                 List<Organisationsauswahl> einrichtungen) {
         StringBuilder s = new StringBuilder();
         s.append(Zentrale.detailkopf("/bestand", "Bestand", "Konnektor: " + k.bezeichnung(), null, null));
         s.append("<p class=\"unterzeile\"><a href=\"/bestand\">&larr; Zurück zum Bestand</a></p>");
         if (fehler != null) s.append(Anmeldeseiten.meldung(fehler, "warnend"));
+
+        if (!darfVerwalten) {
+            // ADR-0012: Der Mitnutzer sieht den Konnektor, aendert ihn aber nicht.
+            // Statt einer gesperrten Maske bekommt er eine ehrliche Auskunft.
+            s.append(nurLesenTafel(k));
+            s.append(nutzungsTafel(k, nutzer, einrichtungen, false));
+            return s.toString();
+        }
 
         s.append("""
                 <div class="tafel"><form method="post" action="/bestand/konnektor/%d" class="maske">
@@ -629,6 +639,106 @@ final class Bestandsseiten {
                       <button class="knopf warnend" type="submit" title="Löscht das gespeicherte Terminal-Kennwort; die Verwaltung über die Managementschnittstelle ist danach nicht mehr möglich" aria-label="Terminal-Kennwort entfernen">Kennwort entfernen</button>
                     </form></div>""".formatted(k.id()));
         }
+        s.append(nutzungsTafel(k, nutzer, einrichtungen, true));
+        return s.toString();
+    }
+
+    /**
+     * Was eine mitnutzende Einrichtung über einen fremden Konnektor erfährt.
+     *
+     * <p>Bewusst ohne Zugangsdaten: Benutzername und Webadmin-Adresse gehören
+     * dem Betreiber. Was der Mitnutzer braucht, um seine Geräte zuzuordnen, ist
+     * die Bezeichnung — und die Gewissheit, dass das Gerät aktiv ist.
+     */
+    private static String nurLesenTafel(Bestandsverwaltung.Konnektor k) {
+        return """
+                <div class="tafel"><h3>Konnektor eines anderen Betreibers</h3>
+                <p class="hilfe">Diesen Konnektor betreibt <strong>%s</strong>. Sie nutzen ihn mit:
+                   Ihre Kartenterminals lassen sich ihm zuordnen, seine Einstellungen ändert
+                   aber nur der Betreiber. So kann keine Einrichtung ein Gerät umkonfigurieren,
+                   an dem andere hängen.</p>
+                <dl class="angaben">
+                  <dt>Bezeichnung</dt><dd>%s</dd>
+                  <dt>Adresse</dt><dd><code>%s</code></dd>
+                  <dt>Modell</dt><dd>%s</dd>
+                  <dt>Zustand</dt><dd>%s</dd>
+                </dl></div>"""
+                .formatted(esc(k.organisation()), esc(k.bezeichnung()), esc(k.adresse()),
+                        esc(k.modell() == null || k.modell().isBlank() ? "— nicht angegeben" : k.modell()),
+                        k.aktiv() ? "aktiv — der Roboter spricht ihn an"
+                                  : "deaktiviert — der Roboter lässt ihn in Ruhe");
+    }
+
+    /**
+     * Wer diesen Konnektor mitnutzt (ADR-0012).
+     *
+     * <p>Seit „Konnektor as a Service“ teilen sich mehrere Leistungserbringer
+     * einen Konnektor im Rechenzentrum. Wer hier eingetragen ist, sieht das
+     * Gerät und kann ihm eigene Kartenterminals zuordnen — mehr nicht.
+     */
+    private static String nutzungsTafel(Bestandsverwaltung.Konnektor k,
+                                        List<Bestandsverwaltung.Nutzung> nutzer,
+                                        List<Organisationsauswahl> einrichtungen,
+                                        boolean darfVerwalten) {
+        StringBuilder s = new StringBuilder();
+        s.append("<div class=\"tafel\"><h3>Mitnutzende Einrichtungen");
+        if (!nutzer.isEmpty()) s.append(" <span class=\"zaehler\">").append(nutzer.size()).append("</span>");
+        s.append("</h3>");
+        s.append("""
+                <p class="hilfe">Betrieben wird dieser Konnektor von <strong>%s</strong>.
+                   Wer ihn mitnutzt, sieht ihn und kann ihm eigene Kartenterminals zuordnen —
+                   Zugangsdaten ändern oder ihn löschen kann nur der Betreiber.</p>"""
+                .formatted(esc(k.organisation())));
+
+        if (nutzer.isEmpty()) {
+            s.append("<p class=\"leer\">Diesen Konnektor nutzt nur seine betreibende "
+                    + "Einrichtung. Das ist der Normalfall außerhalb des Rechenzentrums.</p>");
+        } else {
+            s.append("<ul class=\"beziehungsliste\">");
+            for (var n : nutzer) {
+                s.append("<li><span>").append(esc(n.bezeichnung())).append("</span>");
+                if (darfVerwalten) {
+                    s.append("""
+                            <form method="post" action="/bestand/konnektor/%d/nutzung" class="inlineform"
+                                  onsubmit="return confirm('%s die Mitnutzung entziehen? Die dort zugeordneten Kartenterminals bleiben bestehen.')">
+                              <input type="hidden" name="organisationId" value="%d">
+                              <input type="hidden" name="nutzen" value="nein">
+                              <button class="knopf klein warnend" type="submit"
+                                      title="Entzieht dieser Einrichtung die Mitnutzung des Konnektors"
+                                      aria-label="Mitnutzung von %s entziehen">Entziehen</button>
+                            </form>"""
+                            .formatted(k.id(), esc(n.bezeichnung()), n.organisationId(),
+                                    esc(n.bezeichnung())));
+                }
+                s.append("</li>");
+            }
+            s.append("</ul>");
+        }
+
+        if (darfVerwalten) {
+            var offen = einrichtungen.stream()
+                    .filter(o -> o.id() != k.organisationId())
+                    .filter(o -> nutzer.stream().noneMatch(n -> n.organisationId() == o.id()))
+                    .toList();
+            if (offen.isEmpty()) {
+                s.append("<p class=\"leer\">Es gibt keine weitere Einrichtung, die hinzukommen "
+                        + "könnte.</p>");
+            } else {
+                s.append("""
+                        <form method="post" action="/bestand/konnektor/%d/nutzung" class="maske">
+                          <input type="hidden" name="nutzen" value="ja">
+                          <div class="feldgruppe">
+                            <label for="k-nutzer">Einrichtung hinzufügen</label>
+                            <select id="k-nutzer" name="organisationId" required>%s</select>
+                          </div>
+                          <button class="knopf" type="submit"
+                                  title="Erlaubt dieser Einrichtung, den Konnektor mitzunutzen"
+                                  aria-label="Mitnutzung erlauben">Mitnutzung erlauben</button>
+                        </form>"""
+                        .formatted(k.id(), organisationsOptionen(offen, null)));
+            }
+        }
+        s.append("</div>");
         return s.toString();
     }
 
@@ -1336,13 +1446,9 @@ final class Bestandsseiten {
         return s.toString();
     }
 
+    /** Eine Stelle für die Anzeigenamen — Organisationsverwaltung.artAnzeige. */
     private static String artName(String art) {
-        return switch (art) {
-            case "VERBUND"     -> "Verbund";
-            case "STANDORT"    -> "Standort";
-            case "EINRICHTUNG" -> "Einrichtung";
-            default            -> art;
-        };
+        return Organisationsverwaltung.artAnzeige(art);
     }
 
     private static String url(String s) {

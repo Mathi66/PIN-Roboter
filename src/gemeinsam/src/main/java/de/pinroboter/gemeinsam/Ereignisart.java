@@ -41,6 +41,10 @@ public enum Ereignisart {
     ORGANISATION_UMBENANNT("Organisationseinheit umbenannt", Stufe.ROUTINE),
     ORGANISATION_UMGEHAENGT("Organisationseinheit umgehängt", Stufe.SICHERHEIT),
     ORGANISATION_GELOESCHT("Organisationseinheit gelöscht", Stufe.SICHERHEIT),
+    // BSNR und Telematik-ID bestimmen, welche Leistungserbringerinstitution
+    // hinter einer Betriebsstaette steht (ADR-0012). Eine falsche Angabe fuehrt
+    // zur falschen SMC-B-Zuordnung - deshalb nachvollziehbar.
+    ORGANISATION_TI_IDENTITAET("Angaben zur Betriebsstätte geändert", Stufe.SICHERHEIT),
     GRUPPE_ANGELEGT("Gerätegruppe angelegt", Stufe.ROUTINE),
     GRUPPE_GEAENDERT("Gerätegruppe geändert", Stufe.ROUTINE),
     GRUPPE_GELOESCHT("Gerätegruppe gelöscht", Stufe.ROUTINE),
@@ -51,6 +55,8 @@ public enum Ereignisart {
     KONNEKTOR_ANGELEGT("Konnektor erfasst", Stufe.SICHERHEIT),
     KONNEKTOR_GEAENDERT("Konnektor geändert", Stufe.SICHERHEIT),
     KONNEKTOR_GELOESCHT("Konnektor gelöscht", Stufe.SICHERHEIT),
+    // Wer einen Konnektor nutzen darf, sieht dessen Geraete (ADR-0012).
+    KONNEKTOR_NUTZUNG_GEAENDERT("Konnektor-Nutzung geändert", Stufe.SICHERHEIT),
     TERMINAL_ANGELEGT("Kartenterminal erfasst", Stufe.SICHERHEIT),
     TERMINAL_GEAENDERT("Kartenterminal geändert", Stufe.SICHERHEIT),
     TERMINAL_GELOESCHT("Kartenterminal gelöscht", Stufe.SICHERHEIT),

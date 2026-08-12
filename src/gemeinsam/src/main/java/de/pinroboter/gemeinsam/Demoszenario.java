@@ -40,6 +40,19 @@ public final class Demoszenario {
     public static final String TRAEGER = "MVZ Gesundheitszentrum Musterstadt";
 
     /**
+     * Ein Fachbereich innerhalb einer Betriebsstätte (ADR-0012).
+     *
+     * <p>Er hat <b>keine eigene SMC-B</b> — er teilt sich die seiner
+     * Betriebsstätte. Er ist eine Gliederung des Geräteparks, keine eigene
+     * Leistungserbringerinstitution.
+     *
+     * @param name  Anzeigename
+     * @param von   erster Behandlungsraum, der dazugehört (1-basiert)
+     * @param bis   letzter Behandlungsraum, einschließlich
+     */
+    public record Fachbereich(String name, int von, int bis) { }
+
+    /**
      * Eine Betriebsstätte des MVZ.
      *
      * @param kuerzel     eindeutige Kurzform, geht in Terminalkennungen und
@@ -52,9 +65,45 @@ public final class Demoszenario {
      *                    unterschiedlich: Eine Oberfläche, die mit vier Geräten
      *                    je Einheit gut aussieht, sagt nichts über eine
      *                    Betriebsstätte mit sieben und eine mit einem.
+     * @param laufnummer  1-basiert, geht in BSNR und Telematik-ID ein. Abgeleitet
+     *                    statt einzeln gepflegt: Zwei Listen laufen auseinander.
+     * @param imRechenzentrum {@code true}, wenn diese Betriebsstätte keinen
+     *                    eigenen Konnektor hat, sondern den zentralen des
+     *                    Trägers mitnutzt (ADR-0012, „Konnektor as a Service")
+     * @param fachbereiche Gliederung der Behandlungsräume. Meist leer — die
+     *                    Ebene ist optional, und die meisten Betriebsstätten
+     *                    brauchen sie nicht.
      */
     public record Betriebsstaette(String kuerzel, String standort, String name,
-                                  String fach, int behandlungsraeume) {
+                                  String fach, int behandlungsraeume, int laufnummer,
+                                  boolean imRechenzentrum, List<Fachbereich> fachbereiche) {
+
+        /** Kurzform ohne Fachbereiche und ohne Rechenzentrum. */
+        public Betriebsstaette(String kuerzel, String standort, String name, String fach,
+                               int behandlungsraeume, int laufnummer) {
+            this(kuerzel, standort, name, fach, behandlungsraeume, laufnummer, false, List.of());
+        }
+
+        /**
+         * Betriebsstättennummer — neun Ziffern, frei erfunden.
+         *
+         * <p>Die führende {@code 72} steht in der Wirklichkeit für einen
+         * KV-Bezirk; welcher, spielt hier keine Rolle. Die Form stimmt, der
+         * Wert nicht — genau das soll ein Demoaufbau leisten.
+         */
+        public String bsnr() { return "7299%05d".formatted(laufnummer); }
+
+        /** Telematik-ID der SMC-B dieser Betriebsstätte — ebenfalls erfunden. */
+        public String telematikId() {
+            return "1-SMC-B-Testkarte-8831100%06d".formatted(laufnummer);
+        }
+
+        /** Der Fachbereich eines Behandlungsraums, sofern es welche gibt. */
+        public String fachbereichVon(int raum) {
+            return fachbereiche.stream()
+                    .filter(f -> raum >= f.von() && raum <= f.bis())
+                    .map(Fachbereich::name).findFirst().orElse(null);
+        }
 
         /** Kennung des Empfangsterminals — hier steckt die SMC-B. */
         public String empfangsterminal() { return "KT-" + kuerzel + "-EMP"; }
@@ -86,27 +135,48 @@ public final class Demoszenario {
     public static final List<Betriebsstaette> BETRIEBSSTAETTEN = List.of(
             // ── Standort Nord ────────────────────────────────────────────────
             new Betriebsstaette("NHAU", "Nord", "Hausarztpraxis Nordstadt",
-                    "Allgemeinmedizin", 5),
+                    "Allgemeinmedizin", 5, 1),
             new Betriebsstaette("NKAR", "Nord", "Kardiologie am Nordring",
-                    "Kardiologie", 3),
+                    "Kardiologie", 3, 2),
+            // Zwei Geraete, kein eigener Konnektor: Diese Betriebsstaette haengt
+            // am zentralen Konnektor des Traegers (ADR-0012).
             new Betriebsstaette("NORT", "Nord", "Orthopädie Nordpark",
-                    "Orthopädie", 2),
+                    "Orthopädie", 2, 3, true, List.of()),
 
             // ── Standort Mitte ───────────────────────────────────────────────
             new Betriebsstaette("MHAU", "Mitte", "Hausärztliche Praxis am Markt",
-                    "Allgemeinmedizin", 4),
+                    "Allgemeinmedizin", 4, 4),
             new Betriebsstaette("MINN", "Mitte", "Innere Medizin Stadtmitte",
-                    "Innere Medizin", 3),
+                    "Innere Medizin", 3, 5),
             new Betriebsstaette("MRAD", "Mitte", "Radiologie Musterstadt",
-                    "Radiologie", 1),
+                    "Radiologie", 1, 6, true, List.of()),
 
             // ── Standort Süd ─────────────────────────────────────────────────
             new Betriebsstaette("SHAU", "Süd", "Hausarztpraxis Südhang",
-                    "Allgemeinmedizin", 4),
+                    "Allgemeinmedizin", 4, 7),
             new Betriebsstaette("SGYN", "Süd", "Gynäkologie Südpark",
-                    "Gynäkologie", 2),
+                    "Gynäkologie", 2, 8, true, List.of()),
+            // Die einzige Betriebsstaette mit Fachbereichen. Bewusst nur eine:
+            // Die Ebene ist optional, und ein Demoaufbau, in dem sie ueberall
+            // vorkommt, taeuscht eine Pflicht vor, die es nicht gibt.
             new Betriebsstaette("SCHI", "Süd", "Chirurgie und Unfallambulanz Süd",
-                    "Chirurgie", 3));
+                    "Chirurgie", 3, 9, false,
+                    List.of(new Fachbereich("Unfallambulanz", 1, 2),
+                            new Fachbereich("Sprechstunde Chirurgie", 3, 3))));
+
+    /**
+     * Der zentrale Konnektor des Trägers.
+     *
+     * <p>Drei kleine Betriebsstätten teilen ihn sich — der Fall, für den
+     * ADR-0012 die n:m-Beziehung eingeführt hat. Wirtschaftlich lohnt ein
+     * eigener Konnektor für zwei Kartenterminals nicht.
+     */
+    public static final String RZ_KONNEKTOR = "Konnektor Rechenzentrum (zentral)";
+
+    /** Die Betriebsstätten, die den zentralen Konnektor mitnutzen. */
+    public static List<Betriebsstaette> imRechenzentrum() {
+        return BETRIEBSSTAETTEN.stream().filter(Betriebsstaette::imRechenzentrum).toList();
+    }
 
     /** Die Standorte in fester Reihenfolge — die Zwischenebene über den Praxen. */
     public static final List<String> STANDORTE = List.of("Nord", "Mitte", "Süd");

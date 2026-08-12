@@ -90,7 +90,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 
 | | Anforderung | | Stand |
 |---|---|---|---|
-| **✔** | `FA-ORG-010` Mehrstufige Organisationsstruktur <br><span style="opacity:.7">MUSS</span> |  | dreistufig, über die Oberfläche pflegbar |
+| **✔** | `FA-ORG-010` Mehrstufige Organisationsstruktur <br><span style="opacity:.7">MUSS</span> |  | Fünf Ebenen, alle Zwischenebenen optional: Trägergesellschaft → Leistungserbringer → Standort → **Betriebsstätte** → Fachbereich. Die Betriebsstätte ist die Leistungserbringerinstitution und trägt BSNR und Telematik-ID (freiwillig, Formprüfung neun Ziffern). Ein Konnektor kann von mehreren Betriebsstätten mitgenutzt werden — verwalten darf ihn nur sein Betreiber. [ADR-0012](adr/0012-geraetehierarchie-nach-organisationsstruktur.md), [Umsetzung 16](03-umsetzung/16-organisationsstruktur.md) |
 | **✔** | `FA-ORG-020` Mandantentrennung <br><span style="opacity:.7">MUSS</span> |  | Geltungsbereich als Pflichtparameter, 22 Tests inkl. Angriffe |
 
 ## A.6 Benutzer (FA-BEN)

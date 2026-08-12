@@ -432,6 +432,104 @@ class BestandsverwaltungTest {
                 + "Übersicht, das noch Aufmerksamkeit braucht.");
     }
 
+    // ── Gerätehierarchie nach Organisationsstruktur (ADR-0012) ─────────────
+
+    @Test @Order(50)
+    @DisplayName("Ein Konnektor kann mehrere Einrichtungen bedienen")
+    void konnektorFuerMehrere() throws Exception {
+        // Konnektor as a Service im Rechenzentrum: Mehrere Leistungserbringer
+        // teilen sich einen Konnektor. Vorher hätte man ihn mehrfach erfassen
+        // müssen — gleiche Adresse, verschiedene Kennungen, jeder
+        // Zustandswechsel mehrfach protokolliert.
+        long konn = eigenerKonnektor();
+        long fremde = weitereEinrichtung("Mitnutzer Bestand");
+
+        assertTrue(bv.konnektorNutzungSetzen(konn, fremde, true, ALLES).geklappt());
+        assertTrue(bv.konnektorNutzer(konn).stream()
+                        .anyMatch(n -> n.bezeichnung().equals("Mitnutzer Bestand")),
+                "Die mitnutzende Einrichtung muss sichtbar sein");
+
+        // Der Betreiber steht NICHT in der Nutzerliste — er ist der Betreiber.
+        assertFalse(bv.konnektorNutzer(konn).stream()
+                .anyMatch(n -> n.bezeichnung().equals("Testeinrichtung Bestand")));
+    }
+
+    @Test @Order(51)
+    @DisplayName("Wer nutzt, darf sehen — aber nicht verwalten")
+    void nutzenIstNichtVerwalten() throws Exception {
+        long konn = eigenerKonnektor();
+        long fremde = weitereEinrichtung("Nurnutzer Bestand");
+        assertTrue(bv.konnektorNutzungSetzen(konn, fremde, true, ALLES).geklappt());
+
+        var nurNutzer = Geltungsbereich.ausIds(java.util.List.of(fremde), "nur Mitnutzer");
+        assertTrue(bv.konnektor(konn, nurNutzer).isPresent(),
+                "Ohne Sicht könnte die Einrichtung ihre eigenen Terminals nicht zuordnen");
+        assertFalse(bv.darfKonnektorVerwalten(konn, nurNutzer),
+                "Sonst könnte eine kleine Praxis den Konnektor verstellen, an dem "
+                + "zwanzig andere hängen");
+
+        // Und sie kann sich auch keine weiteren Mitnutzer einladen.
+        assertFalse(bv.konnektorNutzungSetzen(konn, fremde, false, nurNutzer).geklappt());
+    }
+
+    @Test @Order(52)
+    @DisplayName("Der Betreiber lässt sich nicht als Nutzer austragen")
+    void betreiberBleibtNutzer() {
+        long konn = eigenerKonnektor();
+        var e = bv.konnektorNutzungSetzen(konn, orgId, false, ALLES);
+        assertFalse(e.geklappt(), "Der Betreiber nutzt seinen Konnektor immer");
+        assertTrue(e.fehler().contains("Betreiber"), e.fehler());
+    }
+
+    @Test @Order(52)
+    @DisplayName("Ein Mitnutzer kann den Konnektor weder ändern noch löschen")
+    void mitnutzerAendertNicht() throws Exception {
+        // Die eigentliche Gefahr von ADR-0012: konnektor() zeigt den Konnektor
+        // jetzt auch dem Mitnutzer. Wenn die Änderungswege weiter nur „sehe ich
+        // ihn?" prüfen, darf ihn plötzlich jeder Mitnutzer umkonfigurieren.
+        long konn = eigenerKonnektor();
+        long fremde = weitereEinrichtung("Aendernutzer Bestand");
+        assertTrue(bv.konnektorNutzungSetzen(konn, fremde, true, ALLES).geklappt());
+        var nurNutzer = Geltungsbereich.ausIds(java.util.List.of(fremde), "nur Mitnutzer");
+
+        var vorher = bv.konnektor(konn, ALLES).orElseThrow();
+        var e = bv.konnektorAendern(konn, "Uebernommen", "10.9.9.9:443", null,
+                vorher.mandantId(), vorher.clientsystemId(), vorher.arbeitsplatzId(),
+                "eindringling", "geheim", null, true, nurNutzer);
+        assertFalse(e.geklappt(), "Ein Mitnutzer darf keine Zugangsdaten setzen");
+        assertEquals(vorher.bezeichnung(), bv.konnektor(konn, ALLES).orElseThrow().bezeichnung());
+
+        assertFalse(bv.konnektorLoeschen(konn, nurNutzer).geklappt());
+        assertFalse(bv.konnektorPasswortEntfernen(konn, nurNutzer).geklappt());
+        assertTrue(bv.konnektor(konn, ALLES).isPresent(), "Der Konnektor steht noch");
+    }
+
+    @Test @Order(53)
+    @DisplayName("Die BSNR wird auf ihre Form geprüft, nicht auf Gültigkeit")
+    void bsnrForm() {
+        // Neun Ziffern. Ob es die BSNR wirklich gibt, weiß nur die KV — eine
+        // Prüfung, die mehr behauptet, als sie kann, ist schlimmer als keine.
+        assertNull(Organisationsverwaltung.bsnrPruefen("123456789"));
+        assertNull(Organisationsverwaltung.bsnrPruefen("12 345 6789"), "Leerzeichen sind erlaubt");
+        assertNull(Organisationsverwaltung.bsnrPruefen(null), "freiwillige Angabe");
+        assertNull(Organisationsverwaltung.bsnrPruefen(""), "freiwillige Angabe");
+        assertNotNull(Organisationsverwaltung.bsnrPruefen("12345"));
+        assertNotNull(Organisationsverwaltung.bsnrPruefen("12345678X"));
+        assertTrue(Organisationsverwaltung.bsnrPruefen("12345").contains("neun Ziffern"));
+    }
+
+    /** Eine weitere Einrichtung unter demselben Verbund. */
+    private long weitereEinrichtung(String name) throws SQLException {
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO organisation (bezeichnung, art, eltern_id, ist_demo)
+                SELECT ?, 'EINRICHTUNG', eltern_id, FALSE
+                FROM organisation WHERE id = ? RETURNING id""")) {
+            p.setString(1, name);
+            p.setLong(2, orgId);
+            try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
+        }
+    }
+
     @Test @Order(45)
     @DisplayName("Die Liste ist standardmäßig nach Einrichtung sortiert")
     void standardsortierung() {

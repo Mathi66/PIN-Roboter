@@ -696,17 +696,27 @@ gepflegte Zuordnung, kein Zufallsprodukt — auch für Konnektor-Fehlercodes wie
 
 ### 8.6 Datenmodell — tragende Beziehungen
 
+Stand nach [ADR-0012](adr/0012-geraetehierarchie-nach-organisationsstruktur.md)
+(12.08.2026):
+
 ```mermaid
 erDiagram
     SERVICEORGANISATION ||--o{ EINRICHTUNG : "betreut"
+    EINRICHTUNG ||--o{ FACHBEREICH : "gliedert sich in"
     EINRICHTUNG ||--o{ GERAETEGRUPPE : "gliedert"
     EINRICHTUNG ||--o{ KONNEKTOR : "betreibt"
+    EINRICHTUNG }o--o{ KONNEKTOR : "nutzt mit"
     GERAETEGRUPPE ||--o{ KARTENTERMINAL : "bündelt"
     KONNEKTOR ||--o{ KARTENTERMINAL : "kennt"
+    FACHBEREICH ||--o{ KARTENTERMINAL : "beherbergt"
     KARTENTERMINAL ||--o| SMCB : "enthält"
     EINRICHTUNG ||--o{ BENUTZER : "hat"
     EINRICHTUNG ||--o{ PROTOKOLLEINTRAG : "erzeugt"
 
+    EINRICHTUNG {
+        string bsnr
+        string telematik_id
+    }
     GERAETEGRUPPE {
         int pruefintervall_sekunden
         bool ist_vorgabe
@@ -722,14 +732,27 @@ erDiagram
 ```
 
 > **Jede Beziehung trägt die Mandantengrenze mit.** Eine Gerätegruppe liegt in
-> genau einer Einrichtung, ein Konnektor ebenso — deshalb lässt sich der
-> Geltungsbereich eines Benutzers in jeder Abfrage auf dieselbe Weise
-> durchsetzen.
+> genau einer Einrichtung — deshalb lässt sich der Geltungsbereich eines
+> Benutzers in jeder Abfrage auf dieselbe Weise durchsetzen.
+>
+> Die eine Ausnahme ist der **Konnektor**: Seit „Konnektor as a Service" teilen
+> sich mehrere Leistungserbringer einen. Er hat deshalb **einen Betreiber**
+> (`konnektor.organisation_id`) und **beliebig viele Nutzer**
+> (`konnektor_nutzung`). Sehen darf ihn, wer ihn nutzt; ändern nur, wer ihn
+> betreibt. Beides wird zentral geprüft, nicht je Route.
 
 
 Bewusste Festlegungen:
-- **Die Einrichtung ist der Mandantenanker.** Jedes fachliche Objekt hängt direkt
-  oder indirekt an ihr.
+- **Die Betriebsstätte ist der Mandantenanker.** Sie ist zugleich die
+  Leistungserbringerinstitution der TI: Sie trägt BSNR, Telematik-ID und die
+  SMC-B. Träger, Standort und Fachbereich haben keine eigene Identität.
+- **Der Fachbereich ist eine Ebene des Organisationsbaums, keine eigene
+  Tabelle.** Ein Kartenterminal hängt an der untersten passenden Einheit; ob das
+  eine Betriebsstätte oder ein Fachbereich ist, ergibt sich aus deren Art. Ein
+  zweites Feld „Fachbereich" neben `organisation_id` könnte auseinanderlaufen.
+- **Wer Geräte einer Betriebsstätte zählt, zählt den Teilbaum.** Mit
+  Fachbereichen ist ein Vergleich auf die eine Kennung zu eng — der
+  Geltungsbereich rechnet ohnehin rekursiv.
 - **Gerätegruppen und Zeitfenster gehören in Version 1**, auch wenn der Rollout
   später kommt. Nachrüsten wäre ein Umbau des halben Modells.
 - **Protokollereignisse liegen physisch getrennt** von den Betriebsdaten

@@ -2656,3 +2656,85 @@ Unveränderlichkeit des Protokolls und `gruppe_id NOT NULL`. Beide Male hatte di
 Regel recht, und beide Male war mein Test der bequeme Weg.
 
 **Stand: 243 Modultests, 393 Systemnachweise — alle grün.**
+
+---
+
+## Eine Hierarchie, die zur Wirklichkeit der TI passt (ADR-0012)
+
+Der PO beschrieb, wie es tatsächlich aussieht: Ein Kartenterminal gehört immer
+zu einem **Fachbereich** und immer zu einem **Konnektor** — und ein Konnektor
+kann mehrere Fachbereiche bedienen. In TI 1.0 galt ursprünglich ein Konnektor je
+Leistungserbringer; heute steht er als „Konnektor as a Service" im Rechenzentrum
+und wird von mehreren geteilt. Im MVZ hängt darüber die Trägergesellschaft, das
+MVZ ist der zugelassene Leistungserbringer, und die **Betriebsstätten** sind es,
+die BSNR, SMC-B und Telematik-ID tragen.
+
+Unser Modell kannte davon zwei Dinge nicht: die Ebene unterhalb der
+Betriebsstätte, und dass ein Konnektor mehr als einer Einrichtung gehören kann.
+
+### Was gebaut wurde
+
+**Zwei neue Ebenen** — `LEISTUNGSERBRINGER` zwischen Verbund und Standort,
+`FACHBEREICH` unterhalb der Betriebsstätte. Beide sind optional; die Einzelpraxis
+bleibt `Verbund → Betriebsstätte`. Die erlaubte Schachtelung steht an genau einer
+Stelle im Code, nicht in jedem Formular.
+
+**BSNR und Telematik-ID an der Betriebsstätte** — freiwillig, mit Formprüfung auf
+neun Ziffern. Ein Standort nimmt keine an und sagt auch, warum. Geprüft wird die
+Form, nicht die Gültigkeit: Ob es die Nummer gibt, weiß nur die KV.
+
+**Konnektor ↔ Betriebsstätte als n:m** mit einer Trennung, die der eigentliche
+Kern dieser Entscheidung ist:
+
+> Wer den Konnektor betreibt, verwaltet ihn. Wer ihn nutzt, sieht ihn.
+
+Im Rechenzentrum gehört der Konnektor dem Dienstleister. Die nutzenden Praxen
+müssen ihn sehen, sonst könnten sie ihre eigenen Terminals nicht zuordnen. Ändern
+dürfen sie ihn nicht — sonst könnte eine Praxis mit zwei Geräten den Konnektor
+umkonfigurieren, an dem zwanzig andere hängen.
+
+### Die Stelle, an der ich mir selbst eine Lücke gebaut hatte
+
+Damit der Mitnutzer den Konnektor sieht, musste `konnektor(...)` ihn ihm zeigen.
+Die drei Änderungswege — ändern, löschen, Kennwort entfernen — prüften bis dahin
+genau eine Frage: „Sehe ich diesen Datensatz?" Nach der Erweiterung hätte jeder
+Mitnutzer alle drei ausführen dürfen.
+
+Gefunden habe ich das nicht durch einen Test, sondern beim Lesen der eigenen
+Änderung. Jetzt prüfen sie `darfKonnektorVerwalten(...)`, das ausschließlich auf
+den Betreiber schaut — und ein Modultest führt genau diesen Angriff aus.
+
+Das ist dasselbe Muster wie schon zweimal zuvor in diesem Projekt: Eine Abfrage
+wird großzügiger, und eine Prüfung, die sich auf ihre Enge verlassen hat, wird
+still unwirksam.
+
+### Was der Demodatensatz jetzt zeigt
+
+7 Konnektoren statt 9: sechs eigene und einer im Rechenzentrum, den sich drei
+kleine Betriebsstätten teilen. Zwei Fachbereiche in der Chirurgie — nur dort,
+denn ein Aufbau, in dem eine optionale Ebene überall vorkommt, täuscht eine
+Pflicht vor, die es nicht gibt. Und an allen neun Betriebsstätten BSNR und
+Telematik-ID, an keiner anderen Ebene.
+
+Eine Nebenwirkung, die durch den ganzen Code lief: Wer die Geräte einer
+Betriebsstätte zählt, muss den **Teilbaum** nehmen. Mit Fachbereichen ist der
+Vergleich auf die eine Kennung zu eng — im Demodatenaufbau, in den
+Systemnachweisen und in jeder Zählung, die vorher richtig war, weil es unterhalb
+der Betriebsstätte nichts gab.
+
+### Der Nachweislauf prüfte ein Artefakt von vorgestern
+
+Neun Nachweise schlugen fehl — alle neu, alle zu ADR-0012. Die Ursache war
+nicht der Code: Das Nachweisskript startet die Bausteine aus `target/*.jar`,
+**baute sie aber nicht selbst**. Das JAR stammte von 11:34, meine Änderungen von
+später.
+
+Der Lauf hätte also einen Stand bescheinigt, den es im Quellcode nicht mehr gibt.
+Aufgefallen ist es nur, weil ich neue Nachweise mitgebracht hatte, die
+zwangsläufig fehlschlagen mussten. Wären es reine Umbauten unter unverändertem
+Verhalten gewesen, wäre der Bericht grün gewesen — und falsch.
+
+Zwei Änderungen: Der Testschritt heißt jetzt `mvn package` statt `mvn test`, baut
+also die Artefakte, die anschließend geprüft werden. Und ein eigener Nachweis
+vergleicht das Alter des JARs mit dem der jüngsten Quelldatei. Ein stiller
+Fehlschlag beim Bauen bleibt damit nicht länger unsichtbar.

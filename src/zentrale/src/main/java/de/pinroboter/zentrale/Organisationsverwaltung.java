@@ -42,16 +42,22 @@ import java.util.*;
 public class Organisationsverwaltung {
 
     /** Eine Einheit mit ihrer Tiefe im Baum — für die eingerückte Darstellung. */
+    /**
+     * Eine Organisationseinheit.
+     *
+     * @param bsnr        Betriebsstättennummer — nur bei einer Betriebsstätte
+     *                    gesetzt, denn nur sie ist die LEI (ADR-0012)
+     * @param telematikId Telematik-ID der SMC-B; über sie wird die
+     *                    institutionelle Identität technisch abgebildet
+     */
     public record Einheit(long id, String bezeichnung, String art, Long elternId, int tiefe,
                           boolean istDemo, int kinder, int benutzer, int konnektoren,
-                          int terminals) {
-        public String artAnzeige() {
-            return switch (art) {
-                case "VERBUND"     -> "Verbund";
-                case "STANDORT"    -> "Standort";
-                case "EINRICHTUNG" -> "Einrichtung";
-                default            -> art;
-            };
+                          int terminals, String bsnr, String telematikId) {
+        public String artAnzeige() { return Organisationsverwaltung.artAnzeige(art); }
+
+        /** Ob diese Einheit die Leistungserbringerinstitution ist. */
+        public boolean istBetriebsstaette() {
+            return Organisationsverwaltung.istBetriebsstaette(art);
         }
 
         /** Ob sie sich löschen lässt — leer heißt: nichts hängt daran. */
@@ -97,11 +103,26 @@ public class Organisationsverwaltung {
      * Datenbank, aber unsinnig im Sinne der Sache — und er würde die Anzeige
      * unverständlich machen.
      */
+    /**
+     * Welche Arten unterhalb einer Einheit zulässig sind (ADR-0012).
+     *
+     * <p><b>Alle Zwischenebenen sind optional.</b> Eine Einzelpraxis bleibt
+     * {@code VERBUND → EINRICHTUNG} — ohne Leistungserbringer, ohne Standort,
+     * ohne Fachbereich. Ein Modell, das für den einfachsten Fall vier Ebenen
+     * erzwingt, wäre in einer Praxis mit drei Geräten eine Zumutung.
+     *
+     * <p>Die Betriebsstätte ({@code EINRICHTUNG}) ist die
+     * Leistungserbringerinstitution: Sie trägt BSNR, SMC-B und Telematik-ID.
+     * Der {@code FACHBEREICH} darunter gliedert große Betriebsstätten — in
+     * einer Klinik stehen 200 Kartenterminals nicht „irgendwo".
+     */
     private static List<String> erlaubtUnter(String elternArt) {
         return switch (elternArt) {
-            case "VERBUND"  -> List.of("STANDORT", "EINRICHTUNG");
-            case "STANDORT" -> List.of("EINRICHTUNG");
-            default         -> List.of();          // unter einer Einrichtung nichts
+            case "VERBUND"            -> List.of("LEISTUNGSERBRINGER", "STANDORT", "EINRICHTUNG");
+            case "LEISTUNGSERBRINGER" -> List.of("STANDORT", "EINRICHTUNG");
+            case "STANDORT"           -> List.of("EINRICHTUNG");
+            case "EINRICHTUNG"        -> List.of("FACHBEREICH");
+            default                   -> List.of();   // unter einem Fachbereich nichts
         };
     }
 
@@ -136,6 +157,7 @@ public class Organisationsverwaltung {
                     FROM organisation o JOIN baum b ON o.eltern_id = b.id
                 )
                 SELECT b.id, b.bezeichnung, b.art, b.eltern_id, b.tiefe, b.ist_demo,
+                       b.bsnr, b.telematik_id,
                        (SELECT count(*) FROM organisation k WHERE k.eltern_id = b.id)    AS kinder,
                        (SELECT count(*) FROM benutzer u WHERE u.organisation_id = b.id)  AS benutzer,
                        (SELECT count(*) FROM konnektor k WHERE k.organisation_id = b.id) AS konnektoren,
@@ -158,7 +180,8 @@ public class Organisationsverwaltung {
                             rs.getString("art"), elternId, rs.getInt("tiefe"),
                             rs.getBoolean("ist_demo"), rs.getInt("kinder"),
                             rs.getInt("benutzer"), rs.getInt("konnektoren"),
-                            rs.getInt("terminals")));
+                            rs.getInt("terminals"),
+                            rs.getString("bsnr"), rs.getString("telematik_id")));
                 }
             }
         } catch (SQLException e) {
@@ -287,12 +310,17 @@ public class Organisationsverwaltung {
         }
         var erlaubt = erlaubtUnter(eltern.get().art());
         if (!erlaubt.contains(art)) {
+            // „Unterhalb eines Betriebsstättes" — die alte Meldung baute den
+            // Genitiv mit angehaengtem s. Mit „Betriebsstätte" und
+            // „Trägergesellschaft" wird daraus Unsinn. Jetzt eine Form, die
+            // fuer jede Art traegt.
             return Ergebnis.schlecht(erlaubt.isEmpty()
-                    ? "Unterhalb einer Einrichtung lassen sich keine weiteren Einheiten anlegen. "
-                      + "Die Einrichtung ist die unterste Ebene."
-                    : "Unterhalb eines " + eltern.get().artAnzeige() + "s ist nur zulässig: "
+                    ? "Unterhalb eines Fachbereichs lassen sich keine weiteren Einheiten "
+                      + "anlegen — er ist die unterste Ebene."
+                    : "Hier ist nur zulässig: "
                       + erlaubt.stream().map(Organisationsverwaltung::artAnzeige)
-                               .reduce((a, b) -> a + " oder " + b).orElse(""));
+                               .reduce((a, b) -> a + " oder " + b).orElse("")
+                      + " (gewählt: " + artAnzeige(eltern.get().art()) + ")");
         }
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "INSERT INTO organisation (bezeichnung, art, eltern_id) VALUES (?,?,?)")) {
@@ -304,6 +332,43 @@ public class Organisationsverwaltung {
                     + eltern.get().bezeichnung() + "“ angelegt.");
         } catch (SQLException e) {
             return Ergebnis.schlecht("Die Einheit konnte nicht angelegt werden.");
+        }
+    }
+
+    /**
+     * Pflegt BSNR und Telematik-ID einer Betriebsstätte (ADR-0012).
+     *
+     * <p>Nur an einer {@code EINRICHTUNG}: Sie ist die
+     * Leistungserbringerinstitution. Weder die Trägergesellschaft noch ein
+     * Fachbereich hat eine eigene — der Fachbereich teilt sich die SMC-B seiner
+     * Betriebsstätte.
+     *
+     * <p>Beide Angaben sind <b>freiwillig</b>. Beim Einrichten liegen sie oft
+     * noch nicht vor, und eine Pflichtangabe, die niemand hat, führt zu
+     * Fantasiewerten, die später niemand korrigiert.
+     */
+    public Ergebnis tiIdentitaetSetzen(long id, String bsnr, String telematikId,
+                                       Geltungsbereich bereich) {
+        var e = einheit(id, bereich);
+        if (e.isEmpty()) return Ergebnis.schlecht("Diese Einheit steht Ihnen nicht zur Verfügung.");
+        if (!e.get().istBetriebsstaette()) {
+            return Ergebnis.schlecht("BSNR und Telematik-ID gehören zur Betriebsstätte — "
+                    + "sie ist die Leistungserbringerinstitution. „" + e.get().bezeichnung()
+                    + "“ ist " + (e.get().art().equals("FACHBEREICH") ? "ein " : "eine ")
+                    + e.get().artAnzeige() + ".");
+        }
+        String fehler = bsnrPruefen(bsnr);
+        if (fehler != null) return Ergebnis.schlecht(fehler);
+
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE organisation SET bsnr = ?, telematik_id = ? WHERE id = ?")) {
+            p.setString(1, bsnr == null || bsnr.isBlank() ? null : bsnr.replace(" ", "").trim());
+            p.setString(2, telematikId == null || telematikId.isBlank() ? null : telematikId.trim());
+            p.setLong(3, id);
+            p.executeUpdate();
+            return Ergebnis.gut("Die Angaben zur Betriebsstätte wurden gespeichert.");
+        } catch (SQLException ex) {
+            return Ergebnis.schlecht("Die Angaben konnten nicht gespeichert werden.");
         }
     }
 
@@ -431,10 +496,44 @@ public class Organisationsverwaltung {
 
     static String artAnzeige(String art) {
         return switch (art) {
-            case "VERBUND"     -> "Verbund";
-            case "STANDORT"    -> "Standort";
-            case "EINRICHTUNG" -> "Einrichtung";
-            default            -> art;
+            case "VERBUND"            -> "Trägergesellschaft";
+            case "LEISTUNGSERBRINGER" -> "Leistungserbringer";
+            case "STANDORT"           -> "Standort";
+            case "EINRICHTUNG"        -> "Betriebsstätte";
+            case "FACHBEREICH"        -> "Fachbereich";
+            default                   -> art;
         };
+    }
+
+    /**
+     * Ob diese Art eine Leistungserbringerinstitution ist.
+     *
+     * <p>Nur die Betriebsstätte. Sie trägt BSNR, SMC-B und Telematik-ID; über
+     * die Telematik-ID wird die institutionelle Identität technisch
+     * abgebildet. Weder die Trägergesellschaft noch ein Fachbereich hat eine
+     * eigene — der Fachbereich teilt sich die SMC-B seiner Betriebsstätte.
+     */
+    public static boolean istBetriebsstaette(String art) {
+        return "EINRICHTUNG".equals(art);
+    }
+
+    /**
+     * Prüft die Form einer Betriebsstättennummer.
+     *
+     * <p>Neun Ziffern. Geprüft wird die <b>Form</b>, nicht die Gültigkeit — ob
+     * es die BSNR wirklich gibt, weiß nur die KV. Eine Prüfung, die mehr
+     * behauptet, als sie kann, ist schlimmer als keine.
+     *
+     * @return Fehlermeldung im Klartext, oder {@code null}
+     */
+    public static String bsnrPruefen(String bsnr) {
+        if (bsnr == null || bsnr.isBlank()) return null;   // freiwillige Angabe
+        String blank = bsnr.replace(" ", "");
+        if (!blank.matches("\\d{9}")) {
+            return "Die Betriebsstättennummer besteht aus neun Ziffern (eingegeben: "
+                 + blank.length() + " Zeichen). Sie steht auf Ihrer Abrechnungsunterlage "
+                 + "oder ist bei der KV zu erfragen.";
+        }
+        return null;
     }
 }

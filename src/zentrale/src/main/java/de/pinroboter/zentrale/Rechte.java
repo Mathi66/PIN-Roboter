@@ -73,9 +73,16 @@ public final class Rechte {
             try (ResultSet rs = p.executeQuery()) {
                 if (!rs.next()) return new Rechte(b, Ebene.UNBEKANNT);
                 return new Rechte(b, switch (rs.getString("art")) {
-                    case "VERBUND"     -> Ebene.VERBUND;
+                    case "VERBUND" -> Ebene.VERBUND;
+                    // Ein Leistungserbringer steht ueber den Standorten und
+                    // damit auf derselben Rechteebene wie ein Verbund: Er
+                    // umfasst mehrere Betriebsstaetten (ADR-0012).
+                    case "LEISTUNGSERBRINGER" -> Ebene.VERBUND;
                     case "STANDORT"    -> Ebene.STANDORT;
                     case "EINRICHTUNG" -> Ebene.EINRICHTUNG;
+                    // Ein Fachbereich liegt INNERHALB einer Betriebsstaette —
+                    // engster Bereich, nicht weiter.
+                    case "FACHBEREICH" -> Ebene.EINRICHTUNG;
                     default            -> Ebene.UNBEKANNT;
                 });
             }

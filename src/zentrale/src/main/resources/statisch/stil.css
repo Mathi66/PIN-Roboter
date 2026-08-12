@@ -515,6 +515,22 @@ td.zahl-zelle, th.zahl-zelle { text-align:right; font-variant-numeric:tabular-nu
 
 /* ─────────────────────────────────────────────────────────────── Beziehungen */
 
+/* Zweispaltige Auskunft: Bezeichnung links, Wert rechts. Bei schmalem
+   Fenster untereinander - erzwungene Spalten waeren auf dem Tablet unlesbar. */
+.angaben { display:grid; grid-template-columns:auto 1fr; gap:var(--r2) var(--r4); margin:0; }
+.angaben dt { color:var(--gedaempft); font-size:.9rem; }
+.angaben dd { margin:0; }
+@media (max-width:34rem) { .angaben { grid-template-columns:1fr; gap:var(--r1); }
+  .angaben dd { margin-bottom:var(--r2); } }
+
+/* Aufzaehlung mit Handlung am Zeilenende (z. B. Mitnutzer eines Konnektors). */
+.beziehungsliste { list-style:none; margin:var(--r3) 0; padding:0;
+  display:flex; flex-direction:column; gap:var(--r1); }
+.beziehungsliste li { display:flex; align-items:center; justify-content:space-between;
+  gap:var(--r3); padding:var(--r2) var(--r3); border:1px solid var(--rand);
+  border-radius:var(--radius-klein); }
+.inlineform { margin:0; }
+
 .beziehungen {
   display:grid; grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr)); gap:var(--r3);
 }

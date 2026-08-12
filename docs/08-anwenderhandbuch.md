@@ -89,7 +89,7 @@ Links steht die Navigation, getrennt in **Betrieb** (Tagesgeschäft) und
 | **Benachrichtigung** | Wer bekommt eine E-Mail, wenn etwas nicht stimmt |
 | **Protokoll** | Was ist wann passiert |
 | **Bestand** | Konnektoren und Terminals erfassen, PIN hinterlegen |
-| **Organisation** | Standorte und Einrichtungen |
+| **Organisation** | Ihre Struktur: Träger, Standorte, Betriebsstätten, Fachbereiche |
 | **Konten** | Benutzer und ihre Rechte |
 | **Instanz** | Technisches: Agenten, Speicher, Versionen |
 
@@ -142,6 +142,15 @@ Drei Schritte, in dieser Reihenfolge:
 **Bestand → Konnektor hinzufügen.** Sie brauchen Adresse und Zugangsdaten des
 Konnektors. Diese Angaben bekommen Sie von Ihrer IT oder Ihrem Dienstleister.
 
+Nutzen mehrere Praxen denselben Konnektor — etwa wenn er beim Dienstleister im
+Rechenzentrum steht —, erfasst ihn **die Einrichtung, die ihn betreibt**. Auf
+seiner Seite steht unten „Mitnutzende Einrichtungen"; dort trägt der Betreiber
+ein, wer ihn mitbenutzen darf.
+
+> Die mitnutzenden Praxen sehen den Konnektor dann und können ihm ihre eigenen
+> Kartenterminals zuordnen. **Ändern oder löschen kann ihn nur der Betreiber** —
+> sonst könnte eine Praxis den Konnektor verstellen, an dem andere hängen.
+
 ### Schritt 2: Kartenterminal erfassen
 
 Zwei Wege:
@@ -177,6 +186,32 @@ eingelegten SMC-B ein.
 Ab jetzt arbeitet der Roboter selbstständig.
 
 ---
+
+### Ihre Struktur abbilden
+
+**Organisation** zeigt Ihre Einrichtung als Baum. Fünf Ebenen sind möglich, und
+**Sie brauchen nicht alle**:
+
+| Ebene | Wofür |
+|---|---|
+| Trägergesellschaft | die Dachorganisation, z. B. bei einem MVZ |
+| Leistungserbringer | das MVZ selbst, sofern es als solches zugelassen ist |
+| Standort | ein Gebäude oder Ortsteil mit mehreren Betriebsstätten |
+| **Betriebsstätte** | die Praxis mit eigener BSNR und eigener SMC-B |
+| Fachbereich | eine Abteilung innerhalb einer Betriebsstätte |
+
+Eine Einzelpraxis kommt mit zwei Ebenen aus. Die Zwischenebenen sind für
+größere Häuser gedacht — legen Sie nur an, was Sie wirklich unterscheiden.
+
+**Die Betriebsstätte ist die wichtigste Ebene.** Sie ist es, die in der
+Telematikinfrastruktur als Leistungserbringer geführt wird und eine eigene
+SMC-B hat. Auf ihrer Seite können Sie **Betriebsstättennummer (BSNR)** und
+**Telematik-ID** eintragen. Beides ist freiwillig — tragen Sie es nach, wenn
+Ihnen die Angaben vorliegen. Die BSNR stimmen Sie mit Ihrer Kassenärztlichen
+Vereinigung ab.
+
+Kartenterminals ordnen Sie der untersten Ebene zu, die passt: dem Fachbereich,
+wenn es einen gibt, sonst der Betriebsstätte.
 
 ## 6. Gerätegruppen
 
