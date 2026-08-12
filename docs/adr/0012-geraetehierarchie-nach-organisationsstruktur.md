@@ -211,8 +211,11 @@ Umgesetzt und nachgewiesen:
 - Mitnutzung über die Konnektorseite verwaltbar; Mitnutzer bekommen eine
   Nur-Lese-Auskunft statt einer gesperrten Maske. Ereignisart
   `KONNEKTOR_NUTZUNG_GEAENDERT` (Sicherheitsstufe).
-- Demoszenario mit zwei Fachbereichen, einem geteilten Rechenzentrums-Konnektor
-  und TI-Identitäten an allen neun Betriebsstätten.
+- Demoszenario mit zwei Fachbereichen und TI-Identitäten an allen neun
+  Betriebsstätten. Ein geteilter Rechenzentrums-Konnektor war zunächst
+  enthalten; der PO hat ihn am 12.08.2026 entfernt. Die n:m-Beziehung bleibt —
+  die Systemnachweise richten den Fall seither selbst ein, statt ihn im
+  Demobestand vorauszusetzen.
 - Modultests in `OrganisationsverwaltungTest` und `BestandsverwaltungTest`,
   Systemnachweise im Block „ADR-0012".
 

@@ -119,13 +119,6 @@ public class Demodaten {
         try {
             long traeger = organisation(Demoszenario.TRAEGER, "VERBUND", null);
 
-            // Der zentrale Konnektor des Traegers (ADR-0012). Drei kleine
-            // Betriebsstaetten teilen ihn sich - fuer zwei Kartenterminals lohnt
-            // kein eigener. Betrieben wird er vom Traeger, genutzt von anderen:
-            // genau die Trennung, die ADR-0012 eingefuehrt hat.
-            long rzKonnektor = konnektor(traeger, Demoszenario.RZ_KONNEKTOR,
-                    "https://10.99.0.10:443/", "KoCo Konnektor", "Mandant-RZ");
-
             int laufendeNummer = 0;
             for (String standortname : Demoszenario.STANDORTE) {
                 long standort = organisation("Standort " + standortname, "STANDORT", traeger);
@@ -135,18 +128,14 @@ public class Demodaten {
                     long praxis = organisation(b.name(), "EINRICHTUNG", standort,
                             b.bsnr(), b.telematikId());
 
-                    // Ein Konnektor je Betriebsstaette - ausser bei den drei
-                    // kleinen, die den zentralen mitnutzen.
-                    long konnektor;
-                    if (b.imRechenzentrum()) {
-                        konnektor = rzKonnektor;
-                        konnektorNutzung(rzKonnektor, praxis);
-                    } else {
-                        konnektor = konnektor(praxis, "Konnektor " + b.name(),
-                                "https://10.%d.%d.10:443/".formatted(
-                                        standortIndex(standortname) + 1, laufendeNummer),
-                                "KoCo Konnektor", "Mandant-" + b.kuerzel());
-                    }
+                    // Ein Konnektor je Betriebsstaette. Das entspricht der
+                    // Wirklichkeit in einem MVZ dieser Groesse: Die SMC-B ist
+                    // die Institutionskarte EINER Betriebsstaette, und der
+                    // Konnektor gehoert dazu.
+                    long konnektor = konnektor(praxis, "Konnektor " + b.name(),
+                            "https://10.%d.%d.10:443/".formatted(
+                                    standortIndex(standortname) + 1, laufendeNummer),
+                            "KoCo Konnektor", "Mandant-" + b.kuerzel());
 
                     // Fachbereiche, wo es sie gibt (ADR-0012). Sie haben keine
                     // eigene SMC-B - sie teilen sich die der Betriebsstaette.

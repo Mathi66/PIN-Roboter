@@ -2942,3 +2942,28 @@ ausgewiesen wurde („18 Seiten ohne Befund" statt „18 von 20").
 Die Kennungen kommen jetzt aus der Datenbank. Der Zeitstrahl existiert dort
 immer, auch ohne Ereignisse — und eine leere Seite ist ebenfalls
 prüfenswert.
+
+
+---
+
+## Der Rechenzentrums-Konnektor fliegt aus dem Demobestand
+
+**Vorgabe des PO.** Im Demoszenario betreibt jetzt jede der neun
+Betriebsstätten ihren eigenen Konnektor — neun statt sieben.
+
+Der geteilte Konnektor war die einzige Stelle, an der die n:m-Beziehung aus
+ADR-0012 im Demobestand sichtbar war. **Die Funktion bleibt unverändert**; nur
+zeigt der Demodatensatz sie nicht mehr.
+
+Zwei Nachweise hingen daran und hätten künftig „übersprungen" gemeldet:
+„drei Betriebsstätten nutzen den zentralen Konnektor mit" und „ein mitgenutzter
+Konnektor ist als solcher gekennzeichnet". Beide **stellen ihren Aufbau jetzt
+selbst her**: Mitnutzung eintragen, prüfen, wieder entziehen. Dabei sind zwei
+Nachweise dazugekommen, die vorher gefehlt haben — dass der Mitnutzer den
+Konnektor auch wirklich sieht, und dass die Kennzeichnung nach dem Entziehen
+wieder verschwindet.
+
+> Ein Nachweis, der an Demodaten hängt, prüft nur so lange, wie niemand die
+> Demodaten ändert. Und wenn er dann still auf „übersprungen" springt, sieht ein
+> grüner Lauf genauso aus wie vorher — obwohl eine Funktion unbelegt geworden
+> ist. Deshalb war der Umbau nicht Beiwerk der Änderung, sondern ihr Kern.

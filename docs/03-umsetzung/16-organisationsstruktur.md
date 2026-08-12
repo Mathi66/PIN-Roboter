@@ -195,11 +195,23 @@ der Demodatenaufbau und die Systemnachweise mussten nachgezogen werden.
 - 1 Träger, 3 Standorte, 9 Betriebsstätten, **2 Fachbereiche** (nur in der
   Chirurgie — die Ebene ist optional, und ein Aufbau, in dem sie überall
   vorkommt, täuscht eine Pflicht vor, die es nicht gibt),
-- **7 Konnektoren** statt 9: sechs eigene, dazu ein zentraler im Rechenzentrum,
-  den sich drei kleine Betriebsstätten teilen,
+- **9 Konnektoren**, einer je Betriebsstätte,
 - BSNR und Telematik-ID an allen neun Betriebsstätten, an keiner anderen Ebene.
 
 Alle Werte sind erfunden; die Form stimmt, der Wert nicht.
+
+> **Nachtrag PO, 12.08.2026:** Der Demobestand enthielt zunächst zusätzlich
+> einen zentralen Konnektor im Rechenzentrum, den sich drei kleine
+> Betriebsstätten teilten — die Veranschaulichung von „Konnektor as a Service".
+> Er wurde auf Wunsch des PO entfernt; jede Betriebsstätte betreibt ihren
+> eigenen.
+>
+> **Die Funktion bleibt unverändert:** Konnektor ↔ Betriebsstätte ist weiterhin
+> n:m. Die Systemnachweise stellen den Fall seither **selbst her** — Mitnutzung
+> eintragen, prüfen, wieder entziehen —, statt sich auf den Demobestand zu
+> verlassen. Ein Nachweis, der an Demodaten hängt, prüft nur so lange, wie
+> niemand die Demodaten ändert, und meldet danach „übersprungen" statt
+> „kaputt".
 
 
 ---

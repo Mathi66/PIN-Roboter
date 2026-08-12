@@ -67,21 +67,18 @@ public final class Demoszenario {
      *                    Betriebsstätte mit sieben und eine mit einem.
      * @param laufnummer  1-basiert, geht in BSNR und Telematik-ID ein. Abgeleitet
      *                    statt einzeln gepflegt: Zwei Listen laufen auseinander.
-     * @param imRechenzentrum {@code true}, wenn diese Betriebsstätte keinen
-     *                    eigenen Konnektor hat, sondern den zentralen des
-     *                    Trägers mitnutzt (ADR-0012, „Konnektor as a Service")
      * @param fachbereiche Gliederung der Behandlungsräume. Meist leer — die
      *                    Ebene ist optional, und die meisten Betriebsstätten
      *                    brauchen sie nicht.
      */
     public record Betriebsstaette(String kuerzel, String standort, String name,
                                   String fach, int behandlungsraeume, int laufnummer,
-                                  boolean imRechenzentrum, List<Fachbereich> fachbereiche) {
+                                  List<Fachbereich> fachbereiche) {
 
-        /** Kurzform ohne Fachbereiche und ohne Rechenzentrum. */
+        /** Kurzform ohne Fachbereiche — der Normalfall. */
         public Betriebsstaette(String kuerzel, String standort, String name, String fach,
                                int behandlungsraeume, int laufnummer) {
-            this(kuerzel, standort, name, fach, behandlungsraeume, laufnummer, false, List.of());
+            this(kuerzel, standort, name, fach, behandlungsraeume, laufnummer, List.of());
         }
 
         /**
@@ -138,10 +135,8 @@ public final class Demoszenario {
                     "Allgemeinmedizin", 5, 1),
             new Betriebsstaette("NKAR", "Nord", "Kardiologie am Nordring",
                     "Kardiologie", 3, 2),
-            // Zwei Geraete, kein eigener Konnektor: Diese Betriebsstaette haengt
-            // am zentralen Konnektor des Traegers (ADR-0012).
             new Betriebsstaette("NORT", "Nord", "Orthopädie Nordpark",
-                    "Orthopädie", 2, 3, true, List.of()),
+                    "Orthopädie", 2, 3),
 
             // ── Standort Mitte ───────────────────────────────────────────────
             new Betriebsstaette("MHAU", "Mitte", "Hausärztliche Praxis am Markt",
@@ -149,34 +144,30 @@ public final class Demoszenario {
             new Betriebsstaette("MINN", "Mitte", "Innere Medizin Stadtmitte",
                     "Innere Medizin", 3, 5),
             new Betriebsstaette("MRAD", "Mitte", "Radiologie Musterstadt",
-                    "Radiologie", 1, 6, true, List.of()),
+                    "Radiologie", 1, 6),
 
             // ── Standort Süd ─────────────────────────────────────────────────
             new Betriebsstaette("SHAU", "Süd", "Hausarztpraxis Südhang",
                     "Allgemeinmedizin", 4, 7),
             new Betriebsstaette("SGYN", "Süd", "Gynäkologie Südpark",
-                    "Gynäkologie", 2, 8, true, List.of()),
+                    "Gynäkologie", 2, 8),
             // Die einzige Betriebsstaette mit Fachbereichen. Bewusst nur eine:
             // Die Ebene ist optional, und ein Demoaufbau, in dem sie ueberall
             // vorkommt, taeuscht eine Pflicht vor, die es nicht gibt.
             new Betriebsstaette("SCHI", "Süd", "Chirurgie und Unfallambulanz Süd",
-                    "Chirurgie", 3, 9, false,
+                    "Chirurgie", 3, 9,
                     List.of(new Fachbereich("Unfallambulanz", 1, 2),
                             new Fachbereich("Sprechstunde Chirurgie", 3, 3))));
 
-    /**
-     * Der zentrale Konnektor des Trägers.
-     *
-     * <p>Drei kleine Betriebsstätten teilen ihn sich — der Fall, für den
-     * ADR-0012 die n:m-Beziehung eingeführt hat. Wirtschaftlich lohnt ein
-     * eigener Konnektor für zwei Kartenterminals nicht.
-     */
-    public static final String RZ_KONNEKTOR = "Konnektor Rechenzentrum (zentral)";
-
-    /** Die Betriebsstätten, die den zentralen Konnektor mitnutzen. */
-    public static List<Betriebsstaette> imRechenzentrum() {
-        return BETRIEBSSTAETTEN.stream().filter(Betriebsstaette::imRechenzentrum).toList();
-    }
+    // Bis zum 12.08.2026 stand hier ein zentraler Konnektor im Rechenzentrum,
+    // den sich drei kleine Betriebsstaetten teilten - die Veranschaulichung von
+    // „Konnektor as a Service" (ADR-0012). Der PO hat ihn aus dem Demobestand
+    // genommen: Jede Betriebsstaette betreibt ihren eigenen.
+    //
+    // Die FUNKTION bleibt unveraendert - Konnektor ↔ Betriebsstaette ist
+    // weiterhin n:m. Nur zeigt der Demobestand sie nicht mehr. Die
+    // Systemnachweise stellen sich den Fall deshalb selbst her, statt sich auf
+    // den Demobestand zu verlassen.
 
     /** Die Standorte in fester Reihenfolge — die Zwischenebene über den Praxen. */
     public static final List<String> STANDORTE = List.of("Nord", "Mitte", "Süd");

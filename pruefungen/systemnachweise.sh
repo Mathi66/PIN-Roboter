@@ -798,9 +798,9 @@ curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' -X POST \
 ergebnis "Demodatensatz laesst sich auf Knopfdruck anlegen" "$DA"
 
 # Seit ADR-0012: 1 Traeger + 3 Standorte + 9 Betriebsstaetten + 2 Fachbereiche
-# = 15 Organisationseinheiten. Konnektoren: 6 eigene + 1 zentraler im
-# Rechenzentrum, den sich drei kleine Betriebsstaetten teilen.
-for paar in "organisation:15" "konnektor:7" "arbeitsplatz:36" "kartenterminal:36"; do
+# = 15 Organisationseinheiten. Ein Konnektor je Betriebsstaette (Vorgabe PO,
+# 12.08.2026 — vorher stand hier zusaetzlich ein zentraler im Rechenzentrum).
+for paar in "organisation:15" "konnektor:9" "arbeitsplatz:36" "kartenterminal:36"; do
   T=${paar%%:*}; SOLL=${paar##*:}
   IST=$(sql "SELECT count(*) FROM $T WHERE ist_demo")
   [ "$IST" = "$SOLL" ] && R=ja || R=nein
@@ -2087,14 +2087,30 @@ CHIPS=$(treffer_zaehlen /tmp/pr-struk.html 'class="geraetechip')
 ergebnis "die Kartenterminals erscheinen als Kacheln ($CHIPS)" "$SC"
 
 # ADR-0012 im Bild: Ein mitgenutzter Konnektor ist als solcher gekennzeichnet.
-if [ "$(sql "SELECT count(*) FROM konnektor_nutzung n JOIN konnektor k ON k.id=n.konnektor_id
-              WHERE n.organisation_id <> k.organisation_id")" != "0" ]; then
-  grep -q "konnektorchip mitgenutzt" /tmp/pr-struk.html && SD=ja || SD=nein
-  ergebnis "ein mitgenutzter Konnektor ist als solcher gekennzeichnet" "$SD"
-  grep -q ">mitgenutzt<" /tmp/pr-struk.html && SD2=ja || SD2=nein
-  ergebnis "und sagt es im Text, nicht nur im Rahmen" "$SD2"
+# Der Fall wird hergestellt, nicht vorausgesetzt — im Demobestand betreibt seit
+# dem 12.08.2026 jede Betriebsstätte ihren eigenen Konnektor.
+S_KONN=$(sql "SELECT id FROM konnektor WHERE ist_demo ORDER BY id LIMIT 1")
+S_ORG=$(sql "SELECT o.id FROM organisation o
+             WHERE o.ist_demo AND o.art='EINRICHTUNG'
+               AND o.id <> (SELECT organisation_id FROM konnektor WHERE id=$S_KONN)
+             ORDER BY o.id LIMIT 1")
+if [ -z "$S_KONN" ] || [ -z "$S_ORG" ]; then
+  uebersprungen "kein Konnektor mit zweiter Einrichtung im Demobestand"
 else
-  uebersprungen "kein geteilter Konnektor im Bestand"
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$S_KONN/nutzung" \
+    --data-urlencode "organisationId=$S_ORG" --data-urlencode "nutzen=ja"
+  curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=struktur" > /tmp/pr-struk2.html
+  grep -q "konnektorchip mitgenutzt" /tmp/pr-struk2.html && SD=ja || SD=nein
+  ergebnis "ein mitgenutzter Konnektor ist als solcher gekennzeichnet" "$SD"
+  grep -q ">mitgenutzt<" /tmp/pr-struk2.html && SD2=ja || SD2=nein
+  ergebnis "und sagt es im Text, nicht nur im Rahmen" "$SD2"
+
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$S_KONN/nutzung" \
+    --data-urlencode "organisationId=$S_ORG" --data-urlencode "nutzen=nein"
+  curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=struktur" > /tmp/pr-struk3.html
+  grep -q "konnektorchip mitgenutzt" /tmp/pr-struk3.html && SD3=nein || SD3=ja
+  ergebnis "nach dem Entziehen verschwindet die Kennzeichnung wieder" "$SD3"
+  rm -f /tmp/pr-struk2.html /tmp/pr-struk3.html
 fi
 
 # WCAG 1.4.1: Farbe darf nie die einzige Aussage sein. Zu jeder Ampel gehoert
@@ -2191,14 +2207,35 @@ else
   ergebnis "keine andere Ebene traegt eine BSNR (gefunden: $MIT)" "$HD2"
 
   # --- Der geteilte Konnektor ---------------------------------------------
-  RZ=$(sql "SELECT id FROM konnektor WHERE bezeichnung LIKE 'Konnektor Rechenzentrum%' AND ist_demo")
-  if [ -z "$RZ" ]; then
-    uebersprungen "kein zentraler Konnektor im Demodatensatz"
+  #
+  # Der Aufbau wird HIER hergestellt, nicht aus dem Demobestand genommen. Bis
+  # zum 12.08.2026 stand dort ein zentraler Konnektor im Rechenzentrum; der PO
+  # hat ihn entfernt. Ein Nachweis, der an einem Demodatensatz haengt, prueft
+  # die Funktion nur so lange, wie jemand den Datensatz nicht aendert — und
+  # meldet danach „uebersprungen" statt „kaputt".
+  RZ=$(sql "SELECT id FROM konnektor WHERE ist_demo ORDER BY id LIMIT 1")
+  MITNUTZER=$(sql "SELECT o.id FROM organisation o
+                   WHERE o.ist_demo AND o.art='EINRICHTUNG'
+                     AND o.id <> (SELECT organisation_id FROM konnektor WHERE id=$RZ)
+                   ORDER BY o.id LIMIT 1")
+  if [ -z "$RZ" ] || [ -z "$MITNUTZER" ]; then
+    uebersprungen "kein Konnektor mit zweiter Einrichtung im Demobestand"
   else
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$RZ/nutzung" \
+      --data-urlencode "organisationId=$MITNUTZER" --data-urlencode "nutzen=ja"
     NUTZER=$(sql "SELECT count(*) FROM konnektor_nutzung n JOIN konnektor k ON k.id=n.konnektor_id
                   WHERE n.konnektor_id=$RZ AND n.organisation_id <> k.organisation_id")
-    [ "${NUTZER:-0}" = "3" ] && HK=ja || HK=nein
-    ergebnis "drei Betriebsstaetten nutzen den zentralen Konnektor mit ($NUTZER von 3)" "$HK"
+    [ "${NUTZER:-0}" -ge 1 ] && HK=ja || HK=nein
+    ergebnis "ein Konnektor laesst sich von einer zweiten Betriebsstaette mitnutzen ($NUTZER)" "$HK"
+
+    # Der Mitnutzer SIEHT den Konnektor - sonst koennte er seine eigenen
+    # Terminals nicht zuordnen.
+    SICHT=$(sql "SELECT count(*) FROM konnektor k
+                 WHERE k.id=$RZ AND (k.organisation_id=$MITNUTZER
+                   OR EXISTS (SELECT 1 FROM konnektor_nutzung n
+                              WHERE n.konnektor_id=k.id AND n.organisation_id=$MITNUTZER))")
+    [ "${SICHT:-0}" = "1" ] && HKS=ja || HKS=nein
+    ergebnis "der Mitnutzer sieht den Konnektor" "$HKS"
 
     curl -s -b "$KEKSE" "$BASIS/bestand/konnektor/$RZ" > /tmp/pr-kn.html
     grep -q "Mitnutzende Einrichtungen" /tmp/pr-kn.html && HK2=ja || HK2=nein
@@ -2227,6 +2264,16 @@ else
     curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$RZ/nutzung"       --data-urlencode "organisationId=$ANDERE" --data-urlencode "nutzen=nein"
     [ "$(sql "SELECT count(*) FROM konnektor_nutzung WHERE konnektor_id=$RZ AND organisation_id=$ANDERE")" = "0" ]       && HK6=ja || HK6=nein
     ergebnis "die Mitnutzung laesst sich wieder entziehen" "$HK6"
+
+    # Zuruecksetzen: Der Nachweis hat die Mitnutzung selbst eingerichtet und
+    # nimmt sie wieder zurueck. Sonst misst der naechste Lauf einen Zustand,
+    # den dieser hier erzeugt hat.
+    curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/bestand/konnektor/$RZ/nutzung" \
+      --data-urlencode "organisationId=$MITNUTZER" --data-urlencode "nutzen=nein"
+    [ "$(sql "SELECT count(*) FROM konnektor_nutzung n JOIN konnektor k ON k.id=n.konnektor_id
+              WHERE n.konnektor_id=$RZ AND n.organisation_id <> k.organisation_id")" = "0" ] \
+      && HK7=ja || HK7=nein
+    ergebnis "der Nachweis nimmt die eingerichtete Mitnutzung zurueck" "$HK7"
   fi
 
   # Aufraeumen: Der Nachweis hinterlaesst keine Einheiten und keine BSNR, die
