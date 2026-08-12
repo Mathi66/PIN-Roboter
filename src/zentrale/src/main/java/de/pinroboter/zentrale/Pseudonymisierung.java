@@ -116,7 +116,7 @@ public class Pseudonymisierung {
         try {
             int n = jetztPseudonymisieren();
             if (n > 0) {
-                protokoll.anfuegen("Praxis", null,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null,
                         de.pinroboter.gemeinsam.Ereignisart.PROTOKOLL_PSEUDONYMISIERT, true,
                         "System", null,
                         "%d Protokolleinträge älter als %d Tage pseudonymisiert"

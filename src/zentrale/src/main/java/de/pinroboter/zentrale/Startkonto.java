@@ -125,7 +125,7 @@ final class Startkonto {
             // Ein Administrator ist entstanden, ohne dass ihn jemand angelegt hat.
             // Niemals mit Passwort oder Geheimnis - das erzwingt Fachprotokoll
             // ohnehin zentral, hier steht es zur Sicherheit noch einmal.
-            protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENUTZER_ANGELEGT, true,
                     "Konfiguration", null,
                     "Startkonto „" + name + "“ aus der Konfiguration angelegt (" + vermerk + ")",
                     "Prüfen Sie, ob dieses Konto erwartet war. Wenn nicht, deaktivieren Sie es "

@@ -247,10 +247,33 @@ public class Organisationsverwaltung {
      * Anlegen eines neuen Mandanten — das gehört zur Ersteinrichtung der
      * Instanz, nicht in die laufende Verwaltung.
      */
-    public Ergebnis anlegen(String bezeichnung, String art, Long elternId, Geltungsbereich bereich) {
+    /**
+     * Prüft den Namen einer Organisationseinheit.
+     *
+     * <p>Der einzige verbotene Name ist {@link Fachprotokoll#INSTANZ}. Er
+     * kennzeichnet im Protokoll Vorgänge <b>ohne</b> Einrichtungsbezug —
+     * Anmeldungen, Sicherungen, Benutzerverwaltung. Gäbe es eine Einheit
+     * dieses Namens, würden diese Einträge ihr zugeordnet, und ein
+     * Praxisadministrator sähe schlagartig die Instanzverwaltung mit
+     * (Befund 12.08.2026).
+     *
+     * @return Fehlermeldung im Klartext, oder {@code null}
+     */
+    static String namePruefen(String bezeichnung) {
         if (bezeichnung == null || bezeichnung.isBlank()) {
-            return Ergebnis.schlecht("Bitte eine Bezeichnung eingeben.");
+            return "Bitte eine Bezeichnung eingeben.";
         }
+        if (Fachprotokoll.INSTANZ.equalsIgnoreCase(bezeichnung.strip())) {
+            return "Die Bezeichnung „" + Fachprotokoll.INSTANZ + "“ ist vergeben: Sie "
+                 + "kennzeichnet im Protokoll Vorgänge, die zu keiner Einrichtung gehören. "
+                 + "Bitte einen anderen Namen wählen.";
+        }
+        return null;
+    }
+
+    public Ergebnis anlegen(String bezeichnung, String art, Long elternId, Geltungsbereich bereich) {
+        String namensfehler = namePruefen(bezeichnung);
+        if (namensfehler != null) return Ergebnis.schlecht(namensfehler);
         if (elternId == null) {
             return Ergebnis.schlecht("Bitte auswählen, unterhalb welcher Einheit die neue "
                     + "Einheit liegen soll.");
@@ -286,9 +309,8 @@ public class Organisationsverwaltung {
 
     /** Benennt eine Einheit um. Die Zuordnung bleibt unverändert. */
     public Ergebnis umbenennen(long id, String bezeichnung, Geltungsbereich bereich) {
-        if (bezeichnung == null || bezeichnung.isBlank()) {
-            return Ergebnis.schlecht("Bitte eine Bezeichnung eingeben.");
-        }
+        String namensfehler = namePruefen(bezeichnung);
+        if (namensfehler != null) return Ergebnis.schlecht(namensfehler);
         if (einheit(id, bereich).isEmpty()) {
             return Ergebnis.schlecht("Diese Einheit steht Ihnen nicht zur Verfügung.");
         }

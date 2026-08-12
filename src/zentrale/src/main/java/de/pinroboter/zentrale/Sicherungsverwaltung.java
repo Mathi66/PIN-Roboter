@@ -217,10 +217,10 @@ public class Sicherungsverwaltung {
             letzterFehler.remove(plan);
 
             Stand s = new Stand(name, plan, Instant.now(), Files.size(ziel));
-            protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_ERSTELLT, true,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.SICHERUNG_ERSTELLT, true,
                     ausloeser, null,
                     "Sicherung (" + plan.anzeige + ") erstellt: " + s.groesse(), null);
-            alarme.beheben("Praxis", "Sicherung " + plan.anzeige,
+            alarme.beheben(Fachprotokoll.INSTANZ, "Sicherung " + plan.anzeige,
                     Alarmverwaltung.Art.SICHERUNG_FEHLGESCHLAGEN);
             rotieren(plan);
             return s;
@@ -232,13 +232,13 @@ public class Sicherungsverwaltung {
 
             // Ein Alarm, keine Logzeile: Eine Sicherung, von der niemand weiß,
             // dass sie ausblieb, ist keine Sicherung (FA-BAK-010).
-            alarme.melden("Praxis", "Sicherung " + plan.anzeige,
+            alarme.melden(Fachprotokoll.INSTANZ, "Sicherung " + plan.anzeige,
                     Alarmverwaltung.Art.SICHERUNG_FEHLGESCHLAGEN,
                     "Die " + plan.anzeige + "e Sicherung ist fehlgeschlagen: " + grund,
                     "Prüfen Sie den freien Speicherplatz und die Erreichbarkeit der "
                     + "Datenbank. Unter Einstellungen lässt sich eine Sicherung von "
                     + "Hand auslösen.");
-            protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_FEHLGESCHLAGEN, false,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.SICHERUNG_FEHLGESCHLAGEN, false,
                     ausloeser, null,
                     "Sicherung (" + plan.anzeige + ") fehlgeschlagen: " + grund,
                     "Freien Speicherplatz und Datenbankverbindung prüfen.");
@@ -259,7 +259,7 @@ public class Sicherungsverwaltung {
             Stand alt = alle.get(i);
             try {
                 Files.deleteIfExists(ablage.resolve(alt.dateiname()));
-                protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_ROTIERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.SICHERUNG_ROTIERT, true,
                         "Automatik", null,
                         "Ältester " + plan.anzeige + "er Stand entfernt (" + alt.anzeige() + ")",
                         null);
@@ -366,7 +366,7 @@ public class Sicherungsverwaltung {
         // danach ist er im wiederhergestellten Stand nicht mehr vorhanden.
         // Deshalb steht er zusätzlich im Betriebsprotokoll, das der
         // Wiederherstellung nicht unterliegt.
-        protokoll.anfuegen("Praxis", null, Ereignisart.WIEDERHERSTELLUNG, true, durch, null,
+        protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.WIEDERHERSTELLUNG, true, durch, null,
                 "Wiederherstellung des Standes vom " + s.anzeige() + " begonnen",
                 "Die Zentrale startet danach neu. Angemeldete Benutzer werden abgemeldet.");
         System.out.println("[Wiederherstellung] Stand vom " + s.anzeige()
@@ -404,7 +404,7 @@ public class Sicherungsverwaltung {
                 + STEMPEL.format(Instant.now()) + ".dump";
         Path ziel = ablage.resolve(name);
         Files.write(ziel, inhalt, StandardOpenOption.CREATE_NEW);
-        protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_HOCHGELADEN, true, durch, null,
+        protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.SICHERUNG_HOCHGELADEN, true, durch, null,
                 "Sicherung hochgeladen (" + (inhalt.length / 1024) + " KB)",
                 "Die Datei wurde geprüft und entschlüsselt. Sie ist noch nicht eingespielt.");
         return new Stand(name, plan, Instant.now(), inhalt.length);

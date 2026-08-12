@@ -2562,3 +2562,54 @@ Einrichtung; Geltungsbereich bei jeder ändernden Handlung.
    ein Nachweis: „und wieder zurück".
 5. **„Übersprungen, weil die Lage nicht passt"** bei einem Nachweis, der eine
    Mandantengrenze prüft. Er stellt die Vorbedingung jetzt selbst her.
+
+---
+
+## „Praxis" als stiller Platzhalter — 54 Stellen
+
+**Vorgabe PO, 12.08.2026:** die verbliebenen fest verdrahteten „Praxis"-Stellen
+angehen.
+
+### Warum das mehr war als Kosmetik
+
+Instanzweite Vorgänge trugen die Einrichtung „Praxis". Das funktionierte, weil
+ein Eintrag ohne passende Organisationseinheit keine `organisation_id` bekommt
+und damit für eingeschränkte Benutzer unsichtbar bleibt.
+
+Der Platzhalter konnte aber jederzeit zu einer **echten Einrichtung** werden.
+Dann sähe ein Praxisadministrator schlagartig Anmeldungen, Sicherungen und die
+Benutzerverwaltung der gesamten Instanz. Eine Mandantengrenze, die von einem
+frei wählbaren Namen abhängt, ist keine.
+
+`Fachprotokoll.INSTANZ = "(instanzweit)"`, und die Organisationsverwaltung
+weist diesen Namen ab — beim Anlegen wie beim Umbenennen. Damit ist die
+Kollision ausgeschlossen statt unwahrscheinlich.
+
+### Der wichtigere Teil kam erst durch den Nachweis
+
+39 Stellen ließen sich mechanisch umstellen. Der neue Nachweis „kein neuer
+Eintrag fällt auf Praxis zurück" fand danach **19 weitere** — und die waren
+keine Instanzvorgänge, sondern hatten ihre Einrichtung verloren:
+
+- Ereignisse der **Automatik** (Freischaltungen, Fehlschläge, PIN-Übergaben)
+- Zuordnung eines Geräts zu einer Gruppe
+- Massenaktionen im Bestand
+
+Ausgerechnet die Einträge, die eine Praxis am dringendsten sehen muss, standen
+unter einem Namen, der nicht ihrer war. Ohne den Nachweis hätte ich die
+Umstellung für fertig gehalten.
+
+Bei Massenaktionen war eine Entscheidung nötig: Sie können Geräte mehrerer
+Betriebsstätten betreffen. Genau eine → sie; mehrere → instanzweit. Eine
+willkürlich herausgegriffene Einrichtung wäre schlechter als keine.
+
+### Ein Test, der an einer eigenen Zusage scheiterte
+
+Mein Aufräumen wollte den Protokolleintrag löschen und lief in die
+Datenbankregel: *„Das Fachprotokoll ist nur anfügbar."* Richtig so — die
+Unveränderlichkeit (FA-PRO-010) gilt auch für Tests. Der Eintrag bleibt stehen.
+
+Aus demselben Grund tragen **alte** Einträge weiterhin „Praxis". Sie
+umzuschreiben wäre der eigentliche Verstoß.
+
+**Stand: 241 Modultests, 392 Systemnachweise — alle grün.**

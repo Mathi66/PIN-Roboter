@@ -2148,6 +2148,42 @@ else
   ergebnis "und wieder zurueck — der Nachweis raeumt seinen Zustand auf" "$GZ"
 fi
 
+# ── Instanzweite Vorgaenge gehoeren KEINER Einrichtung (12.08.2026) ─────
+# Anmeldungen, Sicherungen, Benutzerverwaltung: Sie trugen die Einrichtung
+# „Praxis". Das funktionierte nur, solange es keine Organisationseinheit
+# dieses Namens gab — ein Eintrag ohne passende Organisation bekommt keine
+# organisation_id und bleibt fuer eingeschraenkte Benutzer unsichtbar.
+#
+# Legt aber jemand eine Praxis mit diesem Namen an, kippen ALLE
+# Instanzereignisse in ihren Geltungsbereich. Eine Mandantengrenze, die von
+# einem frei waehlbaren Namen abhaengt, ist keine.
+hinweis "Instanzweite Vorgänge — keiner Einrichtung zurechenbar"
+INST=$(sql "SELECT count(*) FROM fachprotokoll WHERE einrichtung = '(instanzweit)'")
+[ "${INST:-0}" -ge 1 ] && IW=ja || IW=nein
+ergebnis "instanzweite Vorgaenge sind als solche gekennzeichnet ($INST Eintraege)" "$IW"
+
+OHNE_ORG=$(sql "SELECT count(*) FROM fachprotokoll
+                WHERE einrichtung = '(instanzweit)' AND organisation_id IS NOT NULL")
+[ "${OHNE_ORG:-1}" = "0" ] && IO=ja || IO=nein
+ergebnis "keiner davon haengt an einer Organisationseinheit ($OHNE_ORG)" "$IO"
+
+# Und der Name ist als Einrichtung gesperrt — sonst waere die Kollision nur
+# unwahrscheinlich statt ausgeschlossen.
+VID=$(sql "SELECT id FROM organisation WHERE art='VERBUND' ORDER BY id LIMIT 1")
+ANTWORT_IN=$(curl -s -b "$KEKSE" -X POST $BASIS/organisation \
+  --data-urlencode "bezeichnung=(instanzweit)" --data-urlencode "art=EINRICHTUNG" \
+  --data-urlencode "elternId=$VID")
+IN=$(enthaelt "$ANTWORT_IN" "ist vergeben")
+GIBTS=$(sql "SELECT count(*) FROM organisation WHERE bezeichnung='(instanzweit)'")
+[ "$IN" = "ja" ] && [ "${GIBTS:-1}" = "0" ] && IS=ja || IS=nein
+ergebnis "eine Einheit mit diesem Namen wird abgewiesen (angelegt: $GIBTS)" "$IS"
+
+# Kein Rueckfall auf „Praxis" mehr in neuen Eintraegen.
+NEU_PRAXIS=$(sql "SELECT count(*) FROM fachprotokoll
+                  WHERE einrichtung = 'Praxis' AND zeitpunkt > now() - interval '30 minutes'")
+[ "${NEU_PRAXIS:-1}" = "0" ] && IP=ja || IP=nein
+ergebnis "kein neuer Eintrag faellt auf \"Praxis\" zurueck ($NEU_PRAXIS)" "$IP"
+
 # Das Protokoll traegt die richtige Einrichtung — nicht fest „Praxis".
 FALSCH=$(sql "SELECT count(*) FROM fachprotokoll
               WHERE art IN ('GRUPPE_GEAENDERT','GRUPPE_GELOESCHT')

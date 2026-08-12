@@ -158,6 +158,67 @@ class PinverwaltungTest {
                 + "muss die Praxis erfahren, bevor die erste Karte unverifiziert bleibt.");
     }
 
+    @Test
+    @DisplayName("Instanzweite Vorgänge landen bei KEINER Einrichtung — auch wenn eine Einrichtung so heißt")
+    void instanzweitBleibtInstanzweit() throws Exception {
+        // Der Befund vom 12.08.2026: Instanzweite Vorgänge trugen die
+        // Einrichtung „Praxis". Das funktionierte nur, solange es keine
+        // Organisationseinheit dieses Namens gab — ein Eintrag ohne passende
+        // Organisation bekommt keine organisation_id und bleibt für
+        // eingeschränkte Benutzer unsichtbar.
+        //
+        // Legt aber jemand eine Praxis mit diesem Namen an, kippen schlagartig
+        // ALLE Instanzereignisse in ihren Geltungsbereich: Anmeldungen,
+        // Sicherungen, Benutzerverwaltung. Eine Mandantengrenze, die von einem
+        // frei wählbaren Namen abhängt, ist keine.
+        long verbund, praxis;
+        try (Statement st = db.verbindung().createStatement();
+             ResultSet rs = st.executeQuery("""
+                     INSERT INTO organisation (bezeichnung, art, ist_demo)
+                     VALUES ('Verbund Instanztest', 'VERBUND', FALSE) RETURNING id""")) {
+            rs.next(); verbund = rs.getLong(1);
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                INSERT INTO organisation (bezeichnung, art, eltern_id, ist_demo)
+                VALUES ('Praxis', 'EINRICHTUNG', ?, FALSE) RETURNING id""")) {
+            p.setLong(1, verbund);
+            try (ResultSet rs = p.executeQuery()) { rs.next(); praxis = rs.getLong(1); }
+        }
+        try {
+            var protokoll = new Fachprotokoll(db, null);
+            var e = protokoll.anfuegen(Fachprotokoll.INSTANZ, null,
+                    de.pinroboter.gemeinsam.Ereignisart.ANMELDUNG_ERFOLGREICH, true,
+                    "Nachweis", null, "Anmeldung im Instanztest", null);
+
+            Long org;
+            try (PreparedStatement p = db.verbindung().prepareStatement(
+                    "SELECT organisation_id FROM fachprotokoll WHERE id = ?")) {
+                p.setLong(1, e.id());
+                try (ResultSet rs = p.executeQuery()) {
+                    rs.next();
+                    long wert = rs.getLong(1);
+                    org = rs.wasNull() ? null : wert;
+                }
+            }
+            assertNull(org, "Ein instanzweiter Vorgang darf keiner Einrichtung zufallen — "
+                    + "sonst sieht ein Praxisadministrator die Instanzverwaltung mit.");
+
+            // Die Gegenprobe: Der Name ist als Organisationseinheit gesperrt.
+            assertNotNull(Organisationsverwaltung.namePruefen(Fachprotokoll.INSTANZ),
+                    "Der Name muss beim Anlegen abgewiesen werden — sonst ist die "
+                    + "Kollision nur unwahrscheinlich statt ausgeschlossen");
+        } finally {
+            // Der Protokolleintrag bleibt stehen — das Fachprotokoll ist
+            // unveränderlich (FA-PRO-010), und eine Datenbankregel erzwingt
+            // das. Der erste Anlauf dieses Tests wollte ihn wegräumen und
+            // scheiterte daran: Die Zusage gilt auch für Tests.
+            try (Statement st = db.verbindung().createStatement()) {
+                st.executeUpdate("DELETE FROM organisation WHERE id = " + praxis);
+                st.executeUpdate("DELETE FROM organisation WHERE id = " + verbund);
+            }
+        }
+    }
+
     private Timestamp schluesselGemeldet() throws SQLException {
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "SELECT schluessel_gemeldet FROM agent WHERE id = ?")) {

@@ -36,6 +36,32 @@ public class Fachprotokoll {
      * umbenannt oder gelöscht, wäre der Eintrag nicht mehr lesbar, und das
      * widerspräche der Unveränderlichkeit (FA-PRO-010).
      */
+    /**
+     * Die Einrichtung für Vorgänge, die zu <b>keiner</b> Einrichtung gehören.
+     *
+     * <h2>Warum nicht mehr „Praxis"</h2>
+     *
+     * Bis zum 12.08.2026 trugen instanzweite Vorgänge — Anmeldungen,
+     * Benutzerverwaltung, Sicherungen, Protokollrotation — die Einrichtung
+     * {@code "Praxis"}. Das funktionierte, solange es keine Organisationseinheit
+     * dieses Namens gab: Ein Eintrag, dessen Einrichtungsname zu keiner
+     * Organisation passt, bekommt keine {@code organisation_id} und bleibt für
+     * eingeschränkte Benutzer unsichtbar.
+     *
+     * <p><b>Der Platzhalter konnte aber jederzeit zu einer echten Einrichtung
+     * werden.</b> Legt jemand eine Praxis mit diesem Namen an, kippen
+     * schlagartig alle Instanzereignisse in ihren Geltungsbereich — und ein
+     * Praxisadministrator sieht Anmeldungen, Sicherungen und
+     * Benutzeränderungen der gesamten Instanz. Eine Mandantengrenze, die von
+     * einem frei wählbaren Namen abhängt, ist keine.
+     *
+     * <p>Die Klammern sind Absicht: Der Wert soll als Kennzeichnung lesbar sein
+     * und nicht wie ein Praxisname aussehen. Zusätzlich weist die
+     * Organisationsverwaltung diesen Namen ab — die Kollision ist damit nicht
+     * nur unwahrscheinlich, sondern ausgeschlossen.
+     */
+    public static final String INSTANZ = "(instanzweit)";
+
     public Ereignis anfuegen(String einrichtung, String geraet, Ereignisart art,
                              boolean erfolg, String ausloeser, String vorgang,
                              String text, String handlung) {

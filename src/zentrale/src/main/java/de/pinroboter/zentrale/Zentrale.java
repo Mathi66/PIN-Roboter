@@ -342,7 +342,7 @@ public class Zentrale {
                     Thread.sleep(20_000);
                     var z = versionen.pruefen();
                     if (z.sicherheitsupdateOffen()) {
-                        protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT,
+                        protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT,
                                 false, "Automatik", null,
                                 "Ein sicherheitsrelevantes Update steht bereit",
                                 "Unter „Instanz“ steht, welche Version und was sich ändert.");
@@ -362,13 +362,13 @@ public class Zentrale {
                     Thread.sleep(15_000);
                     var d = benachrichtigung.versendeFaellige();
                     if (d.mails() > 0) {
-                        protokoll.anfuegen("Praxis", null, Ereignisart.BENACHRICHTIGUNG_VERSENDET,
+                        protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENACHRICHTIGUNG_VERSENDET,
                                 true, "Automatik", null,
                                 "%d Benachrichtigung(en) versendet, %d Meldung(en) zusammengefasst"
                                         .formatted(d.mails(), d.alarme()), null);
                     }
                     for (String f : d.fehler()) {
-                        protokoll.anfuegen("Praxis", null, Ereignisart.BENACHRICHTIGUNG_VERSENDET,
+                        protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENACHRICHTIGUNG_VERSENDET,
                                 false, "Automatik", null,
                                 "Benachrichtigung konnte nicht zugestellt werden", f);
                     }
@@ -432,10 +432,17 @@ public class Zentrale {
     }
 
     /** Die Einrichtung des Agenten, der gerade meldet. */
+    /**
+     * Die Einrichtung des Agenten, der gerade meldet.
+     *
+     * <p>Der Rückfall ist {@link Fachprotokoll#INSTANZ}, nicht „Praxis": Ein
+     * Agent ohne Einrichtung ist ein Datenfehler, und sein Ereignis gehört dann
+     * in die Instanzverwaltung — nicht in eine Praxis, die es womöglich gibt.
+     */
     private String einrichtungDesAgenten(Context c) {
         var a = (Agentenverwaltung.Agent) c.attribute("agent");
         return a == null || a.einrichtung() == null || a.einrichtung().isBlank()
-                ? "Praxis" : a.einrichtung();
+                ? Fachprotokoll.INSTANZ : a.einrichtung();
     }
 
     private String einrichtungVonAgent(long agentId) {
@@ -443,11 +450,54 @@ public class Zentrale {
                 "SELECT einrichtung FROM agent WHERE id = ?")) {
             p.setLong(1, agentId);
             try (var rs = p.executeQuery()) {
-                if (!rs.next()) return "Praxis";
+                if (!rs.next()) return Fachprotokoll.INSTANZ;
                 String e = rs.getString(1);
-                return e == null || e.isBlank() ? "Praxis" : e;
+                return e == null || e.isBlank() ? Fachprotokoll.INSTANZ : e;
             }
-        } catch (java.sql.SQLException e) { return "Praxis"; }
+        } catch (java.sql.SQLException e) { return Fachprotokoll.INSTANZ; }
+    }
+
+    /**
+     * Die Einrichtung eines Kartenterminals — aus dem Bestand.
+     *
+     * <p>Fällt auf {@link Fachprotokoll#INSTANZ} zurück, nicht auf „Praxis":
+     * Ein Gerät ohne bekannte Einrichtung ist ein Datenfehler, und sein
+     * Ereignis gehört dann in die Instanzverwaltung. Ein Rückfall auf einen
+     * Praxisnamen würde es einer echten Einrichtung zuschlagen, die damit
+     * nichts zu tun hat (Befund 12.08.2026).
+     */
+    private String einrichtungVonTerminal(String terminalId) {
+        if (terminalId == null || terminalId.isBlank()) return Fachprotokoll.INSTANZ;
+        try (var p = db.verbindung().prepareStatement("""
+                SELECT o.bezeichnung FROM kartenterminal t
+                JOIN organisation o ON o.id = t.organisation_id
+                WHERE t.terminal_id = ?
+                UNION ALL
+                SELECT g.einrichtung FROM geraet g WHERE g.terminal_id = ?
+                LIMIT 1""")) {
+            p.setString(1, terminalId);
+            p.setString(2, terminalId);
+            try (var rs = p.executeQuery()) {
+                if (rs.next()) {
+                    String e = rs.getString(1);
+                    if (e != null && !e.isBlank()) return e;
+                }
+            }
+        } catch (java.sql.SQLException ignored) {
+            // Kein Abbruch: Das Ereignis gehoert protokolliert, notfalls ohne
+            // Einrichtungsbezug.
+        }
+        return Fachprotokoll.INSTANZ;
+    }
+
+    /** Die Einrichtung eines Kartenterminals über seine Datenbankkennung. */
+    private String einrichtungVonTerminalId(long id) {
+        try (var p = db.verbindung().prepareStatement(
+                "SELECT o.bezeichnung FROM kartenterminal t "
+                + "JOIN organisation o ON o.id = t.organisation_id WHERE t.id = ?")) {
+            p.setLong(1, id);
+            try (var rs = p.executeQuery()) { return rs.next() ? rs.getString(1) : null; }
+        } catch (java.sql.SQLException e) { return null; }
     }
 
     private Long organisationVon(String terminalId) {
@@ -543,7 +593,11 @@ public class Zentrale {
                     Ereignisart art;
                     try { art = Ereignisart.valueOf(String.valueOf(e.get("art"))); }
                     catch (Exception ex) { continue; }
-                    protokoll.anfuegen("Praxis", id, art,
+                    // Die Einrichtung DES GERAETS, nicht ein fester Name: Sonst
+                    // stehen die Ereignisse der Automatik unter einer Praxis,
+                    // die damit nichts zu tun hat — und fehlen dem
+                    // Zustaendigen (Befund 12.08.2026).
+                    protokoll.anfuegen(einrichtungVonTerminal(id), id, art,
                             Boolean.TRUE.equals(e.get("erfolg")), "Automatik",
                             e.get("vorgang") == null ? null : String.valueOf(e.get("vorgang")),
                             String.valueOf(e.get("text")),
@@ -637,20 +691,20 @@ public class Zentrale {
 
         if (z.alarmNoetig()) {
             // Instanzweit: Das Protokoll gehoert keiner Einrichtung.
-            alarme.melden("Praxis", null, Alarmverwaltung.Art.SPEICHER_KNAPP,
+            alarme.melden(Fachprotokoll.INSTANZ, null, Alarmverwaltung.Art.SPEICHER_KNAPP,
                     "Das Protokoll belegt %s von %s (%d %%)."
                             .formatted(z.belegtLesbar(), z.budgetLesbar(), z.prozent()),
                     "Ältere Einträge werden automatisch gelöscht. Wenn Sie sie behalten "
                     + "möchten, exportieren Sie das Protokoll und erhöhen Sie das "
                     + "Speicherbudget in der Konfiguration.");
         } else if (z.anteil() < Speicherwaechter.SCHWELLE_ROTATION) {
-            alarme.beheben("Praxis", null, Alarmverwaltung.Art.SPEICHER_KNAPP);
+            alarme.beheben(Fachprotokoll.INSTANZ, null, Alarmverwaltung.Art.SPEICHER_KNAPP);
         }
 
         if (z.rotationNoetig()) {
             var e = speicher.rotieren();
             if (e.rotiert() && e.geloescht() > 0) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.PROTOKOLL_ROTIERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.PROTOKOLL_ROTIERT, true,
                         "Automatik", null,
                         "%d Einträge gelöscht, Füllstand jetzt %d %%"
                                 .formatted(e.geloescht(), e.danach().prozent()),
@@ -785,7 +839,10 @@ public class Zentrale {
 
         return new Bestandsseiten.Ansicht(filter, sortierung, absteigend,
                 bestand.vorhandeneWerte("modell", bereich(c)), bestand.vorhandeneWerte("firmware", bereich(c)),
-                gruppen.alle("Praxis", bereich(c)), ermittlung.aufrufkontextAuswahl());
+                // Alle Gruppen im Geltungsbereich. Vorher stand hier ein fester
+                // Einrichtungsname — die Auswahl „Gerätegruppe" der
+                // Massenaktion blieb damit in einem MVZ leer.
+                gruppen.alle(bereich(c)), ermittlung.aufrufkontextAuswahl());
     }
 
     private static int zahl(String s, int vorgabe) {
@@ -895,7 +952,7 @@ public class Zentrale {
         boolean vorherFrei = !bremse.gebremst(absender);
         int n = bremse.fehlversuch(absender);
         if (vorherFrei && bremse.gebremst(absender)) {
-            protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_GEBREMST, false,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.ANMELDUNG_GEBREMST, false,
                     "System", null,
                     "Anmeldeversuche von einem Absender werden gebremst (%d Fehlversuche)"
                             .formatted(n),
@@ -2357,7 +2414,10 @@ public class Zentrale {
         // 60 s — zwei Minuten lassen einen ausgefallenen Takt zu, ohne einen
         // wirklich abgehängten Agenten als verbunden auszuweisen.
         String agentText = agentZeile();
-        int offeneAlarme = alarme.zaehlen("Praxis").values().stream().mapToInt(Integer::intValue).sum();
+        // Ueber alle Einrichtungen des Geltungsbereichs — sonst zeigte die
+        // Kopfzeile in einem MVZ dauerhaft „0 Alarme", waehrend die Lage-Seite
+        // welche auflistet.
+        int offeneAlarme = alarme.offene(Geltungsbereich.alles()).size();
 
         StringBuilder s = new StringBuilder();
         s.append("""
@@ -2512,7 +2572,7 @@ public class Zentrale {
                 case Benutzerverwaltung.Anmeldung.Erfolg e -> {
                     bremse.erfolg(absender);
                     setzeSitzungscookie(c, e.sitzung());
-                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_ERFOLGREICH,
+                    protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.ANMELDUNG_ERFOLGREICH,
                             true, e.benutzer().anzeigename(), null,
                             "Anmeldung erfolgreich", null);
                     c.redirect("/");
@@ -2522,14 +2582,14 @@ public class Zentrale {
                             "Bitte richten Sie zuerst den zweiten Faktor ein."));
                 case Benutzerverwaltung.Anmeldung.Gesperrt g -> {
                     zaehleFehlversuch(absender, name);
-                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
+                    protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
                             false, name, null, "Anmeldung bei gesperrtem Konto", null);
                     c.html(Anmeldeseiten.anmeldeformular(g.meldung()));
                 }
                 case Benutzerverwaltung.Anmeldung.Abgelehnt a -> {
                     zaehleFehlversuch(absender, name);
                     // Der Benutzername wird protokolliert, das Passwort nie (FA-PRO-020).
-                    protokoll.anfuegen("Praxis", null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
+                    protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.ANMELDUNG_FEHLGESCHLAGEN,
                             false, name.isBlank() ? "unbekannt" : name, null,
                             "Anmeldung fehlgeschlagen", null);
                     c.html(Anmeldeseiten.anmeldeformular(a.meldung()));
@@ -2556,7 +2616,7 @@ public class Zentrale {
                     Anmeldeseiten.passwortFeld(c, "passwort"),
                     Benutzerverwaltung.Rolle.ADMINISTRATOR);
             if (e instanceof Benutzerverwaltung.Anmeldung.TotpEinrichten t) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENUTZER_ANGELEGT, true,
                         "Ersteinrichtung", null,
                         "Erstes Administratorkonto angelegt: " + Anmeldeseiten.feld(c, "benutzer"), null);
                 c.html(Anmeldeseiten.totpEinrichten(t.benutzerId(), t.uri(), t.geheimnis(), null));
@@ -2568,7 +2628,7 @@ public class Zentrale {
         app.post("/totp-bestaetigen", c -> {
             long id = Long.parseLong(Anmeldeseiten.feld(c, "benutzerId"));
             if (benutzer.totpBestaetigen(id, Anmeldeseiten.feld(c, "code"))) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_EINGERICHTET, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.TOTP_EINGERICHTET, true,
                         "Benutzer " + id, null, "Zweiter Faktor eingerichtet", null);
                 c.html(Anmeldeseiten.rahmen("Einrichtung abgeschlossen", """
                         <div class="hinweis"><strong>Der zweite Faktor ist eingerichtet.</strong>
@@ -2598,7 +2658,7 @@ public class Zentrale {
                 return;
             }
             var erfolg = (Einladungen.Einloesung.Erfolg) e;
-            protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENUTZER_ANGELEGT, true,
                     "Einladung", null,
                     "Einladung eingelöst, Konto eingerichtet (Nummer " + erfolg.benutzerId() + ")",
                     null);
@@ -2691,7 +2751,8 @@ public class Zentrale {
             String fehler = gruppen.zuordnen(c.pathParam("id"),
                     Long.parseLong(Anmeldeseiten.feld(c, "gruppe")));
             if (fehler == null) {
-                protokoll.anfuegen("Praxis", c.pathParam("id"), Ereignisart.GERAET_ZUGEORDNET,
+                protokoll.anfuegen(einrichtungVonTerminal(c.pathParam("id")),
+                        c.pathParam("id"), Ereignisart.GERAET_ZUGEORDNET,
                         true, angemeldeter(c).anzeigename(), null,
                         "Gerät einer anderen Gruppe zugeordnet", null);
             }
@@ -2740,7 +2801,7 @@ public class Zentrale {
             if (abgewiesen(c, rechte(c).darfNotAus(), "Das Auslösen des Not-Aus")) return;
             var b = angemeldeter(c);
             notAus = !notAus;
-            protokoll.anfuegen("Praxis", null,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null,
                     notAus ? Ereignisart.NOT_AUS_AUSGELOEST : Ereignisart.NOT_AUS_AUFGEHOBEN,
                     true, b == null ? "Unbekannt" : b.anzeigename(), null,
                     notAus ? "Not-Aus ausgelöst — die Automatik ruht."
@@ -2780,7 +2841,11 @@ public class Zentrale {
                 m.zeile();
                 m.zeile("Erstellt am", java.time.Instant.now());
                 m.zeile("Erstellt von", b.anzeigename());
-                m.zeile("Einrichtung", "Praxis");
+                // Die Einrichtungen, die im Auszug wirklich vorkommen — „Praxis"
+                // war eine Behauptung, die in einem MVZ schlicht falsch ist.
+                m.zeile("Einrichtungen", eintraege.stream()
+                        .map(Ereignis::einrichtung).distinct().sorted()
+                        .reduce((x, y) -> x + ", " + y).orElse("—"));
                 m.zeile();
                 m.zeile("Angewendete Filter");
                 m.zeile("Ereignisart", leerAls(fArt, "alle"));
@@ -2810,7 +2875,7 @@ public class Zentrale {
 
             // Der Export ist selbst protokollpflichtig: Er kann personenbezogene
             // Daten enthalten (FA-PRO-040).
-            protokoll.anfuegen("Praxis", null, Ereignisart.PROTOKOLL_EXPORTIERT, true,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.PROTOKOLL_EXPORTIERT, true,
                     b.anzeigename(), null,
                     "Protokoll exportiert (" + eintraege.size() + " Zeilen)", null);
 
@@ -2844,8 +2909,12 @@ public class Zentrale {
             catch (NumberFormatException e) { intervall = 60; }
             String bez = Anmeldeseiten.feld(c, "bezeichnung");
             // FA-GER-050: Die Einrichtung wird gewaehlt, nicht verdrahtet.
+            // Kein Ausweichen auf einen Vorgabenamen mehr: Gruppenverwaltung
+            // lehnt eine fehlende Einrichtung mit klarer Begruendung ab. Eine
+            // stillschweigend gesetzte „Praxis" waere entweder eine falsche
+            // Zuordnung oder — falls es sie nicht gibt — eine Gruppe ohne
+            // Mandantenbezug.
             String einrichtung = Anmeldeseiten.feld(c, "einrichtung");
-            if (einrichtung == null || einrichtung.isBlank()) einrichtung = "Praxis";
             String fehler = gruppen.anlegen(bez, einrichtung, intervall);
             if (fehler == null) {
                 protokoll.anfuegen(einrichtung, null, Ereignisart.GRUPPE_ANGELEGT, true,
@@ -3110,7 +3179,14 @@ public class Zentrale {
             // Auch eine Massenaktion ist Bestandspflege - sie entscheidet
             // darueber, welche Geraete ueberwacht werden.
             if (e.geaendert() > 0) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.TERMINAL_GEAENDERT, true,
+                // Eine Massenaktion kann Geraete mehrerer Einrichtungen
+                // betreffen. Nur wenn es genau eine ist, traegt der Eintrag
+                // sie; sonst ist der Vorgang instanzweit. Eine willkuerlich
+                // herausgegriffene Einrichtung waere schlechter als keine.
+                var betroffene = ids.stream().map(this::einrichtungVonTerminalId)
+                        .filter(java.util.Objects::nonNull).distinct().toList();
+                protokoll.anfuegen(betroffene.size() == 1 ? betroffene.get(0) : Fachprotokoll.INSTANZ,
+                        null, Ereignisart.TERMINAL_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
                         "%d Kartenterminal(s) %s".formatted(e.geaendert(), was),
                         e.vollstaendig() ? null : String.join(" ", e.hinweise()));
@@ -3595,7 +3671,7 @@ public class Zentrale {
             if (e.geklappt()) {
                 // Das Geheimnis selbst steht NICHT im Protokoll - es waere sonst
                 // fuer jeden lesbar, der das Protokoll einsehen darf.
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_ANGELEGT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENUTZER_ANGELEGT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Person \u201e" + name + "\u201c eingeladen (Rolle " + rolle.anzeige() + ")",
                         "Der Zugangscode wird nur einmal angezeigt und ist nicht im Protokoll "
@@ -3611,7 +3687,7 @@ public class Zentrale {
             String name = Anmeldeseiten.feld(c, "benutzername");
             boolean weg = einladungen.zurueckziehen(name, bereich(c));
             if (weg) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENUTZER_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Einladung für \u201e" + name + "\u201c zurückgezogen", null);
             }
@@ -3626,7 +3702,7 @@ public class Zentrale {
             var ziel = benutzer.benutzer(id, bereich(c));
             boolean ok = benutzer.totpZuruecksetzen(id, bereich(c));
             if (ok && ziel.isPresent()) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.TOTP_ZURUECKGESETZT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.TOTP_ZURUECKGESETZT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Zweiter Faktor von \u201e" + ziel.get().anzeigename() + "\u201c zurückgesetzt",
                         "Die Person richtet ihn bei der nächsten Anmeldung neu ein. Das neue "
@@ -3645,7 +3721,7 @@ public class Zentrale {
             var ziel = benutzer.benutzer(id, bereich(c));
             String fehler = benutzer.aktivSetzen(id, aktiv, bereich(c));
             if (fehler == null && ziel.isPresent()) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.BENUTZER_GEAENDERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.BENUTZER_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Konto \u201e" + ziel.get().anzeigename() + "\u201c "
                                 + (aktiv ? "aktiviert" : "deaktiviert"),
@@ -3679,7 +3755,7 @@ public class Zentrale {
                     Anmeldeseiten.feld(c, "kennwort"), Anmeldeseiten.feld(c, "absender"));
             if (fehler == null) {
                 // Protokolliert wird DASS eingerichtet wurde, nie das Kennwort.
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Mailserver eingerichtet: " + Anmeldeseiten.feld(c, "host"), null);
             }
@@ -3721,7 +3797,7 @@ public class Zentrale {
                           + "prüfen Sie den Spam-Ordner und die Protokolle Ihres Mailservers."
                         : e.fehler();
                 verlauf = e.verlauf();
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT,
                         e.geklappt(), angemeldeter(c).anzeigename(), null,
                         "Testnachricht " + (e.geklappt() ? "versendet" : "fehlgeschlagen"),
                         e.geklappt() ? null : e.fehler());
@@ -3740,7 +3816,7 @@ public class Zentrale {
                             Anmeldeseiten.feld(c, "schwelle"), Anmeldeseiten.feld(c, "fenster"),
                             angekreuzt(c, "aktiv"), bereich(c));
             if (fehler == null) {
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Benachrichtigungsregel gespeichert", null);
             }
@@ -3781,7 +3857,7 @@ public class Zentrale {
                     Anmeldeseiten.feld(c, "token"));
             if (fehler == null) {
                 // Nie das Token — nur DASS eingerichtet wurde.
-                protokoll.anfuegen("Praxis", null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Registry-Zugang eingerichtet: " + Anmeldeseiten.feld(c, "abbild"), null);
                 versionen.pruefen();
@@ -3803,7 +3879,7 @@ public class Zentrale {
             try {
                 var konten = demodaten.anlegen();
                 var b = demodaten.bestand();
-                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.DEMODATEN_ANGELEGT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Demodatensatz angelegt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals (%d mit SMC-B), %d Konten"
                                 .formatted(b.organisationen(), b.konnektoren(), b.arbeitsplaetze(),
@@ -3825,7 +3901,7 @@ public class Zentrale {
             int anzahl = zahl(Anmeldeseiten.feld(c, "anzahl"), Lasterzeuger.TERMINALS_ZIEL);
             try {
                 var e = last.erzeugen(anzahl);
-                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_ANGELEGT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.DEMODATEN_ANGELEGT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Lasttestbestand angelegt: %d Kartenterminals an %d Konnektoren (%d ms)"
                                 .formatted(e.terminals(), e.konnektoren(), e.dauerMs()),
@@ -3849,7 +3925,7 @@ public class Zentrale {
             if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Lasttestbestands")) return;
             try {
                 int weg = last.entfernen();
-                protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.DEMODATEN_GELOESCHT, true,
                         angemeldeter(c).anzeigename(), null,
                         "Lasttestbestand entfernt: %d Kartenterminals".formatted(weg), null);
                 c.html(seite("verwaltung", verwaltungsSeite(
@@ -3868,7 +3944,7 @@ public class Zentrale {
             // Demodatensatz loescht, traefe damit fremde Einrichtungen.
             if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Das Entfernen des Demodatensatzes")) return;
             var weg = demodaten.loeschen();
-            protokoll.anfuegen("Praxis", null, Ereignisart.DEMODATEN_GELOESCHT, true,
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.DEMODATEN_GELOESCHT, true,
                     angemeldeter(c).anzeigename(), null,
                     "Demodatensatz entfernt: %d Organisationseinheiten, %d Konnektoren, %d Arbeitsplätze, %d Kartenterminals, %d Konten"
                             .formatted(weg.organisationen(), weg.konnektoren(),
@@ -3983,7 +4059,7 @@ public class Zentrale {
                         klar, schluessel, st.get().zeitpunkt());
                 java.util.Arrays.fill(klar, (byte) 0);
 
-                protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_HERUNTERGELADEN, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.SICHERUNG_HERUNTERGELADEN, true,
                         benutzername(c), null,
                         "Sicherung vom " + st.get().anzeige() + " heruntergeladen",
                         "Die Datei ist verschlüsselt. Ohne den Schlüssel ist sie unbrauchbar.");
@@ -4066,7 +4142,7 @@ public class Zentrale {
             if (st.isEmpty()) { c.status(404).result("Diese Sicherung gibt es nicht."); return; }
             try {
                 java.nio.file.Files.deleteIfExists(sicherung.pfad(st.get()));
-                protokoll.anfuegen("Praxis", null, Ereignisart.SICHERUNG_GELOESCHT, true,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.SICHERUNG_GELOESCHT, true,
                         benutzername(c), null,
                         "Sicherung vom " + st.get().anzeige() + " gelöscht", null);
                 c.redirect("/einstellungen?meldung=" + urlKodiert("Sicherung gelöscht."));
@@ -4240,7 +4316,7 @@ public class Zentrale {
                 // Instanzweit abgelegt: Zu einem abgelehnten Versuch gibt es
                 // keine belegte Einrichtung, und ein Angreifer duerfte den
                 // Ablageort nicht ueber sein Geheimnis waehlen koennen.
-                protokoll.anfuegen("Praxis", null, Ereignisart.AGENT_REGISTRIERUNG_ABGELEHNT,
+                protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.AGENT_REGISTRIERUNG_ABGELEHNT,
                         false, "Registrierung", null, a.grund(),
                         "Falls ein Agent eingerichtet werden soll, bitte ein neues "
                         + "Registrierungsgeheimnis erzeugen.");

@@ -404,3 +404,66 @@ Diese Punkte kann die Software nicht für ihn erledigen:
 9. **Prüfen, ob der eigene Mailserver zu einem Anbieter außerhalb der EU
    gehört.** Der Roboter sendet dorthin, wohin der Betreiber ihn richtet —
    die Beurteilung des Drittlandtransfers obliegt ihm.
+
+---
+
+## Nachtrag 12.08.2026: Eine Mandantengrenze, die von einem Namen abhing
+
+Instanzweite Vorgänge — Anmeldungen, Benutzerverwaltung, Sicherungen,
+Protokollrotation — trugen im Fachprotokoll die Einrichtung `"Praxis"`.
+
+Das Modell dahinter ist richtig: Ein Eintrag, dessen Einrichtungsname zu **keiner**
+Organisationseinheit passt, bekommt keine `organisation_id` und bleibt für
+eingeschränkte Benutzer unsichtbar. Genau das braucht man für Vorgänge ohne
+Einrichtungsbezug.
+
+> **Der Platzhalter konnte aber jederzeit zu einer echten Einrichtung werden.**
+> Legt jemand eine Praxis namens „Praxis" an, kippen schlagartig alle
+> Instanzereignisse in ihren Geltungsbereich — ein Praxisadministrator sähe
+> Anmeldungen, Sicherungen und Benutzeränderungen der gesamten Instanz.
+
+Eine Mandantengrenze, die von einem frei wählbaren Namen abhängt, ist keine.
+
+### Was gilt
+
+| | |
+|---|---|
+| Kennzeichnung | `Fachprotokoll.INSTANZ = "(instanzweit)"` |
+| Abgesichert | Die Organisationsverwaltung weist diesen Namen ab — beim Anlegen **und** beim Umbenennen |
+| Wirkung | Der Eintrag bekommt keine `organisation_id` und bleibt eingeschränkten Benutzern verborgen |
+
+Die Kollision ist damit nicht mehr unwahrscheinlich, sondern ausgeschlossen.
+
+### Was nicht instanzweit ist
+
+Drei Stellen waren fälschlich als instanzweit eingeordnet: Ereignisse der
+**Automatik**, die Zuordnung eines Geräts zu einer Gruppe und Massenaktionen im
+Bestand. Sie tragen jetzt die Einrichtung ihres Geräts.
+
+Das ist der wichtigere Teil: Ohne die Korrektur stünden Freischaltungen,
+Fehlschläge und PIN-Übergaben weiterhin unter „Praxis" — also genau die
+Einträge, die eine Praxis am dringendsten sehen muss, unter einem Namen, der
+nicht ihrer ist.
+
+Eine **Massenaktion** kann Geräte mehrerer Betriebsstätten betreffen. Betrifft
+sie genau eine, trägt der Eintrag diese; sonst ist er instanzweit. Eine
+willkürlich herausgegriffene Einrichtung wäre schlechter als keine.
+
+### Zwei verwandte Blindstellen, im selben Zug behoben
+
+- Die **Lage-Übersicht** fragte Alarme fest für „Praxis" ab. In einem MVZ zeigte
+  die Kernsicht des Produkts keinen einzigen Alarm.
+- Die **Gruppenauswahl** der Massenaktion und der **Alarmzähler** der Kopfzeile
+  ebenso — die eine blieb leer, der andere stand dauerhaft auf null.
+
+Der Geltungsbereich war in allen Fällen längst da und ist die richtige Grenze.
+Die zusätzliche Einschränkung auf einen Einrichtungsnamen war ein Rest aus der
+Zeit, als es nur eine gab.
+
+### Bestehende Einträge bleiben unverändert
+
+Das Fachprotokoll ist nur anfügbar (FA-PRO-010), und eine Datenbankregel
+erzwingt das. Alte Einträge tragen weiterhin „Praxis" — sie umzuschreiben wäre
+ein Verstoß gegen die Unveränderlichkeit. Der erste Anlauf des zugehörigen
+Modultests wollte genau das und scheiterte an der Regel: Die Zusage gilt auch
+für Tests.

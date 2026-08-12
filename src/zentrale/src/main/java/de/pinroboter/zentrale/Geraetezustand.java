@@ -16,8 +16,13 @@ public class Geraetezustand {
      * Meldung. Bis zum 09.08.2026 stand hier überall fest {@code "Praxis"} —
      * damit trugen Alarme, Protokolleinträge und Gerätegruppen aller Standorte
      * denselben Namen, und die Mandantengrenze griff für sie nicht.
+     *
+     * <p>Der Startwert ist {@link Fachprotokoll#INSTANZ}, nicht „Praxis". Er
+     * wird bei der ersten Meldung überschrieben; bliebe er stehen, fiele der
+     * Zustand sonst einer echten Einrichtung zu, die es womöglich gibt
+     * (Befund 12.08.2026).
      */
-    public String einrichtung = "Praxis";
+    public String einrichtung = Fachprotokoll.INSTANZ;
     public PinStatus pinStatus = PinStatus.UNBEKANNT;
     public int verbleibendeVersuche = -1;
     public boolean erreichbar, pevimUnterstuetzt, pevimAktiv, aktualisierend, automatikAngehalten;
