@@ -168,6 +168,37 @@ Registrierung des Agenten, nicht aus seiner Meldung** — sonst könnte ein
 `pruefe()`, der gemeinsame Weg aller Gerätealarme, hat sie als
 Pflichtparameter, damit ein vergessener Aufruf nicht übersetzt.
 
+### 4.2b Piktogramme: nur aus `Symbole`
+
+Jedes Sinnbild kommt aus `Symbole.java` — Raster 24×24, Strichstärke 1,7,
+`currentColor`, immer `aria-hidden="true"`. Kein `<svg>` direkt in einer
+Seitenklasse.
+
+Der Grund ist derselbe wie bei `Bedienelemente`: Vorher standen SVG-Pfade dort,
+wo man sie gerade brauchte, mit jeweils leicht abweichendem Raster und
+Strichgewicht. **Keine Bilddateien, keine Icon-Schrift** — das Produkt läuft
+on-premise ohne Internet; ein Symbol von einem fremden Server wäre zugleich
+Datenabfluss und Ausfallrisiko.
+
+### 4.2c SQL aus Textblöcken: das Leerzeichen vor `ORDER BY`
+
+Ein Java-Textblock entfernt den Zeilenumbruch direkt nach den öffnenden
+Anführungszeichen. Diese Form ist deshalb **falsch**:
+
+```java
+"… WHERE 1=1" + bereich.bedingung("x") + """
+ORDER BY …"""                       // → "WHERE 1=1ORDER BY" bei leerer Bedingung
+```
+
+Richtig ist ein gewöhnlicher String mit führendem Leerzeichen:
+
+```java
+"… WHERE 1=1" + bereich.bedingung("x") + " ORDER BY …"
+```
+
+Am 12.08.2026 hat genau das eine Ansicht still leer bleiben lassen: Der
+SQL-Fehler stand im technischen Protokoll, die Seite zeigte kommentarlos nichts.
+
 ### 4.3 Kurzhinweise: Pflichtparameter in `Bedienelemente`
 
 Ein Knopf ohne Erklärung lässt sich mit `Bedienelemente.absenden(...)` nicht

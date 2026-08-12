@@ -443,6 +443,26 @@ Struktur: Instanz → Serviceorganisation → Einrichtung → Gerätegruppe → 
 - Auch die Einzelinstallation nutzt dieselbe Struktur, in der Oberfläche jedoch
   ohne unnötige Ebenen (siehe FA-INS-030).
 
+### FA-ORG-030 — Struktur grafisch darstellen · SOLL · V1 · PO 12.08.2026
+Die Organisationsstruktur ist als Bild darstellbar, mit Sinnbildern für die
+Einheiten und die daran hängenden Geräte.
+
+*Akzeptanz:*
+- Die grafische Ansicht zeigt **jede** Einheit des Geltungsbereichs — geprüft
+  durch Abgleich der Kartenzahl gegen die Datenbank. Eine Ansicht, die
+  stillschweigend weniger zeigt als die Liste, ist gefährlicher als keine.
+- Konnektoren und Kartenterminals erscheinen unter ihrer Einheit; ein
+  **mitgenutzter** Konnektor ist als solcher gekennzeichnet (ADR-0012).
+- Jede Zustandsaussage trägt neben der Farbe ein Sinnbild **und** Text
+  (WCAG 1.4.1). Die Zustände sind in einer Legende benannt.
+- Die Ansicht ist vollständig mit der Tastatur bedienbar und besteht die
+  axe-core-Prüfung ohne Befund.
+- Eine gleichwertige Listenansicht bleibt erreichbar; die Wahl wird gemerkt.
+- Begrenzungen der Darstellung (nicht gezeigte Geräte, zugeklappte Zweige)
+  nennen die vollständige Zahl.
+
+---
+
 ### FA-ORG-020 — Mandantentrennung · MUSS · V1 · ADR-0002, PO
 Kein Benutzer sieht oder verändert Daten außerhalb seines Geltungsbereichs.
 

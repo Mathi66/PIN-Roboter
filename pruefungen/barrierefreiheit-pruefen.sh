@@ -72,16 +72,33 @@ OID_A=$(curl -s -b "$KEKSE" $BASIS/organisation \
 curl -s -b "$KEKSE" $BASIS/organisation/neu      > "$SEITEN/organisation-neu.html"
 curl -s -b "$KEKSE" $BASIS/benachrichtigung      > "$SEITEN/benachrichtigung.html"
 # Zeitstrahl und Vorgangsansicht (FA-PRO-050/060) sind eigene Seiten.
-KT_A=$(curl -s -b "$KEKSE" $BASIS/geraete | grep -oE '/geraete/[A-Z0-9-]+/verlauf' | head -1)
-[ -n "$KT_A" ] && curl -s -b "$KEKSE" "$BASIS$KT_A" > "$SEITEN/zeitstrahl.html"
-# Die Vorgangsnummer aus dem Zeitstrahl holen — die Protokollansicht verlinkt
-# nicht darauf. Eine leere Datei waere ein Befund ohne Seite dahinter.
-VG_A=$(grep -oE '/vorgang/[a-zA-Z0-9-]+' "$SEITEN/zeitstrahl.html" 2>/dev/null | head -1)
+#
+# Die Kennungen kommen aus der DATENBANK, nicht aus der Geraeteseite: Je
+# nachdem, an welcher Stelle des Prüflaufs diese Prüfung startet, ist die Liste
+# gerade leer — und dann blieben zwei der vier Nachvollziehbarkeitssichten
+# ungeprüft, ohne dass es jemandem auffiel. Genau das ist am 12.08.2026
+# passiert, sichtbar erst durch die Meldung „NICHT GEPRUEFT" weiter unten.
+psql_() { docker exec pr-db psql -U pinroboter -d pinroboter -tAc "$1" 2>/dev/null | tr -d ' \n'; }
+
+KT_A=$(psql_ "SELECT terminal_id FROM kartenterminal ORDER BY id LIMIT 1")
+[ -z "$KT_A" ] && KT_A=$(psql_ "SELECT terminal_id FROM geraet ORDER BY id LIMIT 1")
+if [ -n "$KT_A" ]; then
+  curl -s -b "$KEKSE" "$BASIS/geraete/$KT_A/verlauf" > "$SEITEN/zeitstrahl.html"
+fi
+
+# Eine Vorgangsnummer aus dem Fachprotokoll. Die Protokollansicht verlinkt
+# nicht darauf, deshalb direkt aus der Tabelle.
+VG_A=$(psql_ "SELECT vorgang FROM fachprotokoll WHERE vorgang IS NOT NULL
+              ORDER BY id DESC LIMIT 1")
 if [ -n "$VG_A" ]; then
-  curl -s -b "$KEKSE" "$BASIS$VG_A" > "$SEITEN/vorgang.html"
+  curl -s -b "$KEKSE" "$BASIS/vorgang/$VG_A" > "$SEITEN/vorgang.html"
   [ -s "$SEITEN/vorgang.html" ] || rm -f "$SEITEN/vorgang.html"
 fi
 [ -s "$SEITEN/zeitstrahl.html" ] || rm -f "$SEITEN/zeitstrahl.html"
+# Die Strukturansicht der Organisation - eine eigene Seite mit vielen Grafiken
+# und Farbaussagen. Genau dort entstehen Barrieren, wenn man nicht hinsieht.
+curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=struktur" > "$SEITEN/organisation-struktur.html"
+
 # ADR-0012: Die Detailseite einer Betriebsstaette traegt zusaetzlich die Felder
 # fuer BSNR und Telematik-ID. Die erste Detailseite im Baum ist der Traeger und
 # hat sie nicht - deshalb gezielt die erste Einheit suchen, die sie zeigt.
@@ -107,7 +124,8 @@ curl -s -b "$KEKSE" $BASIS/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 # gibt. Bisher verschwanden sie stillschweigend - und die Zahl geprüfter Seiten
 # schwankte, ohne dass jemand wusste, warum. Eine ungeprüfte Seite muss man
 # sehen, sonst hält man die Prüfung für vollständiger, als sie ist.
-for erwartet in zeitstrahl vorgang organisation-betriebsstaette konnektor-detail; do
+for erwartet in zeitstrahl vorgang organisation-betriebsstaette konnektor-detail \
+                organisation-struktur; do
   [ -s "$SEITEN/$erwartet.html" ] || \
     printf '  \033[33mNICHT GEPRUEFT\033[0m  %s — die Seite war im Prüfaufbau nicht erreichbar\n' \
       "$erwartet"

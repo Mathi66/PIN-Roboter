@@ -152,8 +152,11 @@ public class Demodaten {
                     // eigene SMC-B - sie teilen sich die der Betriebsstaette.
                     Map<String, Long> fachbereiche = new LinkedHashMap<>();
                     for (var f : b.fachbereiche()) {
+                        // Nur der Fachbereichsname: Wo er steht, sagt der Baum.
+                        // „Unfallambulanz Chirurgie und Unfallambulanz Süd" ist
+                        // korrekt und unlesbar zugleich.
                         fachbereiche.put(f.name(),
-                                organisation(f.name() + " " + b.name(), "FACHBEREICH", praxis));
+                                organisation(f.name(), "FACHBEREICH", praxis));
                     }
 
                     // Informationsmodell des Konnektors ([gemSpec_Kon],

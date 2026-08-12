@@ -2807,3 +2807,138 @@ sollte ein Fremdschlüssel auf `organisation` sein, kein Text. Dann überstünde
 Zuordnung eine Umbenennung von selbst, und ein Löschen wäre nicht stillschweigend
 möglich. Der Umbau berührt Registrierung, Meldeweg, Alarme und Protokoll und
 gehört in einen eigenen Schritt.
+
+---
+
+## Die Struktur als Bild
+
+**Vorgabe des PO:** eine grafische Darstellung der Organisationsstruktur mit
+Sinnbildern für die Entitäten und Geräte — „was Schönes fürs Auge und mit hoher
+Usability".
+
+Seit ADR-0012 sind fünf Ebenen möglich. Eine eingerückte Tabelle bildet das ab,
+aber niemand erfasst sie auf einen Blick — und sie beantwortet die eigentliche
+Frage nicht: **Wo klemmt es?**
+
+### Was entstanden ist
+
+Ein Umschalter auf der Organisationsseite: **Struktur** oder **Liste**. Die
+Struktur zeigt jede Einheit als Karte mit Sinnbild, Zahlen und Ampel; darunter
+hängen ihre Konnektoren und Kartenterminals als Kacheln. Die Liste bleibt
+gleichwertig — sie ist das bessere Werkzeug, wenn man sucht statt versteht.
+
+Drei Dinge, die die Ansicht nützlich statt nur hübsch machen:
+
+- **Die Ampel gilt für den Teilbaum und zeigt den schlechtesten Zustand darin.**
+  Wer auf die oberste Karte schaut, sieht, ob irgendwo im Haus etwas rot ist.
+  Ein Mittelwert würde neunundneunzig gesunde Geräte über ein ausgefallenes
+  legen.
+- **Ein mitgenutzter Konnektor ist gestrichelt und sagt es im Text.** Damit wird
+  ADR-0012 zum ersten Mal sichtbar: Man sieht, dass der Konnektor der Radiologie
+  im Rechenzentrum steht und ihr nicht gehört.
+- **Das Sinnbild unterscheidet Terminals mit und ohne SMC-B.** Nur die mit Karte
+  nimmt die Automatik in die Hand — sonst wundert man sich über fünfunddreißig
+  „stille" Geräte.
+
+### Warum kein gezeichnetes Diagramm
+
+Ein SVG-Organigramm sieht auf einem Bildschirm gut aus und versagt auf jedem
+anderen: Es bricht nicht um, lässt sich nicht mit der Tastatur bedienen,
+skaliert nicht mit der Schriftgröße, und ein Screenreader findet darin keine
+Reihenfolge. Die Karten sind gewöhnliche Verweise in verschachtelten Listen; die
+Linien zeichnet CSS, das Auf- und Zuklappen macht `<details>`. Damit ist die
+Ansicht ohne Zusatzaufwand tastaturbedienbar, vorlesbar und mit Strg+F
+durchsuchbar.
+
+Die Piktogramme liegen jetzt in `Symbole.java` — vorher standen SVG-Pfade dort,
+wo man sie gerade brauchte. Dieselbe Ursache wie bei den 142 fehlenden
+Kurzhinweisen im August: Was an jeder Stelle einzeln gepflegt wird, weicht an
+jeder Stelle ein wenig ab.
+
+### Ein Fehler, den ein Java-Textblock verursacht hat
+
+```
+ERROR: trailing junk after numeric literal at or near "1ORDER"
+```
+
+Ein Textblock entfernt den Zeilenumbruch direkt nach den öffnenden
+Anführungszeichen. Aus `"WHERE 1=1" + bedingung + """\nORDER BY …"""` wurde bei
+leerer Bedingung `WHERE 1=1ORDER BY`. Die Ansicht zeigte daraufhin **still keine
+Konnektoren**; der Fehler stand nur im technischen Protokoll.
+
+Drei andere Abfragen im Code setzen an genau dieser Stelle ein Leerzeichen —
+diese eine nicht. Das ist der Preis dafür, SQL aus Textblöcken
+zusammenzusetzen; es steht jetzt als Kommentar an der Stelle.
+
+### Ein Nachweis, der ein Zeitfenster maß statt einer Tatsache
+
+Beim Vollauf danach wurde ein Nachweis rot, den meine Änderungen gar nicht
+berühren: „nach dem Fehlschlag gilt weiter die zuletzt gültige PIN". In den
+beiden Läufen davor war er grün.
+
+Er prüfte:
+
+```bash
+docker logs pr-agt | tail -25 | grep -q "freigeschaltet"
+```
+
+Also: *Steht das Wort in den letzten 25 Zeilen des Agentenprotokolls?* Das ist
+kein Zustand, das ist ein Zeitfenster. Sobald der Agent zwischendurch andere
+Geräte meldete, rutschte die Zeile heraus — und der Nachweis meldete einen
+Fehler, den es nicht gab. Ein flatternder Nachweis ist schlimmer als keiner: Er
+erzieht dazu, rote Läufe zu ignorieren.
+
+Jetzt wird an der Sache gemessen, in zwei Schritten:
+
+1. Der Zähler der SMC-B-Übergaben am Terminal **steigt** — der Roboter hat die
+   PIN erneut übergeben.
+2. Die Karte steht danach in der Geräteliste wieder auf **„verifiziert"** — es
+   war also die richtige PIN. Wäre die fehlgeschlagene Änderung durchgeschlagen,
+   bliebe sie unverifiziert und der Fehlversuchszähler sänke.
+
+Und der Zustand wird in **der Zeile dieses Geräts** gelesen, nicht irgendwo auf
+der Seite. „verifiziert" steht dort auch bei fünfunddreißig anderen Terminals;
+ein Nachweis, der das nicht unterscheidet, ist immer grün.
+
+**Und dann derselbe Fehler noch einmal, eine Stufe feiner.** Der neue Nachweis
+war beim ersten Anlauf grün — mit diesem Klartext daneben:
+
+```
+BESTANDEN  die Karte steht danach wieder auf „verifiziert" (gelesen: !nicht verifiziert)
+```
+
+Gelesen wurde **„nicht verifiziert"**, und das Muster `*verifiziert*` trifft
+darauf zu. Der Nachweis bescheinigte also das Gegenteil dessen, was dastand.
+Aufgefallen ist es nur, weil ich den gelesenen Wert in die Meldung geschrieben
+hatte — hätte ich nur „bestanden" ausgegeben, wäre es durchgegangen.
+
+Zwei Lehren, beide eingebaut: Der Vergleich schließt „nicht verifiziert"
+ausdrücklich zuerst aus, und der Nachweis **wartet** auf den Zustand, statt drei
+Sekunden zu hoffen — die Zentrale erfährt ihn erst mit der nächsten Meldung des
+Agenten.
+
+> Ein Nachweis sollte immer den gemessenen Wert mitschreiben, nicht nur sein
+> Urteil. Genau dieser Zusatz hat hier den Fehler im Nachweis selbst
+> aufgedeckt.
+
+
+### Und die Meldung, die ich eingebaut hatte, fand gleich etwas
+
+Seit heute meldet die Barrierefreiheitsprüfung, wenn eine erwartete Seite im
+Prüfaufbau nicht erreichbar war, statt die Zahl geprüfter Seiten still schwanken
+zu lassen. Beim ersten Lauf mit dieser Meldung:
+
+```
+NICHT GEPRUEFT  zeitstrahl — die Seite war im Prüfaufbau nicht erreichbar
+NICHT GEPRUEFT  vorgang — die Seite war im Prüfaufbau nicht erreichbar
+```
+
+Die Prüfung suchte die Gerätekennung **in der Geräteseite**. Je nachdem, an
+welcher Stelle des Prüflaufs sie startet, ist die Liste gerade leer — dann
+blieben zwei der vier Nachvollziehbarkeitssichten aus CLAUDE.md ungeprüft. Das
+war schon vorher so; man sah es nur nicht, weil nur eine Gesamtzahl
+ausgewiesen wurde („18 Seiten ohne Befund" statt „18 von 20").
+
+Die Kennungen kommen jetzt aus der Datenbank. Der Zeitstrahl existiert dort
+immer, auch ohne Ereignisse — und eine leere Seite ist ebenfalls
+prüfenswert.

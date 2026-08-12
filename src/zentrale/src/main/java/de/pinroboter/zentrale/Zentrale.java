@@ -763,8 +763,106 @@ public class Zentrale {
 
     private String organisationsSeite(io.javalin.http.Context c, String meldung,
                                       boolean istFehler) {
-        return Organisationsseiten.seite(organisationen.baum(bereich(c)),
-                rechte(c).darfOrganisationVerwalten(), meldung, istFehler);
+        return organisationsSeite(c, meldung, istFehler, strukturGewuenscht(c));
+    }
+
+    private String organisationsSeite(io.javalin.http.Context c, String meldung,
+                                      boolean istFehler, boolean struktur) {
+        var baum = organisationen.baum(bereich(c));
+        return Organisationsseiten.seite(baum, rechte(c).darfOrganisationVerwalten(),
+                meldung, istFehler, struktur,
+                struktur ? bilanzen(baum, bereich(c)) : java.util.Map.of(),
+                struktur ? strukturgeraete(bereich(c)) : java.util.Map.of(),
+                struktur ? strukturkonnektoren(bereich(c)) : java.util.Map.of());
+    }
+
+    /**
+     * Welche Ansicht gewünscht ist — Struktur oder Liste.
+     *
+     * <p>Die Wahl steht im Kekserl, nicht in der Adresse: Wer die Struktur
+     * bevorzugt, will sie beim nächsten Aufruf wieder sehen, auch nach einem
+     * Umweg über eine Detailseite. Ein Parameter in der Adresse wäre nach der
+     * ersten Weiterleitung verloren.
+     */
+    private boolean strukturGewuenscht(io.javalin.http.Context c) {
+        String q = c.queryParam("ansicht");
+        if (q != null) {
+            c.cookie("pr-organisationsansicht", q, 60 * 60 * 24 * 365);
+            return !"liste".equals(q);
+        }
+        return !"liste".equals(c.cookie("pr-organisationsansicht"));
+    }
+
+    /**
+     * Die Kartenterminals je Organisationseinheit, mit ihrem aktuellen Zustand.
+     *
+     * <p>Der Bestand sagt, welches Gerät wohin gehört; der Arbeitsspeicher, wie
+     * es ihm geht. Ein Gerät, von dem noch keine Meldung kam, gilt als
+     * „unbekannt" — nicht als in Ordnung. Das ist der Unterschied zwischen
+     * „geprüft und gut" und „noch nie gesehen".
+     */
+    private java.util.Map<Long, java.util.List<Strukturansicht.Geraet>> strukturgeraete(
+            Geltungsbereich bereich) {
+        var nach = new java.util.HashMap<Long, java.util.List<Strukturansicht.Geraet>>();
+        for (var g : bestand.strukturgeraete(bereich)) {
+            var z = geraete.get(g.terminalId());
+            nach.computeIfAbsent(g.organisationId(), k -> new java.util.ArrayList<>())
+                .add(new Strukturansicht.Geraet(g.terminalId(),
+                        g.bezeichnung() == null || g.bezeichnung().isBlank()
+                                ? g.terminalId() : g.bezeichnung(),
+                        g.hatSmcb(), z == null ? Ampel.UNBEKANNT : z.ampel()));
+        }
+        return nach;
+    }
+
+    /** Die Konnektoren je Organisationseinheit — betriebene und mitgenutzte. */
+    private java.util.Map<Long, java.util.List<Strukturansicht.Konnektor>> strukturkonnektoren(
+            Geltungsbereich bereich) {
+        var nach = new java.util.HashMap<Long, java.util.List<Strukturansicht.Konnektor>>();
+        for (var k : bestand.strukturkonnektoren(bereich)) {
+            nach.computeIfAbsent(k.organisationId(), x -> new java.util.ArrayList<>())
+                .add(new Strukturansicht.Konnektor(k.id(), k.bezeichnung(), k.art(),
+                        k.betreibt()));
+        }
+        return nach;
+    }
+
+    /**
+     * Zahlen und Gerätezustand je Organisationseinheit, über den Teilbaum
+     * summiert.
+     *
+     * <p>Der Zustand liegt im Arbeitsspeicher (Meldungen der Agenten), die
+     * Zuordnung in der Datenbank. Beides wird hier einmal je Seitenaufruf
+     * zusammengeführt — nicht je Einheit, sonst wären es bei einem
+     * Klinikverbund hunderte Abfragen für eine Seite.
+     *
+     * <p>Das Summieren über den Teilbaum macht
+     * {@link Strukturansicht#summieren} — dort ist es ohne Datenbank prüfbar.
+     */
+    private java.util.Map<Long, Strukturansicht.Bilanz> bilanzen(
+            java.util.List<Organisationsverwaltung.Einheit> baum, Geltungsbereich bereich) {
+        var zuordnung = bestand.terminalOrganisationen(bereich);
+        var eigene = new java.util.HashMap<Long, Strukturansicht.Bilanz>();
+
+        // Erst die eigenen Geräte je Einheit.
+        for (var eintrag : zuordnung.entrySet()) {
+            var z = geraete.get(eintrag.getKey());
+            Ampel a = z == null ? Ampel.UNBEKANNT : z.ampel();
+            var alt = eigene.getOrDefault(eintrag.getValue(), Strukturansicht.Bilanz.LEER);
+            eigene.put(eintrag.getValue(), alt.plus(new Strukturansicht.Bilanz(
+                    1, 0, 0,
+                    a == Ampel.OK ? 1 : 0, a == Ampel.WARNUNG ? 1 : 0,
+                    a == Ampel.FEHLER ? 1 : 0, a == Ampel.UNBEKANNT ? 1 : 0)));
+        }
+        // Konnektoren und Konten stehen schon in der Einheit selbst.
+        for (var e : baum) {
+            var alt = eigene.getOrDefault(e.id(), Strukturansicht.Bilanz.LEER);
+            eigene.put(e.id(), alt.plus(new Strukturansicht.Bilanz(
+                    0, e.konnektoren(), e.benutzer(), 0, 0, 0, 0)));
+        }
+
+        // Dann von unten nach oben aufsummieren.
+        return Strukturansicht.summieren(baum, eigene);
     }
 
     private String organisationsDetail(io.javalin.http.Context c, long id,

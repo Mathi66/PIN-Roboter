@@ -187,6 +187,29 @@ Ab jetzt arbeitet der Roboter selbstständig.
 
 ---
 
+### Struktur oder Liste
+
+Oben auf der Seite **Organisation** stehen zwei Schalter:
+
+- **Struktur** zeigt Ihr Haus als Baum: jede Einheit als Karte mit ihrem Bild,
+  ihren Zahlen und einer Ampel. **Die Ampel einer Karte gilt für alles, was
+  darunter hängt** — steht sie auf Rot, ist irgendwo darunter ein Gerät
+  ausgefallen. Sie müssen nicht suchen, Sie klappen auf.
+  Unter jeder Praxis stehen ihre Konnektoren und Kartenterminals als kleine
+  Kacheln. Ein Klick öffnet das Gerät.
+- **Liste** zeigt dieselben Einheiten als Tabelle. Die ist besser, wenn Sie
+  etwas Bestimmtes **suchen**.
+
+Ihre Wahl wird gemerkt.
+
+> Ein Kartenterminal mit dem Kartensymbol enthält eine **SMC-B** — nur diese
+> Geräte schaltet der Roboter frei. Die übrigen werden überwacht, haben aber
+> nichts freizuschalten.
+>
+> Ein Konnektor mit **gestricheltem Rahmen** wird von einer anderen Einrichtung
+> betrieben; Sie nutzen ihn nur mit. Sie können ihm Geräte zuordnen, seine
+> Einstellungen ändert der Betreiber.
+
 ### Ihre Struktur abbilden
 
 **Organisation** zeigt Ihre Einrichtung als Baum. Fünf Ebenen sind möglich, und

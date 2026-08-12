@@ -1009,6 +1009,112 @@ public class Bestandsverwaltung {
                      WHEN 'STANDORT' THEN 3 WHEN 'EINRICHTUNG' THEN 4 ELSE 5 END""";
 
     /**
+     * Ein Kartenterminal, so wie die Strukturansicht es braucht.
+     *
+     * @param organisationId die Einheit, an der es hängt — Betriebsstätte oder
+     *        Fachbereich, je nachdem, wie tief die Struktur reicht (ADR-0012)
+     */
+    public record Strukturgeraet(String terminalId, long organisationId,
+                                 String bezeichnung, boolean hatSmcb) {}
+
+    /**
+     * Alle Kartenterminals des Geltungsbereichs mit ihrer Einheit.
+     *
+     * <p>Eine Abfrage für alle statt einer je Einheit: Bei 5.000 Geräten wären
+     * es sonst tausende Einzelabfragen für eine einzige Seite.
+     */
+    public List<Strukturgeraet> strukturgeraete(Geltungsbereich bereich) {
+        List<Strukturgeraet> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT terminal_id, organisation_id, bezeichnung, hat_smcb "
+                + "FROM kartenterminal WHERE 1=1" + bereich.bedingung("organisation_id")
+                + " ORDER BY lower(bezeichnung), terminal_id")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) {
+                    liste.add(new Strukturgeraet(rs.getString(1), rs.getLong(2),
+                            rs.getString(3), rs.getBoolean(4)));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Geräte für die Strukturansicht nicht lesbar: " + e.getMessage());
+        }
+        return liste;
+    }
+
+    /**
+     * Ein Konnektor, so wie die Strukturansicht ihn zeigt.
+     *
+     * @param betreibt {@code true} an der betreibenden Einheit, {@code false}
+     *        an jeder, die ihn nur mitnutzt (ADR-0012). Der Unterschied gehört
+     *        sichtbar gemacht: Er entscheidet, wer ihn ändern darf.
+     */
+    public record Strukturkonnektor(long id, long organisationId, String bezeichnung,
+                                    String art, boolean betreibt) {}
+
+    /**
+     * Alle Konnektoren des Geltungsbereichs — je Einheit, die sie betreibt oder
+     * mitnutzt.
+     *
+     * <p>Ein geteilter Konnektor erscheint deshalb mehrfach: einmal bei seinem
+     * Betreiber und einmal bei jedem Mitnutzer. Das ist gewollt — im
+     * Rechenzentrumsbetrieb ist genau das die Aussage.
+     */
+    public List<Strukturkonnektor> strukturkonnektoren(Geltungsbereich bereich) {
+        List<Strukturkonnektor> liste = new ArrayList<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                SELECT k.id, n.organisation_id, k.bezeichnung, k.art,
+                       (n.organisation_id = k.organisation_id) AS betreibt
+                FROM konnektor_nutzung n
+                JOIN konnektor k ON k.id = n.konnektor_id
+                WHERE 1=1""" + bereich.bedingung("n.organisation_id")
+                // Das Leerzeichen ist Pflicht: Ein Java-Textblock entfernt den
+                // Zeilenumbruch nach den Anfuehrungszeichen, sonst entsteht
+                // „1ORDER BY" - und die Ansicht bleibt still leer.
+                + " ORDER BY betreibt DESC, lower(k.bezeichnung)")) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) {
+                    liste.add(new Strukturkonnektor(rs.getLong(1), rs.getLong(2),
+                            rs.getString(3), rs.getString(4), rs.getBoolean(5)));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Konnektoren für die Strukturansicht nicht lesbar: "
+                    + e.getMessage());
+        }
+        return liste;
+    }
+
+    /**
+     * Welche Organisationseinheit welches Kartenterminal führt.
+     *
+     * <p>Für die Strukturansicht: Sie braucht zu jeder Einheit den Zustand
+     * <b>ihrer</b> Geräte. Der Zustand selbst liegt im Arbeitsspeicher der
+     * Zentrale und kennt nur die Terminalkennung — die Zuordnung steht in der
+     * Datenbank.
+     *
+     * <p>Eine Abfrage für alle Terminals statt einer je Einheit: Bei 5.000
+     * Geräten wären das sonst tausende Einzelabfragen für eine einzige Seite.
+     *
+     * @return Terminalkennung → Kennung der Organisationseinheit
+     */
+    public Map<String, Long> terminalOrganisationen(Geltungsbereich bereich) {
+        Map<String, Long> zuordnung = new HashMap<>();
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT terminal_id, organisation_id FROM kartenterminal WHERE 1=1"
+                + bereich.bedingung("organisation_id"))) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            try (ResultSet rs = p.executeQuery()) {
+                while (rs.next()) zuordnung.put(rs.getString(1), rs.getLong(2));
+            }
+        } catch (SQLException e) {
+            System.err.println("Zuordnung Terminal→Einheit nicht lesbar: " + e.getMessage());
+        }
+        return zuordnung;
+    }
+
+    /**
      * Nur die Betriebsstätten — für die Mitnutzung eines Konnektors (ADR-0012).
      *
      * <p>Mitnutzer eines Konnektors ist immer eine Leistungserbringer&shy;institution,

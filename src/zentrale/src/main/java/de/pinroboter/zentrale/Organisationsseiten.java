@@ -21,7 +21,10 @@ final class Organisationsseiten {
     private Organisationsseiten() { }
 
     static String seite(List<Organisationsverwaltung.Einheit> baum, boolean darfVerwalten,
-                        String meldung, boolean istFehler) {
+                        String meldung, boolean istFehler, boolean struktur,
+                        java.util.Map<Long, Strukturansicht.Bilanz> bilanzen,
+                        java.util.Map<Long, List<Strukturansicht.Geraet>> geraete,
+                        java.util.Map<Long, List<Strukturansicht.Konnektor>> konnektoren) {
         StringBuilder s = new StringBuilder(Zentrale.seitenkopf("Organisation",
                 "Verbünde, Standorte und Einrichtungen — die Struktur, der Geräte und "
                 + "Konten zugeordnet sind.",
@@ -43,8 +46,36 @@ final class Organisationsseiten {
                       damit niemand seinen eigenen Zuständigkeitsbereich erweitern kann.</div>""");
         }
 
-        s.append(baumTafel(baum, darfVerwalten));
+        if (!baum.isEmpty()) s.append(ansichtsumschalter(struktur));
+        s.append(struktur ? Strukturansicht.tafel(baum, bilanzen, geraete, konnektoren)
+                          : baumTafel(baum, darfVerwalten));
         return s.toString();
+    }
+
+    /**
+     * Umschalter zwischen Struktur und Liste.
+     *
+     * <p>Beide Sichten zeigen dieselben Daten — keine ist eine abgespeckte
+     * Fassung der anderen. Die Struktur beantwortet „wie hängt das zusammen und
+     * wo klemmt es?", die Liste „welche Einheiten gibt es?" und lässt sich
+     * überfliegen und durchsuchen. Deshalb bleibt die Liste erhalten und ist
+     * gleichwertig erreichbar; auch, weil sie für Screenreader und sehr kleine
+     * Bildschirme die nüchternere Darstellung ist.
+     */
+    private static String ansichtsumschalter(boolean struktur) {
+        return """
+                <div class="ansichtswahl" role="group" aria-label="Darstellung der Struktur">
+                  <a href="/organisation?ansicht=struktur" class="wahl %s"%s
+                     title="Zeigt die Struktur als Baum mit Sinnbildern und Zustandsampel">
+                     %sStruktur</a>
+                  <a href="/organisation?ansicht=liste" class="wahl %s"%s
+                     title="Zeigt die Struktur als durchsuchbare Tabelle">
+                     %sListe</a>
+                </div>"""
+                .formatted(struktur ? "aktiv" : "", struktur ? " aria-current=\"page\"" : "",
+                        Symbole.gruppe(),
+                        struktur ? "" : "aktiv", struktur ? "" : " aria-current=\"page\"",
+                        Symbole.liste());
     }
 
     private static String baumTafel(List<Organisationsverwaltung.Einheit> baum,

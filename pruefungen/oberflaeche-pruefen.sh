@@ -88,6 +88,11 @@ ergebnis "kein Kurzhinweis wiederholt nur die Beschriftung ($ECHOS Echos)" "$B"
 # ── 3. Klickbare Zeilen ───────────────────────────────────────────────────
 # Eine Liste, deren Einträge eine eigene Seite haben, oeffnet per Zeile —
 # statt je Zeile einen „Öffnen"-Knopf zu tragen.
+# /organisation zeigt seit dem 12.08.2026 als Vorgabe die Strukturansicht; dort
+# gibt es keine Tabelle. Die Zusage "eine Zeile oeffnet ihren Eintrag" gilt fuer
+# die LISTE - und fuer die Struktur gilt dieselbe Zusage mit Karten statt
+# Zeilen. Beides wird geprueft, keines gegen die falsche Ansicht.
+curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=liste" -o "$ABLAGE/_organisation.html"
 for paar in "/gruppen:gruppen:5" "/organisation:organisation:5" "/bestand:bestand:10"; do
   pfad=$(echo "$paar" | cut -d: -f1); name="_$(echo "$paar" | cut -d: -f2)"
   mindZ=$(echo "$paar" | cut -d: -f3)
@@ -95,6 +100,14 @@ for paar in "/gruppen:gruppen:5" "/organisation:organisation:5" "/bestand:bestan
   [ "${ZEILEN:-0}" -ge "$mindZ" ] && K=ja || K=nein
   ergebnis "$pfad hat klickbare Zeilen ($ZEILEN, mindestens $mindZ)" "$K"
 done
+
+# Dieselbe Zusage in der Strukturansicht: Die ganze Karte oeffnet ihre Einheit,
+# nicht ein kleiner Link darin. Ein Klickziel von 200 Pixeln Breite trifft man
+# auch mit dem Finger auf dem Tablet.
+curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=struktur" -o "$ABLAGE/_struktur.html"
+KARTEN=$(grep -o 'class="strukturkarte' "$ABLAGE/_struktur.html" 2>/dev/null | wc -l | tr -d ' ')
+[ "${KARTEN:-0}" -ge 5 ] && SK=ja || SK=nein
+ergebnis "/organisation zeigt klickbare Struktur-Karten ($KARTEN, mindestens 5)" "$SK"
 
 # Und der Gegentest: In einer klickbaren Zeile darf kein „Öffnen"-Knopf mehr
 # stehen. Zwei Wege zum selben Ziel sind einer zu viel.

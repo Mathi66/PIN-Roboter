@@ -2063,6 +2063,62 @@ else
 fi
 rm -f /tmp/pr-org.html
 
+# ------------------------------------------------- Strukturansicht (UX)
+# Die Organisationsstruktur als Bild. Geprueft wird nicht, ob sie huebsch ist -
+# das kann kein Skript -, sondern ob sie DIESELBEN Daten zeigt wie die Liste,
+# ob die Geraete darin auftauchen und ob die Barrierefreiheitsregeln halten,
+# die man beim Bauen von Grafiken am leichtesten verletzt.
+hinweis "Strukturansicht der Organisation"
+
+curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=struktur" > /tmp/pr-struk.html
+grep -q 'class="strukturkarte' /tmp/pr-struk.html && SA=ja || SA=nein
+ergebnis "die Strukturansicht ist erreichbar" "$SA"
+
+# Gleich viele Karten wie Einheiten im Geltungsbereich - eine Ansicht, die
+# stillschweigend weniger zeigt als die Liste, waere gefaehrlicher als keine.
+KARTEN=$(treffer_zaehlen /tmp/pr-struk.html 'class="strukturkarte')
+EINHEITEN=$(sql "SELECT count(*) FROM organisation")
+[ "$KARTEN" = "$EINHEITEN" ] && SB=ja || SB=nein
+ergebnis "sie zeigt jede Organisationseinheit ($KARTEN von $EINHEITEN)" "$SB"
+
+# Die Geraete stehen als Kacheln darunter.
+CHIPS=$(treffer_zaehlen /tmp/pr-struk.html 'class="geraetechip')
+[ "${CHIPS:-0}" -ge 1 ] && SC=ja || SC=nein
+ergebnis "die Kartenterminals erscheinen als Kacheln ($CHIPS)" "$SC"
+
+# ADR-0012 im Bild: Ein mitgenutzter Konnektor ist als solcher gekennzeichnet.
+if [ "$(sql "SELECT count(*) FROM konnektor_nutzung n JOIN konnektor k ON k.id=n.konnektor_id
+              WHERE n.organisation_id <> k.organisation_id")" != "0" ]; then
+  grep -q "konnektorchip mitgenutzt" /tmp/pr-struk.html && SD=ja || SD=nein
+  ergebnis "ein mitgenutzter Konnektor ist als solcher gekennzeichnet" "$SD"
+  grep -q ">mitgenutzt<" /tmp/pr-struk.html && SD2=ja || SD2=nein
+  ergebnis "und sagt es im Text, nicht nur im Rahmen" "$SD2"
+else
+  uebersprungen "kein geteilter Konnektor im Bestand"
+fi
+
+# WCAG 1.4.1: Farbe darf nie die einzige Aussage sein. Zu jeder Ampel gehoert
+# ein Text - hier gegengeprueft, weil genau das bei Grafiken vergessen wird.
+for wort in "in Ordnung" "Handlungsbedarf" "keine Rückmeldung"; do
+  grep -q "$wort" /tmp/pr-struk.html && SE=ja || SE=nein
+  ergebnis "die Legende benennt „$wort“ in Worten" "$SE"
+done
+
+# Und die Liste bleibt gleichwertig erreichbar.
+curl -s -b "$KEKSE" "$BASIS/organisation?ansicht=liste" > /tmp/pr-strukl.html
+grep -q "<tbody>" /tmp/pr-strukl.html && SF=ja || SF=nein
+ergebnis "die Listenansicht bleibt erreichbar" "$SF"
+grep -q 'class="strukturkarte' /tmp/pr-strukl.html && SG=nein || SG=ja
+ergebnis "sie zeigt dann keine Struktur-Karten" "$SG"
+
+# Die Wahl wird gemerkt: Wer die Liste gewaehlt hat, bekommt sie wieder -
+# sonst muesste man sie nach jedem Seitenwechsel neu einstellen.
+curl -s -b /tmp/pr-struk-kekse.txt -c /tmp/pr-struk-kekse.txt -o /dev/null \
+  -b "$KEKSE" "$BASIS/organisation?ansicht=liste"
+grep -q "pr-organisationsansicht" /tmp/pr-struk-kekse.txt && SH=ja || SH=nein
+ergebnis "die gewaehlte Ansicht wird gemerkt" "$SH"
+rm -f /tmp/pr-struk.html /tmp/pr-strukl.html /tmp/pr-struk-kekse.txt
+
 # ---------------------------------------------------------------- ADR-0012
 # Die Gerätehierarchie folgt der Organisationsstruktur. Geprüft werden die drei
 # Punkte, an denen sie sich vom vorherigen Modell unterscheidet: die neuen
@@ -3177,15 +3233,58 @@ else
   [ "$MELDUNG_C" != "-" ] && CE=ja || CE=nein
   ergebnis "eine falsche alte PIN wird abgelehnt und gemeldet" "$CE"
 
+  # Gemessen wird an der KARTE, nicht am Protokolltext des Agenten. Der
+  # frühere Nachweis prüfte „steht 'freigeschaltet' in den letzten 25 Zeilen?"
+  # — ein Zeitfenster, keine Tatsache: Sobald der Agent zwischendurch andere
+  # Geräte meldete, rutschte die Zeile heraus, und der Nachweis wurde rot,
+  # obwohl das Produkt richtig arbeitete (beobachtet 12.08.2026).
+  #
+  # Die Tatsache lautet: Der Roboter übergibt die PIN erneut UND die Karte ist
+  # danach wieder freigeschaltet. Ist die hinterlegte PIN falsch, bleibt sie
+  # unverifiziert und der Fehlversuchszähler sinkt.
+  VOR_U=$(curl -s "$SIMBASIS/steuerung/KT-EMPFANG-01/smcb-uebergaben" \
+          | grep -oE '"uebergaben":[0-9]+' | cut -d: -f2)
   curl -s -X POST $SIMBASIS/steuerung/KT-EMPFANG-01/entziehen >/dev/null
-  V_D=$(verifikationen)
   for _ in $(seq 30); do
-    [ $(( $(verifikationen) - V_D )) -ge 1 ] && break
+    NACH_U=$(curl -s "$SIMBASIS/steuerung/KT-EMPFANG-01/smcb-uebergaben" \
+             | grep -oE '"uebergaben":[0-9]+' | cut -d: -f2)
+    [ "${NACH_U:-0}" -gt "${VOR_U:-0}" ] && break
     sleep 2
   done
-  sleep 4
-  docker logs pr-agt 2>&1 | tail -25 | grep -q "freigeschaltet" && CU=ja || CU=nein
-  ergebnis "nach dem Fehlschlag gilt weiter die zuletzt gueltige PIN" "$CU"
+  [ "${NACH_U:-0}" -gt "${VOR_U:-0}" ] && CU=ja || CU=nein
+  ergebnis "nach dem Fehlschlag wird die PIN erneut uebergeben (${VOR_U:-0} -> ${NACH_U:-0})" "$CU"
+
+  # Und es war die RICHTIGE PIN: Die Karte steht danach wieder auf
+  # „verifiziert". Waere die fehlgeschlagene Aenderung durchgeschlagen, haette
+  # der Agent eine PIN im Speicher, die auf der Karte nicht gilt - die Karte
+  # bliebe unverifiziert und der Fehlversuchszaehler saenke.
+  # Auf den Zustand WARTEN, nicht drei Sekunden hoffen: Die Zentrale erfaehrt
+  # ihn erst mit der naechsten Meldung des Agenten.
+  #
+  # Und exakt vergleichen. Ein Muster „*verifiziert*" trifft auch auf
+  # „nicht verifiziert" zu - beim ersten Anlauf dieses Nachweises war er
+  # deshalb gruen, waehrend die Karte gesperrt dastand (12.08.2026).
+  ZUSTAND=""
+  for _ in $(seq 30); do
+    curl -s -b "$KEKSE" "$BASIS/geraete" -o /tmp/pr-pinzustand.html
+    # Die Zeile DIESES Geraets: „verifiziert" steht auch bei den anderen
+    # Terminals, und ein Nachweis, der das nicht unterscheidet, ist immer gruen.
+    ZEILE=$(spalte_lesen /tmp/pr-pinzustand.html "Gerät" | grep -n "KT-EMPFANG-01" \
+            | head -1 | cut -d: -f1)
+    ZUSTAND=$(spalte_lesen /tmp/pr-pinzustand.html "Zustand" | sed -n "${ZEILE:-0}p")
+    case "$ZUSTAND" in
+      *"nicht verifiziert"*) ;;                 # noch nicht so weit
+      *verifiziert*) break ;;
+    esac
+    sleep 2
+  done
+  case "$ZUSTAND" in
+    *"nicht verifiziert"*) CU2=nein ;;
+    *verifiziert*)         CU2=ja ;;
+    *)                     CU2=nein ;;
+  esac
+  ergebnis "die Karte steht danach wieder auf „verifiziert“ (gelesen: ${ZUSTAND:-nichts})" "$CU2"
+  rm -f /tmp/pr-pinzustand.html
 
   # Und die Notbremse: Klartext statt Chiffrat wird abgewiesen.
   curl -s -b "$KEKSE" -X POST "$BASIS/bestand/terminal/$TID_C/pin-aendern" \

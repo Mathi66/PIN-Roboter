@@ -762,3 +762,181 @@ tr > th:last-child,  tr > td:last-child  { padding-right:var(--karte-x); }
    losgelöst von dem, was er tut. Gemessen am 10.08.2026: 794 px Bedarf bei
    761 px Platz. */
 .reihe-enden .feldgruppe:not(.zahlenfeld) { flex:1 1 12rem; }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Strukturansicht der Organisation
+   ══════════════════════════════════════════════════════════════════════════
+   Ein Organigramm aus HTML statt aus SVG. Die Linien zeichnen ::before und
+   ::after, die Knoten sind gewoehnliche Verweise in verschachtelten Listen.
+   Damit ist die Ansicht ohne Zusatzaufwand tastaturbedienbar, vorlesbar,
+   durchsuchbar (Strg+F) und umbruchfaehig - alles Dinge, die ein gezeichnetes
+   Diagramm erst muehsam nachbilden muesste.                                */
+
+.sinnbild { width:1.15rem; height:1.15rem; flex:none; }
+
+/* ── Umschalter Struktur / Liste ─────────────────────────────────────── */
+.ansichtswahl { display:flex; gap:var(--r1); margin:0 0 var(--r4);
+  padding:var(--r1); background:var(--glas); border:1px solid var(--rand);
+  border-radius:var(--radius-klein); width:fit-content; }
+.ansichtswahl .wahl {
+  display:inline-flex; align-items:center; gap:var(--r2);
+  padding:var(--r2) var(--r4); border-radius:calc(var(--radius-klein) - 3px);
+  color:var(--gedaempft); text-decoration:none; font-size:.92rem; font-weight:600;
+  transition:background .15s, color .15s;
+}
+.ansichtswahl .wahl:hover { background:var(--akzent-hg); color:var(--text); }
+.ansichtswahl .wahl.aktiv { background:var(--akzent); color:var(--auf-akzent); }
+.ansichtswahl .wahl.aktiv svg { color:var(--auf-akzent); }
+
+/* ── Legende ─────────────────────────────────────────────────────────── */
+.strukturlegende { display:flex; flex-wrap:wrap; align-items:center;
+  gap:var(--r2) var(--r5); margin:0 0 var(--r5); font-size:.86rem; }
+.strukturlegende > span { display:inline-flex; align-items:center; gap:var(--r1); }
+.strukturlegende .sinnbild { width:1rem; height:1rem; }
+.ampel-ok        { color:var(--ok); }
+.ampel-warnung   { color:var(--warnung); }
+.ampel-fehler    { color:var(--fehler); }
+.ampel-unbekannt { color:var(--unbekannt); }
+
+/* ── Baum ────────────────────────────────────────────────────────────── */
+.strukturfeld { overflow-x:auto; padding-bottom:var(--r2); }
+.strukturbaum { list-style:none; margin:0; padding:0; }
+.strukturbaum:not(.wurzel) { margin-left:var(--r5); padding-left:var(--r5);
+  border-left:2px solid var(--rand); }
+.strukturast { position:relative; margin:var(--r2) 0; }
+
+/* Der waagerechte Strich vom senkrechten Ast zur Karte. Rein dekorativ -
+   die Verschachtelung steht fuer Screenreader in der Listenstruktur. */
+.strukturbaum:not(.wurzel) > .strukturast::before {
+  content:""; position:absolute; left:calc(-1 * var(--r5) - 2px); top:1.75rem;
+  width:var(--r5); height:2px; background:var(--rand);
+}
+
+/* ── Karte ───────────────────────────────────────────────────────────── */
+.strukturkarte {
+  display:flex; align-items:center; gap:var(--r4);
+  padding:var(--r3) var(--r4);
+  background:var(--karte); border:1px solid var(--rand);
+  border-left:4px solid var(--rand);
+  border-radius:var(--radius-klein);
+  color:inherit; text-decoration:none;
+  box-shadow:0 1px 2px rgba(16,22,35,.04);
+  transition:border-color .15s, box-shadow .15s, transform .12s;
+}
+.strukturkarte:hover { box-shadow:var(--schatten); transform:translateY(-1px); }
+.strukturkarte:focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }
+
+/* Der farbige Streifen links traegt die Ampel. Er ist NIE die einzige
+   Aussage: Rechts steht dasselbe als Sinnbild mit Text (WCAG 1.4.1). */
+.strukturkarte.ok        { border-left-color:var(--ok); }
+.strukturkarte.warnung   { border-left-color:var(--warnung); }
+.strukturkarte.fehler    { border-left-color:var(--fehler); }
+.strukturkarte.unbekannt { border-left-color:var(--unbekannt); }
+
+.kartensinnbild { display:grid; place-items:center; flex:none;
+  width:2.75rem; height:2.75rem; border-radius:var(--radius-klein);
+  background:var(--akzent-hg); color:var(--akzent); }
+.kartensinnbild .sinnbild { width:1.5rem; height:1.5rem; }
+
+/* Kein gap: Die drei Zeilen stehen ohnehin untereinander, und ein roher
+   Zwischenwert waere der Anfang der naechsten Unregelmaessigkeit. Der Abstand
+   kommt aus der Zeilenhoehe. */
+.kartentext { display:flex; flex-direction:column; line-height:1.4; min-width:0; flex:1; }
+.kartenname { font-weight:650; font-size:1rem; }
+.kartenart  { color:var(--gedaempft); font-size:.84rem; }
+.kartenzahlen { display:flex; flex-wrap:wrap; gap:var(--r1) var(--r3);
+  margin-top:var(--r1); font-size:.84rem; color:var(--gedaempft); }
+.kartenzahl { display:inline-flex; align-items:center; gap:var(--r1); }
+.kartenzahl .sinnbild { width:.95rem; height:.95rem; }
+.kartenzahl .zahlwort { color:var(--gedaempft); }
+.strukturleer { font-size:.84rem; color:var(--gedaempft); font-style:italic; }
+
+.kartenampel { flex:none; display:grid; place-items:center;
+  width:2rem; height:2rem; border-radius:999px; }
+.kartenampel .sinnbild { width:1.15rem; height:1.15rem; }
+.kartenampel.ok        { background:var(--ok-hg);        color:var(--ok); }
+.kartenampel.warnung   { background:var(--warnung-hg);   color:var(--warnung); }
+.kartenampel.fehler    { background:var(--fehler-hg);    color:var(--fehler); }
+.kartenampel.unbekannt { background:var(--unbekannt-hg); color:var(--unbekannt); }
+
+/* ── Auf- und Zuklappen ──────────────────────────────────────────────── */
+.strukturzweig > summary {
+  display:inline-flex; align-items:center; gap:var(--r2);
+  margin:var(--r2) 0 0 var(--r5);
+  padding:var(--r1) var(--r3);
+  color:var(--gedaempft); font-size:.86rem; cursor:pointer;
+  border-radius:var(--radius-klein);
+}
+.strukturzweig > summary:hover { background:var(--akzent-hg); color:var(--text); }
+.strukturzweig > summary:focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }
+.zweigzahl { display:inline-grid; place-items:center; min-width:1.5rem; height:1.5rem;
+  padding:0 var(--r1); border-radius:999px;
+  background:var(--akzent-hg); color:var(--akzent); font-weight:700; font-size:.8rem; }
+
+/* Auf schmalen Geraeten faellt die Einrueckung kleiner aus, sonst bleibt bei
+   fuenf Ebenen fuer den Namen kein Platz mehr. */
+@media (max-width:48rem) {
+  .strukturbaum:not(.wurzel) { margin-left:var(--r3); padding-left:var(--r3); }
+  .strukturbaum:not(.wurzel) > .strukturast::before {
+    left:calc(-1 * var(--r3) - 2px); width:var(--r3);
+  }
+  .strukturzweig > summary { margin-left:var(--r3); }
+  .kartenzahl .zahlwort { display:none; }   /* die Zahl samt Sinnbild genuegt */
+}
+
+/* ── Geraete unter ihrer Einheit ─────────────────────────────────────── */
+.geraetereihe { list-style:none; display:flex; flex-wrap:wrap; gap:var(--r2);
+  margin:var(--r2) 0 0 var(--r5); padding:0; }
+.geraetechip {
+  display:flex; align-items:center; gap:var(--r2);
+  padding:var(--r2) var(--r3);
+  background:var(--glas); border:1px solid var(--rand);
+  border-left:3px solid var(--rand);
+  border-radius:var(--radius-klein);
+  color:inherit; text-decoration:none; font-size:.86rem;
+  transition:border-color .15s, background .15s;
+}
+.geraetechip:hover { background:var(--akzent-hg); }
+.geraetechip:focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }
+.geraetechip.ampel-ok        { border-left-color:var(--ok); }
+.geraetechip.ampel-warnung   { border-left-color:var(--warnung); }
+.geraetechip.ampel-fehler    { border-left-color:var(--fehler); }
+.geraetechip.ampel-unbekannt { border-left-color:var(--unbekannt); }
+.chipsinnbild { display:grid; place-items:center; flex:none;
+  width:1.75rem; height:1.75rem; border-radius:6px;
+  background:var(--grund-tief); color:var(--gedaempft); }
+.chipsinnbild .sinnbild { width:1.05rem; height:1.05rem; }
+.chiptext { display:flex; flex-direction:column; line-height:1.25; }
+.chipname { font-weight:600; }
+.chipzusatz { color:var(--gedaempft); font-size:.78rem; }
+.chipampel { display:grid; place-items:center; flex:none; }
+.chipampel .sinnbild { width:1rem; height:1rem; }
+.geraetechip.ampel-ok        .chipampel { color:var(--ok); }
+.geraetechip.ampel-warnung   .chipampel { color:var(--warnung); }
+.geraetechip.ampel-fehler    .chipampel { color:var(--fehler); }
+.geraetechip.ampel-unbekannt .chipampel { color:var(--unbekannt); }
+
+/* Der Konnektor ist Technik, kein Kartenterminal - andere Grundfarbe des
+   Sinnbilds, damit die beiden Reihen sich auf einen Blick unterscheiden. */
+.konnektorchip .chipsinnbild { background:var(--akzent-hg); color:var(--akzent); }
+.konnektorchip.mitgenutzt { border-style:dashed; border-left-style:solid; }
+.konnektorchip.mitgenutzt .chipsinnbild { background:var(--grund-tief); color:var(--gedaempft); }
+
+div.geraetereihe { display:block; }
+.geraetemehr { display:inline-flex; align-items:center; gap:var(--r2);
+  padding:var(--r2) var(--r3); border:1px dashed var(--rand-bedien);
+  border-radius:var(--radius-klein); color:var(--akzent);
+  text-decoration:none; font-size:.86rem; font-weight:600; }
+.geraetemehr:hover { background:var(--akzent-hg); }
+.geraetemehr:focus-visible { outline:3px solid var(--akzent); outline-offset:2px; }
+
+@media (max-width:48rem) {
+  .geraetereihe { margin-left:var(--r3); }
+}
+
+/* Wer Bewegung reduziert haben moechte, bekommt keine (WCAG 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+  .strukturkarte { transition:none; }
+  .strukturkarte:hover { transform:none; }
+}

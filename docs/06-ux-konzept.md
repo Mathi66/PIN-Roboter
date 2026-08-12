@@ -263,3 +263,88 @@ Fall gemacht werden.
 2. **Technologie** — bleibt es bei HTMX (Empfehlung) oder soll ein Wechsel
    geprüft werden?
 3. **Reihenfolge** — Stufen 1–5 wie vorgeschlagen, oder anders priorisiert?
+
+
+---
+
+## Nachtrag 12.08.2026 — die Struktur als Bild
+
+**Vorgabe des PO:** eine grafische Darstellung der Organisationsstruktur mit
+Sinnbildern für die Entitäten und Geräte, „was Schönes fürs Auge und mit hoher
+Usability".
+
+### Warum eine zweite Sicht und nicht eine neue
+
+Die Tabelle beantwortet gut: *Welche Einheiten gibt es?* Sie beantwortet
+schlecht: *Wie hängt das zusammen, und wo klemmt es?* Seit
+[ADR-0012](adr/0012-geraetehierarchie-nach-organisationsstruktur.md) sind fünf
+Ebenen möglich; eine eingerückte Liste ist dann nicht mehr auf einen Blick zu
+erfassen.
+
+Umgekehrt ist die Tabelle das bessere Werkzeug, wenn man **sucht** statt
+**versteht** — und für Screenreader und kleine Bildschirme die nüchternere
+Darstellung. Beide bleiben deshalb erhalten, gleichwertig erreichbar über einen
+Umschalter. Die gewählte Ansicht wird im Kekserl gemerkt, damit sie einen
+Umweg über eine Detailseite überlebt.
+
+### Was auf einer Karte steht
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ [Sinnbild]  Hausarztpraxis Nordstadt              [Ampel]    │
+│             Betriebsstätte · BSNR 729900001                  │
+│             🖳 6 Kartenterminals  ▭ 1 Konnektor  👤 2 Konten  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Die **Ampel gilt für den ganzen Teilbaum** und zeigt den *schlechtesten*
+Zustand darin. Ein Mittelwert wäre gefährlich: Neunundneunzig gesunde Geräte
+dürfen ein ausgefallenes nicht grün färben. Wer auf die oberste Karte schaut,
+sieht damit, ob irgendwo im Haus etwas rot ist — ohne zu blättern.
+
+Darunter hängen die **Konnektoren** und die **Kartenterminals** als Kacheln.
+Der Konnektor steht zuerst, weil er das Bindeglied ist: Ohne ihn gibt es keine
+PIN-Automatik, egal wie gesund die Terminals aussehen. Ein **mitgenutzter**
+Konnektor ist gestrichelt umrandet und sagt es auch im Text — er gehört jemand
+anderem, und wer das nicht sieht, sucht die Zugangsdaten an der falschen Stelle.
+
+Bei den Terminals unterscheidet das Sinnbild, ob eine **SMC-B** darin steckt.
+Nur diese Geräte nimmt die Automatik überhaupt in die Hand (`A_24080`) — sonst
+wundert man sich über fünfunddreißig „stille" Terminals.
+
+### Die Entscheidungen dahinter
+
+**HTML und CSS, kein gezeichnetes Diagramm.** Ein SVG-Organigramm sieht auf
+einem Bildschirm gut aus und versagt auf jedem anderen: Es bricht nicht um,
+lässt sich nicht mit der Tastatur bedienen, skaliert nicht mit der
+Schriftgröße, und ein Screenreader findet darin keine Reihenfolge. Die Karten
+sind gewöhnliche Verweise in verschachtelten Listen; die Linien dazwischen
+zeichnet CSS. Damit ist die Ansicht ohne Zusatzaufwand tastaturbedienbar,
+vorlesbar und mit Strg+F durchsuchbar.
+
+**Kein JavaScript zum Auf- und Zuklappen.** Tiefe Ebenen stecken in
+`<details>` — einem Browserelement, das Tastatur und Screenreader von sich aus
+beherrschen. Ab der dritten Ebene wird zugeklappt; wieviel darin steckt, steht
+am zugeklappten Element, sonst klappt man blind auf.
+
+**Grenzen werden genannt, nicht verschwiegen.** Ab dreizehn Geräten je Einheit
+tritt an die Stelle der Kacheln ein Verweis in die Geräteliste — mit der
+vollständigen Zahl darin. Ein stilles Abschneiden sähe aus wie Vollständigkeit.
+
+**Eigene Symbolsammlung.** Alle Piktogramme liegen in `Symbole.java`: Raster
+24×24, Strichstärke 1,7, `currentColor`, immer `aria-hidden`. Vorher standen
+SVG-Pfade dort, wo man sie gerade brauchte — dieselbe Ursache wie bei den 142
+fehlenden Kurzhinweisen. Keine Bilddateien und keine Icon-Schrift: Das Produkt
+läuft on-premise ohne Internet, ein Symbol von einem fremden Server wäre
+zugleich Datenabfluss und Ausfallrisiko.
+
+**Farbe ist nie die einzige Aussage** (WCAG 1.4.1). Jede Ampel trägt ein eigenes
+Sinnbild und einen Text; die Legende benennt die vier Zustände in Worten. Bei
+`prefers-reduced-motion` entfällt das Anheben der Karte unter dem Zeiger.
+
+### Was das nicht ist
+
+Keine frei bewegliche Zeichenfläche mit Zoom und verschiebbaren Knoten. Das wäre
+hübscher anzusehen und in einer Praxis unbedienbar: Wer unter Zeitdruck
+nachsieht, warum ein Terminal nicht freigeschaltet ist, will nicht erst ein
+Diagramm zurechtrücken.
