@@ -40,9 +40,16 @@ public class Agentenverwaltung {
 
     public Agentenverwaltung(Datenbank db) { this.db = db; }
 
+    /**
+     * @param einrichtungBekannt ob es eine Organisationseinheit dieses Namens
+     *        gibt. Der Agent speichert die Einrichtung als <b>Text</b>; wird sie
+     *        umbenannt oder gelöscht, meldet er ins Leere — die Zentrale kann
+     *        seine Geräte dann keiner Gruppe zuordnen. Ohne dieses Merkmal
+     *        stünde der Befund nur im technischen Protokoll.
+     */
     public record Agent(long id, String bezeichnung, String einrichtung,
                         Instant zuletztGesehen, Integer protokollversion,
-                        String bausteinversion) {
+                        String bausteinversion, boolean einrichtungBekannt) {
 
         /** Ob die Zentrale mit diesem Agenten reden kann (FA-AGT-040). */
         public boolean versionUnterstuetzt() {
@@ -160,7 +167,12 @@ public class Agentenverwaltung {
                 return Optional.of(new Agent(rs.getLong("id"), rs.getString("bezeichnung"),
                         rs.getString("einrichtung"),
                         rs.getTimestamp("zuletzt_gesehen").toInstant(),
-                        version, rs.getString("bausteinversion")));
+                        version, rs.getString("bausteinversion"),
+                        // Hier nicht ermittelt: Die Tokenpruefung laeuft bei
+                        // jeder Agentmeldung und darf keine zweite Abfrage
+                        // kosten. Der Befund gehoert in die Uebersicht, nicht in
+                        // den Meldeweg.
+                        true));
             }
         } catch (SQLException e) { return Optional.empty(); }
     }
@@ -169,16 +181,19 @@ public class Agentenverwaltung {
         List<Agent> liste = new ArrayList<>();
         try (Statement s = db.verbindung().createStatement();
              ResultSet rs = s.executeQuery("""
-                     SELECT id, bezeichnung, einrichtung, zuletzt_gesehen,
-                            protokollversion, bausteinversion
-                     FROM agent WHERE aktiv ORDER BY bezeichnung""")) {
+                     SELECT a.id, a.bezeichnung, a.einrichtung, a.zuletzt_gesehen,
+                            a.protokollversion, a.bausteinversion,
+                            EXISTS (SELECT 1 FROM organisation o
+                                     WHERE o.bezeichnung = a.einrichtung) AS einr_da
+                     FROM agent a WHERE a.aktiv ORDER BY a.bezeichnung""")) {
             while (rs.next()) {
                 Timestamp t = rs.getTimestamp("zuletzt_gesehen");
                 int v = rs.getInt("protokollversion");
                 Integer version = rs.wasNull() ? null : v;   // sofort auswerten
                 liste.add(new Agent(rs.getLong("id"), rs.getString("bezeichnung"),
                         rs.getString("einrichtung"), t == null ? null : t.toInstant(),
-                        version, rs.getString("bausteinversion")));
+                        version, rs.getString("bausteinversion"),
+                        rs.getBoolean("einr_da")));
             }
         }
         catch (SQLException e) {
@@ -188,6 +203,62 @@ public class Agentenverwaltung {
             System.err.println("Agentenverwaltung.alle: " + e.getMessage());
         }
         return liste;
+    }
+
+    /**
+     * Ändert die Einrichtung eines registrierten Agenten.
+     *
+     * <p><b>Warum das möglich sein muss.</b> Ursprünglich war die Zuordnung
+     * unveränderlich — „ein Agent steht in genau einer Praxis". Das stimmt, löst
+     * aber den Fall nicht, der in der Praxis eintritt: Die Einrichtung wird
+     * umbenannt oder umstrukturiert, und weil der Agent den <em>Namen</em>
+     * speichert, meldet er ab da ins Leere. Ohne Korrekturmöglichkeit bleibt nur
+     * die Neuregistrierung — mit neuem Schlüssel und dem Verlust aller
+     * hinterlegten PINs an diesem Standort.
+     *
+     * <p>Die Änderung ist ein Sicherheitsereignis: Sie verschiebt, wohin ein
+     * Agent meldet. Sie gehört deshalb ins Fachprotokoll, und sie ist nur
+     * innerhalb des eigenen Geltungsbereichs möglich.
+     *
+     * @return Fehlertext oder {@code null} bei Erfolg
+     */
+    public String einrichtungSetzen(long agentId, String einrichtung, Geltungsbereich bereich) {
+        if (einrichtung == null || einrichtung.isBlank()) {
+            return "Bitte eine Einrichtung wählen.";
+        }
+        String name = einrichtung.trim();
+        // Die Einrichtung muss existieren UND im Bereich des Aufrufers liegen -
+        // sonst koennte jemand einen Agenten in eine fremde Einrichtung
+        // umhaengen und damit deren Geraete in seine Sicht holen.
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT count(*) FROM organisation WHERE bezeichnung = ?"
+                + bereich.bedingung("id"))) {
+            p.setString(1, name);
+            bereich.wertSetzen(db.verbindung(), p, 2);
+            try (ResultSet rs = p.executeQuery()) {
+                rs.next();
+                if (rs.getInt(1) != 1) {
+                    return "„" + name + "“ ist keine eindeutige Organisationseinheit "
+                            + "in Ihrem Zuständigkeitsbereich.";
+                }
+            }
+        } catch (SQLException e) { return "Die Einrichtung konnte nicht geprüft werden."; }
+
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE agent SET einrichtung = ? WHERE id = ? AND aktiv")) {
+            p.setString(1, name);
+            p.setLong(2, agentId);
+            return p.executeUpdate() > 0 ? null : "Diesen Agenten gibt es nicht mehr.";
+        } catch (SQLException e) { return "Die Änderung konnte nicht gespeichert werden."; }
+    }
+
+    /** Die aktuelle Einrichtung eines Agenten — für das Protokoll vor der Änderung. */
+    public String einrichtungVon(long agentId) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT einrichtung FROM agent WHERE id = ?")) {
+            p.setLong(1, agentId);
+            try (ResultSet rs = p.executeQuery()) { return rs.next() ? rs.getString(1) : null; }
+        } catch (SQLException e) { return null; }
     }
 
     public boolean widerrufen(long agentId) {

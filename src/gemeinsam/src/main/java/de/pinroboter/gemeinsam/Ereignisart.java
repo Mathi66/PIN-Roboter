@@ -108,6 +108,9 @@ public enum Ereignisart {
     AGENT_REGISTRIERUNG_ABGELEHNT("Registrierung abgelehnt", Stufe.SICHERHEIT),
     AGENT_GEHEIMNIS_ERZEUGT("Registrierungsgeheimnis erzeugt", Stufe.SICHERHEIT),
     AGENT_GETRENNT("Standort-Agent getrennt", Stufe.ROUTINE),
+    // Verschiebt, wohin ein Agent meldet - und damit, in wessen Sicht seine
+    // Geraete landen. Deshalb Sicherheitsstufe, nicht Routine.
+    AGENT_ZUGEORDNET("Standort-Agent einer Einrichtung zugeordnet", Stufe.SICHERHEIT),
 
     // --- Datensicherung (FA-BAK, ADR-0010) ---
     // Durchweg Sicherheitsstufe: Diese Einträge überleben die Rotation als

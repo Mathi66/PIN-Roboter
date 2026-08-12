@@ -397,6 +397,21 @@ jemand anderen ein** — dann kennen es zwei.
 nächsten Anmeldung neu ein. Das dürfen nur Administratoren, und es steht im
 Protokoll.
 
+### Wenn ein Agent „Einrichtung unbekannt" meldet
+
+Unter **Verwaltung → Standort-Agenten** kann bei einem Agenten der Hinweis
+**„Einrichtung unbekannt"** stehen. Dann meldet er gegen eine
+Organisationseinheit, die es nicht (mehr) gibt — meist, weil sie umbenannt
+wurde. Die Folge: Seine Geräte landen in keiner Gerätegruppe und werden nicht
+überwacht.
+
+**Zu tun:** In derselben Zeile unter „Zuordnung ändern" die richtige Einrichtung
+wählen und auf **Zuordnen** klicken. Der Hinweis verschwindet, und der Agent
+ordnet seine Geräte beim nächsten Melden wieder zu.
+
+Die Änderung steht im Protokoll: Sie verschiebt, wer die Geräte dieses Agenten
+sieht.
+
 ### Wenn jemand die Einrichtung verlässt
 
 **Deaktivieren**, nicht löschen. Das Konto kann sich nicht mehr anmelden, seine

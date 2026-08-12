@@ -267,7 +267,23 @@ public class Demodaten {
             // Dann die Zuordnung, dann die Gruppe: geraet verweist auf
             // geraetegruppe. In umgekehrter Reihenfolge scheitert das Loeschen
             // am Fremdschluessel.
+            // Und die Zeilen, die der AGENT zu Demogeräten angelegt hat. Sie
+            // tragen kein Demo-Kennzeichen, denn der Agent kennt den
+            // Unterschied nicht — er meldet, was der Konnektor ihm nennt.
+            // Blieben sie stehen, zeigte die Übersicht Geräte und Gruppen zu
+            // einem Bestand, den es nicht mehr gibt.
+            s.executeUpdate("""
+                    DELETE FROM geraet
+                    WHERE terminal_id IN (SELECT terminal_id FROM kartenterminal WHERE ist_demo)""");
+            s.executeUpdate("""
+                    DELETE FROM geraet
+                    WHERE gruppe_id IN (SELECT g.id FROM geraetegruppe g
+                                        JOIN organisation o ON o.id = g.organisation_id
+                                        WHERE o.ist_demo)""");
             s.executeUpdate("DELETE FROM geraet          WHERE ist_demo");
+            s.executeUpdate("""
+                    DELETE FROM geraetegruppe
+                    WHERE organisation_id IN (SELECT id FROM organisation WHERE ist_demo)""");
             s.executeUpdate("DELETE FROM geraetegruppe   WHERE ist_demo");
             s.executeUpdate("DELETE FROM kartenterminal WHERE ist_demo");
             s.executeUpdate("DELETE FROM arbeitsplatz   WHERE ist_demo");

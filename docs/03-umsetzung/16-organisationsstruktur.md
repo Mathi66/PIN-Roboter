@@ -200,3 +200,38 @@ der Demodatenaufbau und die Systemnachweise mussten nachgezogen werden.
 - BSNR und Telematik-ID an allen neun Betriebsstätten, an keiner anderen Ebene.
 
 Alle Werte sind erfunden; die Form stimmt, der Wert nicht.
+
+
+---
+
+## Nachtrag 12.08.2026 — der Agent und der Name seiner Einrichtung
+
+Ein Standort-Agent speichert seine Einrichtung als **Text**
+(`agent.einrichtung`), nicht als Verweis auf `organisation.id`. Wird die Einheit
+umbenannt, meldet er ab da gegen einen Namen, den es nicht gibt: Die Zentrale
+findet keine Vorgabegruppe, und seine Geräte landen in keiner Gruppe.
+
+Bis zu diesem Tag war das **unsichtbar und unbehebbar** — der Befund stand nur
+im technischen Protokoll, und die Oberfläche sagte ausdrücklich: „Sie lässt sich
+später nicht ändern; ein Agent steht in genau einer Praxis."
+
+Zwei Änderungen:
+
+1. `Agentenverwaltung.Agent` trägt jetzt `einrichtungBekannt`. Die Übersicht
+   zeigt „Einrichtung unbekannt" samt Folge („kann seine Geräte keiner Gruppe
+   zuordnen") und der Handlung.
+2. `einrichtungSetzen(agentId, einrichtung, bereich)` — mandantengebunden: Die
+   Zieleinrichtung muss existieren **und** im Geltungsbereich des Aufrufers
+   liegen. Sonst könnte jemand einen fremden Agenten in seine eigene Einrichtung
+   umhängen und damit dessen Geräte in seine Sicht holen. Ereignisart
+   `AGENT_ZUGEORDNET`, Sicherheitsstufe.
+
+Die Auswahlliste belegt die aktuelle Einrichtung vor. Ist sie unbekannt, steht
+sie als **nicht wählbarer** erster Eintrag darin („— unbekannt: … —"). Eine
+Liste, die stattdessen irgendeine Einrichtung vorbelegt, würde bei einem Klick
+auf „Zuordnen" stillschweigend die falsche setzen.
+
+> **Die eigentliche Ursache bleibt offen** und ist als technische Schuld
+> festgehalten ([Codeanalyse 3.5](../10-codeanalyse.md)): Der Text müsste ein
+> Fremdschlüssel sein. Dann überstünde die Zuordnung eine Umbenennung von
+> selbst.

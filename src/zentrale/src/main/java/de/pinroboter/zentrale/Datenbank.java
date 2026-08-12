@@ -842,6 +842,37 @@ public class Datenbank implements AutoCloseable {
             UPDATE konnektor SET art = 'HSK'
              WHERE art = 'KONNEKTOR' AND modell ILIKE '%HSK%';
             """);
+
+        // ── 25 · Ein Fremdschlüssel, der seiner eigenen Spalte widersprach ──
+        //
+        // Migration 23 setzte geraetegruppe.organisation_id auf NOT NULL: Eine
+        // Gerätegruppe ohne Organisationseinheit ist für niemanden sichtbar.
+        // Der Fremdschlüssel stand aber weiter auf ON DELETE SET NULL — die
+        // Datenbank hätte beim Löschen einer Einheit genau den Wert setzen
+        // sollen, den sie zugleich verbietet.
+        //
+        // Wirkung: Das Löschen des Demodatensatzes brach mit
+        // „null value in column organisation_id violates not-null constraint"
+        // ab, sobald der Agent eine eigene Vorgabegruppe angelegt hatte. Der
+        // Fehler war seit Migration 23 vorhanden und fiel erst am 12.08.2026
+        // auf — die Nachweise löschten immer nur Gruppen, die sie selbst
+        // angelegt hatten.
+        //
+        // Richtig ist CASCADE: Die Gruppe gehört zu ihrer Einheit. Verschwindet
+        // die Einheit, verschwindet die Gruppe — und mit ihr die
+        // Gerätezuordnungen, die ohne Gruppe keinen Sinn ergeben.
+        migration(25, """
+            ALTER TABLE geraetegruppe DROP CONSTRAINT IF EXISTS geraetegruppe_organisation_id_fkey;
+            ALTER TABLE geraetegruppe ADD CONSTRAINT geraetegruppe_organisation_id_fkey
+              FOREIGN KEY (organisation_id) REFERENCES organisation(id) ON DELETE CASCADE;
+
+            -- geraet.gruppe_id hatte gar keine Regel und hätte die Kette
+            -- blockiert. gruppe_id ist NOT NULL — eine Zuordnung ohne Gruppe
+            -- gibt es nicht, also geht die Zeile mit.
+            ALTER TABLE geraet DROP CONSTRAINT IF EXISTS geraet_gruppe_id_fkey;
+            ALTER TABLE geraet ADD CONSTRAINT geraet_gruppe_id_fkey
+              FOREIGN KEY (gruppe_id) REFERENCES geraetegruppe(id) ON DELETE CASCADE;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

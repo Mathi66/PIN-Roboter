@@ -2738,3 +2738,72 @@ Zwei Änderungen: Der Testschritt heißt jetzt `mvn package` statt `mvn test`, b
 also die Artefakte, die anschließend geprüft werden. Und ein eigener Nachweis
 vergleicht das Alter des JARs mit dem der jüngsten Quelldatei. Ein stiller
 Fehlschlag beim Bauen bleibt damit nicht länger unsichtbar.
+
+---
+
+## „Demodatensatz löschen geht nicht" — zwei Fehler dahinter
+
+Befund des PO, unmittelbar nachdem der neue Stack lief. Dahinter steckten zwei
+unabhängige Fehler, beide älter als der gestrige Umbau.
+
+### 1. Ein Fremdschlüssel, der seiner eigenen Spalte widersprach
+
+```
+null value in column "organisation_id" of relation "geraetegruppe"
+  violates not-null constraint
+Where: UPDATE ONLY "geraetegruppe" SET "organisation_id" = NULL
+```
+
+Migration 23 hatte `geraetegruppe.organisation_id` auf **NOT NULL** gesetzt —
+richtig, denn eine Gerätegruppe ohne Organisationseinheit ist für niemanden
+sichtbar. Der Fremdschlüssel stand aber weiterhin auf **ON DELETE SET NULL**.
+Die Datenbank sollte beim Löschen einer Einheit genau den Wert setzen, den sie
+zugleich verbietet.
+
+Warum das nicht auffiel: Die Nachweise löschten immer nur Gruppen, die sie
+selbst angelegt hatten. Der Fehler braucht eine Gruppe, die **der Agent**
+erzeugt — und die entsteht erst, wenn ein Agent längere Zeit gegen einen
+Demobestand läuft. Genau die Konstellation auf dem Rechner des PO.
+
+Migration 25 setzt beide Fremdschlüssel auf `CASCADE`: `geraetegruppe →
+organisation` und `geraet → geraetegruppe`. Die Gruppe gehört zu ihrer Einheit;
+verschwindet die Einheit, verschwindet die Gruppe.
+
+### 2. Die Löschroutine räumte nur ihre eigenen Zeilen weg
+
+`DELETE FROM geraet WHERE ist_demo` — aber die Zeilen, die der Agent zu
+Demogeräten anlegt, tragen **kein** Demo-Kennzeichen. Er kennt den Unterschied
+nicht; er meldet, was der Konnektor ihm nennt. Bei `pin_hinterlegt` war das
+schon bedacht (dort wird über das Kartenhandle aufgeräumt), bei `geraet` und
+`geraetegruppe` nicht.
+
+### Der Folgefund: ein Agent, der ins Leere meldet
+
+Im Protokoll standen hunderte Zeilen:
+
+> Gerät KT-MHAU-B3 konnte der Einrichtung „Kardiologie Nord" nicht zugeordnet
+> werden.
+
+Der Agent war am 10.08. auf „Kardiologie Nord" registriert. Diese Einrichtung
+gibt es seit dem MVZ-Szenario nicht mehr — und **der Agent speichert den Namen,
+nicht die Kennung**. Dasselbe Muster wie beim fest verdrahteten „Praxis": Ein
+Text, der eine Beziehung tragen soll.
+
+In der Oberfläche sah alles normal aus. Zwei Änderungen:
+
+- Die Agentenübersicht **kennzeichnet** einen Agenten, dessen Einrichtung es
+  nicht gibt, und sagt, was die Folge ist: Er kann seine Geräte keiner Gruppe
+  zuordnen.
+- Die Zuordnung ist **änderbar**. Bisher stand in der Oberfläche: „Sie lässt
+  sich später nicht ändern; ein Agent steht in genau einer Praxis." Der Satz
+  stimmt fachlich, führte im Fehlerfall aber in eine Sackgasse — es blieb nur
+  die Neuregistrierung, mit neuem Schlüssel und dem Verlust aller dort
+  hinterlegten PINs. Die Änderung ist mandantengebunden geprüft und steht als
+  `AGENT_ZUGEORDNET` auf der Sicherheitsstufe im Fachprotokoll: Sie verschiebt,
+  in wessen Sicht die Geräte eines Agenten landen.
+
+**Was offen bleibt (technische Schuld, bewusst aufgenommen):** `agent.einrichtung`
+sollte ein Fremdschlüssel auf `organisation` sein, kein Text. Dann überstünde die
+Zuordnung eine Umbenennung von selbst, und ein Löschen wäre nicht stillschweigend
+möglich. Der Umbau berührt Registrierung, Meldeweg, Alarme und Protokoll und
+gehört in einen eigenen Schritt.

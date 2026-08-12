@@ -852,6 +852,37 @@ IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
 [ "$IST" = "36" ] && R=ja || R=nein
 ergebnis "Demodatensatz laesst sich wiederherstellen ($IST von 36)" "$R"
 
+# Der Befund vom 12.08.2026: Der Agent legt zu gemeldeten Demogeraeten eigene
+# Zeilen in geraet und geraetegruppe an - ohne Demo-Kennzeichen, denn er kennt
+# den Unterschied nicht. Das Loeschen brach daran ab:
+#   null value in column "organisation_id" of relation "geraetegruppe"
+# Ursache war ein Fremdschluessel ON DELETE SET NULL auf einer NOT-NULL-Spalte
+# (Migration 23 gegen Migration 25).
+DEMO_ORG=$(sql "SELECT id FROM organisation WHERE ist_demo AND art='EINRICHTUNG'
+                ORDER BY id LIMIT 1")
+docker exec pr-db psql -U pinroboter -d pinroboter -c \
+  "INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
+        pruefintervall_sekunden, organisation_id, ist_demo)
+   SELECT 'Nachweis Agentengruppe', o.bezeichnung, FALSE, 60, o.id, FALSE
+   FROM organisation o WHERE o.id = $DEMO_ORG" >/dev/null 2>&1
+docker exec pr-db psql -U pinroboter -d pinroboter -c \
+  "INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung, aktiv, ist_demo)
+   SELECT 'KT-NACHWEIS-AGENT', 'egal', g.id, 'Vom Agenten gemeldet', TRUE, FALSE
+   FROM geraetegruppe g WHERE g.bezeichnung = 'Nachweis Agentengruppe'" >/dev/null 2>&1
+
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/loeschen
+IST=$(sql "SELECT count(*) FROM organisation WHERE ist_demo")
+[ "$IST" = "0" ] && R=ja || R=nein
+ergebnis "Loeschen gelingt auch mit Gruppen, die der Agent angelegt hat (Rest: $IST)" "$R"
+IST=$(sql "SELECT count(*) FROM geraetegruppe WHERE bezeichnung='Nachweis Agentengruppe'")
+[ "$IST" = "0" ] && R=ja || R=nein
+ergebnis "eine Gruppe ohne ihre Einrichtung bleibt nicht zurueck ($IST)" "$R"
+
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/anlegen
+IST=$(sql "SELECT count(*) FROM kartenterminal WHERE ist_demo")
+[ "$IST" = "36" ] && R=ja || R=nein
+ergebnis "und danach steht der Demobestand wieder ($IST von 36)" "$R"
+
 docker exec pr-db psql -U pinroboter -d pinroboter -c \
   "DELETE FROM organisation WHERE bezeichnung='Nachweis Echtdaten'" >/dev/null 2>&1
 
@@ -2938,6 +2969,42 @@ GESEHEN_NACH=$(sqltext "SELECT coalesce(zuletzt_gesehen::text,'-') FROM agent WH
 [ "$GESEHEN_VOR" != "$GESEHEN_NACH" ] && AX=ja || AX=nein
 ergebnis "der Agent wird nicht abgewiesen und meldet weiter" "$AX"
 rm -f /tmp/pr-agt-v.html /tmp/pr-agt-v2.html
+
+# ── Die Zuordnung eines Agenten korrigieren (12.08.2026) ─────────────────
+# Der Agent speichert seine Einrichtung als TEXT. Wird sie umbenannt, meldet er
+# ins Leere: keine Vorgabegruppe, keine Zuordnung seiner Geraete. Bis zu diesem
+# Tag stand das nur im technischen Protokoll, und aendern liess es sich gar
+# nicht - es blieb nur die Neuregistrierung samt Verlust aller PINs.
+AID3=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
+ALT_EINR=$(sqltext "SELECT einrichtung FROM agent WHERE id = $AID3")
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "UPDATE agent SET einrichtung = 'Praxis von gestern' WHERE id = $AID3" >/dev/null
+
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-agt-e.html
+[ "$(enthaelt /tmp/pr-agt-e.html "Einrichtung unbekannt")" = "ja" ] && AE=ja || AE=nein
+ergebnis "die Uebersicht kennzeichnet einen Agenten ohne gueltige Einrichtung" "$AE"
+[ "$(enthaelt /tmp/pr-agt-e.html "keiner Gruppe zuordnen")" = "ja" ] && AE2=ja || AE2=nein
+ergebnis "sie sagt, was die Folge ist" "$AE2"
+
+# Eine Einrichtung, die es nicht gibt, darf nicht durchgehen.
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/agenten/$AID3/einrichtung" \
+  --data-urlencode "einrichtung=Gibt es nicht"
+[ "$(sqltext "SELECT einrichtung FROM agent WHERE id = $AID3")" = "Praxis von gestern" ] \
+  && AE3=ja || AE3=nein
+ergebnis "eine unbekannte Einrichtung wird abgelehnt" "$AE3"
+
+curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/agenten/$AID3/einrichtung" \
+  --data-urlencode "einrichtung=$ALT_EINR"
+[ "$(sqltext "SELECT einrichtung FROM agent WHERE id = $AID3")" = "$ALT_EINR" ] && AE4=ja || AE4=nein
+ergebnis "die Zuordnung laesst sich ueber die Oberflaeche korrigieren" "$AE4"
+[ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_ZUGEORDNET'")" != "0" ] \
+  && AE5=ja || AE5=nein
+ergebnis "die Zuordnung steht im Fachprotokoll (Sicherheitsstufe)" "$AE5"
+
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-agt-e2.html
+[ "$(enthaelt /tmp/pr-agt-e2.html "Einrichtung unbekannt")" = "nein" ] && AE6=ja || AE6=nein
+ergebnis "nach der Korrektur ist die Kennzeichnung verschwunden" "$AE6"
+rm -f /tmp/pr-agt-e.html /tmp/pr-agt-e2.html
 
 hinweis "FA-INS-040 — nach der Wiederherstellung ist ersichtlich, was fehlt"
 

@@ -103,6 +103,16 @@ KID_A=$(curl -s -b "$KEKSE" $BASIS/bestand \
 curl -s -b "$KEKSE" $BASIS/bestand/konnektor/neu > "$SEITEN/konnektor-neu.html"
 curl -s -b "$KEKSE" $BASIS/bestand/terminal/neu  > "$SEITEN/terminal-neu.html"
 
+# Bedingte Seiten (Zeitstrahl, Vorgang) entstehen nur, wenn es Daten dafuer
+# gibt. Bisher verschwanden sie stillschweigend - und die Zahl geprüfter Seiten
+# schwankte, ohne dass jemand wusste, warum. Eine ungeprüfte Seite muss man
+# sehen, sonst hält man die Prüfung für vollständiger, als sie ist.
+for erwartet in zeitstrahl vorgang organisation-betriebsstaette konnektor-detail; do
+  [ -s "$SEITEN/$erwartet.html" ] || \
+    printf '  \033[33mNICHT GEPRUEFT\033[0m  %s — die Seite war im Prüfaufbau nicht erreichbar\n' \
+      "$erwartet"
+done
+
 ANZ=$(ls "$SEITEN" | wc -l | tr -d ' ')
 
 if docker run --rm -v "$PWD/pruefungen/barrierefreiheit":/p -v "$SEITEN":/seiten:ro \

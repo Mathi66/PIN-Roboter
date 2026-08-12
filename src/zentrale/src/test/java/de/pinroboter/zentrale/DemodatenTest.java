@@ -244,4 +244,49 @@ class DemodatenTest {
         assertEquals(gesamt, zaehle("SELECT count(*) FROM kartenterminal "
                 + "WHERE ist_demo AND admin_chiffrat IS NULL"));
     }
+
+    @Test @Order(11)
+    @DisplayName("Löschen räumt auch auf, was der Agent zu Demogeräten angelegt hat")
+    void loeschenRaeumtAgentzeilen() throws Exception {
+        // Der Befund vom 12.08.2026: Der Agent legt zu gemeldeten Geräten Zeilen
+        // in geraet und geraetegruppe an — OHNE Demo-Kennzeichen, denn er kennt
+        // den Unterschied nicht. Das Löschen blieb daran hängen:
+        // „null value in column organisation_id violates not-null constraint".
+        if (dd.bestand().vorhanden()) dd.loeschen();
+        new Demodaten(db, null).anlegen();
+
+        long org = zaehle("SELECT id FROM organisation WHERE ist_demo AND art='EINRICHTUNG' "
+                + "ORDER BY id LIMIT 1");
+        String terminal = ersteDemoKennung();
+        try (Statement s = db.verbindung().createStatement()) {
+            s.executeUpdate("""
+                    INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
+                            pruefintervall_sekunden, organisation_id, ist_demo)
+                    SELECT 'Vom Agenten angelegt', o.bezeichnung, FALSE, 60, o.id, FALSE
+                    FROM organisation o WHERE o.id = %d""".formatted(org));
+            s.executeUpdate("""
+                    INSERT INTO geraet (terminal_id, einrichtung, gruppe_id, bezeichnung,
+                            aktiv, ist_demo)
+                    SELECT '%s-AGENT', 'egal', g.id, 'Vom Agenten gemeldet', TRUE, FALSE
+                    FROM geraetegruppe g WHERE g.bezeichnung = 'Vom Agenten angelegt'"""
+                    .formatted(terminal));
+        }
+
+        dd.loeschen();
+
+        assertEquals(0, zaehle("SELECT count(*) FROM geraetegruppe "
+                + "WHERE bezeichnung = 'Vom Agenten angelegt'"),
+                "Eine Gruppe ohne ihre Organisationseinheit wäre für niemanden sichtbar");
+        assertEquals(0, zaehle("SELECT count(*) FROM organisation WHERE ist_demo"));
+        assertEquals(0, zaehle("SELECT count(*) FROM geraet WHERE bezeichnung = 'Vom Agenten gemeldet'"));
+    }
+
+    /** Die Kennung eines beliebigen Demo-Terminals. */
+    private String ersteDemoKennung() throws SQLException {
+        try (Statement s = db.verbindung().createStatement();
+             ResultSet rs = s.executeQuery(
+                     "SELECT terminal_id FROM kartenterminal WHERE ist_demo ORDER BY id LIMIT 1")) {
+            return rs.next() ? rs.getString(1) : "KT-UNBEKANNT";
+        }
+    }
 }

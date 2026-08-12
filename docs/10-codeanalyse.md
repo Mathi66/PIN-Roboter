@@ -183,6 +183,32 @@ zu FA-GER-010 und nicht in ein UX-Refactoring.
 
 ---
 
+### 3.5 `agent.einrichtung` ist ein Text, keine Beziehung
+
+Ein Standort-Agent speichert seine Einrichtung als **Namen**:
+
+```sql
+agent (id, bezeichnung, einrichtung TEXT, ...)
+```
+
+Wird die Organisationseinheit umbenannt oder gelöscht, meldet der Agent ins
+Leere: Die Zentrale findet keine Vorgabegruppe und kann seine Geräte keiner
+Gruppe zuordnen. Am 12.08.2026 genau so eingetreten — nach dem Wechsel auf das
+MVZ-Szenario meldete ein Agent hunderte Male gegen eine Einrichtung, die es
+nicht mehr gab.
+
+**Was getan wurde:** Die Übersicht kennzeichnet den Zustand jetzt, und die
+Zuordnung lässt sich korrigieren (`AGENT_ZUGEORDNET`, Sicherheitsstufe).
+
+**Was offen bleibt:** Ein Fremdschlüssel auf `organisation` statt des Textes.
+Dann überstünde die Zuordnung eine Umbenennung von selbst, und die Datenbank
+verhinderte ein Löschen, das den Agenten abhängt. Der Umbau berührt
+Registrierung, Meldeweg, Alarme und Fachprotokoll — und die Frage, was mit
+Agenten geschieht, die auf eine gelöschte Einheit zeigen.
+
+> Es ist dasselbe Muster wie beim fest verdrahteten „Praxis": Ein Text, der eine
+> Beziehung tragen soll. Er sieht so lange richtig aus, bis jemand umbenennt.
+
 ## 4. Was gut ist und so bleiben soll
 
 Damit ein späterer Umbau nicht versehentlich zerstört, was trägt:
@@ -222,11 +248,13 @@ Hälfte.
    Mengengerüsts.
 3. **`Verwaltungsseiten` auslagern**, mit Datenträger statt Parameterliste. Dann
    dieselbe Bauweise für Lage, Gruppen und Protokoll.
-4. **Kalibrierung an echter Hardware** ([ADR-0007](adr/0007-simulierte-endpunkte-und-teststrategie.md))
+4. **`agent.einrichtung` in einen Fremdschlüssel überführen** (3.5) — solange es
+   ein Text ist, zerreißt jede Umbenennung die Zuordnung eines Agenten.
+5. **Kalibrierung an echter Hardware** ([ADR-0007](adr/0007-simulierte-endpunkte-und-teststrategie.md))
    — unverändert der wichtigste offene Punkt des ganzen Projekts. Alle Nachweise
    laufen bislang gegen den selbstgebauten Simulator. Besonders offen: ob ein
    echter KoCo-Konnektor den KSR-Zustand im `GetPinStatus` meldet oder nur als
    Ereignis.
 
-Punkt 4 wiegt schwerer als 1 bis 3 zusammen. Alles andere ist Handwerk; dieser
+Punkt 5 wiegt schwerer als 1 bis 4 zusammen. Alles andere ist Handwerk; dieser
 Punkt entscheidet, ob das Produkt in der Realität funktioniert.

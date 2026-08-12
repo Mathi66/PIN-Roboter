@@ -1146,11 +1146,22 @@ public class Zentrale {
                 + "Registrierte Standort-Agenten mit Protokollversion</caption><thead><tr>"
                 + "<th scope=\"col\">Agent</th><th scope=\"col\">Einrichtung</th>"
                 + "<th scope=\"col\">Protokoll</th><th scope=\"col\">Baustein</th>"
-                + "<th scope=\"col\">Zuletzt gesehen</th></tr></thead><tbody>");
+                + "<th scope=\"col\">Zuletzt gesehen</th>"
+                + "<th scope=\"col\">Zuordnung ändern</th></tr></thead><tbody>");
         for (var a : liste) {
             String bewertung = a.versionsbewertung();
             s.append("<tr><td class=\"geraet\">").append(esc(a.bezeichnung())).append("</td>")
-             .append("<td>").append(esc(nz(a.einrichtung()))).append("</td><td>")
+             .append("<td>").append(esc(nz(a.einrichtung())))
+             // Der Agent speichert den NAMEN der Einrichtung. Wird sie
+             // umbenannt oder geloescht, meldet er ins Leere: Seine Geraete
+             // landen in keiner Gruppe. Bis zum 12.08.2026 stand das nur im
+             // technischen Protokoll - in der Oberflaeche sah alles normal aus.
+             .append(a.einrichtungBekannt() ? "" : """
+                     <div class="handlung"><span class="marke warnung">Einrichtung unbekannt</span>
+                       <div>Es gibt keine Organisationseinheit dieses Namens. Dieser Agent kann
+                          seine Geräte keiner Gruppe zuordnen. Bitte unten die richtige
+                          Einrichtung wählen.</div></div>""")
+             .append("</td><td>")
              .append(a.protokollversion() == null
                      ? "<span class=\"marke unbekannt\">noch nicht gemeldet</span>"
                      : a.versionUnterstuetzt() && bewertung == null
@@ -1165,6 +1176,18 @@ public class Zentrale {
                      : esc(java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm")
                             .withZone(java.time.ZoneId.systemDefault())
                             .format(a.zuletztGesehen())))
+             .append("</td><td>")
+             .append("""
+                     <form method="post" action="/agenten/%d/einrichtung" class="inlineform">
+                       <label class="nurLeser" for="ag-e-%d">Einrichtung von %s</label>
+                       <select id="ag-e-%d" name="einrichtung" required>%s</select>
+                       <button class="knopf klein" type="submit"
+                               title="Ordnet diesen Standort-Agenten einer anderen Einrichtung zu"
+                               aria-label="Einrichtung von %s ändern">Zuordnen</button>
+                     </form>"""
+                     .formatted(a.id(), a.id(), esc(a.bezeichnung()), a.id(),
+                             einrichtungsoptionen(bereich, a.einrichtung()),
+                             esc(a.bezeichnung())))
              .append("</td></tr>");
         }
         s.append("</tbody></table></div>");
@@ -1431,6 +1454,32 @@ public class Zentrale {
         return Bestandsseiten.konnektorMaske(k, ermittlung.aufrufkontextAuswahl(), fehler,
                 bestand.darfKonnektorVerwalten(k.id(), bereich(c)),
                 bestand.konnektorNutzer(k.id()), bestand.betriebsstaetten(bereich(c)));
+    }
+
+    /**
+     * Auswahl der Organisationseinheiten mit Vorbelegung — für die Zuordnung
+     * eines Standort-Agenten.
+     *
+     * <p>Ist die gespeicherte Einrichtung unbekannt (umbenannt oder gelöscht),
+     * steht sie als <b>nicht wählbarer</b> erster Eintrag darin. Sonst zeigte
+     * das Feld eine beliebige Einrichtung, und ein Klick auf „Zuordnen" würde
+     * den Agenten stillschweigend woandershin hängen.
+     */
+    private String einrichtungsoptionen(Geltungsbereich bereich, String gewaehlt) {
+        var liste = bestand.organisationen(bereich);
+        boolean bekannt = gewaehlt != null
+                && liste.stream().anyMatch(o -> o.bezeichnung().equals(gewaehlt));
+        StringBuilder s = new StringBuilder();
+        if (!bekannt) {
+            s.append("<option value=\"\" disabled selected>— unbekannt: ")
+             .append(esc(nz(gewaehlt))).append(" —</option>");
+        }
+        for (var o : liste) {
+            s.append("<option value=\"").append(esc(o.bezeichnung())).append("\"")
+             .append(o.bezeichnung().equals(gewaehlt) ? " selected" : "").append(">")
+             .append(esc(o.bezeichnung())).append("</option>");
+        }
+        return s.toString();
     }
 
     private String einrichtungsauswahl(Context c) {
@@ -4013,6 +4062,32 @@ public class Zentrale {
         });
 
         // Erzeugt ein Registrierungsgeheimnis. Nur für angemeldete Administratoren.
+        // Die Einrichtung eines Agenten korrigieren. Bis zum 12.08.2026 war sie
+        // unveraenderlich - eine Selbstbeschraenkung, die im Fehlerfall in eine
+        // Sackgasse fuehrte: Wird die Einrichtung umbenannt, meldet der Agent
+        // ins Leere, und es bliebe nur die Neuregistrierung samt Verlust aller
+        // dort hinterlegten PINs.
+        app.post("/agenten/{id}/einrichtung", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(),
+                    "Das Zuordnen von Standort-Agenten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            String neuE = Anmeldeseiten.feld(c, "einrichtung");
+            String alt = agenten.einrichtungVon(id);
+            String fehler = agenten.einrichtungSetzen(id, neuE, bereich(c));
+            if (fehler == null) {
+                // Sicherheitsstufe: Die Aenderung verschiebt, wohin ein Agent
+                // meldet - und damit, in wessen Sicht seine Geraete landen.
+                protokoll.anfuegen(neuE, null, Ereignisart.AGENT_ZUGEORDNET, true,
+                        angemeldeter(c).anzeigename(), null,
+                        "Standort-Agent von „" + nz(alt) + "“ nach „" + neuE.trim()
+                                + "“ zugeordnet",
+                        "Alles, was dieser Agent meldet, gehört ab sofort zur neuen "
+                        + "Einrichtung. Bereits protokollierte Ereignisse bleiben, wo sie sind.");
+            }
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
+                    angemeldeter(c)));
+        });
+
         app.post("/agenten/geheimnis", c -> {
             var angemeldet = angemeldeter(c);
             if (angemeldet == null || angemeldet.rolle() != Benutzerverwaltung.Rolle.ADMINISTRATOR) {
