@@ -1,7 +1,7 @@
 # Übergabe an DevOps — PIN-Roboter auf Labs
 
 **Antwort auf:** Anforderungen an die Anwendung „PIN-Roboter" (DevOps, 12.08.2026)
-· **Stand:** 13.08.2026 · **Version:** 0.2.0
+· **Stand:** 13.08.2026 · **Version:** 0.3.0
 
 Alle Angaben sind **gemessen**, nicht geschätzt: an einem Container, der mit
 euren Vorgaben gestartet wurde (`read_only`, `cap_drop: ALL`,
@@ -167,7 +167,7 @@ stört das den Betrieb auf Labs nicht.
 | `pids_limit` | 512 für die Anwendung, 256 für die Datenbank |
 | fester Port, nur `expose` | 8090, `deploy/labs/docker-compose.yml` öffnet keinen Host-Port |
 | kein TLS im Container | die Zentrale spricht HTTP |
-| `/health` ohne Anmeldung, mit Version | `{"status":"ok","db":true,"version":"0.2.0"}`, 503 wenn die Datenbank fehlt |
+| `/health` ohne Anmeldung, mit Version | `{"status":"ok","db":true,"version":"0.3.0"}`, 503 wenn die Datenbank fehlt |
 | `HEALTHCHECK` im Image, ohne curl/wget | `docker/gesundheit.sh`, bash `/dev/tcp` |
 | Protokoll nach stdout | keine Logdateien im Container |
 | SIGTERM ≤ 10 s | **gemessen: 1 s** |
@@ -225,14 +225,14 @@ halber.
 ## 7. Übergabe für den ersten Rollout
 
 ```
-PIN-Roboter – Deploy v0.2.0 auf Labs
-Image:               ghcr.io/mathi66/pin-roboter:0.2.0
+PIN-Roboter – Deploy v0.3.0 auf Labs
+Image:               ghcr.io/mathi66/pin-roboter:0.3.0
 Schema-Änderung:     ja (läuft automatisch beim Start, idempotent, nicht umkehrbar)
 Neue Env:            DB_PASSWORD (Pflicht), GEHEIMNIS_SCHLUESSEL (Pflicht),
                      PROTOKOLL_BUDGET, SICHERUNG_ABLAGE, SICHERUNG_PLAN,
                      START_ADMIN_* (nur zur Ersteinrichtung)
 Prüfung danach:      curl -s https://pin-roboter.lab.vps.nieting.de/health
-                     → {"status":"ok","db":true,"version":"0.2.0"}
+                     → {"status":"ok","db":true,"version":"0.3.0"}
                      Anmeldeseite erreichbar, Protokoll zeigt „Migration 27 angewendet"
 Rückfall:            keiner (Erstinstallation) — bei Fehlschlag Stack anhalten,
                      Volume pinroboter-db verwerfen, erneut starten
