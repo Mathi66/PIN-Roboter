@@ -3590,3 +3590,62 @@ gemacht habe.
 Paket). Systemnachweis `FA-AGT-100` geschrieben. Am laufenden Stack durchgespielt:
 angefordert, vom Agenten abgeholt, mit verständlichem Grund gescheitert,
 Erfolgsfall verifiziert, Fachprotokoll vollständig.
+
+### Das Handbuch gehört ins Produkt
+
+Ein Handbuch, das man erst suchen muss, wird nicht gelesen. In einer Praxis
+unter Zeitdruck entscheidet sich in Sekunden, ob jemand nachschlägt oder rät.
+Der zweite Grund wiegt schwerer: Ein beiliegendes PDF beschreibt nach der
+ersten Aktualisierung eine andere Software als die, die läuft.
+
+Also sechzehn Kapitel als eigener Navigationspunkt, gegliedert **nach
+Leserkreis** statt nach Systemteil: *Verstehen* für den, der entscheidet,
+*Bedienen* für die Praxis, *Betreiben* für den Administrator. Eine Gliederung
+nach „Zentrale, Agent, Datenbank" wäre für mich bequemer und für jeden Leser
+falsch — niemand hat eine Frage zu einem Systemteil.
+
+Fünf Zeichnungen erklären Verfahren, Zustände, Aufbau, Mandantenstruktur und
+den Weg der PIN. Eingebettet, nicht nachgeladen: Die Agenten stehen in Netzen
+ohne Internetzugang, und ein fehlendes Bild ist schlimmer als keines. Sie
+nehmen die Farbtokens der Oberfläche an und tragen Beschreibungen, die dasselbe
+sagen wie das Bild.
+
+Die Suche läuft serverseitig — damit sie ohne JavaScript funktioniert. Mit
+JavaScript reagiert dasselbe Feld beim Tippen, über `hx-select`: Der Server
+liefert immer die ganze Seite, HTMX nimmt sich den Ausschnitt. **Ein** Weg
+statt zweier, die auseinanderlaufen.
+
+### Neunzehn Anführungszeichen auf einmal
+
+Beim Schreiben ist mir zum vierten Mal an zwei Tagen derselbe Fehler passiert:
+`„Wort"` — typografisch geöffnet, gerade geschlossen. In Java schließt das
+einen String, in einem HTML-Attribut zerlegt es die Seite. Bei sechzehn
+Kapiteln entstanden davon neunzehn Stück.
+
+Diesmal habe ich nicht nur repariert. Es gibt jetzt einen Test, der pro Kapitel
+zählt, und einen zweiten, der die HTML-Elemente auf Balance prüft. **Beide
+gegengeprüft durch Sabotage** — Fehler absichtlich eingebaut, nachgesehen, ob
+sie rot werden. Sie werden es.
+
+Dabei ist übrigens die erste Sabotage ins Leere gelaufen: Mein Suchtext kam im
+Quelltext gar nicht vor, die Datei blieb unverändert, und der Test blieb grün.
+Hätte ich das nicht nachgeprüft, hätte ich einen blinden Test für geprüft
+gehalten. Der zweite Anlauf hat mit einer Zusicherung gearbeitet, dass der
+Suchtext existiert.
+
+### Und ein Nachweis, der etwas anderes maß
+
+Der Systemnachweis sollte zählen, ob jede Zeichnung eine Beschreibung trägt.
+Er zählte `<svg` — und fand vier statt einer, weil die Navigationsicons in der
+Seitenleiste ebenfalls SVG sind. Aufgefallen, weil ich ihn vor dem Committen
+einmal von Hand gegen den laufenden Stack laufen ließ. Jetzt zählt er
+`class="hb-svg"`.
+
+Das ist derselbe Fehler wie gestern mit `*verifiziert*`, das auch „nicht
+verifiziert" traf. Ein Nachweis, der grün ist und nichts misst, ist schlechter
+als keiner.
+
+**Belegt:** 373 Modultests grün (16 neu fürs Handbuch). axe-core über 24 Seiten
+ohne Befund, Kontraste bestanden. Im Browser gemessen: keine Textüberlappung in
+den fünf Zeichnungen, kein seitliches Rollen auf dem Tablet, Live-Suche liefert
+sieben Treffer mit Hervorhebung und aktualisierter Adresse.

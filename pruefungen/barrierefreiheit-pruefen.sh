@@ -54,7 +54,10 @@ curl -s $BASIS/anmelden  > "$SEITEN/anmelden.html"
 curl -s $BASIS/einladung > "$SEITEN/einladung.html"
 for paar in "uebersicht:/" "geraete:/geraete" "bestand:/bestand" "gruppen:/gruppen" \
             "benutzer:/benutzer" "verwaltung:/verwaltung" "protokoll:/protokoll" \
-            "ermittelt:/bestand/ermittelt" "organisation:/organisation"; do
+            "ermittelt:/bestand/ermittelt" "organisation:/organisation" \
+            "handbuch:/handbuch" "handbuch-tabelle:/handbuch/alarme" \
+            "handbuch-glossar:/handbuch/begriffe" \
+            "handbuch-suche:/handbuch/suche?q=PIN"; do
   curl -s -b "$KEKSE" "$BASIS${paar#*:}" > "$SEITEN/${paar%%:*}.html"
 done
 # Zwei Zustaende, die im Grundaufruf nicht entstehen und deshalb sonst

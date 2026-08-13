@@ -159,6 +159,12 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-AGT-100` Aktualisierung steuern und verifizieren <br><span style="opacity:.7">SOLL</span> |  | Laufende und verfügbare Version je Agent, gezielter Anstoß auf eine gewählte Version, höchstens ein offener Auftrag. **Verifiziert wird über die Wirkung**: erfolgreich erst, wenn der Agent sich mit der Zielversion wiedermeldet. Frist 10 min, abbrechbar, alles im Fachprotokoll. [Umsetzung 36](03-umsetzung/36-agent-updatesteuerung.md) |
 | **✔** | `FA-AGT-090` Stumme und veraltete Agenten <br><span style="opacity:.7">MUSS</span> |  | Minutentakt in der Zentrale: stumm ab 15 min (kritisch), veraltet ab 3 Tagen bei eingeschalteter Weitergabe (Warnung). Beide schließen sich selbst. Am laufenden Stack provoziert und aufgelöst |
 
+## A.13 Anwenderdokumentation (FA-DOK)
+
+| | Anforderung | Hardware | Stand |
+|---|---|---|---|
+| **✔** | `FA-DOK-010` Handbuch in der Oberfläche <br><span style="opacity:.7">SOLL</span> |  | 16 Kapitel in drei Teilen (Verstehen, Bedienen, Betreiben), fünf eingebettete Zeichnungen, serverseitige Suche mit Trefferauszug und Hervorhebung — auch ohne JavaScript. Eigener Navigationspunkt. axe-core ohne Befund. [Umsetzung 37](03-umsetzung/37-handbuch.md) |
+
 ## A.12 Datensicherung (FA-BAK)
 
 | | Anforderung | Hardware | Stand |

@@ -3908,6 +3908,92 @@ docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
   "DELETE FROM agent_aktualisierung WHERE agent_id=$AID" >/dev/null
 rm -f /tmp/pr-au*.html
 
+# ---------------------------------------------------------------- FA-DOK-010
+# Das Handbuch in der Oberflaeche (PO, 13.08.2026).
+#
+# Geprueft wird nicht, ob der Text gut ist — das kann kein Skript. Geprueft
+# wird, dass jedes Kapitel erreichbar ist, die Suche findet und ordnet, und
+# dass die Auszeichnung unversehrt beim Nutzer ankommt.
+hinweis "FA-DOK-010 — Handbuch in der Oberflaeche"
+
+curl -s -b "$KEKSE" $BASIS/handbuch -o /tmp/pr-hb.html
+[ "$(enthaelt /tmp/pr-hb.html "hb-verzeichnis")" = "ja" ] && HB=ja || HB=nein
+ergebnis "das Handbuch ist erreichbar" "$HB"
+[ "$(enthaelt /tmp/pr-hb.html ">Handbuch<")" = "ja" ] && HB2=ja || HB2=nein
+ergebnis "es steht als eigener Punkt in der Navigation" "$HB2"
+
+# Alle Kapitel — ein Verweis ins Leere ist in einem Nachschlagewerk das
+# Aergerlichste, was passieren kann.
+KAP=0; KAP_FEHL=0
+for k in ueberblick verfahren aufbau organisation sicherheit erste-schritte \
+         lage alarme pins gruppen protokoll inbetriebnahme agenten sicherung \
+         stoerungen begriffe; do
+  C=$(curl -s -b "$KEKSE" -o /tmp/pr-hbk.html -w '%{http_code}' $BASIS/handbuch/$k)
+  KAP=$((KAP+1))
+  [ "$C" = "200" ] || { KAP_FEHL=$((KAP_FEHL+1)); echo "    $k -> HTTP $C"; }
+  # Ein unaufgeloester Platzhalter stuende sichtbar im Text.
+  [ "$(enthaelt /tmp/pr-hbk.html "%s")" = "nein" ] || {
+    KAP_FEHL=$((KAP_FEHL+1)); echo "    $k enthaelt einen Platzhalter"; }
+done
+[ $KAP_FEHL -eq 0 ] && HC=ja || HC=nein
+ergebnis "alle $KAP Kapitel sind abrufbar und vollstaendig gefuellt" "$HC"
+
+# Ein unbekanntes Kapitel darf keine Fehlerseite zeigen, sondern zurueck ins
+# Handbuch fuehren.
+C=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' $BASIS/handbuch/gibt-es-nicht)
+[ "$C" = "302" ] && HD=ja || HD=nein
+ergebnis "ein unbekanntes Kapitel fuehrt zurueck statt auf einen Fehler (HTTP $C)" "$HD"
+
+# Die Zeichnungen. Ohne Beschreibung sind sie fuer einen Screenreader nicht
+# vorhanden — und ohne Bildunterschrift sagt niemand, was sie zeigen sollen.
+curl -s -b "$KEKSE" $BASIS/handbuch/aufbau -o /tmp/pr-hbg.html
+# Gezaehlt werden die ZEICHNUNGEN des Handbuchs, nicht jedes SVG der Seite:
+# Die Navigationsicons in der Seitenleiste sind ebenfalls SVG, tragen aber
+# bewusst aria-hidden. Wer sie mitzaehlt, misst etwas anderes, als er behauptet.
+SVG=$(grep -c 'class="hb-svg"' /tmp/pr-hbg.html || true)
+ARIA=$(grep -c 'role="img" class="hb-svg"' /tmp/pr-hbg.html || true)
+[ "$SVG" != "0" ] && [ "$SVG" = "$ARIA" ] && HE=ja || HE=nein
+ergebnis "jede Zeichnung traegt eine Beschreibung ($SVG Zeichnungen, $ARIA beschrieben)" "$HE"
+[ "$(enthaelt /tmp/pr-hbg.html "<figcaption>")" = "ja" ] && HE2=ja || HE2=nein
+ergebnis "und eine Bildunterschrift" "$HE2"
+# Nichts wird nachgeladen: Netze ohne Internetzugang.
+[ "$(enthaelt /tmp/pr-hbg.html "<img ")" = "nein" ] && HE3=ja || HE3=nein
+ergebnis "keine Zeichnung wird von aussen nachgeladen" "$HE3"
+
+# Die Suche.
+curl -s -b "$KEKSE" "$BASIS/handbuch/suche?q=Fehlversuch" -o /tmp/pr-hbs.html
+TR=$(grep -c "hb-treffer-eintrag" /tmp/pr-hbs.html || true)
+[ "$TR" -gt 2 ] && HF=ja || HF=nein
+ergebnis "die Suche findet ($TR Treffer fuer „Fehlversuch\")" "$HF"
+[ "$(enthaelt /tmp/pr-hbs.html "<mark>")" = "ja" ] && HF2=ja || HF2=nein
+ergebnis "die Fundstelle ist im Auszug hervorgehoben" "$HF2"
+
+# Titeltreffer zuerst: Wer „Datensicherung" sucht, will das Kapitel, das so
+# heisst — nicht das erstbeste mit dem Wort im Text.
+curl -s -b "$KEKSE" "$BASIS/handbuch/suche?q=Datensicherung" -o /tmp/pr-hbs2.html
+ERSTES=$(grep -oE 'href="/handbuch/[a-z-]+" class="hb-treffer-eintrag"' /tmp/pr-hbs2.html \
+         | head -1 | sed 's|.*/handbuch/\([a-z-]*\)".*|\1|')
+[ "$ERSTES" = "sicherung" ] && HG=ja || HG=nein
+ergebnis "ein Treffer im Titel steht oben (erster: $ERSTES)" "$HG"
+
+curl -s -b "$KEKSE" "$BASIS/handbuch/suche?q=Kaffeemaschine" -o /tmp/pr-hbs3.html
+[ "$(enthaelt /tmp/pr-hbs3.html "Nichts gefunden")" = "ja" ] && HH=ja || HH=nein
+ergebnis "ohne Treffer sagt sie das und schlaegt etwas vor" "$HH"
+
+# Ohne JavaScript muss dieselbe Adresse die ganze Seite liefern — die Suche ist
+# der wichtigste Zugang zu einem Handbuch.
+[ "$(enthaelt /tmp/pr-hbs.html "hb-verzeichnis")" = "ja" ] && HI=ja || HI=nein
+ergebnis "die Suche funktioniert auch ohne JavaScript" "$HI"
+
+# Die Auszeichnung muss unversehrt ankommen. Ein „Wort\" mit geradem
+# Schlusszeichen bricht in einem Attribut das HTML — dieser Fehler ist am
+# 13.08.2026 dreimal passiert.
+ATTR=$(grep -cE 'placeholder="[^"]*„[^"]*"[^ >]' /tmp/pr-hb.html || true)
+[ "$ATTR" = "0" ] && HJ=ja || HJ=nein
+ergebnis "kein Attribut wird durch ein Anfuehrungszeichen zerlegt" "$HJ"
+
+rm -f /tmp/pr-hb*.html
+
 # ---------------------------------------------------------------- FA-BEN-035
 hinweis "FA-BEN-035 — Administratorkonto aus der Konfiguration"
 

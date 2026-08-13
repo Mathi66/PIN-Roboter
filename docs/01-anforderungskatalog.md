@@ -1048,6 +1048,37 @@ eines einzelnen Standorts an und bekommt ein belastbares Ergebnis.
 
 ---
 
+## A.13 Anwenderdokumentation (FA-DOK)
+
+### FA-DOK-010 — Handbuch in der Oberfläche · SOLL · V1 · PO 13.08.2026
+Das Handbuch ist Teil der Anwendung, nicht eine Beilage. Es beschreibt
+Architektur, System und Bedienung und ist durchsuchbar.
+
+*Akzeptanz:*
+- Erreichbar als **eigener Punkt** in der Navigation, aus jedem Zustand heraus.
+- Gegliedert nach Leserkreis: **Verstehen** (Entscheider), **Bedienen**
+  (Praxispersonal), **Betreiben** (Administrator).
+- **Durchsuchbar.** Treffer zeigen ihre Umgebung und heben die Fundstelle
+  hervor; Titeltreffer stehen oben. Die Suche funktioniert **auch ohne
+  JavaScript** — sie ist der wichtigste Zugang zu einem Handbuch.
+- **Grafiken** erklären Verfahren, Aufbau, Organisationsstruktur und den Weg
+  der PIN. Sie werden **nicht nachgeladen** (Netze ohne Internetzugang) und
+  tragen eine Beschreibung, die dasselbe sagt wie das Bild.
+- Gestaltung, Farben und Abstände stammen aus denselben Vorgaben wie der Rest
+  der Oberfläche.
+- Lesbar auf Desktop und Tablet; die Zeilenlänge bleibt begrenzt, auch wenn das
+  Fenster breiter ist.
+- WCAG 2.2 AA wie jede andere Seite: geprüft mit axe-core, Kontraste gemessen.
+- *Nachweis:* Alle Kapitel abrufbar, Suche findet und ordnet, keine
+  Zeichnung ohne Beschreibung, keine kaputte Auszeichnung.
+
+> **Warum im Produkt und nicht als PDF:** Ein Handbuch, das man erst suchen
+> muss, wird nicht gelesen — in einer Praxis unter Zeitdruck entscheidet sich in
+> Sekunden, ob jemand nachschlägt oder rät. Und ein beiliegendes PDF beschreibt
+> nach der ersten Aktualisierung eine andere Software als die, die läuft.
+
+---
+
 # Teil B — Nichtfunktionale Anforderungen
 
 ## B.1 Sicherheit (NFA-SIC)

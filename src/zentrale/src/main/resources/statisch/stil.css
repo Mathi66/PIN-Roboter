@@ -940,3 +940,394 @@ div.geraetereihe { display:block; }
   .strukturkarte { transition:none; }
   .strukturkarte:hover { transform:none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════ Handbuch
+   Ein Nachschlagewerk hat andere Anforderungen als eine Arbeitsoberfläche:
+   Man liest hier längere Strecken, springt zurück, sucht. Deshalb eine eigene
+   Zweiteilung — Verzeichnis links, Text rechts — und eine Zeilenlänge, die
+   dem Lesen dient statt dem Ausnutzen des Fensters.
+
+   Alle Farben, Abstände und Radien kommen aus den Tokens oben. Das Handbuch
+   sieht deshalb nicht „auch schön" aus, sondern wie derselbe Bau. */
+
+.hb {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: var(--r5);
+  align-items: start;
+}
+
+/* ── Verzeichnis ───────────────────────────────────────────────────────── */
+
+.hb-verzeichnis {
+  position: sticky;
+  /* Mitlaufend: Wer in Kapitel 14 liest, soll nicht scrollen müssen, um zu
+     sehen, wo er ist. */
+  top: var(--r5);
+  max-height: calc(100vh - var(--r6));
+  overflow-y: auto;
+  background: var(--karte);
+  border: 1px solid var(--rand);
+  border-radius: var(--radius);
+  box-shadow: var(--schatten);
+  padding: var(--r4);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .hb-verzeichnis {
+    background: var(--glas);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    backdrop-filter: blur(22px) saturate(150%);
+    border-color: var(--glas-rand);
+  }
+}
+
+.hb-suche { display: flex; gap: var(--r2); margin-bottom: var(--r4); }
+.hb-suche input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--r2) var(--r3);
+  border: 1px solid var(--rand-bedien);
+  border-radius: var(--radius-klein);
+  background: var(--karte);
+  color: var(--text);
+  font: inherit;
+  font-size: .9rem;
+}
+.hb-suche input:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 1px;
+}
+
+.hb-teil + .hb-teil { margin-top: var(--r4); }
+.hb-teil-titel {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--gedaempft);
+  padding: 0 var(--r2) var(--r1);
+}
+.hb-teil-titel small {
+  display: block;
+  font-size: .68rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: .85;
+  margin-top: 1px;
+}
+.hb-teil ul { list-style: none; margin: 0; padding: 0; }
+
+.hb-teil a {
+  display: flex;
+  gap: var(--r2);
+  align-items: flex-start;
+  padding: var(--r2) var(--r2);
+  border-radius: var(--radius-klein);
+  color: var(--text);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+.hb-teil a:hover { background: var(--akzent-hg); }
+.hb-teil a:focus-visible { outline: 2px solid var(--akzent); outline-offset: -2px; }
+.hb-teil a.hb-aktiv {
+  background: var(--akzent-hg);
+  border-left-color: var(--akzent);
+}
+.hb-teil a.hb-aktiv b { color: var(--akzent); }
+.hb-teil a b { display: block; font-size: .87rem; font-weight: 620; line-height: 1.3; }
+.hb-teil a small {
+  display: block;
+  font-size: .74rem;
+  color: var(--gedaempft);
+  line-height: 1.35;
+  margin-top: 1px;
+}
+.hb-symbol { font-size: 1rem; line-height: 1.4; flex: none; width: 1.3em; text-align: center; }
+
+/* ── Inhalt ────────────────────────────────────────────────────────────── */
+
+.hb-kapitel {
+  background: var(--karte);
+  border: 1px solid var(--rand);
+  border-radius: var(--radius);
+  box-shadow: var(--schatten);
+  padding: var(--r6) var(--karte-x) var(--r5);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .hb-kapitel {
+    background: var(--glas);
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    backdrop-filter: blur(22px) saturate(150%);
+    border-color: var(--glas-rand);
+  }
+}
+
+/* Zeilenlänge. Über etwa 75 Zeichen verliert das Auge beim Zeilenwechsel den
+   Anschluss — auf einem breiten Schirm wird ein Text sonst unlesbar, gerade
+   weil Platz da ist. */
+.hb-kapitel > p,
+.hb-kapitel > ul,
+.hb-kapitel > ol,
+.hb-kapitel > h2,
+.hb-kapitel > h3,
+.hb-kapitel > dl { max-width: 68ch; }
+
+.hb-kopf {
+  display: flex;
+  gap: var(--r4);
+  align-items: flex-start;
+  padding-bottom: var(--r4);
+  margin-bottom: var(--r5);
+  border-bottom: 1px solid var(--rand);
+}
+.hb-kopf-symbol {
+  font-size: 1.7rem;
+  line-height: 1;
+  flex: none;
+  width: 3rem; height: 3rem;
+  display: grid; place-items: center;
+  background: var(--akzent-hg);
+  border-radius: var(--radius-klein);
+}
+.hb-kopf-teil {
+  font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--akzent);
+}
+.hb-kopf h1 {
+  font-size: 1.6rem; font-weight: 680; letter-spacing: -.02em;
+  margin: 2px 0 0; line-height: 1.2;
+}
+.hb-kopf-kurz { color: var(--gedaempft); margin: var(--r1) 0 0; font-size: .93rem; }
+
+.hb-kapitel h2 {
+  font-size: 1.12rem; font-weight: 660; letter-spacing: -.01em;
+  margin: var(--r5) 0 var(--r3);
+}
+.hb-kapitel h3 { font-size: .97rem; font-weight: 640; margin: var(--r4) 0 var(--r2); }
+.hb-kapitel p { line-height: 1.62; margin: 0 0 var(--r3); }
+.hb-kapitel a { color: var(--akzent); }
+
+/* Der Anriss trägt die Kernaussage. Größer, aber nicht laut. */
+.anriss {
+  font-size: 1.04rem;
+  line-height: 1.58;
+  color: var(--text);
+  border-left: 3px solid var(--akzent);
+  padding-left: var(--r4);
+  margin-bottom: var(--r5) !important;
+}
+
+.hb-liste { margin: 0 0 var(--r4); padding-left: var(--r5); line-height: 1.6; }
+.hb-liste li { margin-bottom: var(--r2); }
+
+/* ── Bausteine im Text ─────────────────────────────────────────────────── */
+
+.hb-merke {
+  background: var(--akzent-hg);
+  border: 1px solid var(--rand);
+  border-left: 3px solid var(--akzent);
+  border-radius: var(--radius-klein);
+  padding: var(--r4);
+  margin: var(--r4) 0 var(--r5);
+  max-width: 68ch;
+}
+.hb-merke > b { display: block; margin-bottom: var(--r2); line-height: 1.45; }
+.hb-merke p { margin: 0; font-size: .92rem; line-height: 1.58; color: var(--gedaempft); }
+
+.hb-zahlen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--r3);
+  margin: var(--r4) 0 var(--r5);
+}
+.hb-zahlen > div {
+  background: var(--grund-tief);
+  border-radius: var(--radius-klein);
+  padding: var(--r4);
+  text-align: center;
+}
+.hb-zahlen b {
+  display: block;
+  font-size: 1.9rem; font-weight: 700; letter-spacing: -.03em;
+  color: var(--akzent); line-height: 1.05;
+}
+.hb-zahlen span {
+  display: block; font-size: .78rem; color: var(--gedaempft);
+  margin-top: var(--r1); line-height: 1.35;
+}
+
+.hb-karten {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--r3);
+  margin: var(--r4) 0 var(--r5);
+}
+.hb-karte {
+  background: var(--karte);
+  border: 1px solid var(--rand);
+  border-radius: var(--radius-klein);
+  padding: var(--r4);
+}
+.hb-karte h3 { margin: 0 0 var(--r2); font-size: .93rem; color: var(--akzent); }
+.hb-karte p { margin: 0; font-size: .87rem; line-height: 1.55; color: var(--gedaempft); }
+
+.hb-tabelle {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--r3) 0 var(--r5);
+  font-size: .9rem;
+}
+.hb-tabelle th {
+  text-align: left;
+  font-size: .74rem; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--gedaempft);
+  padding: var(--r2) var(--r3);
+  border-bottom: 1px solid var(--rand);
+}
+.hb-tabelle td {
+  padding: var(--zelle-y) var(--r3);
+  border-bottom: 1px solid var(--rand);
+  vertical-align: top;
+  line-height: 1.5;
+}
+.hb-tabelle tbody tr:last-child td { border-bottom: none; }
+.hb-tabelle td:first-child { font-weight: 600; white-space: normal; }
+
+.hb-glossar { margin: var(--r3) 0 var(--r5); }
+.hb-glossar dt {
+  font-weight: 660;
+  color: var(--akzent);
+  margin-top: var(--r4);
+}
+.hb-glossar dd {
+  margin: var(--r1) 0 0;
+  padding-left: 0;
+  line-height: 1.58;
+  color: var(--gedaempft);
+  font-size: .92rem;
+}
+
+.hb-fussnote {
+  font-size: .86rem;
+  color: var(--gedaempft);
+  border-top: 1px solid var(--rand);
+  padding-top: var(--r3);
+  margin-top: var(--r5) !important;
+  max-width: 68ch;
+}
+
+/* ── Zeichnungen ───────────────────────────────────────────────────────── */
+
+.hb-figur { margin: var(--r5) 0; }
+.hb-svg {
+  width: 100%;
+  height: auto;
+  /* Der Zeichenbereich darf nicht schmaler werden, als die Beschriftung
+     verträgt — sonst überlappt Text. Darunter wird waagerecht gerollt. */
+  min-width: 560px;
+}
+.hb-figur { overflow-x: auto; }
+.hb-figur figcaption {
+  font-size: .84rem;
+  color: var(--gedaempft);
+  line-height: 1.5;
+  margin-top: var(--r2);
+  max-width: 68ch;
+}
+.hb-t {
+  font-family: var(--schrift);
+  fill: var(--text);
+  text-anchor: middle;
+}
+.hb-t-fett  { font-size: 14px; font-weight: 650; }
+.hb-t-klein { font-size: 11.5px; fill: var(--gedaempft); }
+.hb-t-mini  { font-size: 10.5px; fill: var(--gedaempft); }
+
+/* ── Suchtreffer ───────────────────────────────────────────────────────── */
+
+.hb-treffer { display: grid; gap: var(--r2); }
+.hb-treffer-eintrag {
+  display: flex;
+  gap: var(--r3);
+  align-items: flex-start;
+  padding: var(--r3) var(--r4);
+  border: 1px solid var(--rand);
+  border-radius: var(--radius-klein);
+  text-decoration: none;
+  color: var(--text);
+  background: var(--karte);
+}
+.hb-treffer-eintrag:hover { border-color: var(--akzent); background: var(--akzent-hg); }
+.hb-treffer-eintrag:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.hb-treffer-eintrag b { display: block; font-size: .95rem; }
+.hb-treffer-teil {
+  display: block;
+  font-size: .7rem; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--gedaempft); margin-bottom: var(--r1);
+}
+.hb-treffer-auszug {
+  display: block;
+  font-size: .86rem; line-height: 1.5; color: var(--gedaempft);
+}
+.hb-treffer-auszug mark {
+  background: var(--warnung-hg);
+  color: var(--text);
+  font-weight: 620;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+/* ── Blättern ──────────────────────────────────────────────────────────── */
+
+.hb-weiter {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--r3);
+  margin-top: var(--r6);
+  padding-top: var(--r4);
+  border-top: 1px solid var(--rand);
+}
+.hb-weiter a {
+  display: block;
+  padding: var(--r3) var(--r4);
+  border: 1px solid var(--rand);
+  border-radius: var(--radius-klein);
+  text-decoration: none;
+  color: var(--text);
+  max-width: 48%;
+}
+.hb-weiter a:hover { border-color: var(--akzent); background: var(--akzent-hg); }
+.hb-weiter a:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+.hb-weiter small {
+  display: block; font-size: .7rem; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--gedaempft);
+}
+.hb-weiter b { font-size: .9rem; font-weight: 620; }
+.hb-weiter-rechts { text-align: right; margin-left: auto; }
+
+/* ── Schmales Fenster ──────────────────────────────────────────────────── */
+
+@media (max-width: 980px) {
+  .hb { grid-template-columns: 1fr; }
+  .hb-verzeichnis {
+    position: static;
+    max-height: none;
+    /* Auf einem Tablet ist das Verzeichnis der Umweg, nicht das Ziel: Es
+       steht oben, aber gedrängt, damit das Kapitel noch sichtbar beginnt. */
+  }
+  .hb-teil ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--r1);
+  }
+  .hb-teil a small { display: none; }
+  .hb-kapitel { padding: var(--r5) var(--r4) var(--r4); }
+}
+
+@media print {
+  /* Wer doch ausdruckt, soll den Text bekommen und nicht die Navigation. */
+  .hb-verzeichnis, .hb-weiter, .leiste { display: none; }
+  .hb { grid-template-columns: 1fr; }
+  .hb-kapitel { box-shadow: none; border: none; padding: 0; }
+}

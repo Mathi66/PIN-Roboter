@@ -3180,6 +3180,14 @@ public class Zentrale {
         // Speicher, Version. Hier stehen Dinge, die man selten und bewusst tut.
         s.append(bereichsLink(aktiv, "einstellungen", "/einstellungen", "Einstellungen",
                 "<path d=\"M3 5.5h14M3 10h14M3 14.5h14\"/><circle cx=\"7\" cy=\"5.5\" r=\"1.6\" fill=\"var(--karte)\"/><circle cx=\"13\" cy=\"10\" r=\"1.6\" fill=\"var(--karte)\"/><circle cx=\"7\" cy=\"14.5\" r=\"1.6\" fill=\"var(--karte)\"/>", 0));
+        // Das Handbuch steht bewusst UNTER den Arbeitsbereichen und nicht
+        // dazwischen: Es gehört nicht in den Arbeitsfluss, muss aber aus jedem
+        // Zustand heraus erreichbar sein — genau wie der Not-Aus.
+        s.append("<div class=\"bereich-titel\">Hilfe</div>");
+        s.append(bereichsLink(aktiv, "handbuch", "/handbuch", "Handbuch",
+                "<path d=\"M4 4.5A1.5 1.5 0 0 1 5.5 3H9v14H5.5A1.5 1.5 0 0 1 4 15.5Z\"/>"
+                + "<path d=\"M16 4.5A1.5 1.5 0 0 0 14.5 3H11v14h3.5a1.5 1.5 0 0 0 1.5-1.5Z\"/>"
+                + "<path d=\"M10 3v14\"/>", 0));
         s.append("</nav>");
 
         // Not-Aus und Konto stehen unten: Beides gehoert nicht in den
@@ -4825,6 +4833,37 @@ public class Zentrale {
             }
             c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
                     angemeldeter(c)));
+        });
+
+        // ── Handbuch (PO, 13.08.2026) ───────────────────────────────────
+        //
+        // Kein PDF im Anhang: Ein Handbuch, das man erst suchen muss, wird
+        // nicht gelesen — und es veraltet ab dem Tag der Auslieferung. Dieses
+        // liegt im selben Quellbaum wie das Verhalten, das es beschreibt.
+        //
+        // Ohne Rechteprüfung: Wissen, wie das Produkt arbeitet, ist für jeden
+        // Angemeldeten das Mindeste. Es steht nichts darin, was jemand nicht
+        // wissen dürfte — keine Daten, keine Zugangswege, keine Geheimnisse.
+        app.get("/handbuch", c ->
+                c.html(seite("handbuch",
+                        Handbuchseiten.seite(Handbuch.erstes(), null), angemeldeter(c))));
+
+        /**
+         * Die Suche. Beim Tippen wird nur die Trefferliste getauscht; ohne
+         * JavaScript liefert derselbe Pfad die vollständige Seite.
+         */
+        app.get("/handbuch/suche", c -> {
+            String q = c.queryParam("q");
+            c.html(seite("handbuch",
+                    Handbuchseiten.seite(null, q,
+                            Handbuchseiten.treffer(q, Handbuch.suchen(q))),
+                    angemeldeter(c)));
+        });
+
+        app.get("/handbuch/{kapitel}", c -> {
+            var k = Handbuch.finden(c.pathParam("kapitel"));
+            if (k == null) { c.redirect("/handbuch"); return; }
+            c.html(seite("handbuch", Handbuchseiten.seite(k, null), angemeldeter(c)));
         });
 
         /**
