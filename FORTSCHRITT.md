@@ -3465,3 +3465,71 @@ Zurückgenommen bis auf die Dateien, an denen ich tatsächlich arbeitete.
 Die Lehre ist nicht neu, aber sie war fällig: Ein Fehler an einer Stelle wird
 an dieser Stelle behoben. Ein Suchmuster über den ganzen Baum ist eine
 Änderung an sechzig Stellen — und die prüft man nicht mehr einzeln.
+
+### Der Token gehört nicht in hundertfünfzig Praxen
+
+Die Entscheidung des PO: Die Programmablage bleibt privat, die Aktualisierung
+wird über den PIN-Roboter eingeschaltet, und der Token soll nicht im Container
+stecken.
+
+Der naheliegende Weg wäre gewesen, ihn ins Einrichtungspaket zu schreiben. Dann
+stünde derselbe Token in jeder Praxis — in einer `.env`, sichtbar in
+`docker inspect`, tauschbar nur durch einen Besuch vor Ort. Ein Token, den man
+nicht wechseln kann, ist ein Token, den man nicht sperrt.
+
+Jetzt holt ihn der Agent bei der Zentrale ab. Sie kennt ihn ohnehin, denn sie
+prüft damit selbst auf neue Versionen. Vier Eigenschaften waren mir wichtig:
+**ab Werk aus** (wer einen Zugang hinterlegt, hat der Weitergabe nicht
+zugestimmt), **eine Stelle zum Pflegen**, **Widerruf wirkt**, und der Schalter
+ist der Not-Aus — Abschalten *löscht* die Datei beim Agenten, und ohne Anmeldung
+holt die Aktualisierung nichts mehr. Kein zweiter Mechanismus, der das erzwingen
+müsste; es fehlt schlicht, was es dafür braucht.
+
+Watchtower bekommt dafür ein **eigenes Volume**. In `/daten` liegen Token,
+privater Schlüssel und die PIN-Ablage — die gehen die Aktualisierung nichts an,
+auch nicht lesend. Beim ersten Anlauf hatte ich genau das falsch gemacht und es
+beim Nachrechnen des Pfades gemerkt.
+
+Ehrlich zum Gewinn: Der Token landet trotzdem auf dem Praxisrechner, anders kann
+Watchtower ihn nicht benutzen. Gewonnen ist nicht Unsichtbarkeit, sondern
+Austauschbarkeit — eine Stelle statt hundertfünfzig.
+
+### Eine Aktualisierung, die stillschweigend ausfällt, ist schlimmer als keine
+
+Das war der Punkt, den ich unabhängig von der Entscheidung zugesagt hatte. Ein
+abgelaufener Token oder ein angehaltener Dienst wäre monatelang unbemerkt
+geblieben — und genau dann fehlen die Fehlerbehebungen, für die das Ganze
+gebaut ist.
+
+Prüfbar ist nur die **Wirkung**. Ob Watchtower läuft, sieht weder die Zentrale
+noch der Agent; der hat bewusst keinen Zugriff auf den Docker-Dienst. Was beide
+sehen: Der Agent hängt zurück. Also prüft die Zentrale im Minutentakt und
+alarmiert — stumm ab 15 Minuten (kritisch), veraltet ab drei Tagen (Warnung),
+letzteres nur bei eingeschalteter Weitergabe. Wer von Hand aktualisiert, hat
+einen Rückstand selbst entschieden.
+
+Dabei fiel auf, dass `AGENT_STUMM` als Alarmart seit jeher existierte und
+**nirgends gemeldet** wurde. Ein Agent, der verstummt, löste bis heute keinen
+Alarm aus — an diesem Standort wäre die Überwachung ausgefallen, ohne dass es
+jemand erfahren hätte.
+
+### Zwei Fehler, die die neue Überwachung wertlos gemacht hätten
+
+Beim Bauen wollte ich die Agentversion vergleichen und sah nach, was in der
+Datenbank steht: `unbekannt`. Dem Agent-JAR fehlte der Manifest-Eintrag mit der
+Version. Die Zentrale hat ihn seit dem 10.08.2026 — samt Kommentar, der genau
+diese Geschichte erzählt. Beim Agenten war er nie nachgezogen worden.
+
+Der zweite Fehler saß in `versionMerken`: Die Methode brach ab, sobald die
+*Protokoll*version gleich blieb. Die ändert sich fast nie. Ein Agent, der von
+0.3.1 auf 0.3.2 wechselte, stand weiter mit 0.3.1 in der Liste.
+
+Zusammen hätten sie eine Überwachung ergeben, die niemals ausschlägt — grün,
+weil sie nichts misst. Der Nachweis prüft jetzt beides ausdrücklich mit.
+
+**Belegt:** 345 Modultests grün (neu: 9 für den Zugangsabgleich im Agenten,
+6 für die Weitergabe in der Zentrale, 1 fürs Einrichtungspaket). Die
+Systemnachweise `FA-AGT-080` und `FA-AGT-090` sind geschrieben und laufen beim
+nächsten Vollauf. Am laufenden Stack geprüft: Der Agent meldet jetzt `0.3.2`
+statt `unbekannt`, der Stummalarm entsteht nach 13 Sekunden und schließt sich
+45 Sekunden nach dem Neustart des Agenten von selbst.

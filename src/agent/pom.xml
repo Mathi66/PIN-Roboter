@@ -17,7 +17,17 @@
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId>
       <executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration>
         <transformers><transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-          <mainClass>de.pinroboter.agent.Agent</mainClass></transformer>
+          <mainClass>de.pinroboter.agent.Agent</mainClass>
+          <!-- Die Version ins Manifest. Ohne diesen Eintrag liefert
+               getImplementationVersion() null, der Agent meldet der Zentrale
+               "unbekannt", und in der Agentenliste stand bis zum 13.08.2026
+               genau das — bei jedem Agenten, seit es die Spalte gibt.
+               Die Zentrale hat den Eintrag seit dem 10.08.2026; hier wurde er
+               nicht nachgezogen. Aufgefallen erst, als die Version gebraucht
+               wurde, um die selbsttätige Aktualisierung zu überwachen. -->
+          <manifestEntries>
+            <Implementation-Version>${project.version}</Implementation-Version>
+          </manifestEntries></transformer>
           <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/></transformers>
         <filters><filter><artifact>*:*</artifact><excludes>
           <exclude>META-INF/*.SF</exclude><exclude>META-INF/*.DSA</exclude><exclude>META-INF/*.RSA</exclude>

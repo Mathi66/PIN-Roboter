@@ -108,6 +108,9 @@ final class Agentenpaket {
                     container_name: pin-roboter-agent
                     restart: unless-stopped
                     env_file: .env
+                    environment:
+                      # Wohin die Zugangsdaten für die Aktualisierung gehören.
+                      REGISTRY_VERZEICHNIS: /registry
                     # Die Oberfläche des Agenten: Inbetriebnahme, Zustand,
                     # Fehlersuche. Nur auf DIESEM Rechner erreichbar —
                     # http://127.0.0.1:8091. Im Container an 0.0.0.0 gebunden,
@@ -125,6 +128,11 @@ final class Agentenpaket {
                       # weil sie für ein Schlüsselpaar verschlüsselt ist, das es dann
                       # nicht mehr gibt.
                       - agentdaten:/daten
+                      # Eigenes Volume NUR für die Zugangsdaten zur
+                      # Programmablage. Nicht in /daten: Dort liegen Token,
+                      # privater Schlüssel und die PIN-Ablage — die gehen die
+                      # Aktualisierung nichts an, auch nicht lesend.
+                      - registryzugang:/registry
                     # Der Agent soll auch auf schwacher Hardware mitlaufen.
                     mem_limit: 512m
                     security_opt: [no-new-privileges:true]
@@ -157,12 +165,27 @@ final class Agentenpaket {
                     environment:
                       DOCKER_HOST: tcp://dockerzugang:2375
                       WATCHTOWER_LABEL_ENABLE: "true"
+                      # Die Zugangsdaten zur Programmablage stehen NICHT hier,
+                      # sondern in einer Datei, die der Agent von der Zentrale
+                      # bezieht. Damit liegt der Token nicht in dieser Datei,
+                      # nicht in „docker inspect" und nicht in der Prozessliste
+                      # — und er lässt sich zentral tauschen statt vor Ort.
+                      #
+                      # Schaltet die Zentrale die Aktualisierung ab, löscht der
+                      # Agent die Datei. Dann findet Watchtower keine Anmeldung
+                      # mehr und holt nichts: Das IST der Schalter.
+                      DOCKER_CONFIG: /registry
                       # 03:30 Uhr. Ortszeit des Rechners, siehe TZ unten.
                       WATCHTOWER_SCHEDULE: "%s"
                       # Alte Abbilder wegräumen — sonst füllt sich die Platte.
                       WATCHTOWER_CLEANUP: "true"
                       WATCHTOWER_INCLUDE_RESTARTING: "true"
                       TZ: Europe/Berlin
+                    volumes:
+                      # Nur lesend, und nur dieses eine Verzeichnis: Watchtower
+                      # braucht die Anmeldedatei, schreiben darf sie allein der
+                      # Agent. An das Datenverzeichnis kommt es nicht.
+                      - registryzugang:/registry:ro
                     logging:
                       driver: json-file
                       options: { max-size: "10m", max-file: "3" }
@@ -204,6 +227,7 @@ final class Agentenpaket {
 
                 volumes:
                   agentdaten:
+                  registryzugang:
                 """.formatted(tag, "0 30 3 * * *");
     }
 
@@ -299,19 +323,30 @@ final class Agentenpaket {
 
                 Alles andere ist bereits eingetragen.
 
-                ## Schritt 2 — Zugang zur Programmablage (nur einmalig)
+                ## Schritt 2 — Zugang zur Programmablage (nur beim ersten Mal)
 
                 Das Programm liegt in einer **Ablage im Internet** (GitHub Container
-                Registry). Ist sie nicht öffentlich, braucht Ihr Rechner einmalig
-                Zugangsdaten. Ihr Dienstleister nennt Ihnen Benutzernamen und Token:
+                Registry). Sie ist nicht öffentlich, deshalb braucht Ihr Rechner für
+                den **ersten** Download eine Anmeldung. Benutzernamen und Token nennt
+                Ihnen Ihr Dienstleister:
 
                 ```
                 docker login ghcr.io
                 ```
 
                 Sie erkennen, dass dieser Schritt nötig ist, an der Meldung
-                `unauthorized` oder `denied` beim nächsten Schritt. Läuft Schritt 3
-                ohne Fehler durch, war er nicht nötig.
+                `unauthorized` oder `denied` beim nächsten Schritt.
+
+                > **Nur dieses eine Mal.** Für alle **späteren** Aktualisierungen
+                > holt sich der Agent die Anmeldung selbst von der Zentrale — sie
+                > steht deshalb nirgends in diesen Dateien. Wechselt Ihr
+                > Dienstleister den Token, müssen Sie hier nichts tun.
+                >
+                > Damit das funktioniert, muss die Weitergabe in der Zentrale
+                > eingeschaltet sein (dort unter „Instanz“ → „Programmablage“). Ist
+                > sie es nicht, läuft der Agent normal weiter — er aktualisiert sich
+                > dann nur nicht von selbst. Die Prüfliste unter
+                > <http://127.0.0.1:8091> sagt Ihnen, woran Sie sind.
 
                 ## Schritt 3 — Starten
 
@@ -359,6 +394,7 @@ final class Agentenpaket {
                 | Meldung | Bedeutung |
                 |---|---|
                 | `unauthorized` / `denied` beim Herunterladen | Die Programmablage ist nicht öffentlich. Schritt 2 ausführen; Zugangsdaten bekommen Sie von Ihrem Dienstleister. |
+                | Der Agent bleibt auf einer alten Version | Prüfen Sie unter <http://127.0.0.1:8091>, ob „Selbsttätige Aktualisierung" erfüllt ist. Fehlt sie, ist die Weitergabe in der Zentrale nicht eingeschaltet. Sonst hilft `docker compose logs aktualisierung`. |
                 | `Unbekanntes Registrierungsgeheimnis` | Das Geheimnis ist abgelaufen (24 Stunden) oder schon benutzt. Laden Sie in der Zentrale ein neues Paket herunter. |
                 | `Warte auf den Simulator` / keine Verbindung zum Konnektor | `KONNEKTOR_URL` prüfen. Ist der Rechner im selben Netz wie der Konnektor? |
                 | `malformed PEM data` | `CA_URL` zeigt nicht auf ein Zertifikat. |

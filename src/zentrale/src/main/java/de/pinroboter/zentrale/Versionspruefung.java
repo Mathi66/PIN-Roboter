@@ -140,6 +140,79 @@ public class Versionspruefung {
     }
 
     /**
+     * Die Zugangsdaten zur Programmablage — für einen registrierten Agenten
+     * (PO, 13.08.2026).
+     *
+     * <h2>Warum die Zentrale sie ausgibt</h2>
+     *
+     * Die Standort-Agenten holen ihre Aktualisierung aus einer <b>privaten</b>
+     * Registry und brauchen dafür Zugangsdaten. Die Alternative wäre, sie in
+     * jedes Einrichtungspaket zu schreiben: Dann läge derselbe Token in jeder
+     * Praxis in einer {@code .env}, wäre in {@code docker inspect} sichtbar und
+     * ließe sich nur durch einen Besuch an jedem Rechner tauschen.
+     *
+     * <p>So gibt es <b>eine</b> Stelle. Wird der Token erneuert, haben ihn alle
+     * Agenten beim nächsten Kontakt. Wird ein Agent widerrufen, bekommt er
+     * keinen mehr — das ist der eigentliche Gewinn: Ein kompromittierter
+     * Praxisrechner lässt sich hier ausschließen, statt den Token weltweit zu
+     * tauschen.
+     *
+     * <h2>Was das nicht leistet</h2>
+     *
+     * Der Token landet trotzdem auf dem Praxisrechner — anders kann Watchtower
+     * ihn nicht benutzen. Er steht dort aber in einer Datei im Datenverzeichnis
+     * statt in einer Umgebungsvariablen, ist also nicht in
+     * {@code docker inspect} und nicht in der Prozessliste zu sehen.
+     *
+     * <p><b>Der Token gehört auf {@code read:packages} beschränkt.</b> Mehr
+     * braucht ein Agent nie, und mehr sollte er im Ernstfall nicht hergeben.
+     *
+     * @return {@code null}, wenn nichts eingerichtet ist oder die Weitergabe
+     *         abgeschaltet wurde
+     */
+    public Agentenzugang agentenzugang() {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT registry, benutzer, token_chiffrat, an_agenten "
+                + "FROM registry_zugang WHERE nur_eine")) {
+            try (ResultSet rs = p.executeQuery()) {
+                if (!rs.next()) return null;
+                if (!rs.getBoolean("an_agenten")) return null;
+                String benutzer = rs.getString("benutzer");
+                String ch = rs.getString("token_chiffrat");
+                if (benutzer == null || benutzer.isBlank() || ch == null || tresor == null) {
+                    return null;
+                }
+                return new Agentenzugang(rs.getString("registry"), benutzer,
+                        tresor.entschluesseln(ch));
+            }
+        } catch (SQLException e) {
+            System.err.println("Agentenzugang nicht lesbar: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** Zugangsdaten für die Programmablage. Der Token ist Klartext — sparsam behandeln. */
+    public record Agentenzugang(String registry, String benutzer, String token) {}
+
+    /**
+     * Schaltet die Weitergabe an Agenten ein oder aus.
+     *
+     * <p>Ausgeschaltet können sich Agenten nicht mehr selbst aktualisieren:
+     * Ohne Zugangsdaten kommt Watchtower nicht an das Abbild. Das ist der
+     * Not-Aus für die Aktualisierung — kein zusätzlicher Mechanismus, sondern
+     * das Vorenthalten dessen, was es dafür braucht.
+     */
+    public void anAgenten(boolean an) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE registry_zugang SET an_agenten = ? WHERE nur_eine")) {
+            p.setBoolean(1, an);
+            p.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Weitergabe an Agenten nicht änderbar: " + e.getMessage());
+        }
+    }
+
+    /**
      * Fragt die Registry ab und merkt sich das Ergebnis.
      *
      * @return derselbe Zustand wie {@link #zustand()}, nach der Abfrage

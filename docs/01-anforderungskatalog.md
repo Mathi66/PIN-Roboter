@@ -963,6 +963,52 @@ Fachkenntnisse in Betrieb nehmen lässt.
 - *Nachweis:* Trennung der Verbindung für 24 Stunden; Verifikationen laufen
   weiter, nach Wiederverbindung ist das Protokoll vollständig.
 
+### FA-AGT-080 — Selbsttätige Aktualisierung der Agenten · SOLL · V1 · PO 13.08.2026
+Standort-Agenten aktualisieren sich selbst aus der Programmablage. Gerade am
+Anfang werden häufig neue Versionen ausgerollt, um Fehler zu beheben; ein
+Besuch an jedem Praxisrechner ist dafür kein gangbarer Weg.
+
+*Akzeptanz:*
+- Die Programmablage bleibt **privat**. Die nötige Anmeldung steht **nicht** im
+  Einrichtungspaket, nicht in der `.env` und nicht in der Prozessliste des
+  Aktualisierungsdienstes.
+- Die Zentrale gibt sie **nur an registrierte Agenten** heraus; ein widerrufener
+  Agent bekommt nichts mehr.
+- Die Weitergabe ist **ab Werk abgeschaltet** und wird in der Verwaltung
+  eingeschaltet. Wer einen Zugang hinterlegt, damit die Zentrale nach Updates
+  sieht, hat damit nicht der Weitergabe zugestimmt.
+- **Not-Aus:** Abschalten entfernt die Anmeldung beim Agenten wieder — ohne sie
+  holt die Aktualisierung kein Abbild mehr.
+- Der Aktualisierungsdienst hat **keinen direkten Zugriff auf den
+  Docker-Socket** (Socket-Proxy) und fasst nur die Container dieses Produkts an.
+- Ein begonnenes Update wird nachts ausgeführt, nicht während der Sprechzeit.
+- *Nachweis:* Die Anmeldedatei erscheint beim Agenten nach dem Einschalten und
+  verschwindet nach dem Abschalten; der Token steht in keinem Log, in keinem
+  Protokoll und nicht im Klartext in der Datei.
+
+### FA-AGT-090 — Zustand der Standort-Agenten fällt auf · MUSS · V1 · PO 13.08.2026
+Ein Agent, der verstummt oder nicht mehr aktualisiert wird, muss in der Zentrale
+auffallen — dort schaut ein Administrator hin, nicht in die lokale Oberfläche
+eines Praxisrechners.
+
+*Akzeptanz:*
+- Meldet ein Agent länger als 15 Minuten nichts, entsteht ein **kritischer**
+  Alarm: An diesem Standort wird nicht mehr überwacht.
+- Läuft ein Agent länger als 3 Tage auf einer älteren Version als die Zentrale,
+  **obwohl die Weitergabe eingeschaltet ist**, entsteht eine Warnung — die
+  selbsttätige Aktualisierung greift dort nicht.
+- Ohne eingeschaltete Weitergabe wird **nicht** alarmiert: Dann aktualisiert
+  jemand von Hand, und ein Rückstand ist seine Entscheidung.
+- Beide Alarme **schließen sich von selbst**, sobald der Zustand behoben ist.
+- Die Meldung sagt, **was zu tun ist** — nicht nur, was nicht stimmt.
+- *Nachweis:* Am laufenden Stack provoziert und wieder aufgelöst.
+
+> **Warum über die Wirkung und nicht über den Aktualisierungsdienst:** Ob er
+> läuft, sein Token gilt oder die Programmablage erreichbar ist, sieht weder die
+> Zentrale noch der Agent — der hat bewusst keinen Zugriff auf den
+> Docker-Dienst. Beide sehen dasselbe Ergebnis: Der Agent hängt zurück. Genau
+> das ist die Aussage, die ein Administrator braucht.
+
 ### FA-AGT-040 — Versionsunterschiede · MUSS · V1 · ADR-0002
 *Akzeptanz:*
 - Agent und Zentrale können unterschiedliche Versionen haben; das Protokoll ist

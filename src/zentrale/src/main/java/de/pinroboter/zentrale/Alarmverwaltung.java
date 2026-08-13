@@ -46,7 +46,13 @@ public class Alarmverwaltung {
         SPEICHER_KNAPP(Schweregrad.WARNUNG),
         // Eine ausgebliebene Sicherung merkt man erst, wenn man sie braucht —
         // deshalb ein Alarm und keine Logzeile (FA-BAK-010).
-        SICHERUNG_FEHLGESCHLAGEN(Schweregrad.WARNUNG);
+        SICHERUNG_FEHLGESCHLAGEN(Schweregrad.WARNUNG),
+        // Die selbsttätige Aktualisierung ist eingeschaltet, aber der Agent
+        // läuft seit Tagen auf einer älteren Version als die Zentrale. Warum,
+        // weiß hier niemand — abgelaufener Token, angehaltener Watchtower,
+        // nicht erreichbare Programmablage. Gemeldet wird deshalb die WIRKUNG:
+        // Die Fehlerbehebungen, für die das Ganze gebaut wurde, kommen nicht an.
+        AGENT_VERALTET(Schweregrad.WARNUNG);
 
         private final Schweregrad vorgabe;
         Art(Schweregrad s) { vorgabe = s; }

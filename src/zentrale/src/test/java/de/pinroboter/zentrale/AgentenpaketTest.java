@@ -115,6 +115,32 @@ class AgentenpaketTest {
     }
 
     @Test
+    @DisplayName("Die Anmeldung kommt aus einem eigenen Volume, nicht aus dem Datenverzeichnis")
+    void anmeldungGetrennt() {
+        // Der Token steht nicht im Paket, sondern wird vom Agenten aus der
+        // Zentrale geholt und abgelegt. Watchtower liest ihn — und darf dabei
+        // NICHT an /daten kommen: Dort liegen Token, privater Schlüssel und die
+        // PIN-Ablage.
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+
+        assertTrue(yml.contains("DOCKER_CONFIG: /registry"),
+                "Ohne diesen Zeiger findet die Aktualisierung die Anmeldung nicht");
+        assertTrue(yml.contains("REGISTRY_VERZEICHNIS: /registry"),
+                "Der Agent muss dorthin schreiben, wo Watchtower liest");
+        assertTrue(yml.contains("registryzugang:/registry:ro"),
+                "Watchtower darf nur lesen — schreiben tut allein der Agent");
+        assertFalse(yml.contains("agentdaten:/registry"),
+                "Das Datenverzeichnis geht die Aktualisierung nichts an");
+
+        // Und der Token selbst steht nirgends im Paket.
+        for (var e : paket().entrySet()) {
+            assertFalse(e.getValue().contains("ghp_"),
+                    "In " + e.getKey() + " steht ein Token — genau das sollte "
+                    + "die Weitergabe über die Zentrale verhindern");
+        }
+    }
+
+    @Test
     @DisplayName("Das Volume für die Agentendaten fehlt nicht")
     void volumeVorhanden() {
         String yml = paket().get("pin-roboter-agent/docker-compose.yml");

@@ -931,6 +931,36 @@ public class Datenbank implements AutoCloseable {
             CREATE UNIQUE INDEX IF NOT EXISTS geraetegruppe_name_global_idx
               ON geraetegruppe (lower(bezeichnung));
             """);
+
+        // ── 28 · Zugangsdaten der Programmablage auch für die Agenten ───────
+        //
+        // Die Standort-Agenten holen ihre Aktualisierung aus einer privaten
+        // Registry (PO, 13.08.2026). Ohne diese Weitergabe müsste derselbe
+        // Token in jedem Einrichtungspaket stehen — in jeder Praxis, in einer
+        // .env, sichtbar in "docker inspect", tauschbar nur vor Ort.
+        //
+        // Vorgabe FALSE: Eine Instanz, die aktualisiert wird, gibt damit nicht
+        // stillschweigend Zugangsdaten an jeden registrierten Agenten weiter.
+        // Das muss jemand einschalten und dabei wissen, was er tut.
+        migration(28, """
+            ALTER TABLE registry_zugang
+              ADD COLUMN IF NOT EXISTS an_agenten BOOLEAN NOT NULL DEFAULT FALSE;
+            """);
+
+        // ── 29 · Seit wann ein Agent auf seiner Version läuft ───────────────
+        //
+        // Ohne diesen Zeitstempel lässt sich nicht unterscheiden, ob ein Agent
+        // seit zehn Minuten hinterherhinkt (normal, die Zentrale wurde gerade
+        // aktualisiert) oder seit zwei Wochen (die selbsttätige Aktualisierung
+        // greift nicht — und genau dafür wurde sie eingebaut).
+        //
+        // Vorbelegt mit "jetzt": Für vorhandene Agenten ist der wahre Wert
+        // nicht rekonstruierbar. Die Karenzzeit läuft damit ab der Migration
+        // neu an — lieber ein paar Tage später alarmieren als sofort falsch.
+        migration(29, """
+            ALTER TABLE agent
+              ADD COLUMN IF NOT EXISTS version_seit TIMESTAMPTZ NOT NULL DEFAULT now();
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

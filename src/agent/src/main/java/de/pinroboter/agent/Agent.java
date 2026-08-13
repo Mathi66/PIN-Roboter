@@ -48,6 +48,9 @@ public class Agent {
     private volatile boolean notAus = false;
     private volatile String agentToken;
 
+    /** Zugangsdaten zur Programmablage, von der Zentrale bezogen (PO, 13.08.2026). */
+    private volatile Registrierzugang registrierzugang;
+
     /**
      * Was der Agent über sich weiß — für die Oberfläche zur Inbetriebnahme und
      * Fehlersuche (PO, 13.08.2026). Enthält keine Geheimnisse.
@@ -220,6 +223,13 @@ public class Agent {
 
         // Die Oberfläche zeigt, was oben eingerichtet wurde. Sie startet ZULETZT:
         // Wäre sie vorher da, zeigte sie einen Zustand, den es noch nicht gibt.
+        // Die Zugangsdaten für die selbsttätige Aktualisierung. Sie liegen im
+        // Datenverzeichnis, weil Watchtower sie dort lesen muss — nicht in
+        // einer Umgebungsvariablen, wo sie in "docker inspect" stünden.
+        agent.registrierzugang = new Registrierzugang(
+                java.nio.file.Path.of(env("REGISTRY_VERZEICHNIS", "/daten/registry")),
+                agent.zentraleHttp, zentralenadresse.aktuell());
+
         agent.zustand.grunddaten(bausteinversion(), zentralenadresse.aktuell().toString(),
                 konnektorUrl, intervall);
         agent.zustand.schluessel(agent.schluessel != null, agent.ablage.aktiv());
@@ -372,6 +382,16 @@ public class Agent {
                 notAus = notAusAbfragen();
                 zustand.notAus(notAus);
                 zustand.zentraleErreicht();
+
+                // Zugangsdaten für die Aktualisierung abgleichen. Nur bei einer
+                // Änderung entsteht eine Meldung — sonst stünde bei jedem Takt
+                // dieselbe Zeile im Puffer.
+                if (registrierzugang != null && agentToken != null) {
+                    String m = registrierzugang.abgleichen(agentToken);
+                    if (m != null) { System.out.println("  " + m); zustand.melden(false, m); }
+                    zustand.aktualisierung(registrierzugang.bereit(),
+                                           registrierzugang.registry());
+                }
                 intervalleAbrufen();
                 var terminals = konnektor.terminals();
                 var karten = konnektor.karten();

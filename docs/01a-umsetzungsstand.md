@@ -154,7 +154,9 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | **✔** | `FA-AGT-050` Einrichtungspaket <br><span style="opacity:.7">SOLL</span> |  | ZIP mit `docker-compose.yml`, vorausgefüllter `.env` (Zentralen-Adresse aus der Anfrage, Zugangscode) und Anleitung. Ende zu Ende geprüft: Ein Agent aus diesem Paket registriert sich und meldet 36 Terminals. [Umsetzung 33](03-umsetzung/33-agenten-einrichtungspaket.md) |
 | **✔** | `FA-AGT-020` Verbindung <br><span style="opacity:.7">MUSS</span> |  | ausgehend aufgebaut, Token-authentisiert |
 | **✔** | `FA-AGT-030` Autonomer Weiterbetrieb <br><span style="opacity:.7">MUSS</span> |  | Agent arbeitet ohne Zentrale weiter |
-| **✔** | `FA-AGT-040` Versionsunterschiede <br><span style="opacity:.7">MUSS</span> |  | Protokollversion gemeldet, bewertet, angezeigt; kein Abweisen |
+| **✔** | `FA-AGT-040` Versionsunterschiede <br><span style="opacity:.7">MUSS</span> |  | Protokollversion gemeldet, bewertet, angezeigt; kein Abweisen. Die **Bausteinversion** stand bis 13.08.2026 immer auf „unbekannt" (fehlender Manifest-Eintrag) und wurde nur bei einem Protokollwechsel nachgeführt — beides behoben |
+| **✔** | `FA-AGT-080` Selbsttätige Aktualisierung <br><span style="opacity:.7">SOLL</span> |  | Watchtower nachts um 3:30 über einen Socket-Vermittler, nur auf den Agenten begrenzt, Tag `stabil`. Die Anmeldung zur privaten Programmablage steht **nicht im Paket**: Der Agent holt sie von der Zentrale, ab Werk abgeschaltet, Abschalten löscht sie wieder. [Umsetzung 35](03-umsetzung/35-agent-aktualisierung.md) |
+| **✔** | `FA-AGT-090` Stumme und veraltete Agenten <br><span style="opacity:.7">MUSS</span> |  | Minutentakt in der Zentrale: stumm ab 15 min (kritisch), veraltet ab 3 Tagen bei eingeschalteter Weitergabe (Warnung). Beide schließen sich selbst. Am laufenden Stack provoziert und aufgelöst |
 
 ## A.12 Datensicherung (FA-BAK)
 

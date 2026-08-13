@@ -3649,6 +3649,155 @@ ergebnis "ohne Anmeldung laesst sich die Registry nicht umstellen (HTTP $CODE)" 
 
 rm -f /tmp/pr-reg*.html
 
+# ---------------------------------------------------------------- FA-AGT-080
+# Selbsttaetige Aktualisierung der Standort-Agenten (PO, 13.08.2026).
+#
+# Die Programmablage bleibt privat. Damit die Aktualisierung an das Abbild
+# kommt, braucht sie eine Anmeldung — und die kennt nur die Zentrale. Sie
+# reicht sie an registrierte Agenten weiter, statt denselben Token in jedes
+# Einrichtungspaket zu schreiben. Geprueft wird die ganze Kette, nicht die
+# Absicht: Erst wenn die Datei beim Agenten liegt (und beim Abschalten wieder
+# verschwindet), wirkt der Schalter.
+hinweis "FA-AGT-080 — selbsttaetige Aktualisierung der Agenten"
+
+# Der Zugang aus FA-UPD-010 steht noch; die Weitergabe ist ab Werk AUS.
+ANAUS=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
+[ "$ANAUS" = "false" ] && AA=ja || AA=nein
+ergebnis "die Weitergabe an Agenten ist ab Werk abgeschaltet ($ANAUS)" "$AA"
+
+# Ohne Einschaltung darf die Zentrale nichts herausgeben.
+docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && AB=nein || AB=ja
+ergebnis "der Agent hat keine Zugangsdaten, solange nichts eingeschaltet ist" "$AB"
+
+# Einschalten — ueber die Oberflaeche, nicht per SQL.
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=1" -o /dev/null
+ANEIN=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
+[ "$ANEIN" = "true" ] && AC=ja || AC=nein
+ergebnis "der Schalter in der Verwaltung wirkt ($ANEIN)" "$AC"
+
+# Der Agent holt sie im naechsten Takt ab.
+for _ in $(seq 60); do
+  docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && break
+  sleep 1
+done
+docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && AD=ja || AD=nein
+ergebnis "der Agent legt die Zugangsdaten ab" "$AD"
+
+if [ "$AD" = "ja" ]; then
+  CFG=$(docker exec pr-agt sh -c 'cat /daten/registry/config.json')
+  # Docker-Format: Ein eigenes Format waere wertlos, Watchtower liest genau dieses.
+  ERWARTET=$(printf 'pin-roboter:ghp-testaufbau-1234567890' | base64 | tr -d '\n')
+  case "$CFG" in *"$ERWARTET"*) AE1=ja ;; *) AE1=nein ;; esac
+  ergebnis "sie stehen im Docker-Format, das die Aktualisierung liest" "$AE1"
+  case "$CFG" in *ghp-testaufbau-1234567890*) AE2=nein ;; *) AE2=ja ;; esac
+  ergebnis "der Token steht nicht zusaetzlich im Klartext in der Datei" "$AE2"
+  RECHTE=$(docker exec pr-agt sh -c 'stat -c %a /daten/registry/config.json' 2>/dev/null)
+  case "$RECHTE" in *0) AE3=ja ;; *) AE3=nein ;; esac
+  ergebnis "die Datei ist nicht welt-lesbar (Rechte $RECHTE)" "$AE3"
+fi
+
+# Ohne gueltiges Agent-Token gibt die Zentrale nichts heraus.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' $BASIS/api/agent/registry -H "X-Agent-Token: erfunden")
+[ "$CODE" != "200" ] && AF=ja || AF=nein
+ergebnis "ein unbekannter Agent bekommt keine Zugangsdaten (HTTP $CODE)" "$AF"
+
+# Das Token darf auch auf diesem Weg nirgends im Klartext auftauchen.
+TREFFER=0
+docker logs pr-agt 2>&1 | grep -qF "ghp-testaufbau" && TREFFER=$((TREFFER+1))
+docker logs pr-zen 2>&1 | grep -qF "ghp-testaufbau" && TREFFER=$((TREFFER+1))
+[ "$(sql "SELECT count(*) FROM fachprotokoll WHERE coalesce(text,'') LIKE '%ghp-testaufbau%'")" != "0" ] \
+  && TREFFER=$((TREFFER+1))
+[ $TREFFER -eq 0 ] && AG=ja || AG=nein
+ergebnis "der Token erscheint weder in Logs noch im Protokoll (Treffer: $TREFFER)" "$AG"
+
+# Der Not-Aus: Abschalten muss die Datei ENTFERNEN. Bliebe sie liegen, liefe
+# die Aktualisierung weiter und der Schalter waere eine Anzeige ohne Wirkung.
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=0" -o /dev/null
+for _ in $(seq 60); do
+  docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 || break
+  sleep 1
+done
+docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && AH=nein || AH=ja
+ergebnis "das Abschalten entfernt die Zugangsdaten wieder" "$AH"
+
+# ---------------------------------------------------------------- FA-AGT-090
+# Zustand der Standort-Agenten: stumm und veraltet.
+#
+# Beides ist nur ueber die WIRKUNG pruefbar. Ob die Aktualisierung laeuft, ihr
+# Token gilt oder die Programmablage erreichbar ist, sieht weder die Zentrale
+# noch der Agent — er hat bewusst keinen Zugriff auf den Docker-Dienst. Was
+# beide sehen: Der Agent haengt seit Tagen auf einer aelteren Version.
+hinweis "FA-AGT-090 — stumme und veraltete Agenten fallen auf"
+
+AID=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
+ZEN_VERSION=$(curl -s $BASIS/health | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+AGT_VERSION=$(sqltext "SELECT coalesce(bausteinversion,'-') FROM agent WHERE id = $AID")
+[ "$AGT_VERSION" = "$ZEN_VERSION" ] && AV0=ja || AV0=nein
+ergebnis "der Agent meldet seine Version, nicht „unbekannt\" ($AGT_VERSION)" "$AV0"
+
+# Der Agent wird angehalten, damit er die gesetzten Werte nicht sofort
+# ueberschreibt. 90 Sekunden Stillstand liegen weit unter der Stummgrenze.
+docker stop pr-agt >/dev/null
+
+# (1) veraltet: aeltere Version, lange genug her, Weitergabe eingeschaltet.
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=1" -o /dev/null
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "UPDATE agent SET bausteinversion = '0.0.1', version_seit = now() - interval '5 days',
+                    zuletzt_gesehen = now() WHERE id = $AID" >/dev/null
+for _ in $(seq 90); do
+  [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_VERALTET' AND behoben_am IS NULL")" != "0" ] && break
+  sleep 1
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "UPDATE agent SET zuletzt_gesehen = now() WHERE id = $AID" >/dev/null
+done
+[ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_VERALTET' AND behoben_am IS NULL")" != "0" ] && AV1=ja || AV1=nein
+ergebnis "ein Agent, der seit Tagen zurueckhaengt, loest einen Alarm aus" "$AV1"
+MELD=$(sqltext "SELECT coalesce(handlung,'-') FROM alarm WHERE art='AGENT_VERALTET' ORDER BY id DESC LIMIT 1")
+case "$MELD" in *aktualisierung*) AV2=ja ;; *) AV2=nein ;; esac
+ergebnis "die Meldung sagt, wo nachzusehen ist" "$AV2"
+
+# (2) Ohne eingeschaltete Weitergabe wird NICHT alarmiert: Dann aktualisiert
+#     jemand von Hand, und ein Rueckstand ist seine Entscheidung.
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=0" -o /dev/null
+for _ in $(seq 90); do
+  [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_VERALTET' AND behoben_am IS NULL")" = "0" ] && break
+  sleep 1
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "UPDATE agent SET zuletzt_gesehen = now() WHERE id = $AID" >/dev/null
+done
+[ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_VERALTET' AND behoben_am IS NULL")" = "0" ] && AV3=ja || AV3=nein
+ergebnis "ohne eingeschaltete Weitergabe wird nicht alarmiert" "$AV3"
+
+# (3) stumm: Der Agent meldet sich nicht mehr. Das ist der schwerere Fall —
+#     an diesem Standort wird nichts mehr ueberwacht.
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "UPDATE agent SET zuletzt_gesehen = now() - interval '30 minutes' WHERE id = $AID" >/dev/null
+for _ in $(seq 90); do
+  [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL")" != "0" ] && break
+  sleep 1
+done
+[ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL")" != "0" ] && AV4=ja || AV4=nein
+ergebnis "ein stummer Agent loest einen Alarm aus" "$AV4"
+SCHWERE=$(sqltext "SELECT schweregrad FROM alarm WHERE art='AGENT_STUMM' ORDER BY id DESC LIMIT 1")
+[ "$SCHWERE" = "KRITISCH" ] && AV5=ja || AV5=nein
+ergebnis "er ist als kritisch eingestuft ($SCHWERE)" "$AV5"
+
+# (4) Und er verschwindet von selbst, sobald der Agent wieder meldet.
+docker start pr-agt >/dev/null
+for _ in $(seq 90); do
+  [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL")" = "0" ] && break
+  sleep 1
+done
+[ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL")" = "0" ] && AV6=ja || AV6=nein
+ergebnis "der Alarm schliesst sich, sobald der Agent wieder meldet" "$AV6"
+
+# Die Bausteinversion muss dabei auf den echten Wert zurueckgesetzt worden sein.
+# Bis zum 13.08.2026 wurde sie nur bei einer neuen PROTOKOLLversion gespeichert
+# — ein Agent, der von 0.3.1 auf 0.3.2 wechselte, stand weiter mit 0.3.1 da.
+AGT_V2=$(sqltext "SELECT coalesce(bausteinversion,'-') FROM agent WHERE id = $AID")
+[ "$AGT_V2" = "$ZEN_VERSION" ] && AV7=ja || AV7=nein
+ergebnis "die gemeldete Version wird auch ohne Protokollwechsel nachgefuehrt ($AGT_V2)" "$AV7"
+
 # ---------------------------------------------------------------- FA-BEN-035
 hinweis "FA-BEN-035 — Administratorkonto aus der Konfiguration"
 

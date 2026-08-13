@@ -392,6 +392,20 @@ public class Zentrale {
             }
         });
 
+        // FA-AGT-080 / FA-AGT-090: Zustand der Standort-Agenten.
+        //
+        // Beides ist nur mit einem Takt erkennbar: Ein stummer Agent meldet
+        // definitionsgemäß nichts, an das sich eine Prüfung hängen könnte.
+        Thread.ofVirtual().start(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(60_000);
+                    agentenzustaendePruefen();
+                } catch (InterruptedException e) { return; }
+                  catch (Exception ignored) { }
+            }
+        });
+
         // FA-ALA-020: Sammelfenster abarbeiten. Der Takt ist absichtlich
         // kuerzer als das kuerzeste sinnvolle Fenster — sonst haette ein
         // Fenster von 30 s effektiv 60 s.
@@ -438,28 +452,45 @@ public class Zentrale {
         String bausteinText = baustein == null ? null : String.valueOf(baustein);
 
         Integer vorher = null;
+        String bausteinVorher = null;
         try (var p = db.verbindung().prepareStatement(
-                "SELECT protokollversion FROM agent WHERE id = ?")) {
+                "SELECT protokollversion, bausteinversion FROM agent WHERE id = ?")) {
             p.setLong(1, agentId);
             try (var rs = p.executeQuery()) {
                 if (rs.next()) {
                     int v = rs.getInt(1);
                     vorher = rs.wasNull() ? null : v;   // sofort auswerten
+                    bausteinVorher = rs.getString(2);
                 }
             }
         } catch (java.sql.SQLException ignored) { }
 
-        if (vorher != null && vorher == version) return;   // nichts geändert
+        boolean protokollNeu = vorher == null || vorher != version;
+        boolean bausteinNeu  = !java.util.Objects.equals(bausteinVorher, bausteinText);
 
-        try (var p = db.verbindung().prepareStatement(
-                "UPDATE agent SET protokollversion = ?, bausteinversion = ? WHERE id = ?")) {
+        // Bis zum 13.08.2026 endete die Methode hier, sobald die
+        // Protokollversion gleich blieb — und die Protokollversion ändert sich
+        // fast nie. Ein Agent, der von 0.3.1 auf 0.3.2 wechselte, stand in der
+        // Liste weiter mit 0.3.1. Genau diese Angabe braucht die Überwachung
+        // der selbsttätigen Aktualisierung, also muss sie stimmen.
+        if (!protokollNeu && !bausteinNeu) return;
+
+        try (var p = db.verbindung().prepareStatement("""
+                UPDATE agent SET protokollversion = ?, bausteinversion = ?,
+                                 version_seit = CASE WHEN ? THEN now() ELSE version_seit END
+                 WHERE id = ?""")) {
             p.setInt(1, version);
             p.setString(2, bausteinText);
-            p.setLong(3, agentId);
+            p.setBoolean(3, bausteinNeu);
+            p.setLong(4, agentId);
             p.executeUpdate();
         } catch (java.sql.SQLException e) {
             System.err.println("Agentenversion nicht speicherbar: " + e.getMessage());
         }
+
+        // Der Protokolleintrag hängt an der Protokollversion — sonst stünde bei
+        // jedem Agenten-Update dieselbe Zeile im Fachprotokoll.
+        if (!protokollNeu) return;
 
         String bewertung = de.pinroboter.gemeinsam.Protokollversion.bewertung(version);
         protokoll.anfuegen(einrichtungVonAgent(agentId), null, Ereignisart.AGENT_VERSION,
@@ -717,6 +748,99 @@ public class Zentrale {
         } else if (alarme.beheben(einrichtung, objekt, art)) {
             protokoll.anfuegen(einrichtung, objekt, Ereignisart.ALARM_BEHOBEN, true,
                     "Automatik", null, "Zustand behoben: " + art.name(), null);
+        }
+    }
+
+    /**
+     * Wie lange ein Agent stumm sein darf, bevor es ein Alarm wird.
+     *
+     * <p>Der Agent meldet sich im Prüftakt, im Auslieferungszustand alle 60 s.
+     * Fünfzehn Minuten sind rund fünfzehn ausgefallene Meldungen — kein
+     * Netzwerkhusten mehr, sondern ein Standort ohne Überwachung.
+     */
+    private static final java.time.Duration STUMM_AB = java.time.Duration.ofMinutes(15);
+
+    /**
+     * Wie lange ein Agent hinter der Zentrale zurückbleiben darf.
+     *
+     * <p>Watchtower läuft im Auslieferungszustand einmal nachts. Drei Tage
+     * sind drei verpasste Gelegenheiten — davor wäre jede Meldung nur Lärm,
+     * etwa wenn die Zentrale gerade aktualisiert wurde und die Agenten in der
+     * kommenden Nacht ohnehin nachziehen.
+     */
+    private static final java.time.Duration VERALTET_AB = java.time.Duration.ofDays(3);
+
+    /**
+     * Leitet die Alarme zum Zustand der Standort-Agenten ab.
+     *
+     * <h2>Warum die Aktualisierung über die Wirkung geprüft wird</h2>
+     *
+     * Ob Watchtower läuft, ob sein Token gilt, ob die Programmablage
+     * erreichbar ist — das alles sieht die Zentrale nicht, und der Agent selbst
+     * auch nicht: Er hat bewusst keinen Zugriff auf den Docker-Dienst. Was
+     * beide sehen, ist das Ergebnis. Läuft ein Agent mehrere Tage auf einer
+     * älteren Version, obwohl die Weitergabe der Zugangsdaten eingeschaltet
+     * ist, dann greift die selbsttätige Aktualisierung nicht — gleich aus
+     * welchem Grund. Genau das ist die Aussage, die ein Administrator braucht.
+     *
+     * <p>Ohne eingeschaltete Weitergabe wird <b>nicht</b> alarmiert: Dann
+     * aktualisiert jemand von Hand, und ein Rückstand ist seine Entscheidung.
+     */
+    private void agentenzustaendePruefen() {
+        String zentralenversion = Versionspruefung.laufendeVersion();
+        boolean weitergabe;
+        try {
+            var z = versionen.agentenzugang();
+            weitergabe = z != null;
+        } catch (Exception e) {
+            weitergabe = false;
+        }
+
+        try (var p = db.verbindung().prepareStatement("""
+                SELECT id, bezeichnung, einrichtung, zuletzt_gesehen,
+                       bausteinversion, version_seit
+                  FROM agent WHERE aktiv""")) {
+            try (var rs = p.executeQuery()) {
+                while (rs.next()) {
+                    long id = rs.getLong("id");
+                    String objekt = "Standort-Agent " + id;
+                    String bez = nz(rs.getString("bezeichnung"));
+                    String einrichtung = rs.getString("einrichtung");
+                    java.sql.Timestamp gesehen = rs.getTimestamp("zuletzt_gesehen");
+                    String version = rs.getString("bausteinversion");
+                    java.sql.Timestamp seit = rs.getTimestamp("version_seit");
+
+                    boolean stumm = gesehen == null
+                            || gesehen.toInstant().isBefore(Instant.now().minus(STUMM_AB));
+                    pruefe(einrichtung, stumm, objekt, Alarmverwaltung.Art.AGENT_STUMM,
+                            "Der Standort-Agent „%s“ meldet sich seit über %d Minuten nicht. "
+                            .formatted(bez, STUMM_AB.toMinutes())
+                            + "Die Kartenterminals an diesem Standort werden nicht mehr überwacht.",
+                            "Bitte prüfen, ob der Rechner läuft und der Container gestartet ist. "
+                            + "Die Oberfläche des Agenten zeigt unter „Übersicht“, woran es hakt.");
+
+                    // Ein stummer Agent kann seine Version nicht melden; ihn
+                    // zusätzlich als veraltet zu führen, wäre eine zweite
+                    // Meldung für dieselbe Ursache.
+                    boolean veraltet = !stumm && weitergabe
+                            && version != null && !version.isBlank()
+                            && !version.equals("unbekannt")
+                            && !version.equals(zentralenversion)
+                            && seit != null
+                            && seit.toInstant().isBefore(Instant.now().minus(VERALTET_AB));
+                    pruefe(einrichtung, veraltet, objekt, Alarmverwaltung.Art.AGENT_VERALTET,
+                            "Der Standort-Agent „%s“ läuft seit über %d Tagen auf Version %s, "
+                            .formatted(bez, VERALTET_AB.toDays(), nz(version))
+                            + "die Zentrale auf " + zentralenversion
+                            + ". Die selbsttätige Aktualisierung greift dort nicht.",
+                            "Bitte am betroffenen Rechner prüfen, ob der Dienst „aktualisierung“ "
+                            + "läuft: docker compose logs aktualisierung. Häufigste Ursache sind "
+                            + "abgelehnte Zugangsdaten zur Programmablage — die lassen sich unter "
+                            + "„Instanz“ neu hinterlegen.");
+                }
+            }
+        } catch (java.sql.SQLException e) {
+            System.err.println("Agentenzustände nicht prüfbar: " + e.getMessage());
         }
     }
 
@@ -1195,11 +1319,67 @@ public class Zentrale {
                 <form method="post" action="/verwaltung/registry/pruefen" class="abstand-oben">
                   <button class="knopf" type="submit" title="Fragt die Registry sofort ab, statt auf die tägliche Prüfung zu warten" aria-label="Fragt die Registry sofort ab, statt auf die tägliche Prüfung zu warten">Jetzt auf neue Versionen prüfen</button>
                 </form>
+                %s
                 </div>""".formatted(esc(nz(registryFeld("registry"))), esc(nz(registryFeld("abbild"))),
                         esc(nz(registryFeld("benutzer"))),
                         z.zugangHinterlegt() ? "Ein Token ist hinterlegt."
-                                             : "Es ist kein Token hinterlegt."));
+                                             : "Es ist kein Token hinterlegt.",
+                        agentenaktualisierung(z.zugangHinterlegt())));
         return s.append("</div>").toString();
+    }
+
+    /**
+     * Der Schalter für die selbsttätige Aktualisierung der Standort-Agenten
+     * (PO, 13.08.2026).
+     *
+     * <p>Er gibt keinen Befehl, sondern gibt etwas <b>heraus</b>: die
+     * Zugangsdaten zur Programmablage. Ohne sie kommt ein Agent im Praxisnetz
+     * nicht an sein Abbild — die Aktualisierung unterbleibt, ohne dass dort
+     * jemand etwas umstellen muss.
+     *
+     * <p>Das ist zugleich der Not-Aus: Stellt sich eine Fassung als fehlerhaft
+     * heraus, schaltet man hier ab, und keine weitere Praxis zieht sie nach.
+     */
+    private String agentenaktualisierung(boolean tokenDa) {
+        boolean an = versionen.agentenzugang() != null;
+        return """
+                <div class="tafel abstand-oben"><h3>Selbsttätige Aktualisierung der Agenten</h3>
+                <p class="unterzeile">Die Standort-Agenten in den Praxen holen ihre
+                   Aktualisierung aus derselben Programmablage. Weil sie privat ist, brauchen
+                   sie dafür Zugangsdaten — <strong>diese hier</strong>. Sie werden über die
+                   bestehende, verschlüsselte Verbindung übergeben und stehen damit nicht in
+                   jedem Einrichtungspaket.</p>
+                <p class="marke %s">%s</p>
+                %s
+                <form method="post" action="/verwaltung/registry/agenten" class="abstand-oben"
+                      onsubmit="return confirm('%s')">
+                  <input type="hidden" name="an" value="%s">
+                  <button class="knopf %s" type="submit"
+                          title="%s"
+                          aria-label="%s">%s</button>
+                </form>
+                <p class="hilfe">Der Token sollte auf <code>read:packages</code> beschränkt
+                   sein — mehr braucht ein Agent nie. Wird ein Agent widerrufen, bekommt er
+                   keine Zugangsdaten mehr; ein kompromittierter Praxisrechner lässt sich so
+                   ausschließen, ohne den Token überall zu tauschen.</p>
+                </div>"""
+                .formatted(
+                    an ? "ok" : "unbekannt",
+                    an ? "✓ eingeschaltet — Agenten aktualisieren sich selbst"
+                       : "× ausgeschaltet — Agenten bleiben auf ihrem Stand",
+                    tokenDa ? "" : "<div class=\"hinweis\">Zuerst oben einen Zugang mit Token "
+                            + "hinterlegen. Ohne ihn gibt es nichts weiterzugeben.</div>",
+                    an ? "Selbsttätige Aktualisierung abschalten? Die Agenten bleiben auf ihrem "
+                       + "jetzigen Stand, bis Sie sie wieder einschalten."
+                       : "Selbsttätige Aktualisierung einschalten? Die Agenten holen sich ab "
+                       + "der nächsten Nacht die jeweils freigegebene Fassung.",
+                    an ? "aus" : "an",
+                    an ? "warnend" : "haupt",
+                    an ? "Nimmt den Agenten die Zugangsdaten; sie bleiben auf ihrem Stand"
+                       : "Gibt den Agenten die Zugangsdaten, damit sie sich aktualisieren können",
+                    an ? "Selbsttätige Aktualisierung abschalten"
+                       : "Selbsttätige Aktualisierung einschalten",
+                    an ? "Abschalten" : "Einschalten");
     }
 
     private String registryFeld(String spalte) {
@@ -4352,6 +4532,25 @@ public class Zentrale {
             c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)), angemeldeter(c)));
         });
 
+        app.post("/verwaltung/registry/agenten", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Steuern der Agenten-Aktualisierung")) return;
+            boolean an = "an".equals(Anmeldeseiten.feld(c, "an"));
+            versionen.anAgenten(an);
+            // Sicherheitsstufe: Hier wird entschieden, ob Zugangsdaten das Haus
+            // verlassen — und ob in Praxen ungefragt neue Fassungen anlaufen.
+            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT,
+                    true, angemeldeter(c).anzeigename(), null,
+                    "Selbsttätige Aktualisierung der Standort-Agenten "
+                            + (an ? "eingeschaltet" : "abgeschaltet"),
+                    an ? "Die Agenten erhalten die Zugangsdaten zur Programmablage und holen "
+                         + "sich die jeweils freigegebene Fassung."
+                       : "Die Agenten erhalten keine Zugangsdaten mehr und bleiben auf ihrem "
+                         + "jetzigen Stand.");
+            c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)),
+                    angemeldeter(c)));
+        });
+
         app.post("/verwaltung/registry/pruefen", c -> {
             if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Die Versionsprüfung")) return;
             var z = versionen.pruefen();
@@ -4736,6 +4935,33 @@ public class Zentrale {
         app.post("/api/agent/melden", this::agentMeldung);
 
         app.get("/api/agent/notaus", c -> c.json(Map.of("notAus", notAus)));
+
+        /**
+         * Zugangsdaten zur Programmablage für die selbsttätige Aktualisierung
+         * (PO, 13.08.2026).
+         *
+         * <p>Nur für registrierte Agenten — das prüft der Filter oben anhand
+         * des Tokens. Der Token der Registry geht damit über eine bereits
+         * bestehende, verschlüsselte Verbindung an einen bekannten Empfänger,
+         * statt in jedem Einrichtungspaket zu stehen.
+         *
+         * <p>Ist die Weitergabe abgeschaltet oder kein Zugang eingerichtet,
+         * kommt eine leere Antwort. Der Agent schreibt dann keine Anmeldedaten,
+         * und die Aktualisierung unterbleibt — <b>das ist der Schalter</b>:
+         * kein zusätzlicher Mechanismus, sondern das Vorenthalten dessen, was
+         * es dafür braucht.
+         */
+        app.get("/api/agent/registry", c -> {
+            var z = versionen.agentenzugang();
+            if (z == null) {
+                c.json(Map.of("verfuegbar", false));
+                return;
+            }
+            // Kein Zwischenspeicher: Hier geht ein Geheimnis über die Leitung.
+            c.header("Cache-Control", "no-store");
+            c.json(Map.of("verfuegbar", true, "registry", z.registry(),
+                    "benutzer", z.benutzer(), "token", z.token()));
+        });
 
         /**
          * FA-UEB-010: Das Prüfintervall je Kartenterminal.

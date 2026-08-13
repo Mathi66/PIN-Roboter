@@ -122,6 +122,11 @@ final class Betriebszustand {
     /** Nach einem Serverumzug: Die Anzeige muss die neue Adresse nennen. */
     void grunddatenZentrale(String zentrale) { this.zentrale = zentrale; }
 
+    /** Liegt eine Anmeldung für die Programmablage vor? */
+    private volatile boolean aktualisierungBereit;
+    /** Kurzer Klartext dazu, etwa die Registry. */
+    private volatile String aktualisierungStand;
+
     void registrierung(boolean ok, String einrichtung) {
         this.registriert = ok;
         if (einrichtung != null) this.einrichtung = einrichtung;
@@ -133,6 +138,17 @@ final class Betriebszustand {
     }
 
     void zentraleErreicht()   { this.zentraleGesehen = Instant.now(); }
+
+    /**
+     * Was der Abgleich der Zugangsdaten zuletzt ergeben hat.
+     *
+     * @param bereit ob eine verwendbare Anmeldung auf der Platte liegt
+     * @param stand  kurzer Klartext für die Anzeige, oder {@code null}
+     */
+    void aktualisierung(boolean bereit, String stand) {
+        this.aktualisierungBereit = bereit;
+        this.aktualisierungStand = stand;
+    }
 
     void konnektorErreicht(int terminals, int erreichbar, int smcb) {
         this.konnektorGesehen = Instant.now();
@@ -249,6 +265,20 @@ final class Betriebszustand {
                         : "PIN_ABLAGE_SCHLUESSEL in der .env setzen "
                           + "(openssl rand -base64 32), dann neu starten. "
                           + "Ohne ihn müssen PINs nach jedem Neustart erneut hinterlegt werden."));
+
+        // Ohne diesen Punkt bliebe eine nicht greifende Aktualisierung
+        // monatelang unbemerkt — und genau dann fehlen die Fehlerbehebungen,
+        // für die sie eingebaut wurde.
+        l.add(new Schritt("Selbsttätige Aktualisierung", aktualisierungBereit,
+                aktualisierungBereit
+                        ? "Zugangsdaten zur Programmablage liegen vor" + (aktualisierungStand == null
+                                ? "." : " (" + aktualisierungStand + ").")
+                        : "Keine Zugangsdaten — der Agent aktualisiert sich nicht selbst.",
+                aktualisierungBereit ? null
+                        : "In der Zentrale unter „Instanz“ → „Programmablage“ die Weitergabe "
+                          + "an Agenten einschalten. Bis dahin muss jede neue Version hier "
+                          + "von Hand eingespielt werden: docker compose pull && "
+                          + "docker compose up -d"));
 
         return l;
     }
