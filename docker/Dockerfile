@@ -13,7 +13,14 @@ RUN mvn -B -q package -DskipTests
 FROM eclipse-temurin:21-jre AS laufzeit
 ARG BAUSTEIN
 # NFA-SIC-030: Container laufen als Nicht-Root-Benutzer.
-RUN useradd --system --uid 10001 --create-home roboter
+#
+# GID AUSDRUECKLICH setzen. „useradd --system --uid 10001" legt die Gruppe zwar
+# an, aber mit der naechsten freien System-GID — hier 999. DevOps bereitet die
+# Volumes anhand von UID:GID vor (Vorgabe 12.08.2026); eine GID, die sich mit
+# dem Basisimage aendern kann, macht daraus ein Ratespiel. Ohne
+# CAP_DAC_OVERRIDE kann der Container nichts nachtraeglich richtigstellen.
+RUN groupadd --system --gid 10001 roboter && \
+    useradd --system --uid 10001 --gid 10001 --create-home roboter
 
 # Der PostgreSQL-Client für die Datensicherung (FA-BAK-010, ADR-0010).
 #
@@ -35,6 +42,12 @@ RUN if [ "$BAUSTEIN" = "zentrale" ]; then \
 WORKDIR /app
 COPY --from=bau /bau/src/${BAUSTEIN}/target/${BAUSTEIN}.jar /app/anwendung.jar
 COPY docker/brainpool.security /app/brainpool.security
+COPY docker/gesundheit.sh /app/gesundheit.sh
+# Nur Bausteine mit HTTP-Schnittstelle bekommen einen Port zum Pruefen. Der
+# Agent hat keinen: Er baut Verbindungen ausschliesslich nach aussen auf
+# (ADR-0002), damit im Kundennetz keine Freigabe noetig ist.
+RUN chmod 0555 /app/gesundheit.sh && \
+    if [ "$BAUSTEIN" = "zentrale" ]; then echo 8090 > /app/gesundheitsport; fi
 
 # Datenverzeichnis des Agenten: Token, Schluesselpaar und PIN-Ablage.
 #
@@ -52,4 +65,20 @@ USER 10001
 # dann bereits gelesen, und die Freischaltung bleibt wirkungslos.
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k \
     -Djava.security.properties=/app/brainpool.security"
+# Der Healthcheck gehoert INS IMAGE (DevOps-Vorgabe 12.08.2026): Wer das Image
+# startet, bekommt die Pruefung mit, ohne sie in seinem Compose nachbauen zu
+# muessen. Nur die Zentrale hat einen HTTP-Endpunkt; Agent und Simulator
+# bekommen keinen, sonst meldete Docker sie dauerhaft als ungesund.
+#
+# start-period: Die Zentrale wendet beim ersten Start Migrationen an. 40 s sind
+# grosszuegig bemessen - ein zu knapper Wert liesse den Container in einer
+# Neustartschleife enden, und genau danach sucht das Deploy-Skript.
+# Dokumentiert den Port im Image. Oeffnet nichts — das Veroeffentlichen
+# entscheidet der Betreiber im Compose (auf Labs: nur „expose").
+EXPOSE 8090
+
+ARG BAUSTEIN
+HEALTHCHECK --interval=10s --timeout=5s --start-period=40s --retries=6 \
+  CMD ["/app/gesundheit.sh"]
+
 ENTRYPOINT ["java", "-jar", "/app/anwendung.jar"]

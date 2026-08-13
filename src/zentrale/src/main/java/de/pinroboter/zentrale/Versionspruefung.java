@@ -225,7 +225,7 @@ public class Versionspruefung {
      * <p>Im Entwicklungslauf ohne Jar steht dort nichts; dann gilt alles als
      * neuer. Das ist die harmlose Richtung — im Betrieb liegt immer ein Jar vor.
      */
-    static String laufendeVersion() {
+    public static String laufendeVersion() {
         String v = Versionspruefung.class.getPackage().getImplementationVersion();
         return v == null ? "unbekannt" : v;
     }

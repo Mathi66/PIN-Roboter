@@ -3084,3 +3084,81 @@ gibt es einen eigenen Test.
 Zwei bestehende Modultests fielen dabei um — sie legten in verschiedenen
 Einrichtungen Gruppen namens „Notaufnahme" an. Genau das, was die neue Regel
 verbietet; die Tests tragen jetzt die Einrichtung im Namen.
+
+
+---
+
+## Übergabe an DevOps
+
+DevOps hat eine Anforderungsliste für das Deployment auf Labs geschickt
+(`*.lab.vps.nieting.de`). Die Besonderheit steht gleich im Kopf: Der PIN-Roboter
+ist **die einzige Anwendung dort, die ohne Authentik aus dem Internet erreichbar
+ist** — alles andere liegt hinter zentraler Anmeldung mit Zwei-Faktor. Er trägt
+seine Absicherung vollständig selbst.
+
+### Was gemessen fehlte
+
+| Anforderung | Stand vorher |
+|---|---|
+| `GET /health` mit Version und DB-Status | fehlte ganz |
+| `HEALTHCHECK` im Image | nur ein TCP-Test im Compose |
+| Sitzungscookie mit `Secure` | **fehlte** |
+| `X-Forwarded-Proto` / `X-Forwarded-For` | wurden nicht ausgewertet |
+| CSRF-Schutz | nur `SameSite=Strict` |
+| `expose:` statt `ports:`, gehärtete Container | Compose öffnete 8090 auf dem Host |
+| GitHub Actions, GHCR, Smoke-Test | kein `.github/` |
+| `RELEASENOTES.md` | fehlte |
+
+### Der peinlichste Punkt
+
+Im Code stand seit Wochen:
+
+> Das Secure-Kennzeichen setzt der Reverse-Proxy in der Auslieferung.
+
+Das tut Caddy **nicht von sich aus**. Ohne `Secure` schickt der Browser das
+Sitzungscookie auch über unverschlüsseltes HTTP — und aufgefallen wäre es
+niemandem, weil im Prototyp ohnehin alles auf localhost lief. Eine Annahme über
+fremde Technik, die nie geprüft wurde. Jetzt setzt die Anwendung das Kennzeichen
+selbst, sobald `X-Forwarded-Proto: https` ankommt.
+
+### CSRF ohne Token
+
+DevOps verlangt CSRF-Schutz für alle verändernden Aufrufe. Statt Tokens je
+Formular nachzurüsten — Arbeit an jedem Formular und jedem HTMX-Aufruf — prüft
+der zentrale Filter jetzt den **`Origin`-Kopf**: Ihn setzt der Browser selbst,
+Skriptcode kann ihn nicht fälschen. Zusammen mit `SameSite=Strict` sind das zwei
+Linien; OWASP nennt den Weg als gleichwertig. Nachgewiesen mit drei Aufrufen:
+fremder Ursprung → 403, eigener → 200, ohne Origin (curl) → 200.
+
+Dasselbe Muster wie überall in diesem Projekt: eine Sperre an einer Stelle statt
+Sorgfalt an hundert.
+
+### Zwei Befunde beim Messen
+
+**Die GID war 999, nicht 10001.** `useradd --system --uid 10001` legt die Gruppe
+zwar an, nimmt dafür aber die nächste freie System-GID. DevOps bereitet die
+Volumes anhand von UID:GID vor — und ohne `CAP_DAC_OVERRIDE` kann der Container
+nichts nachträglich richtigstellen. Jetzt `groupadd --gid 10001` davor.
+
+**`EXPOSE` fehlte im Image.** Öffnet nichts, dokumentiert aber den Port für den,
+der das Image bekommt.
+
+### Gehärtet geprüft, nicht behauptet
+
+Der Container läuft mit `read_only`, `cap_drop: ALL`, `no-new-privileges`,
+`pids_limit` und **PostgreSQL 16-alpine** statt unserer 17 — und meldet
+`healthy`. Auch die Sicherung wurde gegen 16 geprüft: Der `pg_dump`-Client im
+Image ist Version 18, also neuer als der Server. Das ist die zulässige Richtung;
+umgekehrt verweigert der Client die Arbeit.
+
+Gemessen statt geschätzt: **196 MiB** für die Anwendung, **66 MiB** für die
+Datenbank, SIGTERM in **1 s**.
+
+### Was ich als Abweichung benannt habe
+
+Drei Punkte stehen im Übergabedokument als offene Abweichung, nicht als
+erfüllt: PostgreSQL-Version, CSRF ohne Token, und ein Image von 632 MB für
+einen Dienst, der 196 MiB braucht. Beim Image ist Alpine keine Option — wir
+brauchen Brainpool aus BouncyCastle und haben die TLS-Kette nur auf dieser
+Kombination gemessen. `jlink` wäre der nächste Schritt, vor einem
+Produktionsdeployment ohnehin.

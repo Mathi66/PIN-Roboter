@@ -146,6 +146,45 @@ public class Zentrale {
             String pfad = c.path();
             if (pfad.startsWith("/statisch/")) return;
 
+            // Betriebsschnittstelle: Der Container-Healthcheck und das
+            // Deploy-Skript fragen sie, bevor es eine Sitzung gibt. Sie gibt
+            // nichts preis, was nicht ohnehin am Image-Tag ablesbar wäre.
+            if (pfad.equals("/health")) return;
+
+            // KEINE Anmeldung über Kopfzeilen. Diese Anwendung ist die einzige
+            // auf Labs, die ohne zentrale Anmeldung aus dem Internet erreichbar
+            // ist (DevOps 12.08.2026): Ein „X-Authentik-Username" käme hier
+            // nicht vom Proxy, sondern vom Aufrufer — er wäre frei erfindbar.
+            //
+            // Wir werten solche Kopfzeilen nirgends aus. Diese Zeile ist keine
+            // Abwehr, sondern eine Feststellung an der Stelle, an der jemand
+            // sie künftig einbauen würde. Der Systemnachweis führt den Versuch
+            // aus und prüft, dass er nichts bewirkt.
+            // (kein Code nötig — die Anmeldung hängt allein an der Sitzung)
+
+            // ── CSRF: verändernde Aufrufe müssen von dieser Seite kommen ──
+            //
+            // Das Sitzungscookie trägt bereits SameSite=Strict; ein fremder
+            // Ursprung bekommt es gar nicht erst mit. Diese Prüfung ist die
+            // zweite Linie — sie hält auch dann, wenn ein Browser SameSite
+            // nicht durchsetzt oder eine künftige Änderung es lockert.
+            //
+            // Geprüft wird der Origin-Kopf: Ihn setzt der Browser selbst, und
+            // Skriptcode kann ihn nicht fälschen. Fehlt er (manche Browser
+            // lassen ihn bei gleichem Ursprung weg), gilt der Referer.
+            //
+            // Ausgenommen sind die Maschinenschnittstellen weiter unten: Der
+            // Standort-Agent ist kein Browser, schickt keinen Origin und weist
+            // sich mit seinem Token aus.
+            if (!pfad.startsWith("/api/") && veraendernd(c) && !ursprungPasst(c)) {
+                System.err.println("Abgewiesen: verändernder Aufruf von fremdem Ursprung auf "
+                        + pfad + " (Origin: " + kopfWert(c, "Origin") + ")");
+                c.status(403).result("Diese Anfrage kam nicht von dieser Seite. "
+                        + "Bitte die Seite neu laden und erneut versuchen.");
+                c.skipRemainingHandlers();
+                return;
+            }
+
             // Registrierung eines neuen Agenten: Der Schutz liegt im
             // Registrierungsgeheimnis selbst (einmalig gültig, zeitlich
             // begrenzt), nicht in einer Sitzung — der Agent hat noch keine.
@@ -1569,6 +1608,24 @@ public class Zentrale {
      * das Feld eine beliebige Einrichtung, und ein Klick auf „Zuordnen" würde
      * den Agenten stillschweigend woandershin hängen.
      */
+    /**
+     * Antwortet die Datenbank?
+     *
+     * <p>Eine echte Abfrage, kein Blick auf ein Verbindungsobjekt: Eine
+     * Verbindung kann längst tot sein, ohne dass jemand es merkt. Erst mit
+     * dieser Prüfung unterscheidet das Deploy-Skript einen arbeitsfähigen
+     * Container von einem, der nur läuft.
+     */
+    private boolean datenbankErreichbar() {
+        try (var s = db.verbindung().createStatement()) {
+            s.execute("SELECT 1");
+            return true;
+        } catch (Exception e) {
+            System.err.println("Health: Datenbank antwortet nicht: " + e.getMessage());
+            return false;
+        }
+    }
+
     private String einrichtungsoptionen(Geltungsbereich bereich, String gewaehlt) {
         var liste = bestand.organisationen(bereich);
         boolean bekannt = gewaehlt != null
@@ -1912,6 +1969,95 @@ public class Zentrale {
         return "unbekannt".equals(v) ? "Entwicklungsstand" : "Version " + v;
     }
 
+    /** Ändert dieser Aufruf etwas? Nur dann ist CSRF überhaupt ein Thema. */
+    private static boolean veraendernd(Context c) {
+        return switch (c.method().name()) {
+            case "POST", "PUT", "PATCH", "DELETE" -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Kommt dieser Aufruf von dieser Seite?
+     *
+     * <p>Verglichen wird der Ursprung (Schema + Host) mit dem, unter dem die
+     * Anwendung gerade angesprochen wird. Hinter dem Proxy heißt das:
+     * {@code X-Forwarded-Proto} plus {@code Host} — die Anwendung selbst sieht
+     * nur HTTP und ihren internen Namen.
+     *
+     * <p>Fehlen Origin <b>und</b> Referer, wird durchgelassen. Das ist bewusst:
+     * Manche Browser und Erweiterungen senden bei gleichem Ursprung keinen von
+     * beiden, und eine Anmeldeseite, die dann nicht funktioniert, ist
+     * schlimmer als eine zweite Verteidigungslinie mit einer Lücke — die erste
+     * (SameSite=Strict) hält weiterhin.
+     */
+    private static boolean ursprungPasst(Context c) {
+        String origin = kopfWert(c, "Origin");
+        if (origin.isBlank()) {
+            String referer = kopfWert(c, "Referer");
+            if (referer.isBlank()) return true;          // siehe Erläuterung oben
+            origin = ursprungAus(referer);
+        }
+        String host = kopfWert(c, "Host");
+        if (host.isBlank()) return true;
+        String erwartet = (ueberHttps(c) ? "https://" : "http://") + host;
+        // Auch der jeweils andere Weg gilt: Auf localhost wird ohne Proxy
+        // getestet, und ein Browser, der die Seite über http geladen hat,
+        // schickt genau dieses Origin.
+        return origin.equalsIgnoreCase(erwartet)
+                || origin.equalsIgnoreCase("http://" + host)
+                || origin.equalsIgnoreCase("https://" + host);
+    }
+
+    /** Aus „https://host/pfad?abc" wird „https://host". */
+    private static String ursprungAus(String url) {
+        int schema = url.indexOf("://");
+        if (schema < 0) return url;
+        int strich = url.indexOf('/', schema + 3);
+        return strich < 0 ? url : url.substring(0, strich);
+    }
+
+    /**
+     * Läuft dieser Aufruf von außen über HTTPS?
+     *
+     * <p>Hinter einem Reverse Proxy sieht die Anwendung nur HTTP. Ob die
+     * Verbindung zum Browser verschlüsselt war, steht allein in
+     * {@code X-Forwarded-Proto}. Wer das ignoriert, setzt kein
+     * {@code Secure}-Kennzeichen und erzeugt Weiterleitungen auf {@code http://}.
+     *
+     * <p>Genau <b>ein</b> vertrauenswürdiger Zwischenschritt: Kommen mehrere
+     * Werte an, zählt der <b>erste</b> — er stammt vom Proxy, alles Weitere
+     * hätte der Client selbst schicken können.
+     */
+    static boolean ueberHttps(Context c) {
+        String p = kopfWert(c, "X-Forwarded-Proto");
+        if (p.isBlank()) return "https".equalsIgnoreCase(c.scheme());
+        int komma = p.indexOf(',');
+        return "https".equalsIgnoreCase((komma < 0 ? p : p.substring(0, komma)).trim());
+    }
+
+    /**
+     * Die Adresse des Clients — hinter dem Proxy aus {@code X-Forwarded-For}.
+     *
+     * <p>Ohne das steht in jedem Protokolleintrag die Adresse des Proxys, und
+     * die Anmeldebremse bremst alle Benutzer gemeinsam statt den Angreifer.
+     *
+     * <p><b>Der erste Eintrag, nicht der letzte.</b> Caddy hängt die echte
+     * Adresse an eine bereits vorhandene Kette an; ein Client kann den Kopf
+     * fälschen. Da genau ein vertrauenswürdiger Zwischenschritt davorsteht,
+     * ist der erste Eintrag der vom Proxy gesehene Absender. Er ist damit
+     * <em>fälschbar</em>, wenn der Client selbst ein X-Forwarded-For sendet —
+     * deshalb ist er ein Hinweis für Protokoll und Bremse, nie eine
+     * Berechtigung.
+     */
+    static String clientAdresse(Context c) {
+        String f = kopfWert(c, "X-Forwarded-For");
+        if (f.isBlank()) return c.ip();
+        int komma = f.indexOf(',');
+        String erste = (komma < 0 ? f : f.substring(0, komma)).trim();
+        return erste.isBlank() ? c.ip() : erste;
+    }
+
     private static String kopfWert(Context c, String name) {
         String v = c.header(name);
         return v == null ? "" : v.trim();
@@ -1935,8 +2081,19 @@ public class Zentrale {
     }
 
     private void setzeSitzungscookie(Context c, String kennung) {
+        // Secure setzt die ANWENDUNG, nicht der Proxy (DevOps-Vorgabe
+        // 12.08.2026). Bis dahin stand im Code, das übernehme der
+        // Reverse-Proxy — das tut Caddy nicht von sich aus, und niemand hätte
+        // es bemerkt: Ohne Secure schickt der Browser das Sitzungscookie auch
+        // über unverschlüsseltes HTTP.
+        //
+        // Erkannt wird die Verschlüsselung an X-Forwarded-Proto: Innen läuft
+        // schlichtes HTTP, außen HTTPS. Auf localhost ohne Proxy bleibt das
+        // Kennzeichen weg, sonst nähme der Browser das Cookie gar nicht an.
         c.header("Set-Cookie", SITZUNGSCOOKIE + "=" + kennung
-                + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=" + (8 * 3600));
+                + "; Path=/; HttpOnly; SameSite=Strict"
+                + (ueberHttps(c) ? "; Secure" : "")
+                + "; Max-Age=" + (8 * 3600));
     }
 
     /**
@@ -2744,11 +2901,35 @@ public class Zentrale {
      */
     private void routenAnmeldung(Javalin app) {
         // ------------------------------------------------------------------ Anmeldung
+        // ── Betriebsschnittstelle für den Reverse Proxy und das Deploy-Skript ──
+        //
+        // Ohne Anmeldung erreichbar, weil das Deploy-Skript und der
+        // Container-Healthcheck sie brauchen, bevor es einen Benutzer gibt.
+        //
+        // Sie verrät deshalb NICHTS über den Bestand: keine Gerätezahlen, keine
+        // Einrichtungen, keine Alarme. Nur, ob dieser Baustein arbeitsfähig ist
+        // und welche Fassung läuft. Die Version ist ohnehin am Image-Tag
+        // ablesbar, den derjenige gezogen hat, der fragt.
+        app.get("/health", c -> {
+            boolean db = datenbankErreichbar();
+            c.status(db ? 200 : 503);
+            c.header("Cache-Control", "no-store");
+            // LinkedHashMap statt Map.of: Die Reihenfolge der Felder ist damit
+            // festgelegt. Map.of ist absichtlich unbestimmt sortiert, und ein
+            // Healthcheck, der die Antwort mit einem Textmuster prüft, würde
+            // sonst gelegentlich danebengreifen.
+            var antwort = new java.util.LinkedHashMap<String, Object>();
+            antwort.put("status", db ? "ok" : "fehler");
+            antwort.put("db", db);
+            antwort.put("version", Versionspruefung.laufendeVersion());
+            c.json(antwort);
+        });
+
         app.get("/anmelden", c -> c.html(Anmeldeseiten.anmeldeformular(null)));
 
         app.post("/anmelden", c -> {
             String name = Anmeldeseiten.feld(c, "benutzer");
-            String absender = c.ip();
+            String absender = clientAdresse(c);
 
             // Bremse VOR der Pruefung: Wer schon auffaellig war, wartet - und
             // zwar unabhaengig davon, ob dieses Kennwort stimmt. Sonst liesse

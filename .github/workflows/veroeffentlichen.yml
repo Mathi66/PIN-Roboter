@@ -1,0 +1,171 @@
+# Baut das Image bei einem Versions-Tag und veröffentlicht es nach GHCR.
+#
+# Vorgaben DevOps (12.08.2026):
+#   • Plattform linux/amd64
+#   • Git-Tag v0.2.0 → Image-Tag 0.2.0 (OHNE führendes v)
+#   • kein :latest
+#   • Tags sind unveränderlich — ein bereits veröffentlichter Tag wird nicht
+#     überschrieben, ein Fehler bekommt eine neue Nummer
+#   • Smoke-Test VOR dem Veröffentlichen: Ein Image, das nicht startet, darf
+#     gar nicht erst in der Registry landen
+name: Veröffentlichen
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version ohne führendes v, z. B. 0.2.1"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ghcr.io/mathi66/pin-roboter
+
+jobs:
+  bauen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Die Version kommt aus dem Tag, ohne das führende v. Ein abweichender
+      # Image-Tag hat bei DevOps schon mehrfach zu Suchaufwand geführt.
+      - name: Version bestimmen
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      # Die Version im Manifest MUSS zum Image-Tag passen: Das Deploy-Skript
+      # vergleicht sie mit dem, was /health meldet. Weichen sie ab, hält es den
+      # Deploy für fehlgeschlagen — zu Recht.
+      - name: Version im pom prüfen
+        run: |
+          POM=$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.*)<\/version>.*/\1/')
+          if [ "$POM" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::pom.xml steht auf $POM, der Tag verlangt ${{ steps.version.outputs.version }}."
+            echo "Die Version im Manifest muss zum Image-Tag passen — /health meldet sie."
+            exit 1
+          fi
+
+      # Unveränderliche Tags: Was einmal veröffentlicht wurde, bleibt.
+      - name: Tag darf nicht schon existieren
+        run: |
+          if docker manifest inspect "$IMAGE:${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::$IMAGE:${{ steps.version.outputs.version }} gibt es bereits."
+            echo "Tags sind unveränderlich. Bitte eine neue Versionsnummer vergeben."
+            exit 1
+          fi
+        env:
+          DOCKER_CONFIG: ${{ runner.temp }}/docker-anon
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: An GHCR anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Erst lokal bauen, testen, dann veröffentlichen. Ein Image, das nicht
+      # startet, darf die Registry nie erreichen.
+      - name: Image bauen (noch nicht veröffentlichen)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: BAUSTEIN=zentrale
+          platforms: linux/amd64
+          load: true
+          tags: pin-roboter-pruef:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-Test — startet das Image und antwortet /health?
+        run: |
+          set -euo pipefail
+          docker network create smoke
+          docker run -d --name smoke-db --network smoke --network-alias datenbank \
+            -e POSTGRES_DB=pinroboter -e POSTGRES_USER=pinroboter \
+            -e POSTGRES_PASSWORD=smoketest postgres:16-alpine
+          for i in $(seq 30); do
+            docker exec smoke-db pg_isready -U pinroboter && break
+            sleep 2
+          done
+
+          docker run -d --name smoke-app --network smoke \
+            -e DB_URL=jdbc:postgresql://datenbank:5432/pinroboter \
+            -e DB_USER=pinroboter -e DB_PASSWORD=smoketest \
+            -e GEHEIMNIS_SCHLUESSEL="$(openssl rand -base64 32 | tr -d '\n')" \
+            -e SICHERUNG_PLAN=aus \
+            --read-only --tmpfs /tmp:size=64m,mode=1777 \
+            --security-opt no-new-privileges:true --cap-drop ALL --pids-limit 512 \
+            -p 8090:8090 \
+            pin-roboter-pruef:${{ steps.version.outputs.version }}
+
+          # Auf den Healthcheck DES IMAGES warten — genau das tut das
+          # Deploy-Skript später auch.
+          for i in $(seq 40); do
+            ZUSTAND=$(docker inspect -f '{{.State.Health.Status}}' smoke-app 2>/dev/null || echo start)
+            [ "$ZUSTAND" = "healthy" ] && break
+            [ "$ZUSTAND" = "unhealthy" ] && { docker logs smoke-app; exit 1; }
+            sleep 3
+          done
+          [ "$ZUSTAND" = "healthy" ] || { echo "::error::Container wurde nicht healthy"; docker logs smoke-app; exit 1; }
+
+          ANTWORT=$(curl -sf http://localhost:8090/health)
+          echo "Health: $ANTWORT"
+          echo "$ANTWORT" | grep -q '"status":"ok"' \
+            || { echo "::error::/health meldet nicht ok"; exit 1; }
+          echo "$ANTWORT" | grep -q "\"version\":\"${{ steps.version.outputs.version }}\"" \
+            || { echo "::error::/health meldet eine andere Version als der Tag"; exit 1; }
+
+          # Der Container läuft als Nicht-Root — DevOps braucht die UID.
+          UID_IST=$(docker exec smoke-app id -u)
+          [ "$UID_IST" = "10001" ] || { echo "::error::läuft als UID $UID_IST, erwartet 10001"; exit 1; }
+
+          # Sauberes Beenden binnen 10 s (SIGTERM).
+          START=$(date +%s)
+          docker stop -t 15 smoke-app >/dev/null
+          DAUER=$(( $(date +%s) - START ))
+          echo "Beenden dauerte ${DAUER}s"
+          [ "$DAUER" -le 10 ] || { echo "::error::Beenden dauerte ${DAUER}s, erlaubt sind 10"; exit 1; }
+
+      - name: Veröffentlichen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: BAUSTEIN=zentrale
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Zusammenfassung
+        run: |
+          {
+            echo "### PIN-Roboter ${{ steps.version.outputs.version }} veröffentlicht"
+            echo ""
+            echo "\`\`\`"
+            echo "Image: $IMAGE:${{ steps.version.outputs.version }}"
+            echo "\`\`\`"
+            echo ""
+            echo "Smoke-Test bestanden: startet gehärtet (read_only, cap_drop ALL),"
+            echo "/health meldet ok mit passender Version, UID 10001, SIGTERM ≤ 10 s."
+          } >> "$GITHUB_STEP_SUMMARY"
