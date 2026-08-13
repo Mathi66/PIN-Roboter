@@ -75,8 +75,22 @@ final class Agentenpaket {
     // ------------------------------------------------------------- Bausteine
 
     private static String compose(String version) {
-        // Feste Version, kein :latest. Der Agent soll sich nicht unbemerkt
-        // ändern; ein Update ist eine Entscheidung, kein Nebeneffekt.
+        // Der Tag „stabil“ statt einer festen Nummer (PO, 13.08.2026).
+        //
+        // Zuerst stand hier die laufende Version — mit der Begründung, ein
+        // Update sei eine Entscheidung und kein Nebeneffekt. Das bleibt richtig,
+        // ist aber nicht die ganze Rechnung: Gerade am Anfang kommen häufig
+        // Fehlerbehebungen, und niemand kann sie an 150 Praxisrechnern von Hand
+        // einspielen.
+        //
+        // „stabil“ löst beides. Der Tag wandert NICHT automatisch mit jeder
+        // Veröffentlichung, sondern nur, wenn eine Version ausdrücklich
+        // freigegeben wird (.github/workflows/stabil-freigeben.yml). Die
+        // Entscheidung bleibt also — sie fällt nur einmal zentral statt
+        // hundertfach vor Ort.
+        //
+        // Die laufende Version steht als Kommentar dabei: Wer wissen will, mit
+        // welchem Stand dieses Paket erzeugt wurde, findet es hier.
         String tag = "unbekannt".equals(version) ? "0.3.2" : version;
         return """
                 # PIN-Roboter · Standort-Agent
@@ -88,7 +102,9 @@ final class Agentenpaket {
                 # Firewall ist deshalb keine eingehende Freigabe nötig.
                 services:
                   agent:
-                    image: ghcr.io/mathi66/pin-roboter-agent:%s
+                    # „stabil“ ist die jeweils freigegebene Fassung.
+                    # Erzeugt mit Stand %s.
+                    image: ghcr.io/mathi66/pin-roboter-agent:stabil
                     container_name: pin-roboter-agent
                     restart: unless-stopped
                     env_file: .env
@@ -117,9 +133,78 @@ final class Agentenpaket {
                       driver: json-file
                       options: { max-size: "10m", max-file: "5" }
 
+                    labels:
+                      # Nur DIESER Container wird selbsttätig aktualisiert.
+                      com.centurylinklabs.watchtower.enable: "true"
+
+                  # ── Selbsttätige Aktualisierung ────────────────────────────
+                  #
+                  # Holt neue Fassungen des Agenten aus der Programmablage und
+                  # startet ihn neu. Ohne das müsste jemand an jeden Rechner.
+                  #
+                  # Drei Vorkehrungen (CLAUDE.md, Watchtower-Vorbehalt):
+                  #  1. Nur der Agent, nichts anderes auf diesem Rechner
+                  #     (LABEL_ENABLE mit dem Label oben).
+                  #  2. Nur nachts — ein Neustart während der Sprechzeit
+                  #     unterbräche die Überwachung.
+                  #  3. Kein direkter Zugriff auf den Docker-Socket, sondern
+                  #     über einen Vermittler mit eingeschränkten Rechten.
+                  aktualisierung:
+                    image: containrrr/watchtower:1.7.1
+                    container_name: pin-roboter-aktualisierung
+                    restart: unless-stopped
+                    depends_on: [dockerzugang]
+                    environment:
+                      DOCKER_HOST: tcp://dockerzugang:2375
+                      WATCHTOWER_LABEL_ENABLE: "true"
+                      # 03:30 Uhr. Ortszeit des Rechners, siehe TZ unten.
+                      WATCHTOWER_SCHEDULE: "%s"
+                      # Alte Abbilder wegräumen — sonst füllt sich die Platte.
+                      WATCHTOWER_CLEANUP: "true"
+                      WATCHTOWER_INCLUDE_RESTARTING: "true"
+                      TZ: Europe/Berlin
+                    logging:
+                      driver: json-file
+                      options: { max-size: "10m", max-file: "3" }
+
+                  # Der Vermittler zum Docker-Dienst. Watchtower bekommt damit
+                  # NICHT den vollen Socket: Wer ihn hat, ist faktisch
+                  # Administrator des ganzen Rechners.
+                  #
+                  # Freigegeben ist nur, was zum Aktualisieren nötig ist. Nicht
+                  # freigegeben: exec (Befehle in fremden Containern ausführen),
+                  # volumes, networks, secrets, configs, swarm.
+                  dockerzugang:
+                    image: tecnativa/docker-socket-proxy:0.3.0
+                    container_name: pin-roboter-dockerzugang
+                    restart: unless-stopped
+                    environment:
+                      CONTAINERS: "1"
+                      IMAGES: "1"
+                      POST: "1"
+                      # Ausdrücklich nicht:
+                      EXEC: "0"
+                      VOLUMES: "0"
+                      NETWORKS: "0"
+                      SECRETS: "0"
+                      CONFIGS: "0"
+                      SWARM: "0"
+                      SERVICES: "0"
+                      TASKS: "0"
+                      NODES: "0"
+                      AUTH: "0"
+                      INFO: "0"
+                    volumes:
+                      - /var/run/docker.sock:/var/run/docker.sock:ro
+                    # Er ist die einzige Stelle mit Socket-Zugriff und deshalb
+                    # der wertvollste Angriffspunkt in diesem Stapel.
+                    security_opt: [no-new-privileges:true]
+                    read_only: true
+                    tmpfs: [/run]
+
                 volumes:
                   agentdaten:
-                """.formatted(tag);
+                """.formatted(tag, "0 30 3 * * *");
     }
 
     private static String env(String zentraleUrl, String geheimnis, String einrichtung,
@@ -203,7 +288,7 @@ final class Agentenpaket {
                 ## Schritt 1 — Adressen eintragen
 
                 Öffnen Sie die Datei **`.env`** in einem Texteditor. Die Zeilen unter
-                „Von Ihnen auszufüllen" brauchen Ihre Werte:
+                „Von Ihnen auszufüllen“ brauchen Ihre Werte:
 
                 | Eintrag | Woher |
                 |---|---|
@@ -263,7 +348,7 @@ final class Agentenpaket {
                 ```
 
                 Danach steht Ihr Agent in der Zentrale unter **Verwaltung →
-                Standort-Agenten** mit dem heutigen Datum unter „Zuletzt gesehen".
+                Standort-Agenten** mit dem heutigen Datum unter „Zuletzt gesehen“.
 
                 Mit `Strg+C` verlassen Sie die Anzeige; der Agent läuft weiter.
 
@@ -292,22 +377,48 @@ final class Agentenpaket {
                 ## Wenn die Zentrale umzieht
 
                 Bekommt Ihre Zentrale eine **neue Adresse**, tragen Sie sie unter
-                <http://127.0.0.1:8091> im Abschnitt „Adresse der Zentrale" ein. Der Agent
+                <http://127.0.0.1:8091> im Abschnitt „Adresse der Zentrale“ ein. Der Agent
                 prüft sie, bevor er sie übernimmt — antwortet dort keine betriebsbereite
                 Zentrale, bleibt alles beim Alten.
 
                 Die Änderung bleibt über einen Neustart erhalten. Sie müssen dafür weder
                 die Datei `.env` bearbeiten noch den Container neu aufsetzen.
 
-                ## Später aktualisieren
+                ## Aktualisierung
+
+                **Der Agent hält sich selbst aktuell.** Jede Nacht um 3:30 Uhr sieht er
+                nach, ob eine neue freigegebene Fassung vorliegt, holt sie und startet
+                sich neu. Der Neustart dauert wenige Sekunden.
+
+                Ausgerollt wird nur, was **ausdrücklich freigegeben** wurde — nicht jede
+                Veröffentlichung. Ihre Zentrale zeigt unter „Verwaltung → Standort-Agenten“,
+                welche Fassung bei Ihnen läuft.
+
+                Von Hand geht es auch jederzeit:
 
                 ```
                 docker compose pull
                 docker compose up -d
                 ```
 
-                Die Version steht in der `docker-compose.yml`. Ihre Zentrale meldet,
-                wenn Agent und Zentrale nicht mehr zusammenpassen.
+                ### Wenn Sie das nicht möchten
+
+                Manche Häuser wollen jede Änderung selbst bestimmen. Dann in der
+                `docker-compose.yml` die beiden Dienste `aktualisierung` und
+                `dockerzugang` entfernen (oder auskommentieren) und statt `:stabil` eine
+                feste Nummer eintragen, etwa `:0.4.0`. Danach:
+
+                ```
+                docker compose up -d
+                ```
+
+                ### Zur Sicherheit
+
+                Für die Aktualisierung läuft ein zweiter kleiner Dienst mit, der Docker
+                steuern darf — allerdings **nur eingeschränkt**: Er darf Container
+                auflisten, neu starten und Abbilder holen. Nicht erlaubt sind unter
+                anderem Befehle in fremden Containern und der Zugriff auf Datenträger.
+                Der Agent selbst ist der einzige Container, der aktualisiert wird.
                 """.formatted(einrichtung, bezeichnung, zentraleUrl);
     }
 }

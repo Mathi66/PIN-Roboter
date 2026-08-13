@@ -65,8 +65,50 @@ final class Betriebszustand {
     private volatile int verbindungenOffen;
     private volatile int grundtakt;
 
+    /**
+     * Ein Kartenterminal mit dem, was für die Fehlersuche zählt.
+     *
+     * <p>Die Leitfrage ist immer dieselbe: <em>Warum wird diese Karte nicht
+     * freigeschaltet?</em> Sie hat genau fünf mögliche Antworten — Gerät
+     * antwortet nicht, PEviM ist aus, keine SMC-B drin, keine PIN hinterlegt,
+     * oder die Karte ist gesperrt. Jede davon muss hier ablesbar sein.
+     *
+     * @param pinStatus Klartext, nicht der Aufzählungsname aus der Spezifikation
+     * @param versuche  verbleibende Fehlversuche, {@code -1} wenn unbekannt.
+     *                  Die wichtigste Zahl überhaupt: Bei 0 ist die Karte
+     *                  gesperrt und braucht die PUK.
+     */
+    record Geraetezeile(String id, String name, String modell, String firmware,
+                        boolean erreichbar, boolean pevimUnterstuetzt, boolean pevimAktiv,
+                        boolean smcbVorhanden, boolean pinHinterlegt, boolean verbindung,
+                        String pinStatus, int versuche, boolean aktualisierend,
+                        Instant geprueft) {
+
+        /**
+         * Was der Freischaltung im Weg steht — oder {@code null}.
+         *
+         * <p>In der Reihenfolge, in der man es beheben würde: Ohne Gerät keine
+         * Karte, ohne PEviM keine Übergabe, ohne PIN nichts zu übergeben.
+         */
+        String hindernis() {
+            if (!erreichbar)         return "Das Gerät antwortet nicht.";
+            if (!pevimUnterstuetzt)  return "Dieses Modell kann keine PIN über die "
+                                          + "Managementschnittstelle entgegennehmen.";
+            if (!pevimAktiv)         return "PEviM ist am Gerät nicht freigeschaltet.";
+            if (!smcbVorhanden)      return null;   // kein Mangel: eGK-Plätze sind normal
+            if (aktualisierend)      return "Der Konnektor aktualisiert dieses Gerät gerade.";
+            if (!pinHinterlegt)      return "Für diese SMC-B ist in der Zentrale keine PIN "
+                                          + "hinterlegt.";
+            if (versuche == 0)       return "Die Karte ist gesperrt und braucht die PUK.";
+            return null;
+        }
+
+        /** Terminals ohne SMC-B sind kein Fehler — sie haben nichts freizuschalten. */
+        boolean betrifftAutomatik() { return smcbVorhanden; }
+    }
+
     /** Kartenterminals mit ihrem zuletzt bekannten Zustand. */
-    private final Map<String, String> geraete = new ConcurrentHashMap<>();
+    private final Map<String, Geraetezeile> geraete = new ConcurrentHashMap<>();
 
     // ------------------------------------------------------------- Schreiben
 
@@ -109,7 +151,7 @@ final class Betriebszustand {
     void verbindungen(int offen)   { this.verbindungenOffen = offen; }
     void notAus(boolean an)        { this.notAus = an; }
 
-    void geraet(String terminalId, String zustand) { geraete.put(terminalId, zustand); }
+    void geraet(Geraetezeile zeile) { geraete.put(zeile.id(), zeile); }
 
     /**
      * Eine Meldung für die Fehlersuche.
@@ -141,7 +183,7 @@ final class Betriebszustand {
     Instant start()       { return start; }
     Instant zentraleGesehen()  { return zentraleGesehen; }
     Instant konnektorGesehen() { return konnektorGesehen; }
-    Map<String, String> geraete() { return Map.copyOf(geraete); }
+    Map<String, Geraetezeile> geraete() { return Map.copyOf(geraete); }
 
     List<Meldung> letzteMeldungen() {
         synchronized (meldungen) { return List.copyOf(meldungen); }
@@ -151,7 +193,7 @@ final class Betriebszustand {
      * Ist der Agent arbeitsfähig?
      *
      * <p>Absichtlich streng: Ohne Registrierung oder ohne Konnektor kann er
-     * seine Aufgabe nicht erfüllen. Eine Anzeige, die dann „in Ordnung" sagt,
+     * seine Aufgabe nicht erfüllen. Eine Anzeige, die dann „in Ordnung“ sagt,
      * wäre schlimmer als keine.
      */
     boolean arbeitsfaehig() {
@@ -196,7 +238,7 @@ final class Betriebszustand {
                 pinsHinterlegt + " von " + smcbKarten + " SMC-B",
                 pinsDa ? null
                         : "PINs werden in der Zentrale hinterlegt, nicht hier — "
-                          + "unter „Kartenterminals" + "“, beim jeweiligen Gerät. "
+                          + "unter „Kartenterminals“, beim jeweiligen Gerät. "
                           + "Sie werden verschlüsselt an genau diesen Agenten übertragen."));
 
         l.add(new Schritt("PIN-Ablage verschlüsselt", pinAblageVerschluesselt,
@@ -243,7 +285,7 @@ final class Betriebszustand {
         return "Prüfen Sie KONNEKTOR_URL und CA_URL in der .env.";
     }
 
-    /** „vor 3 Minuten" statt eines Zeitstempels in UTC. */
+    /** „vor 3 Minuten“ statt eines Zeitstempels in UTC. */
     static String vorWieLange(Instant wann) {
         if (wann == null) return "noch nie";
         long s = Duration.between(wann, Instant.now()).getSeconds();

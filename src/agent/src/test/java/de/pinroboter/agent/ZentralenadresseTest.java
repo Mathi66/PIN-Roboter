@@ -94,7 +94,7 @@ class ZentralenadresseTest {
         // dauerhaft von seiner Zentrale abschneiden — und die einzige Stelle
         // zum Korrigieren wäre wieder der Praxisrechner.
         var a = new Zentralenadresse(tmp.resolve("z"), "https://alt.example/");
-        // Port 9 ist der „discard"-Dienst und praktisch nie belegt.
+        // Port 9 ist der „discard“-Dienst und praktisch nie belegt.
         String f = a.setzen("http://127.0.0.1:9/");
         assertNotNull(f, "Eine tote Adresse darf nicht übernommen werden");
         assertFalse(f.contains("null"), "Die Meldung muss lesbar sein statt technisch: " + f);

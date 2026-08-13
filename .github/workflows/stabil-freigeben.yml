@@ -1,0 +1,86 @@
+# Erklärt eine bereits veröffentlichte Version zur „stabilen" — und damit zu
+# der, die ausgelieferte Standort-Agenten von selbst nachziehen.
+#
+# WARUM GETRENNT VOM BAUEN (PO/CLAUDE.md, Watchtower-Vorbehalt):
+# Würde jeder Tag automatisch „stabil" setzen, ginge jede Version sofort in
+# jede Praxis — auch die mit dem Fehler, den man zehn Minuten später bemerkt.
+# Ein fehlerhaftes Image legt dort den TI-Zugang lahm.
+#
+# Deshalb ist die Freigabe eine eigene, bewusste Handlung: Erst wird eine
+# Version veröffentlicht und geprüft, dann bekommt sie diesen Tag.
+#
+# Es wird NICHTS neu gebaut. Der vorhandene Manifest-Eintrag wird zusätzlich
+# unter „:stabil" abgelegt — dasselbe Abbild, derselbe Prüfwert.
+name: Stabile Version freigeben
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Bereits veröffentlichte Version, z. B. 0.4.0"
+        required: true
+      bestaetigung:
+        description: 'Zum Bestätigen "ausrollen" eingeben'
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/mathi66/pin-roboter
+
+jobs:
+  freigeben:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bestätigung prüfen
+        run: |
+          if [ "${{ inputs.bestaetigung }}" != "ausrollen" ]; then
+            echo "::error::Nicht bestätigt. Diese Version wird damit in JEDER Praxis"
+            echo "::error::ausgerollt, in der die selbsttätige Aktualisierung läuft."
+            exit 1
+          fi
+
+      - name: An GHCR anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Erst prüfen, dass es die Version überhaupt gibt. Ein Tippfehler würde
+      # sonst „:stabil" auf ein Abbild setzen, das niemand geprüft hat — oder
+      # den Tag ins Leere zeigen lassen.
+      - name: Version muss veröffentlicht sein
+        run: |
+          for N in "$IMAGE" "$IMAGE-agent"; do
+            if ! docker manifest inspect "$N:${{ inputs.version }}" >/dev/null 2>&1; then
+              echo "::error::$N:${{ inputs.version }} gibt es nicht in GHCR."
+              exit 1
+            fi
+          done
+
+      # Der Agent ist der Baustein, den Praxen selbsttätig nachziehen. Die
+      # Zentrale bekommt denselben Tag, damit die Nummern zusammenpassen —
+      # ausgerollt wird sie aber vom Deploy-Skript, nicht von Watchtower.
+      - name: „stabil" umhängen
+        run: |
+          for N in "$IMAGE" "$IMAGE-agent"; do
+            docker buildx imagetools create -t "$N:stabil" "$N:${{ inputs.version }}"
+            echo "$N:stabil zeigt jetzt auf ${{ inputs.version }}"
+          done
+
+      - name: Zusammenfassung
+        run: |
+          {
+            echo "### Version ${{ inputs.version }} ist jetzt die stabile"
+            echo ""
+            echo "Standort-Agenten mit selbsttätiger Aktualisierung ziehen sie im"
+            echo "nächsten Wartungsfenster nach."
+            echo ""
+            echo '```'
+            echo "$IMAGE:stabil        → ${{ inputs.version }}"
+            echo "$IMAGE-agent:stabil  → ${{ inputs.version }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

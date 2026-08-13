@@ -73,23 +73,45 @@ class AgentenpaketTest {
     }
 
     @Test
-    @DisplayName("Das Compose zieht eine feste Version, nie :latest")
-    void festeVersion() {
+    @DisplayName("Das Compose zieht den freigegebenen Stand, nie :latest")
+    void freigegebenerStand() {
         String yml = paket().get("pin-roboter-agent/docker-compose.yml");
-        assertTrue(yml.contains("ghcr.io/mathi66/pin-roboter-agent:0.3.2"), yml);
+        assertTrue(yml.contains("pin-roboter-agent:stabil"), yml);
         assertFalse(yml.contains(":latest"),
-                "Ein Agent, der sich unbemerkt ändert, ist im Störungsfall nicht einzuordnen");
+                "„latest“ wäre jede Veröffentlichung, auch die ungeprüfte");
+        assertTrue(yml.contains("Erzeugt mit Stand 0.3.2"),
+                "Womit das Paket erzeugt wurde, gehört dokumentiert");
     }
 
     @Test
-    @DisplayName("Ohne Versionsangabe entsteht trotzdem ein brauchbares Compose")
-    void ohneVersionsangabe() {
-        // Im Entwicklungslauf ohne Jar liefert das Manifest „unbekannt". Ein
-        // Image-Tag „unbekannt" gäbe es in keiner Registry.
-        var p = entpacken(Agentenpaket.bauen(ZENTRALE, GEHEIM, "Praxis", "Agent", "unbekannt"));
-        String yml = p.get("pin-roboter-agent/docker-compose.yml");
-        assertFalse(yml.contains(":unbekannt"), yml);
-        assertTrue(yml.matches("(?s).*pin-roboter-agent:\\d+\\.\\d+\\.\\d+.*"), yml);
+    @DisplayName("Die Aktualisierung fasst nur den Agenten an und nur nachts")
+    void aktualisierungEingegrenzt() {
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+        assertTrue(yml.contains("WATCHTOWER_LABEL_ENABLE"),
+                "Ohne Label-Filter würde jeder Container auf dem Rechner aktualisiert");
+        assertTrue(yml.contains("com.centurylinklabs.watchtower.enable"),
+                "Das Label am Agenten fehlt — dann aktualisiert sich gar nichts");
+        assertTrue(yml.contains("WATCHTOWER_SCHEDULE"),
+                "Ein Neustart während der Sprechzeit unterbricht die Überwachung");
+    }
+
+    @Test
+    @DisplayName("Watchtower bekommt den Docker-Socket nicht direkt")
+    void keinDirekterSocket() {
+        // Wer den Socket hat, ist faktisch Administrator des Rechners
+        // (CLAUDE.md, Watchtower-Vorbehalt). Nur der Vermittler darf ihn sehen.
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+        assertTrue(yml.contains("docker-socket-proxy"), yml);
+        assertTrue(yml.contains("DOCKER_HOST: tcp://dockerzugang:2375"),
+                "Watchtower muss über den Vermittler gehen");
+        assertTrue(yml.contains("EXEC: \"0\""),
+                "Befehle in fremden Containern dürfen nicht erlaubt sein");
+        // Genau EINE Einbindezeile — nicht ein Vorkommen: Die Zeile nennt den
+        // Pfad zweimal, links die Quelle, rechts das Ziel im Container.
+        long zeilen = yml.lines().filter(z -> z.strip().startsWith("- /var/run/docker.sock")).count();
+        assertEquals(1, zeilen, "Nur der Vermittler bindet den Socket ein");
+        assertTrue(yml.contains("/var/run/docker.sock:/var/run/docker.sock:ro"),
+                "und den nur lesend");
     }
 
     @Test
@@ -135,8 +157,8 @@ class AgentenpaketTest {
     @Test
     @DisplayName("Die Anleitung behandelt eine nicht öffentliche Programmablage")
     void anleitungNenntRegistrierungsZugang() {
-        // Befund 13.08.2026: Das GHCR-Repository ist privat. Ohne „docker login"
-        // scheitert der erste Start mit „unauthorized" — eine Meldung, mit der
+        // Befund 13.08.2026: Das GHCR-Repository ist privat. Ohne „docker login“
+        // scheitert der erste Start mit „unauthorized“ — eine Meldung, mit der
         // in einer Praxis niemand etwas anfangen kann.
         String md = paket().get("pin-roboter-agent/ANLEITUNG.md");
         assertTrue(md.contains("docker login ghcr.io"), "Der Anmeldebefehl fehlt");
@@ -163,6 +185,17 @@ class AgentenpaketTest {
         assertTrue(md.contains("127.0.0.1:8091"), md.substring(0, 200));
         assertTrue(md.contains("umzieht") || md.contains("neue Adresse"),
                 "Der Serverumzug gehört in die Anleitung");
+    }
+
+    @Test
+    @DisplayName("Die Anleitung erklärt die Aktualisierung und wie man sie abstellt")
+    void anleitungErklaertAktualisierung() {
+        String md = paket().get("pin-roboter-agent/ANLEITUNG.md");
+        assertTrue(md.contains("3:30"), "Wann aktualisiert wird, gehört genannt");
+        assertTrue(md.contains("Wenn Sie das nicht möchten"),
+                "Manche Häuser wollen jede Änderung selbst bestimmen");
+        assertTrue(md.contains("freigegeben"),
+                "Dass nicht jede Veröffentlichung ausgerollt wird, ist der Kern");
     }
 
     // ------------------------------------------------------------- Kleinteile

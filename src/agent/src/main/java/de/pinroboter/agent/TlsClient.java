@@ -19,7 +19,7 @@ import java.time.Duration;
  * <p>Belegt durch Messung (siehe {@code docs/00-referenzen/messung-brainpool-tls.md}):
  * <ul>
  *   <li>Ohne BouncyCastle als JSSE-Provider meldet das JDK bei Brainpool
- *       „no supported named groups".</li>
+ *       „no supported named groups“.</li>
  *   <li>Ohne {@code jdk.tls.namedGroups} werden die Gruppen nicht angeboten,
  *       selbst wenn die Bibliothek sie beherrscht.</li>
  *   <li>Unter TLS 1.3 scheitert der Handshake; TLS 1.2 genügt, weil

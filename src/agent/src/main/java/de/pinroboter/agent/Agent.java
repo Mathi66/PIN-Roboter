@@ -110,7 +110,7 @@ public class Agent {
      * <p>Der Schutz bleibt trotzdem wirksam: Ein unbemerkter Fremdversuch senkt
      * den Zähler, und schon der erste erkannte Rückgang hält die Automatik an
      * (Sicherungspruefung). Zusammen mit der Untergrenze „mehr als ein Versuch
-     * übrig" braucht es also mehrere unbemerkte Fremdversuche <i>und</i> unseren,
+     * übrig“ braucht es also mehrere unbemerkte Fremdversuche <i>und</i> unseren,
      * bevor eine Sperrung überhaupt in Reichweite käme.
      */
     private static final long STATUS_HOECHSTALTER_MS = 90_000;
@@ -379,18 +379,11 @@ public class Agent {
                 // Für die Oberfläche: Zahlen, keine Inhalte.
                 long erreichbar = terminals.stream()
                         .filter(KonnektorClient.Terminal::erreichbar).count();
-                // Nicht „smcb" nennen: So heißt das Feld mit den Verbindungen.
+                // Nicht „smcb“ nennen: So heißt das Feld mit den Verbindungen.
                 long smcbKarten = karten.stream()
                         .filter(k -> "SMC-B".equals(k.kartentyp())).count();
                 zustand.konnektorErreicht(terminals.size(), (int) erreichbar, (int) smcbKarten);
                 zustand.pins(pins.size());
-                for (var t : terminals) {
-                    zustand.geraet(t.id(), t.erreichbar()
-                            ? (t.pevimAktiv() ? "erreichbar, PEviM aktiv"
-                                              : "erreichbar, PEviM nicht aktiv")
-                            : "nicht erreichbar");
-                }
-
                 bestandMelden(terminals, karten);
                 pinAuftraegeAbarbeiten();
                 verbindungenPflegen(terminals, karten);
@@ -739,10 +732,18 @@ public class Agent {
         meldung.put("pevimAktiv", t.pevimAktiv());
 
         if (karte == null || !t.erreichbar()) {
+            // Auch dieser Fall gehört in die Oberfläche: „keine SMC-B drin“ und
+            // „antwortet nicht“ sind zwei sehr verschiedene Antworten auf die
+            // Frage, warum nichts freigeschaltet wird.
+            zustand.geraet(new Betriebszustand.Geraetezeile(
+                    t.id(), t.name(), t.modell(), t.firmware(),
+                    t.erreichbar(), t.pevimUnterstuetzt(), t.pevimAktiv(),
+                    karte != null, false, false,
+                    "unbekannt", -1, false, java.time.Instant.now()));
             meldung.put("pinStatus", PinStatus.UNBEKANNT.name());
             meldung.put("verbleibendeVersuche", -1);
             // Ausdruecklich zuruecksetzen: Ohne diese Zeile bliebe ein zuvor
-            // gemeldetes „aktualisierend" in der Zentrale stehen, sobald die
+            // gemeldetes „aktualisierend“ in der Zentrale stehen, sobald die
             // Karte verschwindet oder das Geraet ausfaellt — die Oberflaeche
             // zeigte dann dauerhaft ein Update an, das laengst vorbei ist.
             meldung.put("aktualisierend", false);
@@ -759,6 +760,15 @@ public class Agent {
             meldung.put("aktualisierend", status.aktualisierend());
             meldung.put("automatikAngehalten", angehalten.contains(karte.kartenhandle()));
             meldung.put("smcbVerbindung", smcb.angemeldet(t.id()));
+
+            // Derselbe Kenntnisstand für die Oberfläche des Agenten. Kein
+            // Kartenhandle und keine PIN — nur, was bei der Fehlersuche zählt.
+            zustand.geraet(new Betriebszustand.Geraetezeile(
+                    t.id(), t.name(), t.modell(), t.firmware(),
+                    true, t.pevimUnterstuetzt(), t.pevimAktiv(),
+                    true, pins.containsKey(karte.kartenhandle()), smcb.angemeldet(t.id()),
+                    status.status().anzeige(), status.verbleibendeVersuche(),
+                    status.aktualisierend(), java.time.Instant.now()));
 
             // Für die Schutzlogik im Antwortpfad festhalten: Fragt das Terminal
             // gleich nach der PIN, ist das hier der jüngste Kenntnisstand.
@@ -963,7 +973,7 @@ public class Agent {
      * Die Version dieses Bausteins, aus dem Manifest des Jars.
      *
      * <p>Zur Anzeige, nicht zur Entscheidung — dafür ist die Protokollversion
-     * da. Im Entwicklungslauf ohne Jar steht „unbekannt"; das ist kein Fehler.
+     * da. Im Entwicklungslauf ohne Jar steht „unbekannt“; das ist kein Fehler.
      */
     private static String bausteinversion() {
         String v = Agent.class.getPackage().getImplementationVersion();

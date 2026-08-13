@@ -129,8 +129,8 @@ final class Zentralenadresse {
      * Warum die Verbindung scheiterte — in Klartext.
      *
      * <p>Viele Netzwerkausnahmen tragen <b>keine</b> Meldung: Aus
-     * {@code getMessage()} wird dann „null", und die Anzeige lautete am
-     * 13.08.2026 „… nicht erreichbar: null". Der Klassenname sagt mehr, ist
+     * {@code getMessage()} wird dann „null“, und die Anzeige lautete am
+     * 13.08.2026 „… nicht erreichbar: null“. Der Klassenname sagt mehr, ist
      * aber Englisch und technisch — also übersetzt.
      */
     private static String grund(Exception e) {

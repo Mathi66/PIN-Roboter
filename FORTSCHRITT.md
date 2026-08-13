@@ -3392,3 +3392,76 @@ melden.
 Der Client für die Zentrale steht jetzt in einer eigenen Klasse ohne statischen
 Block. Die Trennung der beiden Strecken hatte ich am Vormittag begonnen und
 nicht zu Ende geführt.
+
+
+---
+
+## Menü, Stil und selbsttätige Aktualisierung
+
+Drei Nachforderungen des PO in einem Zug: Die Agenten-Oberfläche soll die
+wesentlichen Geräteinfos zeigen, ihre Abschnitte über ein Menü erreichbar machen
+und aussehen wie der PIN-Roboter. Dazu: eine selbsttätige Aktualisierung.
+
+### Geräteinfos
+
+Der Agent kannte sie längst — Modell, Firmware, PIN-Status, Fehlversuchszähler
+standen in `durchgang()` und gingen an die Zentrale. Nur in die eigene Anzeige
+kamen sie nicht. Jetzt zeigt die Geräteseite je Terminal, was bei der Fehlersuche
+zählt, und darunter **das Hindernis in Klartext**: „Für diese SMC-B ist in der
+Zentrale keine PIN hinterlegt", „Die Karte ist gesperrt und braucht die PUK".
+
+Die Leitfrage hat genau fünf mögliche Antworten — Gerät antwortet nicht, PEviM
+aus, keine SMC-B, keine PIN, Karte gesperrt. Jede davon ist jetzt ablesbar.
+
+### Menü und Stil
+
+Vier Bereiche mit Seitenleiste, nachgebaut nach der Zentrale: gleiche
+Farbwerte, gleiches Abstandsraster, gleiche Radien. **Nachgebaut, nicht
+nachgeladen** — der Agent holt sich nichts von der Zentrale, sonst wäre die
+Seite genau dann kaputt, wenn die Verbindung dorthin fehlt. Also in dem Fall,
+für den es sie gibt.
+
+### Der Fehler, der den Agenten umbrachte
+
+Beim Umbau auf Bereiche habe ich `/` zweimal angemeldet — einmal explizit,
+einmal über die Bereichsschleife. Der HttpServer wirft dafür eine
+`IllegalArgumentException`, und mein `catch` fing nur `IOException`. Ergebnis:
+**Der Agent lief in eine Neustartschleife.**
+
+Damit war genau die Zusage gebrochen, die im Klassenkommentar steht: „Die
+Kernaufgabe darf nicht an einer Anzeige hängen." Der TI-Zugang einer Praxis wäre
+an einer Anzeigeseite gescheitert. Jetzt fängt der Block `Exception`.
+
+### Aktualisierung: ein Tag, der nicht von selbst wandert
+
+Der PO: Am Anfang kommen häufig Fehlerbehebungen, es braucht etwas wie
+Watchtower. Im Paket stand aber eine **feste Version**, mit meiner Begründung
+„ein Update ist eine Entscheidung, kein Nebeneffekt".
+
+Beides stimmt. Die Auflösung ist ein Tag `stabil`, der **nur bei ausdrücklicher
+Freigabe** umgehängt wird — durch einen eigenen Workflow, der nichts neu baut
+und das Wort „ausrollen" als Bestätigung verlangt. Die Entscheidung bleibt also;
+sie fällt einmal zentral statt hundertfach vor Ort.
+
+Dazu die drei Vorkehrungen, die in CLAUDE.md seit dem 06.08. beschlossen waren
+und jetzt zum ersten Mal gebraucht wurden: nur der Agent (Label-Filter), nur
+nachts um 3:30, und **kein direkter Docker-Socket** — Watchtower spricht mit
+einem Vermittler, der `exec`, `volumes` und `secrets` gar nicht erst freigibt.
+
+Zum Gewinn bin ich im Umsetzungsdokument ehrlich: Ein Vermittler mit `POST` auf
+Container ist kein Bollwerk. Er ist der Unterschied zwischen „kann diesen Stapel
+stören" und „ist Administrator des Rechners".
+
+### Und ein Regex, der 60 Dateien angefasst hat
+
+Zum dritten Mal an diesem Tag hatte ich in einem Java-String ein deutsches
+Zitat mit typografischem Anfang und geradem Ende geschrieben — `„latest"` — und
+damit den String geschlossen. Statt die eine Zeile zu reparieren, ließ ich ein
+Suchmuster über alle Quelldateien laufen.
+
+Es hat 60 Dateien geändert und drei kaputtgemacht, die vorher in Ordnung waren.
+Zurückgenommen bis auf die Dateien, an denen ich tatsächlich arbeitete.
+
+Die Lehre ist nicht neu, aber sie war fällig: Ein Fehler an einer Stelle wird
+an dieser Stelle behoben. Ein Suchmuster über den ganzen Baum ist eine
+Änderung an sechzig Stellen — und die prüft man nicht mehr einzeln.
