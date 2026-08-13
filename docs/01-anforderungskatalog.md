@@ -911,6 +911,22 @@ Systemnahe Funktionen liegen zusammen, getrennt vom Tagesgeschäft.
 - *Nachweis:* Ein Agent mit ungültigem oder bereits verbrauchtem Geheimnis wird
   abgewiesen; der Versuch wird protokolliert.
 
+### FA-AGT-060 — Oberfläche des Standort-Agenten · SOLL · V1 · PO 13.08.2026
+Der Agent bringt eine Oberfläche für Inbetriebnahme, Zustand und Fehlersuche mit.
+
+*Akzeptanz:*
+- Erreichbar **nur auf dem Rechner**, auf dem der Agent läuft — nicht im
+  Praxisnetz (ADR-0002).
+- Zeigt **keine** PIN, kein Token, keinen Schlüssel — auch nicht gekürzt.
+- Eine Prüfliste der Inbetriebnahme, in der jeder offene Punkt sagt, **was zu
+  tun ist**, nicht nur was fehlt.
+- Fehlermeldungen von Konnektor und Netz werden in Klartext übersetzt.
+- **Die Adresse der Zentrale ist änderbar** und überlebt einen Neustart: Bei
+  einem Serverumzug wären die ausgelieferten Agenten sonst verloren.
+- Eine neue Adresse wird **vor** der Übernahme geprüft; antwortet dort keine
+  betriebsbereite Zentrale, bleibt die alte bestehen.
+- Der Agent lädt für die Anzeige nichts nach — auch nicht von der Zentrale.
+
 ### FA-AGT-050 — Einrichtungspaket für den Standort-Agenten · SOLL · V1 · PO 13.08.2026
 Die Zentrale stellt ein Paket bereit, mit dem sich ein Standort-Agent ohne
 Fachkenntnisse in Betrieb nehmen lässt.

@@ -92,6 +92,16 @@ final class Agentenpaket {
                     container_name: pin-roboter-agent
                     restart: unless-stopped
                     env_file: .env
+                    # Die Oberfläche des Agenten: Inbetriebnahme, Zustand,
+                    # Fehlersuche. Nur auf DIESEM Rechner erreichbar —
+                    # http://127.0.0.1:8091. Im Container an 0.0.0.0 gebunden,
+                    # weil ein dort an 127.0.0.1 gebundener Dienst per
+                    # Port-Mapping gar nicht erreichbar wäre; die Beschränkung
+                    # macht die Adresse vor dem Doppelpunkt.
+                    ports:
+                      - "127.0.0.1:8091:8091"
+                    environment:
+                      OBERFLAECHE_ADRESSE: "0.0.0.0"
                     volumes:
                       # Token, Schlüsselpaar und die verschlüsselte PIN-Ablage.
                       # OHNE dieses Volume verliert der Agent nach jedem Neustart
@@ -231,6 +241,16 @@ final class Agentenpaket {
 
                 ## Schritt 4 — Nachsehen, ob es geklappt hat
 
+                Öffnen Sie im Browser **<http://127.0.0.1:8091>**. Dort sehen Sie eine
+                Prüfliste der Inbetriebnahme, den Zustand aller Geräte und die letzten
+                Meldungen — mit einem Hinweis, was zu tun ist, falls etwas fehlt.
+
+                > Diese Seite ist **nur auf diesem Rechner** erreichbar, nicht im
+                > Praxisnetz und nicht aus dem Internet. Sie zeigt keine PINs und keine
+                > Zugangsdaten.
+
+                Wahlweise geht es auch im Terminal:
+
                 ```
                 docker compose logs -f
                 ```
@@ -268,6 +288,16 @@ final class Agentenpaket {
                   Dateiablage, die andere lesen können.
                 - **PINs gehören nicht in diese Datei.** Sie werden in der Zentrale
                   hinterlegt und verschlüsselt an genau diesen Agenten übertragen.
+
+                ## Wenn die Zentrale umzieht
+
+                Bekommt Ihre Zentrale eine **neue Adresse**, tragen Sie sie unter
+                <http://127.0.0.1:8091> im Abschnitt „Adresse der Zentrale" ein. Der Agent
+                prüft sie, bevor er sie übernimmt — antwortet dort keine betriebsbereite
+                Zentrale, bleibt alles beim Alten.
+
+                Die Änderung bleibt über einen Neustart erhalten. Sie müssen dafür weder
+                die Datei `.env` bearbeiten noch den Container neu aufsetzen.
 
                 ## Später aktualisieren
 

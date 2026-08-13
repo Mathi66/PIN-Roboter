@@ -26,11 +26,16 @@ public class Agent {
     /**
      * Eigener Client für die Zentrale (13.08.2026). Der TI-Client vertraut nur
      * der CA aus {@code CA_URL} und käme an einem öffentlichen Zertifikat nicht
-     * vorbei — siehe {@link TlsClient#fuerZentrale()}.
+     * vorbei — siehe {@link Zentraleverbindung}.
      */
     private final HttpClient zentraleHttp;
     private final URI terminalBasis;
-    private final URI zentrale;
+    /**
+     * Adresse der Zentrale. <b>Änderbar zur Laufzeit</b> (PO, 13.08.2026): Bei
+     * einem Serverumzug wären die ausgelieferten Agenten sonst verloren —
+     * niemand kommt an 150 Praxisrechner. Siehe {@link Zentralenadresse}.
+     */
+    private volatile URI zentrale;
     private final Verifikationsablauf ablauf;
 
     /** PIN je Kartenhandle. Im Produkt verschlüsselt abgelegt (NFA-SIC-010). */
@@ -42,6 +47,12 @@ public class Agent {
 
     private volatile boolean notAus = false;
     private volatile String agentToken;
+
+    /**
+     * Was der Agent über sich weiß — für die Oberfläche zur Inbetriebnahme und
+     * Fehlersuche (PO, 13.08.2026). Enthält keine Geheimnisse.
+     */
+    final Betriebszustand zustand = new Betriebszustand();
 
     /**
      * Adresse der Webadmin-Schnittstelle des Konnektors, oder {@code null}.
@@ -133,8 +144,20 @@ public class Agent {
                 env("CLIENTSYSTEM_ID", "PIN-Roboter"),
                 env("ARBEITSPLATZ_ID", "Arbeitsplatz1"));
 
+        // Die gespeicherte Adresse sticht die Umgebungsvariable: Sie ist die
+        // jüngere, bewusste Entscheidung an diesem Standort (Serverumzug).
+        var zentralenadresse = new Zentralenadresse(
+                java.nio.file.Path.of(env("ZENTRALE_URL_DATEI", "/daten/zentrale-url")),
+                zentraleUrl);
+        if (zentralenadresse.abweichend()) {
+            System.out.printf("  Zentrale aus dem Datenverzeichnis: %s%n"
+                            + "  (die Umgebungsvariable nennt %s)%n",
+                    zentralenadresse.aktuell(), zentralenadresse.ausUmgebung());
+        }
+
         Agent agent = new Agent(new KonnektorClient(http, URI.create(konnektorUrl), kontext),
-                http, URI.create(terminalUrl), URI.create(zentraleUrl), URI.create(smcbUrl));
+                http, URI.create(terminalUrl), zentralenadresse.aktuell(),
+                URI.create(smcbUrl));
 
         // Ohne diese Angabe laeuft alles weiter, nur ohne Unterstuetzung beim
         // Einrichten (FA-GER-035, NFA-QS-035). Vorbelegt auf den Konnektor
@@ -146,6 +169,8 @@ public class Agent {
         // liegt danach im Datenverzeichnis und wird nie wieder ausgegeben.
         agent.agentToken = agent.tokenBesorgen(env("TOKEN_DATEI", "/daten/agent-token"),
                                                System.getenv("REGISTRIERUNG"));
+        agent.zustand.registrierung(agent.agentToken != null && !agent.agentToken.isBlank(),
+                null);
 
         // ADR-0009: Der Browser verschluesselt die PIN mit dem oeffentlichen
         // Schluessel DIESES Agenten. Der private Teil verlaesst sein Geraet nie.
@@ -193,6 +218,16 @@ public class Agent {
         System.out.println("  Hinterlegte PINs gesamt: " + agent.pins.size()
                 + "   (Werte werden nie ausgegeben)");
 
+        // Die Oberfläche zeigt, was oben eingerichtet wurde. Sie startet ZULETZT:
+        // Wäre sie vorher da, zeigte sie einen Zustand, den es noch nicht gibt.
+        agent.zustand.grunddaten(bausteinversion(), zentralenadresse.aktuell().toString(),
+                konnektorUrl, intervall);
+        agent.zustand.schluessel(agent.schluessel != null, agent.ablage.aktiv());
+        new Agentenoberflaeche(agent.zustand, zentralenadresse, agent::zentraleSetzen).starten(
+                Integer.parseInt(env("OBERFLAECHE_PORT",
+                        String.valueOf(Agentenoberflaeche.VORGABEPORT))),
+                env("OBERFLAECHE_ADRESSE", Agentenoberflaeche.VORGABEADRESSE));
+
         agent.ueberwachen(intervall);
     }
 
@@ -202,8 +237,11 @@ public class Agent {
 
     Agent(KonnektorClient konnektor, HttpClient http, URI terminalBasis, URI zentrale,
           URI smcbBasis) {
-        this(konnektor, http, TlsClient.fuerZentrale(), terminalBasis, zentrale, smcbBasis);
+        this(konnektor, http, Zentraleverbindung.client(), terminalBasis, zentrale, smcbBasis);
     }
+
+    /** Setzt die Zentrale um — nach geprüfter Erreichbarkeit (Zentralenadresse). */
+    void zentraleSetzen(URI neu) { this.zentrale = neu; }
 
     Agent(KonnektorClient konnektor, HttpClient http, HttpClient zentraleHttp,
           URI terminalBasis, URI zentrale, URI smcbBasis) {
@@ -332,13 +370,31 @@ public class Agent {
         while (true) {
             try {
                 notAus = notAusAbfragen();
+                zustand.notAus(notAus);
+                zustand.zentraleErreicht();
                 intervalleAbrufen();
                 var terminals = konnektor.terminals();
                 var karten = konnektor.karten();
 
+                // Für die Oberfläche: Zahlen, keine Inhalte.
+                long erreichbar = terminals.stream()
+                        .filter(KonnektorClient.Terminal::erreichbar).count();
+                // Nicht „smcb" nennen: So heißt das Feld mit den Verbindungen.
+                long smcbKarten = karten.stream()
+                        .filter(k -> "SMC-B".equals(k.kartentyp())).count();
+                zustand.konnektorErreicht(terminals.size(), (int) erreichbar, (int) smcbKarten);
+                zustand.pins(pins.size());
+                for (var t : terminals) {
+                    zustand.geraet(t.id(), t.erreichbar()
+                            ? (t.pevimAktiv() ? "erreichbar, PEviM aktiv"
+                                              : "erreichbar, PEviM nicht aktiv")
+                            : "nicht erreichbar");
+                }
+
                 bestandMelden(terminals, karten);
                 pinAuftraegeAbarbeiten();
                 verbindungenPflegen(terminals, karten);
+                zustand.verbindungen(smcb.anzahlAngemeldet());
 
                 long jetzt = System.currentTimeMillis();
                 for (var t : terminals) {
@@ -357,6 +413,9 @@ public class Agent {
                 }
             } catch (Exception e) {
                 System.out.println("  Konnektor nicht erreichbar: " + e.getMessage());
+                // Dieselbe Meldung in die Oberfläche — mit einem Hinweis, was
+                // zu tun ist. Im Protokoll steht sie nur als Java-Text.
+                zustand.konnektorFehler(String.valueOf(e.getMessage()));
             }
             Thread.sleep(grundtaktSekunden * 1000L);
         }

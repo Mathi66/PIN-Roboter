@@ -3335,3 +3335,60 @@ Die Anleitung behandelt den Fall jetzt in einem eigenen Schritt und in der
 Fehlertabelle. Die eigentliche Entscheidung liegt beim PO: Soll das Agent-Image
 öffentlich sein? Es enthält keine Geheimnisse, und jede Praxis bräuchte sonst
 Zugangsdaten, die jemand verwalten muss.
+
+
+---
+
+## Eine Oberfläche für den Standort-Agenten
+
+**Vorgabe des PO:** „dem Agenten eine Admin-Oberfläche für Inbetriebnahme,
+Status und Fehleranalyse spendieren."
+
+Bis dahin war der einzige Einblick `docker compose logs`. Wer in einer Praxis
+einen Agenten in Betrieb nimmt und `malformed PEM data: no header found` liest,
+ist verloren.
+
+Jetzt: eine Seite unter `http://127.0.0.1:8091` mit Prüfliste, Zustand, Geräten
+und den letzten Meldungen. Die Fehlermeldungen sind **übersetzt** — aus
+`malformed PEM data` wird „Der Vertrauensanker passt nicht. CA_URL muss auf das
+Zertifikat der ausstellenden Stelle zeigen."
+
+### Der Einwand, der meine Entscheidung gekippt hat
+
+Ich hatte die Oberfläche bewusst **nur lesend** gebaut: Konfiguration kommt aus
+Umgebungsvariablen (DevOps-Vorgabe), zwei Stellen für dieselbe Angabe laufen
+auseinander. Der PO:
+
+> „Wenn ausgelieferte Agenten bei einem Serverumzug nicht verloren gehen, muss
+> das in der Oberfläche konfigurierbar sein."
+
+Das sticht. Zieht die Zentrale um, zeigen alle Agenten ins Leere — und über die
+`.env` nachzuziehen hieße, an **jeden** Praxisrechner zu müssen. Bei 150
+betreuten Einrichtungen ist das keine Option.
+
+Gebaut mit drei Sicherungen: Die neue Adresse wird **vor** der Übernahme
+gefragt (nur was mit `"status":"ok"` antwortet, wird gesetzt), es ist ein POST,
+und die Änderung steht im Meldungspuffer. Die Umgebungsvariable bleibt die
+Vorgabe, die gespeicherte Datei sticht sie — und die Oberfläche zeigt **beide**,
+sonst rätselt jemand, warum seine `.env`-Änderung nichts bewirkt.
+
+### Zwei Fehler beim Bauen, beide lehrreich
+
+**Ein an 127.0.0.1 gebundener Dienst im Container ist von außen nicht
+erreichbar** — auch nicht per Port-Mapping. Docker leitet an die Adresse des
+Containers, nicht an dessen Loopback. Der Agent meldete brav
+„Oberfläche: http://127.0.0.1:8091", und der Aufruf lief ins Leere. Richtig ist:
+im Container an `0.0.0.0` binden und die Beschränkung dem Mapping überlassen
+(`127.0.0.1:8091:8091`). Dann ist der Port auf dem Host nur lokal erreichbar.
+
+**Der statische Initialisierer sprang ungefragt an.** Die Erreichbarkeitsprobe
+rief `TlsClient.fuerZentrale()` — und schon das Anfassen dieser Klasse
+registriert BouncyCastle und schaltet Brainpool frei. Im Test gab das einen
+`ExceptionInInitializerError` bei etwas, das mit Kryptographie nichts zu tun
+hat. Im Betrieb hieße dasselbe: Scheitert die Brainpool-Freischaltung, wäre auch
+die Verbindung zur Zentrale tot — und damit die Möglichkeit, den Fehler zu
+melden.
+
+Der Client für die Zentrale steht jetzt in einer eigenen Klasse ohne statischen
+Block. Die Trennung der beiden Strecken hatte ich am Vormittag begonnen und
+nicht zu Ende geführt.

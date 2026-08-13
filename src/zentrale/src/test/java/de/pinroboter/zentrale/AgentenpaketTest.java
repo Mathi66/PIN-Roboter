@@ -144,6 +144,27 @@ class AgentenpaketTest {
                 "Die Fehlertabelle muss die Meldung nennen, an der man es erkennt");
     }
 
+    @Test
+    @DisplayName("Das Compose legt die Oberfläche nur auf diesen Rechner")
+    void oberflaecheNurLokal() {
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+        assertTrue(yml.contains("127.0.0.1:8091:8091"),
+                "Ohne die Bindung an 127.0.0.1 wäre die Oberfläche im Praxisnetz "
+                + "erreichbar — das weichte ADR-0002 auf");
+        assertTrue(yml.contains("OBERFLAECHE_ADRESSE"),
+                "Im Container muss an 0.0.0.0 gebunden werden, sonst greift das "
+                + "Port-Mapping nicht");
+    }
+
+    @Test
+    @DisplayName("Die Anleitung nennt die Oberfläche und den Umzug")
+    void anleitungNenntOberflaeche() {
+        String md = paket().get("pin-roboter-agent/ANLEITUNG.md");
+        assertTrue(md.contains("127.0.0.1:8091"), md.substring(0, 200));
+        assertTrue(md.contains("umzieht") || md.contains("neue Adresse"),
+                "Der Serverumzug gehört in die Anleitung");
+    }
+
     // ------------------------------------------------------------- Kleinteile
 
     private static Map<String, String> entpacken(byte[] zip) {

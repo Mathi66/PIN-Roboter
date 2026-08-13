@@ -182,6 +182,14 @@ services:
       # Der Agent muss ≤ 512 MB bleiben (NFA-LEI-030) — er soll später auch auf
       # schwacher oder fremder Hardware mitlaufen können.
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
+      OBERFLAECHE_ADRESSE: "0.0.0.0"
+    # Die Oberflaeche des Agenten (PO, 13.08.2026). Im Container an 0.0.0.0
+    # gebunden — ein dort an 127.0.0.1 gebundener Dienst waere per Port-Mapping
+    # gar nicht erreichbar. Die Beschraenkung macht das Mapping unten:
+    # der Agent baut Verbindungen sonst ausschliesslich nach aussen auf
+    # (ADR-0002), und eine im Netz erreichbare Anzeige weichte das auf.
+    ports:
+      - "127.0.0.1:8091:8091"
     volumes:
       # NFA-BET-020: Token, Schluesselpaar und PIN-Ablage gehoeren in ein Volume.
       # Im Container-Layer waeren sie nach jedem Neustart weg — der Agent
