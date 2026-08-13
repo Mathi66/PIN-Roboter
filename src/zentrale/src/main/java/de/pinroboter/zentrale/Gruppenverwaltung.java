@@ -398,6 +398,26 @@ public class Gruppenverwaltung {
      * Index {@code geraetegruppe_vorgabe_idx}, und der Verlierer liest die
      * inzwischen vorhandene Gruppe.
      */
+    /**
+     * Der Name der Vorgabegruppe einer Einrichtung.
+     *
+     * <p><b>Mit der Einrichtung im Namen</b> (Befund PO, 13.08.2026). Vorher
+     * hieß sie überall schlicht „Alle Geräte" — bei neun Betriebsstätten standen
+     * damit neun gleichnamige Zeilen untereinander, und die Unterscheidung
+     * steckte allein in der Nachbarspalte.
+     *
+     * <p>Das ist nicht nur unschön: Überall dort, wo ein Gruppenname <em>ohne</em>
+     * diese Spalte auftaucht — in einem Auswahlfeld, im Fachprotokoll, in einer
+     * Fehlermeldung — sagte er gar nichts mehr. Ein Bezeichner, dessen Bedeutung
+     * vom Nachbarn abhängt, ist keiner.
+     *
+     * <p>Die Einrichtung ist instanzweit eindeutig (das prüft
+     * {@link #vorgabegruppeAnlegen}), also ist es der Gruppenname damit auch.
+     */
+    public static String vorgabename(String einrichtung) {
+        return "Alle Geräte – " + einrichtung;
+    }
+
     Optional<Gruppe> vorgabegruppeAnlegen(String einrichtung) {
         // INSERT ... SELECT statt VALUES mit Unterabfrage: Findet sich keine
         // eindeutige Organisation, entsteht KEINE Zeile.
@@ -410,14 +430,15 @@ public class Gruppenverwaltung {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
                                            pruefintervall_sekunden, organisation_id)
-                SELECT 'Alle Geräte', ?, TRUE, 60, o.id
+                SELECT ?, ?, TRUE, 60, o.id
                   FROM organisation o
                  WHERE o.bezeichnung = ?
                    AND (SELECT count(*) FROM organisation x WHERE x.bezeichnung = ?) = 1
                 ON CONFLICT DO NOTHING""")) {
-            p.setString(1, einrichtung);
+            p.setString(1, vorgabename(einrichtung));
             p.setString(2, einrichtung);
             p.setString(3, einrichtung);
+            p.setString(4, einrichtung);
             p.executeUpdate();
         } catch (SQLException e) {
             // Nicht verschlucken: Ohne Vorgabegruppe wird das Gerät nicht erfasst.
@@ -429,7 +450,7 @@ public class Gruppenverwaltung {
         if (v.isPresent()) return v;
 
         // Zweiter Anlauf für einen Fall, der am 10.08.2026 am laufenden Stand
-        // auftrat: Es gibt bereits eine Gruppe „Alle Geräte" in dieser
+        // auftrat: Es gibt bereits eine Gruppe dieses Namens in dieser
         // Einrichtung — von Hand angelegt, ohne Vorgabe-Kennzeichen. Das
         // Einfügen oben scheitert dann am eindeutigen Namensindex, ON CONFLICT
         // schluckt es, und die Einrichtung bleibt ohne Vorgabegruppe. Jedes
@@ -441,7 +462,7 @@ public class Gruppenverwaltung {
         // dort haben — nicht in einer zweiten mit fast gleichem Namen.
         //
         // Nur in DIESEM Fall. Hat eine Einrichtung fachlich benannte Gruppen
-        // („Notaufnahme", „Archiv"), aber keine „Alle Geräte", so gelingt das
+        // („Notaufnahme", „Archiv"), aber keine gleichnamige, so gelingt das
         // Einfügen oben, und es entsteht eine eigene Vorgabegruppe. Sonst
         // landete jedes neu erkannte Gerät in der Notaufnahme.
         try (PreparedStatement p = db.verbindung().prepareStatement("""

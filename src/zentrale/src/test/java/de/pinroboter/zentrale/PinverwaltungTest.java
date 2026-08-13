@@ -245,7 +245,7 @@ class PinverwaltungTest {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
                         pruefintervall_sekunden, organisation_id)
-                VALUES ('Alle Geräte', ?, TRUE, 60, ?) RETURNING id""")) {
+                VALUES ('Alle Geräte – Pinpruefung', ?, TRUE, 60, ?) RETURNING id""")) {
             p.setString(1, eigene);
             p.setLong(2, orgId);
             try (ResultSet rs = p.executeQuery()) { rs.next(); gruppeId = rs.getLong(1); }

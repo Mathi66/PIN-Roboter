@@ -414,7 +414,7 @@ public class Demodaten {
      * Terminals dreier Praxen wäre technisch keine Gruppe, sondern drei.
      */
     private long geraetegruppe(String einrichtung, long organisationId) throws SQLException {
-        // Gibt es die Gruppe schon? Der Name „Alle Geräte" ist naheliegend, und
+        // Gibt es die Gruppe schon? Der Vorgabename ist naheliegend, und
         // ein Betreiber kann ihn längst vergeben haben. Beim ersten Versuch am
         // 10.08.2026 scheiterte daran der GESAMTE Demodatensatz: Der eindeutige
         // Namensindex warf, die Transaktion rollte zurück, und die Oberfläche
@@ -438,9 +438,10 @@ public class Demodaten {
         try (PreparedStatement p = db.verbindung().prepareStatement("""
                 INSERT INTO geraetegruppe (bezeichnung, einrichtung, ist_vorgabe,
                         pruefintervall_sekunden, organisation_id, ist_demo)
-                VALUES ('Alle Geräte', ?, TRUE, 60, ?, TRUE) RETURNING id""")) {
-            p.setString(1, einrichtung);
-            p.setLong(2, organisationId);
+                VALUES (?, ?, TRUE, 60, ?, TRUE) RETURNING id""")) {
+            p.setString(1, Gruppenverwaltung.vorgabename(einrichtung));
+            p.setString(2, einrichtung);
+            p.setLong(3, organisationId);
             try (ResultSet rs = p.executeQuery()) { rs.next(); return rs.getLong(1); }
         }
     }

@@ -242,13 +242,13 @@ class GruppenverwaltungTest {
     @DisplayName("Eine bestehende Gruppe wird zur Vorgabe, wenn der Name schon belegt ist")
     void bestehendeGruppeWirdVorgabe() throws Exception {
         // Am 10.08.2026 am laufenden Stand aufgetreten: In einer Einrichtung
-        // gab es bereits eine von Hand angelegte Gruppe „Alle Geräte" — ohne
+        // gab es bereits eine von Hand angelegte Gruppe dieses Namens — ohne
         // Vorgabe-Kennzeichen. Das Anlegen der Vorgabegruppe scheiterte am
         // eindeutigen Namensindex, ON CONFLICT schluckte es, und JEDES vom
         // Agenten gemeldete Gerät fiel durch. Vier Terminals waren im
         // Protokoll sichtbar, aber in keiner Geräteliste.
         String einrichtung = neueEinrichtung();
-        assertNull(gv.anlegen("Alle Geräte", einrichtung, 60));
+        assertNull(gv.anlegen(Gruppenverwaltung.vorgabename(einrichtung), einrichtung, 60));
         assertTrue(gv.vorgabegruppe(einrichtung).isEmpty(),
                 "Vorbedingung: eine Gruppe, aber keine als Vorgabe gekennzeichnet");
 
@@ -262,7 +262,7 @@ class GruppenverwaltungTest {
                 "Es darf keine zweite Gruppe entstanden sein");
         var v = gv.vorgabegruppe(einrichtung);
         assertTrue(v.isPresent());
-        assertEquals("Alle Geräte", v.get().bezeichnung());
+        assertEquals(Gruppenverwaltung.vorgabename(einrichtung), v.get().bezeichnung());
         assertEquals(v.get().id(), gv.gruppeVon(terminal).orElseThrow());
     }
 
@@ -272,14 +272,14 @@ class GruppenverwaltungTest {
         // Wichtige Unterscheidung: Hat eine Einrichtung Gruppen wie
         // „Notaufnahme" und „Archiv", darf NICHT eine davon zur Vorgabe werden
         // — sonst landete jedes neu erkannte Gerät in der Notaufnahme. Es
-        // entsteht eine eigene Gruppe „Alle Geräte".
+        // entsteht eine eigene Vorgabegruppe mit dem Namen der Einrichtung.
         String einrichtung = neueEinrichtung();
         assertNull(gv.anlegen("Notaufnahme", einrichtung, 30));
         assertNull(gv.anlegen("Archiv", einrichtung, 300));
 
         var v = gv.vorgabegruppeAnlegen(einrichtung);
         assertTrue(v.isPresent());
-        assertEquals("Alle Geräte", v.get().bezeichnung());
+        assertEquals(Gruppenverwaltung.vorgabename(einrichtung), v.get().bezeichnung());
         assertEquals(3, gv.alle(einrichtung, ALLES).size());
         // Und die fachlichen Gruppen behalten ihr Prüfintervall.
         assertEquals(30, gv.alle(einrichtung, ALLES).stream()
@@ -290,17 +290,17 @@ class GruppenverwaltungTest {
     @Test
     @DisplayName("Ist der Name belegt, wird die älteste vorhandene Gruppe zur Vorgabe")
     void aeltesteWirdVorgabeWennNameBelegt() throws Exception {
-        // Nur in diesem Fall greift der zweite Anlauf: „Alle Geräte" lässt sich
+        // Nur in diesem Fall greift der zweite Anlauf: Der Vorgabename lässt sich
         // nicht anlegen, weil es den Namen schon gibt. Deterministisch über das
         // Anlegedatum, damit nicht die Sortierreihenfolge der Datenbank
         // entscheidet, wo neue Geräte landen.
         String einrichtung = neueEinrichtung();
-        assertNull(gv.anlegen("Alle Geräte", einrichtung, 60));
+        assertNull(gv.anlegen(Gruppenverwaltung.vorgabename(einrichtung), einrichtung, 60));
         assertNull(gv.anlegen("Danach angelegt", einrichtung, 60));
 
         var v = gv.vorgabegruppeAnlegen(einrichtung);
         assertTrue(v.isPresent());
-        assertEquals("Alle Geräte", v.get().bezeichnung());
+        assertEquals(Gruppenverwaltung.vorgabename(einrichtung), v.get().bezeichnung());
         assertEquals(2, gv.alle(einrichtung, ALLES).size(),
                 "Es darf keine dritte Gruppe entstanden sein");
     }
@@ -374,5 +374,18 @@ class GruppenverwaltungTest {
         assertEquals(id, gv.gruppeVon(terminal).orElseThrow(),
                 "Der Tippfehler kostet keine Zuordnung — vorher musste man löschen "
                 + "und neu anlegen, und die Geräte zogen in die Vorgabegruppe um");
+    }
+
+    @Test
+    @DisplayName("Die Vorgabegruppe trägt die Einrichtung im Namen — der Befund vom 13.08.2026")
+    void vorgabenameIstEindeutig() {
+        // Vorher hießen in einem MVZ alle neun Vorgabegruppen „Alle Geräte".
+        // Ein Bezeichner, dessen Bedeutung von der Nachbarspalte abhängt, ist
+        // keiner: In Auswahlfeldern und im Protokoll steht die Spalte nicht.
+        assertEquals("Alle Geräte – Praxis Nord",
+                Gruppenverwaltung.vorgabename("Praxis Nord"));
+        assertNotEquals(Gruppenverwaltung.vorgabename("Praxis Nord"),
+                Gruppenverwaltung.vorgabename("Praxis Süd"),
+                "Zwei Einrichtungen dürfen nicht denselben Gruppennamen bekommen");
     }
 }

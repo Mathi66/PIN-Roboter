@@ -3023,3 +3023,35 @@ Geräte mit.
 > legt Zeilen an, die kein Demo-Kennzeichen tragen, weil er den Unterschied gar
 > nicht kennt. Wer aufräumt, muss über den **Bezug** aufräumen, nicht über das
 > Kennzeichen. Beim dritten Mal sollte ich das eigentlich von selbst mitdenken.
+
+
+---
+
+## Neun Gruppen, ein Name
+
+**Befund des PO (13.08.2026):** In der Gruppenverwaltung hießen alle neun
+Vorgabegruppen „Alle Geräte". Die Unterscheidung steckte allein in der
+Nachbarspalte „Einrichtung".
+
+Der Punkt ist nicht die Optik. Ein Gruppenname taucht auch dort auf, wo diese
+Spalte **nicht** danebensteht: in Auswahlfeldern, im Fachprotokoll, in
+Fehlermeldungen. Dort sagte er gar nichts mehr.
+
+> Ein Bezeichner, dessen Bedeutung vom Nachbarn abhängt, ist keiner.
+
+Die Vorgabegruppe heißt jetzt **„Alle Geräte – <Einrichtung>"**. Die Einrichtung
+ist instanzweit eindeutig — das prüft `vorgabegruppeAnlegen` ohnehin, sonst
+entstünde gar keine Gruppe —, also ist es der Gruppenname damit auch. Migration
+26 benennt bestehende um, **aber nur die, die noch den alten Namen tragen**: Wer
+seine Vorgabegruppe selbst benannt hat, behält seinen Namen. Eine Migration, die
+eine bewusste Benennung überschreibt, wäre übergriffig.
+
+Der Eindeutigkeitsindex bleibt, wie er ist — `(einrichtung, lower(bezeichnung))`.
+Instanzweite Eindeutigkeit zu erzwingen wäre naheliegend und wäre ein
+**Informationsleck**: Eine Praxis bekäme „Name schon vergeben" für eine Gruppe
+in einer Einrichtung, die sie nicht sehen darf. Stattdessen erklärt das
+Anlegeformular jetzt, worauf es ankommt:
+
+> Die Bezeichnung sollte auch **ohne** die Spalte „Einrichtung" erkennbar sein …
+> „Notaufnahme Nordstadt" ist brauchbar, „Notaufnahme" in neun Betriebsstätten
+> nicht.

@@ -1513,7 +1513,8 @@ public class Zentrale {
                     <form method="post" action="/gruppen" class="reihe-enden">
                       <div class="feldgruppe"><label for="bez">Bezeichnung</label>
                         <input id="bez" name="bezeichnung" type="text" required
-                               placeholder="z. B. Notaufnahme"></div>
+                               placeholder="z. B. Notaufnahme Nordstadt"
+                               aria-describedby="bez-hilfe"></div>
                       <div class="feldgruppe"><label for="ge">Einrichtung</label>
                         <select id="ge" name="einrichtung">%s</select></div>
                       <div class="feldgruppe zahlenfeld"><label for="iv" title="Wie oft der Agent die Geräte dieser Gruppe prüft">Prüfintervall (s)</label>
@@ -1521,6 +1522,11 @@ public class Zentrale {
                                value="60" size="6"></div>
                       <div class="feldaktion">%s</div>
                     </form>
+                    <p id="bez-hilfe" class="hilfe">Die Bezeichnung sollte auch
+                       <strong>ohne</strong> die Spalte „Einrichtung" erkennbar sein — sie
+                       erscheint auch in Auswahlfeldern und im Protokoll, wo die Einrichtung
+                       nicht danebensteht. „Notaufnahme Nordstadt" ist brauchbar,
+                       „Notaufnahme" in neun Betriebsstätten nicht.</p>
                   </div>
                 </div>
                 <div class="tafel"><h3>Gruppen <span class="zaehler">%d</span></h3>

@@ -873,6 +873,30 @@ public class Datenbank implements AutoCloseable {
             ALTER TABLE geraet ADD CONSTRAINT geraet_gruppe_id_fkey
               FOREIGN KEY (gruppe_id) REFERENCES geraetegruppe(id) ON DELETE CASCADE;
             """);
+
+        // ── 26 · Vorgabegruppen bekommen einen sprechenden Namen ────────────
+        //
+        // Befund des PO (13.08.2026): In einem MVZ mit neun Betriebsstätten
+        // hießen alle neun Vorgabegruppen „Alle Geräte". Die Unterscheidung
+        // steckte allein in der Nachbarspalte „Einrichtung" — und überall dort,
+        // wo ein Gruppenname OHNE diese Spalte auftaucht (Auswahlfeld,
+        // Fachprotokoll, Fehlermeldung), sagte er gar nichts.
+        //
+        // Umbenannt wird nur, was noch den alten Namen trägt. Wer seine
+        // Vorgabegruppe selbst umbenannt hat, behält seinen Namen — eine
+        // Migration, die eine bewusste Benennung überschreibt, wäre übergriffig.
+        //
+        // Die Einrichtung ist instanzweit eindeutig, der neue Name damit auch.
+        migration(26, """
+            UPDATE geraetegruppe
+               SET bezeichnung = 'Alle Geräte – ' || einrichtung
+             WHERE ist_vorgabe
+               AND bezeichnung = 'Alle Geräte'
+               AND NOT EXISTS (
+                     SELECT 1 FROM geraetegruppe g2
+                      WHERE g2.einrichtung = geraetegruppe.einrichtung
+                        AND lower(g2.bezeichnung) = lower('Alle Geräte – ' || geraetegruppe.einrichtung));
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {
