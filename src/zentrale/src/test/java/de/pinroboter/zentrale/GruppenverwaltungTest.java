@@ -273,9 +273,12 @@ class GruppenverwaltungTest {
         // „Notaufnahme" und „Archiv", darf NICHT eine davon zur Vorgabe werden
         // — sonst landete jedes neu erkannte Gerät in der Notaufnahme. Es
         // entsteht eine eigene Vorgabegruppe mit dem Namen der Einrichtung.
+        // Die Namen tragen die Einrichtung: Seit dem 13.08.2026 muss eine
+        // Gruppenbezeichnung instanzweit eindeutig sein, und diese Testklasse
+        // legt viele Einrichtungen in derselben Datenbank an.
         String einrichtung = neueEinrichtung();
-        assertNull(gv.anlegen("Notaufnahme", einrichtung, 30));
-        assertNull(gv.anlegen("Archiv", einrichtung, 300));
+        assertNull(gv.anlegen("Notaufnahme " + einrichtung, einrichtung, 30));
+        assertNull(gv.anlegen("Archiv " + einrichtung, einrichtung, 300));
 
         var v = gv.vorgabegruppeAnlegen(einrichtung);
         assertTrue(v.isPresent());
@@ -283,7 +286,7 @@ class GruppenverwaltungTest {
         assertEquals(3, gv.alle(einrichtung, ALLES).size());
         // Und die fachlichen Gruppen behalten ihr Prüfintervall.
         assertEquals(30, gv.alle(einrichtung, ALLES).stream()
-                .filter(g -> g.bezeichnung().equals("Notaufnahme"))
+                .filter(g -> g.bezeichnung().equals("Notaufnahme " + einrichtung))
                 .findFirst().orElseThrow().pruefintervallSekunden());
     }
 
@@ -317,9 +320,10 @@ class GruppenverwaltungTest {
         String einrichtung = neueEinrichtung();
         var vorgabe = gv.vorgabegruppeAnlegen(einrichtung).orElseThrow();
 
-        assertNull(gv.anlegen("Notaufnahme", einrichtung, 30));
+        String fachname = "Notaufnahme " + einrichtung;
+        assertNull(gv.anlegen(fachname, einrichtung, 30));
         long fach = gv.alle(einrichtung, ALLES).stream()
-                .filter(g -> g.bezeichnung().equals("Notaufnahme"))
+                .filter(g -> g.bezeichnung().equals(fachname))
                 .findFirst().orElseThrow().id();
 
         String terminal = "KT-" + UUID.randomUUID().toString().substring(0, 8);
@@ -359,18 +363,20 @@ class GruppenverwaltungTest {
     void umbenennenErhaeltZuordnung() throws Exception {
         String einrichtung = neueEinrichtung();
         gv.vorgabegruppeAnlegen(einrichtung);
-        assertNull(gv.anlegen("Notaufnahem", einrichtung, 30));   // Tippfehler
+        String tippfehler = "Notaufnahem " + einrichtung;
+        String richtig    = "Notaufnahme " + einrichtung;
+        assertNull(gv.anlegen(tippfehler, einrichtung, 30));
         long id = gv.alle(einrichtung, ALLES).stream()
-                .filter(g -> g.bezeichnung().equals("Notaufnahem"))
+                .filter(g -> g.bezeichnung().equals(tippfehler))
                 .findFirst().orElseThrow().id();
 
         String terminal = "KT-" + UUID.randomUUID().toString().substring(0, 8);
         assertTrue(gv.geraetSicherstellen(terminal, einrichtung, "Terminal"));
         assertNull(gv.zuordnen(terminal, id));
 
-        assertNull(gv.umbenennen(id, "Notaufnahme", ALLES));
+        assertNull(gv.umbenennen(id, richtig, ALLES));
 
-        assertEquals("Notaufnahme", gv.gruppe(id, ALLES).orElseThrow().bezeichnung());
+        assertEquals(richtig, gv.gruppe(id, ALLES).orElseThrow().bezeichnung());
         assertEquals(id, gv.gruppeVon(terminal).orElseThrow(),
                 "Der Tippfehler kostet keine Zuordnung — vorher musste man löschen "
                 + "und neu anlegen, und die Geräte zogen in die Vorgabegruppe um");
@@ -387,5 +393,57 @@ class GruppenverwaltungTest {
         assertNotEquals(Gruppenverwaltung.vorgabename("Praxis Nord"),
                 Gruppenverwaltung.vorgabename("Praxis Süd"),
                 "Zwei Einrichtungen dürfen nicht denselben Gruppennamen bekommen");
+    }
+
+    @Test
+    @DisplayName("Eine Bezeichnung, die es anderswo schon gibt, wird abgelehnt")
+    void nameInstanzweitEindeutig() throws Exception {
+        // Vorgabe PO, 13.08.2026: Zwei Betriebsstätten dürfen nicht beide eine
+        // Gruppe „Notaufnahme" haben — in einem Auswahlfeld oder im Protokoll
+        // wäre sonst nicht erkennbar, welche gemeint ist.
+        String eine = neueEinrichtung(), andere = neueEinrichtung();
+        String name = "GV Notaufnahme " + UUID.randomUUID().toString().substring(0, 6);
+        assertNull(gv.anlegen(name, eine, 60));
+
+        String fehler = gv.anlegen(name, andere, 60);
+        assertNotNull(fehler, "Derselbe Name in einer anderen Einrichtung muss scheitern");
+        assertTrue(fehler.contains("ergänzen"), fehler);
+
+        // Groß-/Kleinschreibung zählt nicht als Unterschied.
+        assertNotNull(gv.anlegen(name.toLowerCase(), andere, 60));
+
+        // Mit Kennzeichnung geht es.
+        assertNull(gv.anlegen(name + " " + andere, andere, 60));
+    }
+
+    @Test
+    @DisplayName("Die Meldung verrät nicht, in welcher Einrichtung der Name schon vorkommt")
+    void meldungVerraetKeinenFremdenBestand() throws Exception {
+        // Eine Mandantengrenze, die man mit einem Formular ausprobieren kann,
+        // ist keine: Sonst erführe eine Praxis, wie die Gruppen fremder
+        // Mandanten heißen.
+        String fremde = neueEinrichtung(), eigene = neueEinrichtung();
+        String name = "GV Geheim " + UUID.randomUUID().toString().substring(0, 6);
+        assertNull(gv.anlegen(name, fremde, 60));
+
+        String fehler = gv.anlegen(name, eigene, 60);
+        assertNotNull(fehler);
+        assertFalse(fehler.contains(fremde),
+                "Die Meldung nennt die fremde Einrichtung: " + fehler);
+    }
+
+    @Test
+    @DisplayName("Umbenennen auf denselben Namen ist erlaubt")
+    void umbenennenAufSichSelbst() throws Exception {
+        String e = neueEinrichtung();
+        String name = "GV Umbenenntest " + UUID.randomUUID().toString().substring(0, 6);
+        assertNull(gv.anlegen(name, e, 60));
+        long id = gv.alle(e, ALLES).stream()
+                .filter(g -> name.equals(g.bezeichnung())).findFirst().orElseThrow().id();
+
+        assertNull(gv.umbenennen(id, name, ALLES),
+                "Die eigene Kennung muss von der Prüfung ausgenommen sein");
+        assertNull(gv.umbenennen(id, name.toLowerCase(), ALLES),
+                "Auch eine reine Schreibweisenänderung");
     }
 }

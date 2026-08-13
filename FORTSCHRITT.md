@@ -3055,3 +3055,32 @@ Anlegeformular jetzt, worauf es ankommt:
 > Die Bezeichnung sollte auch **ohne** die Spalte „Einrichtung" erkennbar sein …
 > „Notaufnahme Nordstadt" ist brauchbar, „Notaufnahme" in neun Betriebsstätten
 > nicht.
+
+
+### Und dann hart durchgesetzt
+
+Auf Nachfrage entschied der PO: Die Eindeutigkeit soll nicht nur empfohlen,
+sondern **erzwungen** werden — mit einer Meldung in seinen Worten: „Bitte
+ergänzen Sie den Gruppennamen um eine beliebige Praxis-Kennzeichnung."
+
+Zwei Ebenen, weil eine nicht reicht:
+
+- **Migration 27** setzt einen eindeutigen Index auf `lower(bezeichnung)` —
+  instanzweit. Das ist die Wahrheit; zwei gleichzeitige Sitzungen können sie
+  nicht unterlaufen. Die Migration löst zuerst vorhandene Doppelnamen auf
+  (Einrichtung anhängen, notfalls die Kennung) und setzt dann erst den Index.
+  Umgekehrt schlüge sie bei jeder Installation fehl, die schon Doppelnamen hat
+  — und ließe die Zentrale gar nicht mehr starten.
+- **Eine Vorabprüfung** liefert die gute Meldung, bevor die Datenbank einen
+  Constraint-Fehler wirft.
+
+**Die Meldung nennt die fremde Einrichtung nicht.** Das ist der eigentlich
+heikle Teil: Die Prüfung muss über alle Mandanten laufen, sonst greift die
+Eindeutigkeit nicht — aber sie darf nur ein Ja oder Nein liefern. Sonst erführe
+eine Praxis durch Ausprobieren, wie die Gruppen fremder Mandanten heißen. Eine
+Mandantengrenze, die sich mit einem Formular abfragen lässt, ist keine. Dafür
+gibt es einen eigenen Test.
+
+Zwei bestehende Modultests fielen dabei um — sie legten in verschiedenen
+Einrichtungen Gruppen namens „Notaufnahme" an. Genau das, was die neue Regel
+verbietet; die Tests tragen jetzt die Einrichtung im Namen.

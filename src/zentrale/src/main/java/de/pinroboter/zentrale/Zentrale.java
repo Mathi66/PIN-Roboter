@@ -1522,11 +1522,11 @@ public class Zentrale {
                                value="60" size="6"></div>
                       <div class="feldaktion">%s</div>
                     </form>
-                    <p id="bez-hilfe" class="hilfe">Die Bezeichnung sollte auch
-                       <strong>ohne</strong> die Spalte „Einrichtung" erkennbar sein — sie
-                       erscheint auch in Auswahlfeldern und im Protokoll, wo die Einrichtung
-                       nicht danebensteht. „Notaufnahme Nordstadt" ist brauchbar,
-                       „Notaufnahme" in neun Betriebsstätten nicht.</p>
+                    <p id="bez-hilfe" class="hilfe">Die Bezeichnung muss <strong>eindeutig</strong>
+                       sein — auch gegenüber anderen Betriebsstätten. Sie erscheint in
+                       Auswahlfeldern und im Protokoll, wo die Spalte „Einrichtung" nicht
+                       danebensteht. Ergänzen Sie deshalb eine Kennzeichnung der Praxis:
+                       „Notaufnahme Nordstadt" statt „Notaufnahme".</p>
                   </div>
                 </div>
                 <div class="tafel"><h3>Gruppen <span class="zaehler">%d</span></h3>

@@ -443,6 +443,26 @@ Struktur: Instanz → Serviceorganisation → Einrichtung → Gerätegruppe → 
 - Auch die Einzelinstallation nutzt dieselbe Struktur, in der Oberfläche jedoch
   ohne unnötige Ebenen (siehe FA-INS-030).
 
+### FA-GER-055 — Gruppenbezeichnungen sind eindeutig · MUSS · V1 · PO 13.08.2026
+Die Bezeichnung einer Gerätegruppe ist **instanzweit** eindeutig, nicht nur je
+Einrichtung.
+
+*Anlass:* In einem MVZ mit neun Betriebsstätten hießen alle neun
+Vorgabegruppen „Alle Geräte". Ein Gruppenname erscheint auch dort, wo die
+Spalte „Einrichtung" nicht danebensteht — in Auswahlfeldern, im Fachprotokoll,
+in Fehlermeldungen. Dort sagte er nichts mehr.
+
+*Akzeptanz:*
+- Ein Name, den es andernorts schon gibt, wird abgelehnt — auch bei
+  abweichender Groß-/Kleinschreibung.
+- **Die Meldung nennt die fremde Einrichtung nicht.** Sie sagt nur, dass der
+  Name belegt ist, und wie er zu ergänzen ist. Eine Mandantengrenze, die sich
+  mit einem Formular ausprobieren lässt, ist keine.
+- Die Regel wird durch einen eindeutigen Index erzwungen, nicht nur durch eine
+  Vorabprüfung — zwei gleichzeitige Sitzungen dürfen sie nicht unterlaufen.
+- Vorgabegruppen tragen die Einrichtung im Namen.
+- Beim Umbenennen ist die eigene Gruppe von der Prüfung ausgenommen.
+
 ### FA-ORG-030 — Struktur grafisch darstellen · SOLL · V1 · PO 12.08.2026
 Die Organisationsstruktur ist als Bild darstellbar, mit Sinnbildern für die
 Einheiten und die daran hängenden Geräte.

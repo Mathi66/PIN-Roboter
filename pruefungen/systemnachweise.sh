@@ -2724,6 +2724,64 @@ else
   curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/anlegen
 fi
 
+# ---------------------------------------------------------------- FA-GER-055
+# Gruppenbezeichnungen sind instanzweit eindeutig (Vorgabe PO, 13.08.2026).
+#
+# Der Anlass: In einem MVZ hiessen alle neun Vorgabegruppen „Alle Geräte". Ein
+# Gruppenname erscheint auch dort, wo die Spalte „Einrichtung" NICHT
+# danebensteht - in Auswahlfeldern, im Fachprotokoll, in Fehlermeldungen.
+hinweis "FA-GER-055 — Gruppenbezeichnungen sind eindeutig"
+
+# Vorgabegruppen tragen die Einrichtung im Namen.
+OHNE_E=$(sql "SELECT count(*) FROM geraetegruppe WHERE ist_vorgabe AND bezeichnung = 'Alle Geräte'")
+[ "${OHNE_E:-1}" = "0" ] && GE=ja || GE=nein
+ergebnis "keine Vorgabegruppe heisst mehr blosz „Alle Geräte“ ($OHNE_E)" "$GE"
+
+DOPPELT=$(sql "SELECT count(*) FROM (SELECT lower(bezeichnung) FROM geraetegruppe
+               GROUP BY 1 HAVING count(*) > 1) x")
+[ "${DOPPELT:-1}" = "0" ] && GE2=ja || GE2=nein
+ergebnis "keine zwei Gruppen tragen denselben Namen ($DOPPELT Doppelungen)" "$GE2"
+
+# Zwei Einrichtungen, derselbe Wunschname - das muss scheitern.
+E_A=$(sqltext "SELECT bezeichnung FROM organisation WHERE art='EINRICHTUNG' ORDER BY id LIMIT 1")
+E_B=$(sqltext "SELECT bezeichnung FROM organisation WHERE art='EINRICHTUNG'
+               AND bezeichnung <> '$E_A' ORDER BY id LIMIT 1")
+if [ -z "$E_A" ] || [ -z "$E_B" ]; then
+  uebersprungen "weniger als zwei Einrichtungen vorhanden"
+else
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
+    --data-urlencode "bezeichnung=Nachweis Doppelname" \
+    --data-urlencode "einrichtung=$E_A" --data-urlencode "intervall=60"
+  curl -s -b "$KEKSE" -X POST $BASIS/gruppen \
+    --data-urlencode "bezeichnung=Nachweis Doppelname" \
+    --data-urlencode "einrichtung=$E_B" --data-urlencode "intervall=60" > /tmp/pr-dop.html
+  ANZ=$(sql "SELECT count(*) FROM geraetegruppe WHERE bezeichnung='Nachweis Doppelname'")
+  [ "${ANZ:-0}" = "1" ] && GE3=ja || GE3=nein
+  ergebnis "derselbe Name in einer zweiten Einrichtung wird abgelehnt ($ANZ von 1)" "$GE3"
+
+  # Die Meldung sagt, WAS zu tun ist ...
+  grep -q "ergänzen Sie den Gruppennamen" /tmp/pr-dop.html && GE4=ja || GE4=nein
+  ergebnis "die Meldung sagt, wie der Name zu ergaenzen ist" "$GE4"
+
+  # ... und verraet NICHT, wo der Name schon vorkommt. Eine Mandantengrenze,
+  # die man mit einem Formular ausprobieren kann, ist keine.
+  grep -q "$E_A" /tmp/pr-dop.html && GE5=nein || GE5=ja
+  ergebnis "sie nennt die fremde Einrichtung nicht" "$GE5"
+  rm -f /tmp/pr-dop.html
+
+  # Mit Kennzeichnung geht es.
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/gruppen \
+    --data-urlencode "bezeichnung=Nachweis Doppelname $E_B" \
+    --data-urlencode "einrichtung=$E_B" --data-urlencode "intervall=60"
+  [ -n "$(sql "SELECT id FROM geraetegruppe WHERE bezeichnung='Nachweis Doppelname $E_B'")" ] \
+    && GE6=ja || GE6=nein
+  ergebnis "mit einer Praxis-Kennzeichnung im Namen gelingt es" "$GE6"
+
+  # Aufraeumen.
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "DELETE FROM geraetegruppe WHERE bezeichnung LIKE 'Nachweis Doppelname%'" >/dev/null 2>&1
+fi
+
 # ------------------------------------------------- UX-Stufe 4 und 5 (ADR-0010)
 hinweis "UX-Stufe 4/5 — Detailseiten statt Aufklapper, Beziehungen zum Durchklicken"
 

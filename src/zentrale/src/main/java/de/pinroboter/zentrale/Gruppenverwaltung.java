@@ -98,10 +98,61 @@ public class Gruppenverwaltung {
     }
 
     /** @return Fehlermeldung im Klartext, oder null bei Erfolg */
+    /**
+     * Die Meldung, wenn eine Bezeichnung schon vergeben ist.
+     *
+     * <h2>Warum sie nicht sagt, wo</h2>
+     *
+     * Seit dem 13.08.2026 muss eine Gruppenbezeichnung <b>instanzweit</b>
+     * eindeutig sein, nicht nur je Einrichtung (Vorgabe PO). Sonst hießen in
+     * neun Betriebsstätten neun Gruppen „Notaufnahme", und in einem Auswahlfeld
+     * oder im Protokoll — wo die Einrichtung nicht danebensteht — wäre nicht
+     * mehr erkennbar, welche gemeint ist.
+     *
+     * <p>Die Meldung darf dabei <b>nicht verraten, in welcher Einrichtung</b>
+     * der Name schon vorkommt. Sonst könnte eine Praxis durch Ausprobieren
+     * erfahren, wie die Gruppen fremder Mandanten heißen — eine Mandantengrenze,
+     * die man mit einem Formular umgehen kann, ist keine.
+     */
+    private static final String NAME_VERGEBEN =
+            "Diese Bezeichnung wird bereits verwendet. Bitte ergänzen Sie den Gruppennamen "
+            + "um eine Kennzeichnung der Praxis oder Betriebsstätte — zum Beispiel "
+            + "„Notaufnahme Nordstadt“ statt „Notaufnahme“. So bleibt die Gruppe auch dort "
+            + "erkennbar, wo die Einrichtung nicht danebensteht.";
+
+    /**
+     * Ist diese Bezeichnung instanzweit schon vergeben?
+     *
+     * <p><b>Ohne Geltungsbereich</b> — und das ist Absicht: Die Prüfung muss
+     * über alle Mandanten laufen, sonst greift die Eindeutigkeit nicht. Sie
+     * liefert deshalb nur ein Ja oder Nein, nie einen Namen oder eine
+     * Einrichtung. Wer die Antwort bekommt, erfährt daraus nichts über fremde
+     * Bestände außer der Tatsache, dass dieses eine Wort belegt ist.
+     *
+     * @param ausser eigene Kennung beim Umbenennen, sonst {@code null}
+     */
+    private boolean nameVergeben(String bezeichnung, Long ausser) {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT count(*) FROM geraetegruppe WHERE lower(bezeichnung) = lower(?) "
+                + "AND (? IS NULL OR id <> ?)")) {
+            p.setString(1, bezeichnung.trim());
+            if (ausser == null) { p.setNull(2, java.sql.Types.BIGINT);
+                                  p.setNull(3, java.sql.Types.BIGINT); }
+            else                { p.setLong(2, ausser); p.setLong(3, ausser); }
+            try (ResultSet rs = p.executeQuery()) { return rs.next() && rs.getInt(1) > 0; }
+        } catch (SQLException e) {
+            // Im Zweifel durchlassen: Der eindeutige Index in der Datenbank ist
+            // die eigentliche Grenze, diese Pruefung nur die gute Meldung.
+            System.err.println("Namensprüfung fehlgeschlagen: " + e.getMessage());
+            return false;
+        }
+    }
+
     public String anlegen(String bezeichnung, String einrichtung, int intervall) {
         if (bezeichnung == null || bezeichnung.isBlank()) {
             return "Bitte eine Bezeichnung für die Gruppe angeben.";
         }
+        if (nameVergeben(bezeichnung, null)) return NAME_VERGEBEN;
         if (intervall < 10) {
             return "Das Prüfintervall muss mindestens 10 Sekunden betragen. "
                  + "Kürzere Abstände belasten Konnektor und Terminals unnötig.";
@@ -133,9 +184,9 @@ public class Gruppenverwaltung {
             }
             return null;
         } catch (SQLException e) {
-            if ("23505".equals(e.getSQLState())) {
-                return "Eine Gruppe mit dieser Bezeichnung gibt es bereits.";
-            }
+            // Der Index ist die Wahrheit: Zwischen Pruefung und Einfuegen kann
+            // eine zweite Sitzung denselben Namen belegt haben.
+            if ("23505".equals(e.getSQLState())) return NAME_VERGEBEN;
             return "Die Gruppe konnte nicht angelegt werden.";
         }
     }
@@ -197,16 +248,16 @@ public class Gruppenverwaltung {
             return "Diese Gruppe gibt es nicht — oder sie liegt außerhalb Ihres "
                  + "Zuständigkeitsbereichs.";
         }
+        // Die eigene Kennung ausnehmen: Wer nur die Groß-/Kleinschreibung
+        // ändert, soll das dürfen.
+        if (nameVergeben(bezeichnung, gruppeId)) return NAME_VERGEBEN;
         try (PreparedStatement p = db.verbindung().prepareStatement(
                 "UPDATE geraetegruppe SET bezeichnung = ? WHERE id = ?")) {
             p.setString(1, bezeichnung.trim());
             p.setLong(2, gruppeId);
             return p.executeUpdate() == 1 ? null : "Diese Gruppe gibt es nicht.";
         } catch (SQLException e) {
-            if ("23505".equals(e.getSQLState())) {
-                return "In dieser Einrichtung gibt es bereits eine Gruppe „"
-                     + bezeichnung.trim() + "“.";
-            }
+            if ("23505".equals(e.getSQLState())) return NAME_VERGEBEN;
             return "Die Gruppe konnte nicht umbenannt werden.";
         }
     }

@@ -897,6 +897,40 @@ public class Datenbank implements AutoCloseable {
                       WHERE g2.einrichtung = geraetegruppe.einrichtung
                         AND lower(g2.bezeichnung) = lower('Alle Geräte – ' || geraetegruppe.einrichtung));
             """);
+
+        // ── 27 · Gruppenbezeichnungen sind instanzweit eindeutig ────────────
+        //
+        // Vorgabe PO, 13.08.2026. Bisher galt Eindeutigkeit nur JE EINRICHTUNG:
+        // Neun Betriebsstätten durften neun Gruppen „Notaufnahme" haben. In
+        // einem Auswahlfeld oder im Fachprotokoll — wo die Einrichtung nicht
+        // danebensteht — war dann nicht mehr erkennbar, welche gemeint ist.
+        //
+        // Reihenfolge: erst die Altbestände auflösen, dann den Index setzen.
+        // Umgekehrt schlüge die Migration bei jeder Installation fehl, die
+        // bereits doppelte Namen hat — und ließe die Zentrale gar nicht starten.
+        migration(27, """
+            -- 1. Doppelte Namen um ihre Einrichtung ergänzen.
+            UPDATE geraetegruppe g
+               SET bezeichnung = g.bezeichnung || ' – ' || g.einrichtung
+             WHERE EXISTS (SELECT 1 FROM geraetegruppe x
+                            WHERE x.id <> g.id
+                              AND lower(x.bezeichnung) = lower(g.bezeichnung));
+
+            -- 2. Bleibt danach noch etwas doppelt — zwei gleichnamige Gruppen in
+            --    DERSELBEN Einrichtung gab es nie, aber Namen können sich nach
+            --    Schritt 1 überschneiden —, entscheidet die Kennung.
+            UPDATE geraetegruppe g
+               SET bezeichnung = g.bezeichnung || ' (' || g.id || ')'
+             WHERE EXISTS (SELECT 1 FROM geraetegruppe x
+                            WHERE x.id <> g.id
+                              AND lower(x.bezeichnung) = lower(g.bezeichnung));
+
+            -- 3. Und jetzt die Regel. Der alte Index je Einrichtung bleibt
+            --    stehen: Er ist damit redundant, aber harmlos, und ein
+            --    Wegfallen wäre eine Änderung ohne Nutzen.
+            CREATE UNIQUE INDEX IF NOT EXISTS geraetegruppe_name_global_idx
+              ON geraetegruppe (lower(bezeichnung));
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {
