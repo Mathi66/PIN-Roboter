@@ -55,6 +55,22 @@ public class Registrynachbildung implements HttpHandler {
             {"name":"nieting/pin-roboter","tags":["0.9.0","1.0.0","1.0.1","1.1.0","latest"]}""";
 
     /**
+     * Die Versionen des <b>Agent-Abbilds</b> (FA-AGT-100).
+     *
+     * <p>Zentrale und Agent sind zwei getrennte Abbilder in derselben Ablage;
+     * der Name des Agenten ergibt sich aus dem der Zentrale mit dem Zusatz
+     * {@code -agent}. Ohne diese Nachbildung ließe sich die gezielte
+     * Aktualisierung eines Standorts nicht am Testaufbau prüfen — und ein
+     * Vorgang, der einen Standort für eine Minute aus der Überwachung nimmt,
+     * gehört geprüft.
+     *
+     * <p>Bewusst ein <b>anderer</b> Satz als oben: So fällt auf, wenn die
+     * Zentrale versehentlich ihre eigenen Versionen für den Agenten anbietet.
+     */
+    private static final String AGENT_TAGS = """
+            {"name":"nieting/pin-roboter-agent","tags":["0.9.0","1.0.0","1.2.0","stabil"]}""";
+
+    /**
      * Änderungshinweise auf Deutsch, wie sie im Repository liegen.
      *
      * <p>Eine echte Registry liefert das nicht. In der Auslieferung kommen sie
@@ -101,7 +117,10 @@ public class Registrynachbildung implements HttpHandler {
                     "{\"errors\":[{\"code\":\"UNAUTHORIZED\",\"message\":\"authentication required\"}]}");
             return;
         }
-        TerminalVerwaltung.antworte(ex, 200, TAGS);
+        // Welches Abbild ist gemeint? Der Pfad lautet
+        // /registry/v2/<abbild>/tags/list — und <abbild> enthält selbst einen
+        // Schrägstrich (nieting/pin-roboter).
+        TerminalVerwaltung.antworte(ex, 200, pfad.contains("-agent/") ? AGENT_TAGS : TAGS);
     }
 
     private static boolean zugangGueltig(String kopf) {

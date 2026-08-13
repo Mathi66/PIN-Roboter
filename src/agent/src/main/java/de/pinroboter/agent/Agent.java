@@ -52,6 +52,15 @@ public class Agent {
     private volatile Registrierzugang registrierzugang;
 
     /**
+     * Der Weg, sich selbst austauschen zu lassen (FA-AGT-100).
+     *
+     * <p>Der Agent tut das nie von sich aus — nur auf ausdrücklichen Auftrag
+     * der Zentrale. Der nächtliche Lauf des Aktualisierungsdienstes läuft
+     * unabhängig davon weiter und braucht uns nicht.
+     */
+    private volatile Selbstaktualisierung selbstaktualisierung;
+
+    /**
      * Was der Agent über sich weiß — für die Oberfläche zur Inbetriebnahme und
      * Fehlersuche (PO, 13.08.2026). Enthält keine Geheimnisse.
      */
@@ -230,6 +239,10 @@ public class Agent {
                 java.nio.file.Path.of(env("REGISTRY_VERZEICHNIS", "/daten/registry")),
                 agent.zentraleHttp, zentralenadresse.aktuell());
 
+        agent.selbstaktualisierung = new Selbstaktualisierung(
+                env("AKTUALISIERUNG_URL", "http://aktualisierung:8080"),
+                System.getenv("AKTUALISIERUNG_TOKEN"));
+
         agent.zustand.grunddaten(bausteinversion(), zentralenadresse.aktuell().toString(),
                 konnektorUrl, intervall);
         agent.zustand.schluessel(agent.schluessel != null, agent.ablage.aktiv());
@@ -392,6 +405,7 @@ public class Agent {
                     zustand.aktualisierung(registrierzugang.bereit(),
                                            registrierzugang.registry());
                 }
+                aktualisierungsauftrag();
                 intervalleAbrufen();
                 var terminals = konnektor.terminals();
                 var karten = konnektor.karten();
@@ -557,8 +571,14 @@ public class Agent {
         }
 
         String modell = konnektor.informationsmodell(webadmin);
+        // Die eigene Version gehört in den Abdruck: Sonst unterbliebe nach
+        // einem Update die Meldung, weil sich am GERÄTEbestand nichts geändert
+        // hat — und die Zentrale wüsste nie, dass der Agent jetzt eine neue
+        // Fassung fährt. Nach einem Neustart ist der Abdruck zwar ohnehin
+        // leer; verlassen sollte sich darauf aber nichts, was über Erfolg oder
+        // Misserfolg einer Aktualisierung entscheidet (FA-AGT-100).
         String abdruck = String.valueOf(eintraege.hashCode()) + ":"
-                + (modell == null ? "-" : modell.hashCode());
+                + (modell == null ? "-" : modell.hashCode()) + ":" + bausteinversion();
         if (abdruck.equals(letzterBestandsabdruck)) return;   // nichts Neues
 
         var meldung = new LinkedHashMap<String, Object>();
@@ -729,6 +749,61 @@ public class Agent {
                     .filter(k -> k.kartenhandle().equals(kartenhandle))
                     .map(KonnektorClient.Karte::terminalId).findFirst().orElse(null);
         } catch (Exception e) { return null; }
+    }
+
+    /**
+     * Holt einen Aktualisierungsauftrag und führt ihn aus (FA-AGT-100).
+     *
+     * <h2>Die Reihenfolge ist wesentlich</h2>
+     *
+     * Erst <b>quittieren</b>, dann anstoßen. Im Erfolgsfall ersetzt der
+     * Aktualisierungsdienst den Container dieses Agenten — mitten im Satz. Wer
+     * danach quittieren wollte, käme nicht mehr dazu, und in der Zentrale
+     * stünde ein Auftrag, den angeblich niemand angenommen hat.
+     *
+     * <p>Ob die Aktualisierung wirklich gewirkt hat, entscheidet ohnehin nicht
+     * diese Quittung, sondern die Version, mit der der Agent wiederkommt.
+     */
+    private void aktualisierungsauftrag() {
+        if (agentToken == null || selbstaktualisierung == null) return;
+        String antwort;
+        try {
+            var a = zentraleHttp.send(
+                    HttpRequest.newBuilder(zentrale.resolve("/api/agent/aktualisierung"))
+                            .header("X-Agent-Token", agentToken)
+                            .timeout(Duration.ofSeconds(10)).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (a.statusCode() != 200) return;   // ältere Zentrale kennt den Pfad nicht
+            antwort = a.body();
+        } catch (Exception e) { return; }
+
+        var m = java.util.regex.Pattern
+                .compile("\"zielversion\"\\s*:\\s*\"([^\"]+)\"").matcher(antwort);
+        if (!m.find()) return;
+        String ziel = m.group(1);
+
+        System.out.println("  Aktualisierung auf Version " + ziel + " angefordert");
+        zustand.melden(false, "Die Zentrale hat die Aktualisierung auf Version "
+                + ziel + " angefordert.");
+
+        // Zuerst melden, dass wir es versuchen — danach sind wir womöglich weg.
+        var q = new LinkedHashMap<String, Object>();
+        q.put("angenommen", true);
+        q.put("zielversion", ziel);
+        senden("/api/agent/aktualisierung-quittung", alsJson(q));
+
+        String fehler = selbstaktualisierung.anstossen();
+        if (fehler != null) {
+            // Wir leben noch — also war es nichts. Das muss die Zentrale
+            // erfahren, sonst wartet dort jemand zehn Minuten auf nichts.
+            System.out.println("  Aktualisierung nicht angestoßen: " + fehler);
+            zustand.melden(true, "Aktualisierung nicht angestoßen: " + fehler);
+            var f = new LinkedHashMap<String, Object>();
+            f.put("angenommen", false);
+            f.put("zielversion", ziel);
+            f.put("fehler", fehler);
+            senden("/api/agent/aktualisierung-quittung", alsJson(f));
+        }
     }
 
     private void quittieren(long id, String handle, String art, boolean erfolg, String fehler) {

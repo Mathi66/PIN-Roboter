@@ -961,6 +961,50 @@ public class Datenbank implements AutoCloseable {
             ALTER TABLE agent
               ADD COLUMN IF NOT EXISTS version_seit TIMESTAMPTZ NOT NULL DEFAULT now();
             """);
+
+        // ── 30 · Gezielte Aktualisierung eines Standort-Agenten ─────────────
+        //
+        // Der nächtliche Lauf zieht alle Agenten irgendwann nach. Das genügt
+        // nicht, wenn eine Fehlerbehebung an genau einem Standort gebraucht
+        // wird — oder wenn jemand vor dem Rollout an einem Standort sehen
+        // will, ob die neue Fassung trägt (PO, 13.08.2026).
+        //
+        // Jeder Auftrag bleibt als Zeile stehen, auch der gescheiterte: „Wurde
+        // das je versucht?" ist die erste Frage bei einem Agenten, der
+        // zurückhängt.
+        migration(30, """
+            CREATE TABLE IF NOT EXISTS agent_aktualisierung (
+              id              BIGSERIAL PRIMARY KEY,
+              agent_id        BIGINT NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+              zielversion     TEXT NOT NULL,
+              von_version     TEXT,
+              status          TEXT NOT NULL,
+              angefordert_am  TIMESTAMPTZ NOT NULL DEFAULT now(),
+              angefordert_von TEXT NOT NULL,
+              angestossen_am  TIMESTAMPTZ,
+              abgeschlossen_am TIMESTAMPTZ,
+              meldung         TEXT
+            );
+            -- Nur EIN offener Auftrag je Agent. Zwei gleichzeitige Anstöße
+            -- hießen: zwei Neustarts, und keiner weiß, welcher gewirkt hat.
+            CREATE UNIQUE INDEX IF NOT EXISTS agent_aktualisierung_offen_idx
+              ON agent_aktualisierung (agent_id)
+              WHERE status IN ('ANGEFORDERT', 'ANGESTOSSEN');
+            CREATE INDEX IF NOT EXISTS agent_aktualisierung_agent_idx
+              ON agent_aktualisierung (agent_id, id DESC);
+            """);
+
+        // ── 31 · Verfügbare Versionen des Agent-Abbilds ─────────────────────
+        //
+        // Bisher fragte die Zentrale nur nach Versionen ihres EIGENEN Abbilds.
+        // Wer einen Agenten gezielt aktualisieren will, muss aber wissen, was
+        // es für den Agenten gibt — das sind zwei getrennte Abbilder in
+        // derselben Programmablage.
+        migration(31, """
+            ALTER TABLE registry_zugang
+              ADD COLUMN IF NOT EXISTS agent_versionen TEXT,
+              ADD COLUMN IF NOT EXISTS agent_fehler    TEXT;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

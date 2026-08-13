@@ -108,9 +108,6 @@ final class Agentenpaket {
                     container_name: pin-roboter-agent
                     restart: unless-stopped
                     env_file: .env
-                    environment:
-                      # Wohin die Zugangsdaten für die Aktualisierung gehören.
-                      REGISTRY_VERZEICHNIS: /registry
                     # Die Oberfläche des Agenten: Inbetriebnahme, Zustand,
                     # Fehlersuche. Nur auf DIESEM Rechner erreichbar —
                     # http://127.0.0.1:8091. Im Container an 0.0.0.0 gebunden,
@@ -119,8 +116,17 @@ final class Agentenpaket {
                     # macht die Adresse vor dem Doppelpunkt.
                     ports:
                       - "127.0.0.1:8091:8091"
+                    # EIN environment-Block. Zwei wären kein Kommentarfehler,
+                    # sondern ein stiller Datenverlust: In YAML gewinnt bei
+                    # doppeltem Schlüssel der letzte, und alles darüber fiele
+                    # weg.
                     environment:
                       OBERFLAECHE_ADRESSE: "0.0.0.0"
+                      # Wohin die Zugangsdaten für die Aktualisierung gehören.
+                      REGISTRY_VERZEICHNIS: /registry
+                      # Wo der Agent die Aktualisierung anstoßen kann, wenn die
+                      # Zentrale es verlangt. Kennwort steht in der .env.
+                      AKTUALISIERUNG_URL: http://aktualisierung:8080
                     volumes:
                       # Token, Schlüsselpaar und die verschlüsselte PIN-Ablage.
                       # OHNE dieses Volume verliert der Agent nach jedem Neustart
@@ -180,6 +186,17 @@ final class Agentenpaket {
                       # Alte Abbilder wegräumen — sonst füllt sich die Platte.
                       WATCHTOWER_CLEANUP: "true"
                       WATCHTOWER_INCLUDE_RESTARTING: "true"
+                      # Zusätzlich zum nächtlichen Lauf auf Zuruf: Damit kann
+                      # ein Administrator in der Zentrale einen einzelnen
+                      # Standort gezielt aktualisieren, statt bis morgen früh
+                      # zu warten (FA-AGT-100).
+                      #
+                      # PERIODIC_POLLS ist dabei nicht optional: Ohne diesen
+                      # Schalter läuft Watchtower im reinen Anfragebetrieb und
+                      # der nächtliche Plan oben wäre wirkungslos.
+                      WATCHTOWER_HTTP_API_UPDATE: "true"
+                      WATCHTOWER_HTTP_API_PERIODIC_POLLS: "true"
+                      WATCHTOWER_HTTP_API_TOKEN: ${AKTUALISIERUNG_TOKEN}
                       TZ: Europe/Berlin
                     volumes:
                       # Nur lesend, und nur dieses eine Verzeichnis: Watchtower
@@ -282,7 +299,32 @@ final class Agentenpaket {
                 # bleiben hinterlegte PINs nur im Arbeitsspeicher und sind nach einem
                 # Neustart weg. Erzeugen mit:   openssl rand -base64 32
                 PIN_ABLAGE_SCHLUESSEL=
-                """.formatted(zentraleUrl, geheimnis, einrichtung, bezeichnung);
+
+                # ── Selbsttätige Aktualisierung ─────────────────────────────────
+                # Gemeinsames Kennwort zwischen Agent und Aktualisierungsdienst.
+                # Damit kann ein Administrator in der Zentrale diesen Standort
+                # gezielt aktualisieren. Es wirkt NUR innerhalb dieses Rechners und
+                # kann genau eines: „sieh jetzt nach einer neuen Fassung".
+                #
+                # Für Sie erzeugt — bitte nicht ändern, sonst passen die beiden
+                # Dienste nicht mehr zusammen.
+                AKTUALISIERUNG_TOKEN=%s
+                """.formatted(zentraleUrl, geheimnis, einrichtung, bezeichnung,
+                              kennwort());
+    }
+
+    /**
+     * Ein Kennwort für den Aktualisierungsdienst — je Paket ein anderes.
+     *
+     * <p>Ein festes Kennwort im Abbild wäre in jeder Praxis dasselbe; wer eines
+     * kennt, könnte in jeder anderen Neustarts auslösen. Es wirkt zwar nur
+     * innerhalb eines Rechners, aber ein gemeinsames Geheimnis über hundert
+     * Standorte hinweg ist der Fehler, den man später nicht mehr repariert.
+     */
+    private static String kennwort() {
+        byte[] b = new byte[24];
+        new java.security.SecureRandom().nextBytes(b);
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(b);
     }
 
     private static String anleitung(String zentraleUrl, String einrichtung, String bezeichnung) {

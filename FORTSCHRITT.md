@@ -3533,3 +3533,60 @@ Systemnachweise `FA-AGT-080` und `FA-AGT-090` sind geschrieben und laufen beim
 nächsten Vollauf. Am laufenden Stack geprüft: Der Agent meldet jetzt `0.3.2`
 statt `unbekannt`, der Stummalarm entsteht nach 13 Sekunden und schließt sich
 45 Sekunden nach dem Neustart des Agenten von selbst.
+
+### Updates gezielt anstoßen — und wissen, ob sie gewirkt haben
+
+Der nächtliche Lauf zieht irgendwann alle Agenten nach. Am Anfang eines
+Produkts ist das der falsche Takt: Eine Fehlerbehebung wird an genau einem
+Standort gebraucht, heute, nicht morgen um halb vier. Also zeigt die
+Agentenliste jetzt je Zeile die laufende Version, was in der Programmablage
+bereitsteht, und einen Knopf.
+
+Alles in **einer** Spalte, weil die Frage nie „welche Version läuft dort"
+lautet, sondern immer „läuft dort die richtige, und wenn nicht, was tue ich".
+
+**Verifiziert wird über die Wirkung, nicht über die Quittung.** Der Agent
+quittiert, *bevor* er anstößt — danach ersetzt der Aktualisierungsdienst seinen
+Container mitten im Satz. Ob es geklappt hat, entscheidet deshalb die Version,
+mit der er wiederkommt. Kommt er mit der alten oder gar nicht wieder, läuft der
+Auftrag nach zehn Minuten ab. Ein Auftrag, der ewig „läuft", sieht aus wie
+Fortschritt.
+
+Scheitert schon der Anstoß, endet er sofort. Das ist der häufigste Fall beim
+Kunden: Jemand hat die Aktualisierungsdienste entfernt, weil das Haus jede
+Änderung selbst bestimmen will. Dann sagt die Meldung genau das — samt Befehl
+für die Aktualisierung von Hand. Am laufenden Stack habe ich genau diesen Weg
+gesehen, weil im Entwicklungsstack kein Watchtower mitläuft.
+
+### `stabil` in der Auswahlliste — ein Entwurfsfehler, der sich selbst zeigte
+
+In der ersten Fassung standen alle Tags zur Wahl, auch `stabil`. Das wäre ein
+Auftrag gewesen, den niemand je erfüllen kann: Der Agent meldet die **Nummer**
+aus seinem Manifest, nie den Tag, über den er geholt wurde. Er wäre mit `1.2.0`
+wiedergekommen, das Ziel hieße `stabil`, und nach zehn Minuten stünde ein
+Fehlschlag da — obwohl alles geklappt hat.
+
+Aufgefallen beim Blick auf die fertige Auswahlliste. Jetzt sind nur
+Versionsnummern wählbar; der nächtliche Lauf benutzt `stabil` weiterhin, dort
+wird nichts verifiziert.
+
+### Zwei `environment:`-Blöcke
+
+Beim Einbau hatte ich dem Dienst `agent` im Einrichtungspaket einen zweiten
+`environment:`-Block verpasst. In YAML gewinnt bei doppeltem Schlüssel der
+letzte — alles darüber fällt weg, ohne Fehlermeldung. Hier wäre
+`REGISTRY_VERZEICHNIS` verschwunden und die selbsttätige Aktualisierung
+stillschweigend ausgefallen, wenige Stunden nachdem ich sie gebaut hatte.
+
+Aufgefallen ist es mir beim Lesen, nicht durch einen Test. Also gibt es jetzt
+einen: Er geht das erzeugte Compose durch und lehnt jeden Dienst mit einem
+doppelten Schlüssel ab. **Gegengeprüft durch Sabotage** — ich habe den Fehler
+absichtlich wieder eingebaut und nachgesehen, ob der Test rot wird. Er wird es.
+Nach dem Nachweis von gestern, der grün war und trotzdem nichts maß, mache ich
+das jetzt bei jedem Test, der einen Fehler abfangen soll, den ich selbst
+gemacht habe.
+
+**Belegt:** 357 Modultests grün (neu: 10 für die Auftragsverwaltung, 2 fürs
+Paket). Systemnachweis `FA-AGT-100` geschrieben. Am laufenden Stack durchgespielt:
+angefordert, vom Agenten abgeholt, mit verständlichem Grund gescheitert,
+Erfolgsfall verifiziert, Fachprotokoll vollständig.

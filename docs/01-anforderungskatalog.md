@@ -1009,6 +1009,35 @@ eines Praxisrechners.
 > Docker-Dienst. Beide sehen dasselbe Ergebnis: Der Agent hängt zurück. Genau
 > das ist die Aussage, die ein Administrator braucht.
 
+### FA-AGT-100 — Aktualisierung steuern und verifizieren · SOLL · V1 · PO 13.08.2026
+Ein Administrator sieht, welche Version wo läuft, stößt die Aktualisierung
+eines einzelnen Standorts an und bekommt ein belastbares Ergebnis.
+
+*Akzeptanz:*
+- Je Agent sind sichtbar: **laufende Version**, **verfügbare Versionen** aus der
+  Programmablage und ob eine neuere bereitsteht.
+- Der Administrator wählt die Zielversion und stößt an; die Auswahl steht auf
+  der neuesten, lässt aber auch **ältere** zu (Rückweg an einem Standort).
+- **Nur Versionsnummern** werden angeboten. Zeiger wie `stabil` sind
+  ausgeschlossen: Der Agent meldet danach eine Nummer, nie den Tag — ein
+  solcher Auftrag wäre nie erfüllbar.
+- **Höchstens ein offener Auftrag je Agent.** Zwei Anstöße hießen zwei
+  Neustarts, und keiner wüsste, welcher gewirkt hat.
+- **Verifikation über die Wirkung:** Erfolgreich ist der Auftrag erst, wenn der
+  Agent sich mit der Zielversion wiedermeldet — nicht, wenn er den Auftrag
+  quittiert. Er quittiert, bevor sein Container ersetzt wird.
+- Ein Auftrag ohne Ergebnis **läuft ab** (10 Minuten) und wird zum Fehlschlag
+  mit Handlungsanweisung. Ein ewig laufender Auftrag sieht aus wie Fortschritt.
+- Scheitert schon der Anstoß am Standort — etwa weil die Aktualisierungsdienste
+  entfernt wurden —, endet der Auftrag **sofort** mit dem Grund im Klartext.
+- Ein laufender Auftrag ist **abbrechbar**; danach ist ein neuer Anlauf möglich.
+- Jeder Vorgang steht im Fachprotokoll: wer, wann, welche Version, welches
+  Ergebnis.
+- Das Recht hängt an der **Instanzverwaltung**, nicht an der Bestandspflege:
+  Hier wird Software ausgetauscht, nicht ein Gerät eingetragen.
+- *Nachweis:* Am laufenden Stack angefordert, abgeholt, gescheitert und
+  verifiziert — einschließlich Fristablauf.
+
 ### FA-AGT-040 — Versionsunterschiede · MUSS · V1 · ADR-0002
 *Akzeptanz:*
 - Agent und Zentrale können unterschiedliche Versionen haben; das Protokoll ist

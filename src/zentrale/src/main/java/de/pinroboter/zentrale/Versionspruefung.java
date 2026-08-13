@@ -191,6 +191,68 @@ public class Versionspruefung {
         }
     }
 
+    /**
+     * Welche Versionen es für das <b>Agent-Abbild</b> gibt.
+     *
+     * <p>Zentrale und Agent sind zwei getrennte Abbilder in derselben
+     * Programmablage. Der Name des Agent-Abbilds ergibt sich aus dem der
+     * Zentrale durch den Zusatz {@code -agent} — dieselbe Konvention, nach der
+     * auch veröffentlicht wird. Eine eigene Einstellung dafür wäre eine weitere
+     * Stelle, an der etwas auseinanderlaufen kann.
+     *
+     * @return Liste, neueste zuerst; leer, wenn nichts ermittelt wurde
+     */
+    public List<String> agentversionen() {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT agent_versionen FROM registry_zugang WHERE nur_eine")) {
+            try (ResultSet rs = p.executeQuery()) {
+                if (!rs.next()) return List.of();
+                return tagsLesen("{\"tags\":[" + nichtNull(rs.getString(1)) + "]}")
+                        .stream().filter(Versionspruefung::istVersionsnummer).toList();
+            }
+        } catch (SQLException e) {
+            return List.of();
+        }
+    }
+
+    /** Warum die Agent-Versionen fehlen, oder {@code null}. */
+    public String agentfehler() {
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "SELECT agent_fehler FROM registry_zugang WHERE nur_eine")) {
+            try (ResultSet rs = p.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        } catch (SQLException e) {
+            return null;
+        }
+    }
+
+    private static String nichtNull(String s) { return s == null ? "" : s; }
+
+    /**
+     * Ist das eine Versionsnummer — oder nur ein Zeiger wie {@code stabil}?
+     *
+     * <h2>Warum das für die Aktualisierung entscheidend ist</h2>
+     *
+     * Ein Agent meldet immer die <b>Nummer</b> aus seinem Manifest, nie den
+     * Tag, über den er geholt wurde. Ein Auftrag „aktualisiere auf stabil"
+     * wäre deshalb nie erfüllbar: Der Agent käme mit {@code 1.2.0} wieder, die
+     * Zielversion hieße {@code stabil}, und nach zehn Minuten stünde ein
+     * Fehlschlag da — obwohl alles geklappt hat.
+     *
+     * <p>Der nächtliche Lauf benutzt {@code stabil} weiterhin; dort wird nichts
+     * verifiziert, sondern nur nachgezogen.
+     */
+    static boolean istVersionsnummer(String tag) {
+        return tag != null && tag.matches("\\d+(\\.\\d+)*.*")
+                && Character.isDigit(tag.charAt(0));
+    }
+
+    /** Der Name des Agent-Abbilds zu einem Abbild der Zentrale. */
+    static String agentabbild(String abbild) {
+        return abbild == null || abbild.isBlank() ? null : abbild.trim() + "-agent";
+    }
+
     /** Zugangsdaten für die Programmablage. Der Token ist Klartext — sparsam behandeln. */
     public record Agentenzugang(String registry, String benutzer, String token) {}
 
@@ -276,6 +338,7 @@ public class Versionspruefung {
                 return zustand();
             }
             merken(anreichern(tags, registry), null);
+            agentversionenHolen(registry, agentabbild(abbild), benutzer, token);
             return zustand();
 
         } catch (java.net.UnknownHostException e) {
@@ -369,6 +432,74 @@ public class Versionspruefung {
     private static int zahl(String s) {
         try { return Integer.parseInt(s.replaceAll("\\D", "")); }
         catch (Exception e) { return 0; }
+    }
+
+    /**
+     * Holt die Tags des Agent-Abbilds.
+     *
+     * <p>Bewusst <b>ohne</b> Änderungshinweise: Die stehen an der Zentrale und
+     * gelten für das Produkt als Ganzes. Hier geht es nur um die Frage, welche
+     * Fassungen für einen Agenten überhaupt zur Verfügung stehen.
+     *
+     * <p>Scheitert diese Abfrage, bleibt die Prüfung der Zentrale davon
+     * unberührt — sie ist die wichtigere von beiden.
+     */
+    private void agentversionenHolen(String registry, String abbild,
+                                     String benutzer, String token) {
+        if (abbild == null) return;
+        String fehler = null;
+        List<String> tags = List.of();
+        try {
+            var bauer = HttpRequest.newBuilder(
+                            URI.create(registry + "/v2/" + abbild + "/tags/list"))
+                    .timeout(GEDULD).GET();
+            if (token != null && !token.isBlank()) {
+                String basic = Base64.getEncoder().encodeToString(
+                        ((benutzer == null ? "x" : benutzer) + ":" + token)
+                                .getBytes(StandardCharsets.UTF_8));
+                bauer.header("Authorization", "Basic " + basic);
+            }
+            var a = http.send(bauer.build(), HttpResponse.BodyHandlers.ofString());
+            if (a.statusCode() == 401 || a.statusCode() == 403) {
+                fehler = "Die Programmablage hat die Zugangsdaten für „" + abbild
+                       + "“ abgelehnt (HTTP " + a.statusCode() + "). Hat das Token "
+                       + "Zugriff auf beide Abbilder?";
+            } else if (a.statusCode() == 404) {
+                fehler = "Die Programmablage kennt kein Abbild „" + abbild + "“. "
+                       + "Erwartet wird der Name der Zentrale mit dem Zusatz „-agent“.";
+            } else if (a.statusCode() != 200) {
+                fehler = "Die Programmablage antwortete für „" + abbild
+                       + "“ mit HTTP " + a.statusCode() + ".";
+            } else {
+                tags = tagsLesen(a.body());
+                if (tags.isEmpty()) {
+                    fehler = "Für „" + abbild + "“ sind keine Versionen hinterlegt.";
+                }
+            }
+        } catch (Exception e) {
+            fehler = "Die Versionen des Agenten ließen sich nicht abfragen: "
+                   + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+        }
+
+        // Neueste zuerst — in der Oberfläche steht die naheliegende Wahl oben.
+        var sortiert = new ArrayList<>(tags);
+        sortiert.sort((x, y) -> vergleiche(y, x));
+        StringBuilder json = new StringBuilder();
+        for (int i = 0; i < sortiert.size(); i++) {
+            if (i > 0) json.append(',');
+            json.append('"').append(sortiert.get(i).replace("\"", "")).append('"');
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement("""
+                UPDATE registry_zugang
+                   SET agent_versionen = COALESCE(?, agent_versionen),
+                       agent_fehler = ?
+                 WHERE nur_eine""")) {
+            p.setString(1, sortiert.isEmpty() ? null : json.toString());
+            p.setString(2, fehler);
+            p.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Agent-Versionen nicht speicherbar: " + e.getMessage());
+        }
     }
 
     private void merken(List<Version> versionen, String fehler) {

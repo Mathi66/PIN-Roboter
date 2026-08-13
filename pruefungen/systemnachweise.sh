@@ -3798,6 +3798,116 @@ AGT_V2=$(sqltext "SELECT coalesce(bausteinversion,'-') FROM agent WHERE id = $AI
 [ "$AGT_V2" = "$ZEN_VERSION" ] && AV7=ja || AV7=nein
 ergebnis "die gemeldete Version wird auch ohne Protokollwechsel nachgefuehrt ($AGT_V2)" "$AV7"
 
+# ---------------------------------------------------------------- FA-AGT-100
+# Gezielte Aktualisierung eines Standort-Agenten (PO, 13.08.2026).
+#
+# Der naechtliche Lauf zieht irgendwann alle Agenten nach. Das genuegt nicht,
+# wenn eine Fehlerbehebung an genau EINEM Standort gebraucht wird.
+hinweis "FA-AGT-100 — einen Standort-Agenten gezielt aktualisieren"
+
+AID=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
+
+# Die Zentrale muss die Versionen des AGENT-Abbilds kennen — ein anderes
+# Abbild als ihr eigenes. Der Simulator bietet dafuer einen eigenen Satz an,
+# damit auffaellt, wenn hier versehentlich die Versionen der Zentrale stehen.
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/pruefen -o /dev/null
+AGV=$(sqltext "SELECT coalesce(agent_versionen,'-') FROM registry_zugang")
+case "$AGV" in *1.2.0*) UA=ja ;; *) UA=nein ;; esac
+ergebnis "die Versionen des Agent-Abbilds werden ermittelt ($AGV)" "$UA"
+case "$AGV" in *1.1.0*) UA2=nein ;; *) UA2=ja ;; esac
+ergebnis "es sind nicht die Versionen der Zentrale" "$UA2"
+
+# „stabil" darf NICHT zur Auswahl stehen: Der Agent meldet danach eine Nummer,
+# nie den Tag. Ein Auftrag auf „stabil" waere nie erfuellbar und liefe nach
+# zehn Minuten als Fehlschlag auf — obwohl alles geklappt haette.
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-au.html
+[ "$(enthaelt /tmp/pr-au.html '<option value="stabil">')" = "nein" ] && UB=ja || UB=nein
+ergebnis "„stabil\" wird nicht als Zielversion angeboten" "$UB"
+[ "$(enthaelt /tmp/pr-au.html '<option value="1.2.0">')" = "ja" ] && UB2=ja || UB2=nein
+ergebnis "echte Versionsnummern schon" "$UB2"
+
+# Anfordern.
+curl -s -b "$KEKSE" -X POST $BASIS/agenten/$AID/aktualisierung \
+  -d "zielversion=1.2.0" -o /dev/null
+ZUST=$(sqltext "SELECT status||'|'||zielversion||'|'||coalesce(von_version,'-')
+                FROM agent_aktualisierung WHERE agent_id=$AID ORDER BY id DESC LIMIT 1")
+case "$ZUST" in ANGEFORDERT\|1.2.0\|*) UC=ja ;; *) UC=nein ;; esac
+ergebnis "der Auftrag wird angelegt, mit Ziel- und Ausgangsversion ($ZUST)" "$UC"
+
+# Kein zweiter Auftrag daneben: Zwei Anstoesse hiessen zwei Neustarts.
+curl -s -b "$KEKSE" -X POST $BASIS/agenten/$AID/aktualisierung \
+  -d "zielversion=1.0.0" -o /tmp/pr-au2.html
+ANZ=$(sql "SELECT count(*) FROM agent_aktualisierung
+            WHERE agent_id=$AID AND status IN ('ANGEFORDERT','ANGESTOSSEN')")
+[ "$ANZ" = "1" ] && UD=ja || UD=nein
+ergebnis "ein zweiter gleichzeitiger Auftrag wird abgelehnt (offen: $ANZ)" "$UD"
+[ "$(enthaelt /tmp/pr-au2.html "läuft bereits")" = "ja" ] && UD2=ja || UD2=nein
+ergebnis "und die Meldung sagt, warum" "$UD2"
+
+# Der Agent holt den Auftrag ab und versucht es. Im Pruefstand laeuft KEIN
+# Aktualisierungsdienst — genau der Fall, der beim Kunden eintritt, wenn
+# jemand die beiden Dienste aus dem Paket entfernt hat. Er muss sofort als
+# Fehlschlag enden statt zehn Minuten „laeuft" anzuzeigen.
+for _ in $(seq 60); do
+  ST=$(sqltext "SELECT status FROM agent_aktualisierung WHERE agent_id=$AID ORDER BY id DESC LIMIT 1")
+  [ "$ST" != "ANGEFORDERT" ] && break
+  sleep 1
+done
+[ "$ST" = "FEHLGESCHLAGEN" ] && UE=ja || UE=nein
+ergebnis "ein Anstoss ohne Aktualisierungsdienst endet sofort ($ST)" "$UE"
+MELD=$(sqltext "SELECT coalesce(meldung,'-') FROM agent_aktualisierung WHERE agent_id=$AID ORDER BY id DESC LIMIT 1")
+case "$MELD" in *Aktualisierungsdienst*) UE2=ja ;; *) UE2=nein ;; esac
+ergebnis "die Meldung nennt den Grund im Klartext" "$UE2"
+curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-au3.html
+[ "$(enthaelt /tmp/pr-au3.html "fehlgeschlagen")" = "ja" ] && UE3=ja || UE3=nein
+ergebnis "der Fehlschlag steht in der Oberflaeche, nicht nur im Log" "$UE3"
+
+# Der Erfolgsfall. Ein echter Versionswechsel ist im Pruefstand nicht
+# herstellbar — es gibt dort nur eine Fassung des Agenten. Geprueft wird
+# deshalb das, worauf es ankommt: Die Zentrale macht den Abschluss an der
+# GEMELDETEN Version fest, nicht an der Quittung des Agenten.
+AGT_V=$(sqltext "SELECT coalesce(bausteinversion,'-') FROM agent WHERE id=$AID")
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "INSERT INTO agent_aktualisierung (agent_id, zielversion, von_version, status, angefordert_von)
+   VALUES ($AID, '$AGT_V', '0.0.1', 'ANGESTOSSEN', 'Nachweis')" >/dev/null
+for _ in $(seq 90); do
+  ST2=$(sqltext "SELECT status FROM agent_aktualisierung WHERE angefordert_von='Nachweis'
+                  ORDER BY id DESC LIMIT 1")
+  [ "$ST2" != "ANGESTOSSEN" ] && break
+  sleep 1
+done
+[ "$ST2" = "ERFOLGREICH" ] && UF=ja || UF=nein
+ergebnis "kommt der Agent mit der Zielversion, gilt die Aktualisierung als verifiziert ($ST2)" "$UF"
+PROT=$(sql "SELECT count(*) FROM fachprotokoll WHERE art='AGENT_AKTUALISIERUNG'
+             AND text LIKE '%laeuft jetzt auf Version%' OR text LIKE '%läuft jetzt auf Version%'")
+[ "$PROT" != "0" ] && UF2=ja || UF2=nein
+ergebnis "der Abschluss steht im Fachprotokoll" "$UF2"
+
+# Ein Auftrag, der nie zu einem Ergebnis kommt, sieht aus wie Fortschritt.
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "INSERT INTO agent_aktualisierung (agent_id, zielversion, von_version, status,
+                                     angefordert_von, angefordert_am)
+   VALUES ($AID, '9.9.9', '$AGT_V', 'ANGESTOSSEN', 'Nachweis-Frist', now() - interval '20 minutes')" \
+  >/dev/null
+for _ in $(seq 90); do
+  ST3=$(sqltext "SELECT status FROM agent_aktualisierung WHERE angefordert_von='Nachweis-Frist'
+                  ORDER BY id DESC LIMIT 1")
+  [ "$ST3" != "ANGESTOSSEN" ] && break
+  sleep 1
+done
+[ "$ST3" = "FEHLGESCHLAGEN" ] && UG=ja || UG=nein
+ergebnis "ein Auftrag ohne Rueckmeldung laeuft ab statt ewig zu laufen ($ST3)" "$UG"
+
+# Ein Praxisbenutzer darf keine Software austauschen.
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST $BASIS/agenten/$AID/aktualisierung \
+       -d "zielversion=1.0.0")
+[ "$CODE" = "302" ] && UH=ja || UH=nein
+ergebnis "ohne Anmeldung laesst sich kein Agent aktualisieren (HTTP $CODE)" "$UH"
+
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "DELETE FROM agent_aktualisierung WHERE agent_id=$AID" >/dev/null
+rm -f /tmp/pr-au*.html
+
 # ---------------------------------------------------------------- FA-BEN-035
 hinweis "FA-BEN-035 — Administratorkonto aus der Konfiguration"
 

@@ -43,6 +43,8 @@ public class Zentrale {
     private final Organisationsverwaltung organisationen;
     private final Benachrichtigung benachrichtigung;
     private final Versionspruefung versionen;
+    /** Gezielte Aktualisierung einzelner Standort-Agenten (FA-AGT-100). */
+    private final Agentenaktualisierung agentupdates;
     private final Lasterzeuger last;
     private final Sicherungsverwaltung sicherung;
     private final Einladungen einladungen;
@@ -105,6 +107,7 @@ public class Zentrale {
         this.organisationen = new Organisationsverwaltung(db);
         this.benachrichtigung = new Benachrichtigung(db, tresor);
         this.versionen = new Versionspruefung(db, tresor);
+        this.agentupdates = new Agentenaktualisierung(db, protokoll);
         this.last = new Lasterzeuger(db);
         this.sicherung = new Sicherungsverwaltung(protokoll, alarme,
                 env("DB_URL", "jdbc:postgresql://datenbank:5432/pinroboter"),
@@ -401,6 +404,15 @@ public class Zentrale {
                 try {
                     Thread.sleep(60_000);
                     agentenzustaendePruefen();
+                    // FA-AGT-100: Ein Agent, der gar nicht wiederkommt, meldet
+                    // definitionsgemäß nichts. Ohne diesen Takt bliebe sein
+                    // Auftrag für immer auf „läuft“ stehen.
+                    for (String abgelaufen : agentupdates.fristenPruefen()) {
+                        protokoll.anfuegen(Fachprotokoll.INSTANZ, null,
+                                Ereignisart.AGENT_AKTUALISIERUNG, false, "Automatik", null,
+                                abgelaufen,
+                                "Bitte am Standort prüfen, ob der Container läuft.");
+                    }
                 } catch (InterruptedException e) { return; }
                   catch (Exception ignored) { }
             }
@@ -822,6 +834,20 @@ public class Zentrale {
                     // Ein stummer Agent kann seine Version nicht melden; ihn
                     // zusätzlich als veraltet zu führen, wäre eine zweite
                     // Meldung für dieselbe Ursache.
+                    // FA-AGT-100: Auch hier abschließen, nicht nur beim
+                    // Eingang einer Bestandsmeldung. Die kommt nur, wenn sich
+                    // etwas geändert hat — ein Ergebnis, das an einer
+                    // möglicherweise ausbleibenden Meldung hängt, ist keines.
+                    String abschluss = agentupdates.abschlussPruefen(id, version);
+                    if (abschluss != null) {
+                        var fertig = agentupdates.letzter(id);
+                        boolean gut = fertig != null && fertig.status()
+                                == Agentenaktualisierung.Status.ERFOLGREICH;
+                        protokoll.anfuegen(einrichtung, objekt,
+                                Ereignisart.AGENT_AKTUALISIERUNG, gut, "Automatik", null,
+                                abschluss, gut || fertig == null ? null : fertig.meldung());
+                    }
+
                     boolean veraltet = !stumm && weitergabe
                             && version != null && !version.isBlank()
                             && !version.equals("unbekannt")
@@ -1463,7 +1489,14 @@ public class Zentrale {
     }
 
     private String agententafel(Geltungsbereich bereich) {
+        return agententafel(bereich, true);
+    }
+
+    private String agententafel(Geltungsbereich bereich, boolean darfAktualisieren) {
         var liste = agenten.alle();
+        // Einmal für die ganze Tafel, nicht je Zeile: Bei 150 Agenten wären das
+        // 150 Abfragen für dieselbe Antwort.
+        var agentversionen = versionen.agentversionen();
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Standort-Agenten "
                 + "<span class=\"zaehler\">" + liste.size() + "</span></h3>");
         if (liste.isEmpty()) {
@@ -1474,7 +1507,8 @@ public class Zentrale {
         s.append("<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
                 + "Registrierte Standort-Agenten mit Protokollversion</caption><thead><tr>"
                 + "<th scope=\"col\">Agent</th><th scope=\"col\">Einrichtung</th>"
-                + "<th scope=\"col\">Protokoll</th><th scope=\"col\">Baustein</th>"
+                + "<th scope=\"col\">Protokoll</th>"
+                + "<th scope=\"col\">Version &amp; Aktualisierung</th>"
                 + "<th scope=\"col\">Zuletzt gesehen</th>"
                 + "<th scope=\"col\">Zuordnung ändern</th></tr></thead><tbody>");
         for (var a : liste) {
@@ -1499,7 +1533,8 @@ public class Zentrale {
                         : "<span class=\"marke warnung\">Version " + a.protokollversion() + "</span>")
              .append(bewertung == null ? ""
                      : "<div class=\"handlung\">" + esc(bewertung) + "</div>")
-             .append("</td><td><code>").append(esc(nz(a.bausteinversion()))).append("</code></td>")
+             .append("</td><td>").append(aktualisierungszelle(a, agentversionen, darfAktualisieren))
+             .append("</td>")
              .append("<td class=\"zeit\">")
              .append(a.zuletztGesehen() == null ? "nie"
                      : esc(java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm")
@@ -1530,6 +1565,133 @@ public class Zentrale {
                 </div>""".formatted(de.pinroboter.gemeinsam.Protokollversion.AELTESTE_UNTERSTUETZTE,
                         de.pinroboter.gemeinsam.Protokollversion.AKTUELL));
         return s.append("</div>").toString();
+    }
+
+    /**
+     * Die Zelle „Version &amp; Aktualisierung" eines Agenten (FA-AGT-100).
+     *
+     * <h2>Warum alles in einer Zelle steht</h2>
+     *
+     * Die Frage lautet nie „welche Version läuft dort", sondern immer „läuft
+     * dort die richtige, und wenn nicht, was tue ich". Version, verfügbare
+     * Fassungen, Knopf und Ergebnis des letzten Versuchs gehören deshalb
+     * zusammen — sonst muss jemand zwischen Spalten hin- und herspringen und
+     * sich merken, wo er war.
+     *
+     * <p>Die Auswahl steht auf der <b>neuesten</b> Fassung, ist aber frei:
+     * Manchmal will man an einem Standort bewusst zurück.
+     */
+    private String aktualisierungszelle(Agentenverwaltung.Agent a,
+                                        java.util.List<String> verfuegbar,
+                                        boolean darf) {
+        StringBuilder z = new StringBuilder();
+        String laufend = a.bausteinversion();
+        boolean bekannt = laufend != null && !laufend.isBlank() && !laufend.equals("unbekannt");
+
+        z.append(bekannt
+                ? "<code>" + esc(laufend) + "</code>"
+                : "<span class=\"marke unbekannt\">noch nicht gemeldet</span>");
+
+        // Gibt es etwas Neueres? Der Vergleich läuft über Zahlen, nicht über
+        // Zeichenketten — sonst wäre 1.10.0 kleiner als 1.9.0.
+        String neueste = verfuegbar.isEmpty() ? null : verfuegbar.get(0);
+        if (bekannt && neueste != null && Versionspruefung.neuer(neueste, laufend)) {
+            z.append(" <span class=\"marke warnung\">").append(esc(neueste))
+             .append(" verfügbar</span>");
+        }
+
+        var offen = agentupdates.offener(a.id());
+        var letzter = offen != null ? offen : agentupdates.letzter(a.id());
+
+        if (offen != null) {
+            // Läuft gerade. Die Seite lädt sich alle 5 s selbst nach, damit
+            // niemand F5 drückt und sich fragt, ob überhaupt etwas passiert.
+            z.append("""
+                    <div class="handlung" hx-get="/agenten/%d/aktualisierung"
+                         hx-trigger="every 5s" hx-swap="outerHTML">
+                      <span class="marke laeuft"><span class="sym">⟳</span>%s</span>
+                      <div>Ziel: <code>%s</code> · seit %s.
+                        %s</div>
+                      <form method="post" action="/agenten/%d/aktualisierung/abbrechen"
+                            class="inlineform" onsubmit="return confirm('%s')">
+                        <button class="knopf klein" type="submit"
+                                aria-label="Aktualisierung von %s abbrechen">Abbrechen</button>
+                      </form>
+                    </div>"""
+                    .formatted(a.id(), esc(offen.status().anzeige()), esc(offen.zielversion()),
+                            esc(offen.dauer()),
+                            offen.status() == Agentenaktualisierung.Status.ANGEFORDERT
+                                ? "Der Agent holt den Auftrag beim nächsten Prüftakt ab."
+                                : "Der Agent tauscht sich gerade aus und meldet sich danach "
+                                  + "mit der neuen Version.",
+                            a.id(),
+                            "Aktualisierung abbrechen? Falls der Agent den Auftrag schon "
+                            + "angestoßen hat, läuft sie trotzdem zu Ende.",
+                            esc(a.bezeichnung())));
+            return z.toString();
+        }
+
+        // Ergebnis des letzten Versuchs — aber nur, solange es noch etwas sagt.
+        // Ein Erfolg von vorgestern ist Rauschen; ein Fehlschlag bleibt stehen,
+        // bis jemand es erneut versucht.
+        if (letzter != null) {
+            if (letzter.status() == Agentenaktualisierung.Status.FEHLGESCHLAGEN) {
+                z.append("""
+                        <div class="handlung"><span class="marke fehler">Aktualisierung auf %s
+                          fehlgeschlagen</span><div>%s</div></div>"""
+                        .formatted(esc(letzter.zielversion()), esc(nz(letzter.meldung()))));
+            } else if (letzter.status() == Agentenaktualisierung.Status.ERFOLGREICH
+                    && letzter.abgeschlossenAm() != null
+                    && letzter.abgeschlossenAm().isAfter(Instant.now().minus(
+                            java.time.Duration.ofHours(24)))) {
+                z.append("""
+                        <div class="handlung"><span class="marke ok"><span class="sym">✓</span>
+                          auf %s aktualisiert</span><div>Verifiziert: Der Agent meldet sich
+                          seither mit dieser Version.</div></div>"""
+                        .formatted(esc(letzter.zielversion())));
+            }
+        }
+
+        if (!darf) return z.toString();
+
+        if (verfuegbar.isEmpty()) {
+            String grund = versionen.agentfehler();
+            z.append("<div class=\"hilfe\">")
+             .append(grund == null
+                     ? "Keine Versionen bekannt. Unter „Programmablage“ oben einen Zugang "
+                       + "hinterlegen — dann erscheint hier, was zur Verfügung steht."
+                     : esc(grund))
+             .append("</div>");
+            return z.toString();
+        }
+
+        StringBuilder opt = new StringBuilder();
+        for (String v : verfuegbar) {
+            if (v.equals(laufend)) continue;   // „auf die laufende" ist keine Wahl
+            opt.append("<option value=\"").append(esc(v)).append("\">")
+               .append(esc(v)).append("</option>");
+        }
+        if (opt.isEmpty()) {
+            z.append("<div class=\"hilfe\">Dieser Agent läuft auf der einzigen "
+                   + "verfügbaren Version.</div>");
+            return z.toString();
+        }
+
+        z.append("""
+                <form method="post" action="/agenten/%d/aktualisierung" class="inlineform"
+                      onsubmit="return confirm('%s')">
+                  <label class="nurLeser" for="ag-u-%d">Zielversion für %s</label>
+                  <select id="ag-u-%d" name="zielversion" required>%s</select>
+                  <button class="knopf klein" type="submit"
+                          title="Der Agent tauscht sich aus und meldet sich danach neu. Währenddessen ist dieser Standort für etwa eine Minute nicht überwacht."
+                          aria-label="%s jetzt aktualisieren">Aktualisieren</button>
+                </form>"""
+                .formatted(a.id(),
+                        "Diesen Agenten jetzt aktualisieren? Er startet dabei neu. Für etwa "
+                        + "eine Minute werden die Kartenterminals dieses Standorts nicht "
+                        + "überwacht; bereits freigeschaltete Karten bleiben freigeschaltet.",
+                        a.id(), esc(a.bezeichnung()), a.id(), opt, esc(a.bezeichnung())));
+        return z.toString();
     }
 
     /**
@@ -4665,6 +4827,51 @@ public class Zentrale {
                     angemeldeter(c)));
         });
 
+        /**
+         * FA-AGT-100: Einen Standort-Agenten gezielt aktualisieren.
+         *
+         * <p>Das Recht ist an die Instanzverwaltung geknüpft, nicht an die
+         * Bestandspflege: Hier wird Software ausgetauscht, nicht ein Gerät
+         * eingetragen.
+         */
+        app.post("/agenten/{id}/aktualisierung", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Aktualisieren von Standort-Agenten")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            String ziel = Anmeldeseiten.feld(c, "zielversion");
+            String fehler = agentupdates.anfordern(id, ziel,
+                    angemeldeter(c).anzeigename(), agenten.einrichtungVon(id));
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
+                    angemeldeter(c)));
+        });
+
+        /** FA-AGT-100: Einen laufenden Auftrag abbrechen. */
+        app.post("/agenten/{id}/aktualisierung/abbrechen", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
+                    "Das Abbrechen einer Aktualisierung")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            String fehler = agentupdates.abbrechen(id, angemeldeter(c).anzeigename(),
+                    agenten.einrichtungVon(id));
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
+                    angemeldeter(c)));
+        });
+
+        /**
+         * FA-AGT-100: Nur die Zelle eines Agenten, für die Selbstaktualisierung
+         * der Anzeige während eines laufenden Updates.
+         *
+         * <p>Nur dieser Ausschnitt statt der ganzen Seite: Ein Nachladen alle
+         * fünf Sekunden würde sonst jedes offene Menü schließen und jede
+         * Eingabe im Formular darüber verwerfen.
+         */
+        app.get("/agenten/{id}/aktualisierung", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Diese Ansicht")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var a = agenten.alle().stream().filter(x -> x.id() == id).findFirst().orElse(null);
+            if (a == null) { c.status(404).result(""); return; }
+            c.html(aktualisierungszelle(a, versionen.agentversionen(), true));
+        });
+
         // Einrichtungspaket für einen Standort-Agenten (PO, 13.08.2026).
         //
         // POST, nicht GET: Der Aufruf ERZEUGT ein Registrierungsgeheimnis. Ein
@@ -4964,6 +5171,47 @@ public class Zentrale {
         });
 
         /**
+         * FA-AGT-100: Liegt für diesen Agenten ein Aktualisierungsauftrag vor?
+         *
+         * <p>Der Agent fragt im Prüftakt. Ein Auftrag ist damit binnen weniger
+         * Sekunden dort — ohne dass die Zentrale eine Verbindung ins
+         * Praxisnetz aufbauen müsste (ADR-0002).
+         */
+        app.get("/api/agent/aktualisierung", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            var auftrag = agentupdates.offener(agent.id());
+            if (auftrag == null || auftrag.status() != Agentenaktualisierung.Status.ANGEFORDERT) {
+                // Auch ein bereits angestoßener Auftrag wird nicht erneut
+                // ausgeliefert: Sonst stieße ein Agent, der den Neustart
+                // überlebt hat, im nächsten Takt gleich wieder an.
+                c.json(Map.of("auftrag", false));
+                return;
+            }
+            c.json(Map.of("auftrag", true, "zielversion", auftrag.zielversion()));
+        });
+
+        /** FA-AGT-100: Der Agent meldet, dass er es versucht — oder warum nicht. */
+        app.post("/api/agent/aktualisierung-quittung", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+            Map<String, Object> m = c.bodyAsClass(Map.class);
+            boolean angenommen = Boolean.TRUE.equals(m.get("angenommen"));
+            String fehler = m.get("fehler") == null ? null : String.valueOf(m.get("fehler"));
+
+            agentupdates.angestossen(agent.id(), angenommen, angenommen
+                    ? "Der Agent hat die Aktualisierung angestoßen."
+                    : fehler);
+
+            protokoll.anfuegen(agent.einrichtung(), "Standort-Agent " + agent.id(),
+                    Ereignisart.AGENT_AKTUALISIERUNG, angenommen, "Standort-Agent", null,
+                    angenommen
+                        ? "Der Standort-Agent hat die Aktualisierung auf Version %s angestoßen"
+                                .formatted(String.valueOf(m.get("zielversion")))
+                        : "Der Standort-Agent konnte die Aktualisierung nicht anstoßen",
+                    angenommen ? null : fehler);
+            c.json(Map.of("quittiert", true));
+        });
+
+        /**
          * FA-UEB-010: Das Prüfintervall je Kartenterminal.
          *
          * <p>Bis zum 08.08.2026 kannte der Agent nur einen globalen Wert aus
@@ -5017,6 +5265,22 @@ public class Zentrale {
             // PIN-Verifikation in dieser Praxis. Ein veralteter Agent, der
             // seine Kernaufgabe noch erfuellt, ist besser als gar keiner.
             versionMerken(agent.id(), m.get("protokollversion"), m.get("bausteinversion"));
+
+            // FA-AGT-100: Läuft eine Aktualisierung, entscheidet DIESE Meldung
+            // über Erfolg oder Fehlschlag — nicht die Quittung des Agenten.
+            // Er quittiert, bevor er neu startet; danach zählt nur noch, mit
+            // welcher Version er wiederkommt.
+            String abschluss = agentupdates.abschlussPruefen(agent.id(),
+                    m.get("bausteinversion") == null ? null
+                            : String.valueOf(m.get("bausteinversion")));
+            if (abschluss != null) {
+                var fertig = agentupdates.letzter(agent.id());
+                boolean gut = fertig != null
+                        && fertig.status() == Agentenaktualisierung.Status.ERFOLGREICH;
+                protokoll.anfuegen(agent.einrichtung(), "Standort-Agent " + agent.id(),
+                        Ereignisart.AGENT_AKTUALISIERUNG, gut, "Automatik", null,
+                        abschluss, gut ? null : (fertig == null ? null : fertig.meldung()));
+            }
 
             Object schluessel = m.get("oeffentlicherSchluessel");
             if (schluessel instanceof String s && !s.isBlank()) {

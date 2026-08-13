@@ -115,6 +115,70 @@ class AgentenpaketTest {
     }
 
     @Test
+    @DisplayName("Kein Dienst hat zwei environment-Blöcke")
+    void keineDoppeltenSchluessel() {
+        // Am 13.08.2026 standen beim Dienst „agent“ zwei environment-Blöcke.
+        // In YAML gewinnt bei doppeltem Schlüssel der letzte — alles darüber
+        // fällt weg, ohne Fehlermeldung. Hier wäre REGISTRY_VERZEICHNIS
+        // verschwunden und die selbsttätige Aktualisierung stillschweigend
+        // ausgefallen. Ein Kommentarfehler sieht anders aus als ein
+        // Datenverlust; dieser sah aus wie einer.
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+
+        String dienst = null;
+        var gesehen = new java.util.HashMap<String, java.util.List<String>>();
+        for (String zeile : yml.split("\n")) {
+            if (zeile.isBlank() || zeile.strip().startsWith("#")) continue;
+            int einzug = zeile.length() - zeile.stripLeading().length();
+            String inhalt = zeile.strip();
+            // Dienste stehen auf Einzug 2, ihre Schlüssel auf Einzug 4.
+            if (einzug == 2 && inhalt.endsWith(":")) {
+                dienst = inhalt.substring(0, inhalt.length() - 1);
+                gesehen.put(dienst, new java.util.ArrayList<>());
+            } else if (einzug == 4 && dienst != null && inhalt.contains(":")) {
+                String schluessel = inhalt.substring(0, inhalt.indexOf(':'));
+                var liste = gesehen.get(dienst);
+                assertFalse(liste.contains(schluessel),
+                        "Dienst „" + dienst + "“ hat „" + schluessel + "“ zweimal — "
+                        + "in YAML gewinnt der letzte, der erste fällt still weg");
+                liste.add(schluessel);
+            }
+        }
+        assertTrue(gesehen.containsKey("agent"), "Der Dienst „agent“ fehlt: " + gesehen.keySet());
+    }
+
+    @Test
+    @DisplayName("Die Aktualisierung lässt sich aus der Zentrale anstoßen")
+    void aufZuruf() {
+        // Ohne HTTP-API könnte ein Administrator nur bis zum nächsten
+        // nächtlichen Lauf warten — bei einer Fehlerbehebung, die genau an
+        // diesem Standort gebraucht wird, ist das keine Antwort.
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+        assertTrue(yml.contains("WATCHTOWER_HTTP_API_UPDATE: \"true\""), yml);
+        assertTrue(yml.contains("WATCHTOWER_HTTP_API_PERIODIC_POLLS: \"true\""),
+                "Ohne diesen Schalter wäre der nächtliche Plan wirkungslos");
+        assertTrue(yml.contains("AKTUALISIERUNG_URL: http://aktualisierung:8080"),
+                "Der Agent muss wissen, wen er fragen soll");
+
+        // Das Kennwort steht in der .env und ist je Paket ein anderes.
+        String env1 = paket().get("pin-roboter-agent/.env");
+        String env2 = paket().get("pin-roboter-agent/.env");
+        String t1 = zeile(env1, "AKTUALISIERUNG_TOKEN="), t2 = zeile(env2, "AKTUALISIERUNG_TOKEN=");
+        assertTrue(t1.length() > 20, "Kennwort zu kurz: " + t1);
+        assertNotEquals(t1, t2,
+                "Ein festes Kennwort wäre in jeder Praxis dasselbe — wer eines kennt, "
+                + "könnte überall Neustarts auslösen");
+        assertTrue(yml.contains("WATCHTOWER_HTTP_API_TOKEN: ${AKTUALISIERUNG_TOKEN}"),
+                "Das Kennwort gehört in die .env, nicht ins Compose");
+    }
+
+    private static String zeile(String text, String beginn) {
+        return text.lines().filter(z -> z.startsWith(beginn))
+                .map(z -> z.substring(beginn.length()).strip())
+                .findFirst().orElse("");
+    }
+
+    @Test
     @DisplayName("Die Anmeldung kommt aus einem eigenen Volume, nicht aus dem Datenverzeichnis")
     void anmeldungGetrennt() {
         // Der Token steht nicht im Paket, sondern wird vom Agenten aus der

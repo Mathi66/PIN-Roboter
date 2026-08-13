@@ -115,6 +115,10 @@ public enum Ereignisart {
     // Verschiebt, wohin ein Agent meldet - und damit, in wessen Sicht seine
     // Geraete landen. Deshalb Sicherheitsstufe, nicht Routine.
     AGENT_ZUGEORDNET("Standort-Agent einer Einrichtung zugeordnet", Stufe.SICHERHEIT),
+    // Eine Aktualisierung tauscht die Software an einem Standort aus. Wer sie
+    // wann angestossen hat und was dabei herauskam, ist die erste Frage, wenn
+    // sich das Verhalten dort ab einem bestimmten Tag geaendert hat.
+    AGENT_AKTUALISIERUNG("Aktualisierung des Standort-Agenten", Stufe.SICHERHEIT),
 
     // --- Datensicherung (FA-BAK, ADR-0010) ---
     // Durchweg Sicherheitsstufe: Diese Einträge überleben die Rotation als
