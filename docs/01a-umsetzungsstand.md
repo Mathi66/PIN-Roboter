@@ -123,6 +123,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | | Anforderung | | Stand |
 |---|---|---|---|
 | **✔** | `FA-ALA-010` Alarmzustände <br><span style="opacity:.7">MUSS</span> |  | Alarme entstehen und schließen selbsttätig, quittierbar, keine Flut |
+| **✔** | `FA-ALA-030` Alarme von Hand schließen <br><span style="opacity:.7">MUSS</span> |  | Einzeln und als Sammelaktion aus der Lage-Übersicht. Geschlossen heißt **nicht gelöscht**: Der Datensatz bleibt (ADR-0005), und eine fortbestehende Störung meldet sich im nächsten Prüflauf erneut. Nötig für Alarme zu Geräten, die es nicht mehr gibt — für sie kommt nie eine Behebungsmeldung. [Umsetzung 32](03-umsetzung/32-alarme-schliessen.md) |
 | **✔** | `FA-ALA-020` Benachrichtigung per E-Mail <br><span style="opacity:.7">SOLL</span> |  | E-Mail mit Sammelfenster; 50 Alarme ergeben eine Mail |
 
 ## A.9 Produktupdate (FA-UPD)

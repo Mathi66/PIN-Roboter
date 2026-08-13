@@ -264,6 +264,15 @@ public class Demodaten {
             // Unterschied nicht — er meldet, was der Konnektor ihm nennt.
             // Blieben sie stehen, zeigte die Übersicht Geräte und Gruppen zu
             // einem Bestand, den es nicht mehr gibt.
+            // Alarme zu Demogeraeten. Sie tragen kein Demo-Kennzeichen - der
+            // Alarm entsteht aus einer Agentmeldung. Blieben sie stehen, waeren
+            // sie fuer immer offen: Eine Behebungsmeldung kommt fuer ein
+            // geloeschtes Geraet nie. Genau so standen am 13.08.2026 elf
+            // unaufloesbare Alarme in der Lage-Uebersicht.
+            s.executeUpdate("""
+                    DELETE FROM alarm
+                    WHERE objekt IN (SELECT terminal_id FROM kartenterminal WHERE ist_demo)
+                       OR einrichtung IN (SELECT bezeichnung FROM organisation WHERE ist_demo)""");
             s.executeUpdate("""
                     DELETE FROM geraet
                     WHERE terminal_id IN (SELECT terminal_id FROM kartenterminal WHERE ist_demo)""");

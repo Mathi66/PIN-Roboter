@@ -135,6 +135,14 @@ public class Lasterzeuger {
         db.verbindung().setAutoCommit(false);
         int weg;
         try (Statement s = db.verbindung().createStatement()) {
+            // Zuerst die Alarme: Sie verweisen ueber terminal_id auf Geraete, die
+            // es gleich nicht mehr gibt. Blieben sie stehen, waeren sie fuer
+            // immer offen - eine Behebungsmeldung kommt fuer ein geloeschtes
+            // Geraet nie (Befund 13.08.2026).
+            s.executeUpdate("""
+                    DELETE FROM alarm
+                    WHERE objekt LIKE 'KT-LAST-%'
+                       OR einrichtung IN ('Lasttest-Einrichtung', 'Lasttest-Verbund')""");
             weg = s.executeUpdate("DELETE FROM kartenterminal WHERE terminal_id LIKE 'KT-LAST-%'");
             s.executeUpdate("DELETE FROM konnektor WHERE bezeichnung LIKE 'Lastkonnektor %'");
             s.executeUpdate("""

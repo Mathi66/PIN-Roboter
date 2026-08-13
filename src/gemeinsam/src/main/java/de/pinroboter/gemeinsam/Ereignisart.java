@@ -94,6 +94,10 @@ public enum Ereignisart {
     ALARM_AUSGELOEST("Alarm ausgelöst", Stufe.ROUTINE),
     ALARM_BEHOBEN("Alarm behoben", Stufe.ROUTINE),
     ALARM_QUITTIERT("Alarm quittiert", Stufe.ROUTINE),
+    // Von Hand geschlossen - im Unterschied zu ALARM_BEHOBEN, das der Agent
+    // ausloest. Ein Mensch entscheidet hier, dass ein Alarm nicht mehr in der
+    // Liste stehen soll; das muss nachvollziehbar bleiben.
+    ALARM_GESCHLOSSEN("Alarm von Hand geschlossen", Stufe.SICHERHEIT),
     BENACHRICHTIGUNG_VERSENDET("Benachrichtigung versendet", Stufe.ROUTINE),
     // Wer benachrichtigt wird und wie der Mailserver erreicht wird, gehoert auf
     // die Sicherheitsstufe: Eine geaenderte Empfaengeradresse leitet Meldungen

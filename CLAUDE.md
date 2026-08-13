@@ -204,6 +204,29 @@ Ein Feature ist fertig, wenn **alle** Punkte erfüllt sind:
 - [ ] Keine Secrets, keine personenbezogenen Daten in Code, Logs oder Repo
 - [ ] Dem PO in verständlicher Form zur Abnahme vorgelegt
 
+### Prüftiefe je Schritt (PO, 13.08.2026)
+
+**Wir arbeiten hoch agil. Der Vollauf der Systemnachweise läuft nur noch vor
+einem Release**, nicht nach jeder Änderung.
+
+| Wann | Was |
+|---|---|
+| Nach jeder Änderung | Übersetzen, **Modultests**, Stack neu bauen und deployen |
+| Vor einem Release | **Vollauf** `pruefungen/systemnachweise.sh` (~25 min), Barrierefreiheit, Oberflächenprüfung |
+
+> **Begründung des PO:** Die tatsächlichen Fehler kamen bisher aus der
+> Bedienung, nicht aus den Prüfläufen — „Demodatensatz löschen geht nicht",
+> der Agent, der ins Leere meldet, die unauflösbaren Alarme. Der Vollauf hat
+> mehrfach vor allem Fehler in den *neu geschriebenen Nachweisen* aufgedeckt
+> und kostet dabei je Runde eine halbe Stunde, in der der PO nichts bedienen
+> kann.
+>
+> **Was daraus folgt:** Nach einer Änderung zählt, dass sie **schnell auf
+> `localhost:8090` steht** — dort findet der PO die Fehler. Die Nachweise
+> bleiben trotzdem Pflicht: Sie werden **mitgeschrieben** wie bisher, nur
+> nicht mehr bei jedem Schritt ausgeführt. Ein Nachweis, den es nicht gibt,
+> fällt vor dem Release niemandem auf.
+
 ---
 
 ## 8. Fachlicher Auftrag — geklärt am 06.08.2026

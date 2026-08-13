@@ -266,6 +266,32 @@ braucht.
 Wenn Sie sich gekümmert haben, **quittieren** Sie den Alarm. Er verschwindet aus
 „Was zu tun ist", bleibt aber im Protokoll — mit Zeitpunkt und Ihrem Namen.
 
+### Einen Alarm wegbekommen
+
+Ein Alarm verschwindet **von selbst**, sobald der Roboter feststellt, dass das
+Problem behoben ist. Sie müssen dafür nichts tun.
+
+Zwei Knöpfe stehen trotzdem an jedem Alarm:
+
+- **Quittieren** heißt „ich habe es gesehen und kümmere mich". Der Alarm bleibt
+  stehen — er ist ja noch nicht behoben.
+- **Schließen** nimmt ihn aus der Liste. Er bleibt im Protokoll, und **besteht
+  das Problem weiter, meldet der Roboter ihn beim nächsten Durchlauf erneut**.
+
+Oben in der Alarmtafel gibt es zusätzlich **Alle schließen**. Das räumt die
+ganze Liste auf einen Schlag; Sie werden vorher gefragt und sehen dabei, wie
+viele Alarme betroffen sind.
+
+> **Wann brauchen Sie „Schließen"?** Vor allem für Alarme zu Geräten, die es
+> nicht mehr gibt — etwa nach dem Entfernen eines Kartenterminals. Für ein
+> Gerät, das nicht mehr antwortet, kann der Roboter nie melden, dass alles in
+> Ordnung ist; dieser Alarm bliebe sonst für immer stehen.
+>
+> Für ein Problem, das wirklich besteht, hilft Schließen nicht — der Alarm
+> kommt wieder. Das ist Absicht.
+
+Diese Knöpfe sehen nur Administratoren.
+
 ### Häufige Meldungen
 
 | Meldung | Was dahintersteckt | Was Sie tun |

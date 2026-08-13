@@ -2628,6 +2628,102 @@ else
   rm -f /tmp/pr-alarme.html
 fi
 
+# ---------------------------------------------------------------- FA-ALA-030
+# Alarme von Hand schliessen (Vorgabe PO, 13.08.2026).
+#
+# Der Anlass: Alarme zu Geraeten, die es nicht mehr gibt. Fuer sie kommt nie
+# eine Behebungsmeldung - sie blieben fuer immer offen. Am 13.08.2026 standen
+# elf solche Alarme in der Lage-Uebersicht, jeder zu einem Kartenterminal aus
+# einem laengst geloeschten Demo- oder Pruefbestand.
+hinweis "FA-ALA-030 — Alarme von Hand schließen"
+
+# Einen Alarm zu einem Geraet erzeugen, das es nicht gibt - genau der Fall.
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "INSERT INTO alarm (einrichtung, objekt, art, schweregrad, meldung, handlung)
+   VALUES ('Pruefpraxis','KT-KARTEILEICHE','GERAET_NICHT_ERREICHBAR','KRITISCH',
+           'Antwortet nicht','Netzwerk pruefen')
+   ON CONFLICT DO NOTHING" >/dev/null 2>&1
+KL=$(sql "SELECT id FROM alarm WHERE objekt='KT-KARTEILEICHE' AND behoben_am IS NULL")
+if [ -z "$KL" ]; then
+  uebersprungen "Alarm zum Nachweis liess sich nicht anlegen"
+else
+  curl -s -b "$KEKSE" $BASIS/teil/uebersicht > /tmp/pr-alarm-schliessen.html
+  grep -q "/alarme/$KL/schliessen" /tmp/pr-alarm-schliessen.html && AS=ja || AS=nein
+  ergebnis "die Lage-Uebersicht bietet je Alarm ein Schliessen an" "$AS"
+  grep -q "/alarme/alle-schliessen" /tmp/pr-alarm-schliessen.html && AS2=ja || AS2=nein
+  ergebnis "und eine Sammelaktion fuer alle" "$AS2"
+  # Eine destruktive Sammelaktion ohne Mengenangabe ist die haeufigste Ursache
+  # fuer ein „das wollte ich nicht".
+  grep -qE 'hx-confirm="Alle [0-9]+ Alarme schließen' /tmp/pr-alarm-schliessen.html \
+    && AS3=ja || AS3=nein
+  ergebnis "die Rueckfrage nennt die Zahl der betroffenen Alarme" "$AS3"
+  rm -f /tmp/pr-alarm-schliessen.html
+
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/alarme/$KL/schliessen"
+  [ -n "$(sql "SELECT behoben_am FROM alarm WHERE id=$KL")" ] && AS4=ja || AS4=nein
+  ergebnis "ein Alarm laesst sich einzeln schliessen" "$AS4"
+
+  # Geschlossen heisst NICHT geloescht - sonst waere die Frage „warum war das
+  # drei Wochen offen?" hinterher unbeantwortbar (ADR-0005).
+  [ "$(sql "SELECT count(*) FROM alarm WHERE id=$KL")" = "1" ] && AS5=ja || AS5=nein
+  ergebnis "der Datensatz bleibt erhalten, er wird nicht geloescht" "$AS5"
+  [ "$(sql "SELECT count(*) FROM fachprotokoll WHERE art='ALARM_GESCHLOSSEN'")" != "0" ] \
+    && AS6=ja || AS6=nein
+  ergebnis "das Schliessen steht im Fachprotokoll (Sicherheitsstufe)" "$AS6"
+
+  # Die Sammelaktion.
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "INSERT INTO alarm (einrichtung, objekt, art, schweregrad, meldung, handlung)
+     VALUES ('Pruefpraxis','KT-SAMMEL-1','GERAET_NICHT_ERREICHBAR','KRITISCH','a','x'),
+            ('Pruefpraxis','KT-SAMMEL-2','PEVIM_NICHT_AKTIV','HINWEIS','b','y')
+     ON CONFLICT DO NOTHING" >/dev/null 2>&1
+  VOR_A=$(sql "SELECT count(*) FROM alarm WHERE behoben_am IS NULL")
+  curl -s -b "$KEKSE" -o /dev/null -X POST "$BASIS/alarme/alle-schliessen"
+  NACH_A=$(sql "SELECT count(*) FROM alarm WHERE behoben_am IS NULL")
+  [ "${NACH_A:-1}" = "0" ] && [ "${VOR_A:-0}" -ge 2 ] && AS7=ja || AS7=nein
+  ergebnis "die Sammelaktion schliesst alle offenen Alarme ($VOR_A -> $NACH_A)" "$AS7"
+
+  # Und die Zahl steht im Protokoll - ohne sie weiss hinterher niemand, ob drei
+  # oder dreihundert Alarme verschwunden sind.
+  MELDUNG_A=$(sqltext "SELECT text FROM fachprotokoll WHERE art='ALARM_GESCHLOSSEN'
+                       ORDER BY id DESC LIMIT 1")
+  case "$MELDUNG_A" in *"$VOR_A Alarm"*) AS8=ja ;; *) AS8=nein ;; esac
+  ergebnis "das Protokoll nennt die Zahl (gelesen: ${MELDUNG_A:-nichts})" "$AS8"
+
+  # Ein geschlossener Alarm kehrt zurueck, solange die Ursache besteht. Sonst
+  # liesse sich eine echte Stoerung per Mausklick dauerhaft verschwinden lassen.
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "INSERT INTO alarm (einrichtung, objekt, art, schweregrad, meldung, handlung)
+     VALUES ('Pruefpraxis','KT-KARTEILEICHE','GERAET_NICHT_ERREICHBAR','KRITISCH',
+             'Antwortet nicht','Netzwerk pruefen')" >/dev/null 2>&1
+  [ "$(sql "SELECT count(*) FROM alarm WHERE objekt='KT-KARTEILEICHE' AND behoben_am IS NULL")" = "1" ] \
+    && AS9=ja || AS9=nein
+  ergebnis "derselbe Zustand loest danach wieder einen Alarm aus" "$AS9"
+
+  # Aufraeumen - der Nachweis hinterlaesst keine Alarme fuer spaetere Pruefungen.
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "DELETE FROM alarm WHERE objekt LIKE 'KT-KARTEILEICHE' OR objekt LIKE 'KT-SAMMEL-%'" >/dev/null 2>&1
+fi
+
+# Die Ursache selbst: Beim Loeschen des Demobestands muessen dessen Alarme
+# mitgehen. Sonst entstehen genau die unaufloesbaren Karteileichen wieder.
+hinweis "Demodaten löschen räumt auch ihre Alarme weg"
+curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/anlegen
+DEMO_KT=$(sqltext "SELECT terminal_id FROM kartenterminal WHERE ist_demo ORDER BY id LIMIT 1")
+if [ -z "$DEMO_KT" ]; then
+  uebersprungen "kein Demobestand vorhanden"
+else
+  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+    "INSERT INTO alarm (einrichtung, objekt, art, schweregrad, meldung, handlung)
+     VALUES ('egal','$DEMO_KT','GERAET_NICHT_ERREICHBAR','KRITISCH','a','x')
+     ON CONFLICT DO NOTHING" >/dev/null 2>&1
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/loeschen
+  IST=$(sql "SELECT count(*) FROM alarm WHERE objekt='$DEMO_KT'")
+  [ "${IST:-1}" = "0" ] && AD=ja || AD=nein
+  ergebnis "der Alarm eines geloeschten Demogeraets bleibt nicht zurueck ($IST)" "$AD"
+  curl -s -b "$KEKSE" -o /dev/null -X POST $BASIS/verwaltung/demodaten/anlegen
+fi
+
 # ------------------------------------------------- UX-Stufe 4 und 5 (ADR-0010)
 hinweis "UX-Stufe 4/5 — Detailseiten statt Aufklapper, Beziehungen zum Durchklicken"
 

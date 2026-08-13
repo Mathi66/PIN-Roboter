@@ -147,4 +147,102 @@ class AlarmverwaltungTest {
                 .filter(x -> x.id() == a.id()).findFirst().orElseThrow().quittiert());
     }
 
+    // ────────────────── Alarme von Hand schließen (PO, 13.08.2026) ──────────
+
+    @Test
+    @DisplayName("Ein Alarm lässt sich von Hand schließen und verschwindet aus der Liste")
+    void schliessenNimmtAusDerListe() {
+        // Der Anlass: Alarme zu Geräten, die es nicht mehr gibt. Für sie kommt
+        // nie eine Behebungsmeldung — sie blieben sonst für immer offen.
+        String o = obj();
+        av.melden(E, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR, "weg", "nachsehen");
+        var a = offenerAlarm(o);
+
+        assertTrue(av.schliessen(a.id(), ALLES));
+        assertEquals(0, av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).count());
+    }
+
+    @Test
+    @DisplayName("Geschlossen heißt nicht gelöscht — der Datensatz bleibt")
+    void schliessenLoeschtNicht() {
+        String o = obj();
+        av.melden(E, o, Alarmverwaltung.Art.KARTE_GESPERRT, "gesperrt", "PUK");
+        var a = offenerAlarm(o);
+        av.schliessen(a.id(), ALLES);
+
+        assertEquals(1, zaehle("SELECT count(*) FROM alarm WHERE id = " + a.id()),
+                "Ein DELETE würde die Frage „warum war das drei Wochen offen?“ "
+                + "unbeantwortbar machen (ADR-0005)");
+        assertEquals(1, zaehle("SELECT count(*) FROM alarm WHERE id = " + a.id()
+                + " AND behoben_am IS NOT NULL"));
+    }
+
+    @Test
+    @DisplayName("Ein geschlossener Alarm kehrt zurück, solange die Ursache besteht")
+    void geschlossenerAlarmKehrtZurueck() {
+        String o = obj();
+        av.melden(E, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR, "weg", "nachsehen");
+        av.schliessen(offenerAlarm(o).id(), ALLES);
+
+        // Der Agent meldet denselben Zustand erneut. Er MUSS wieder auftauchen:
+        // Ein Wegklicken, das eine echte Störung dauerhaft verschwinden ließe,
+        // wäre genau der Fehler, den man unter Zeitdruck macht.
+        assertTrue(av.melden(E, o, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR,
+                "weg", "nachsehen"), "Nach dem Schließen gilt die Meldung wieder als neu");
+        assertEquals(1, av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).count());
+    }
+
+    @Test
+    @DisplayName("Außerhalb des Geltungsbereichs lässt sich nichts schließen")
+    void schliessenNurImBereich() {
+        String o = obj();
+        av.melden(E, o, Alarmverwaltung.Art.KARTE_GESPERRT, "gesperrt", "PUK");
+        var a = offenerAlarm(o);
+
+        assertFalse(av.schliessen(a.id(), Geltungsbereich.keiner()));
+        assertEquals(1, av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).count(),
+                "Sonst könnte jemand fremde Störungen stillstellen");
+    }
+
+    @Test
+    @DisplayName("Die Sammelaktion schließt alle offenen und meldet ihre Zahl")
+    void alleSchliessen() {
+        String o1 = obj(), o2 = obj(), o3 = obj();
+        av.melden(E, o1, Alarmverwaltung.Art.GERAET_NICHT_ERREICHBAR, "a", "x");
+        av.melden(E, o2, Alarmverwaltung.Art.KARTE_GESPERRT, "b", "y");
+        av.melden(E, o3, Alarmverwaltung.Art.PEVIM_NICHT_AKTIV, "c", "z");
+
+        int vorher = av.offene(ALLES).size();
+        assertTrue(vorher >= 3);
+        int zahl = av.alleSchliessen(ALLES);
+
+        assertEquals(vorher, zahl, "Die Zahl gehört in die Rückmeldung und ins Protokoll");
+        assertEquals(0, av.offene(ALLES).size());
+    }
+
+    @Test
+    @DisplayName("Die Sammelaktion eines leeren Bereichs trifft nichts")
+    void alleSchliessenNurImBereich() {
+        String o = obj();
+        av.melden(E, o, Alarmverwaltung.Art.KARTE_GESPERRT, "gesperrt", "PUK");
+
+        assertEquals(0, av.alleSchliessen(Geltungsbereich.keiner()),
+                "Eine Sammelaktion, die versehentlich fremde Mandanten trifft, "
+                + "ist schlimmer als gar keine");
+        assertEquals(1, av.offene(E, ALLES).stream().filter(x -> o.equals(x.objekt())).count());
+    }
+
+    // ------------------------------------------------------------- Kleinteile
+
+    private Alarmverwaltung.Alarm offenerAlarm(String objekt) {
+        return av.offene(E, ALLES).stream()
+                .filter(x -> objekt.equals(x.objekt())).findFirst().orElseThrow();
+    }
+
+    private long zaehle(String sql) {
+        try (java.sql.Statement s = db.verbindung().createStatement();
+             java.sql.ResultSet rs = s.executeQuery(sql)) {
+            return rs.next() ? rs.getLong(1) : -1;
+        } catch (java.sql.SQLException e) { throw new IllegalStateException(e); }
+    }
 }

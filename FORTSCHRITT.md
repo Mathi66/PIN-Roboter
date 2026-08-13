@@ -2967,3 +2967,59 @@ wieder verschwindet.
 > Demodaten ändert. Und wenn er dann still auf „übersprungen" springt, sieht ein
 > grüner Lauf genauso aus wie vorher — obwohl eine Funktion unbelegt geworden
 > ist. Deshalb war der Umbau nicht Beiwerk der Änderung, sondern ihr Kern.
+
+
+---
+
+## „Alle Alarme löschen" — der Wunsch war das Symptom
+
+**Vorgabe des PO:** eine Funktion, um in der Lage-Übersicht alle Alarme zu
+löschen.
+
+Vor dem Bauen ein Blick in seine Datenbank:
+
+```
+ id  |   einrichtung    |      objekt      |          art
+-----+------------------+------------------+-------------------------
+   1 | Kardiologie Nord | KT-BEHANDLUNG-02 | PEVIM_NICHT_AKTIV
+  57 | PruefEinrichtung | KT-8444d3f1      | GERAET_NICHT_ERREICHBAR
+ 352 | Praxis           | Sicherung täglich| SICHERUNG_FEHLGESCHLAGEN
+```
+
+**Elf offene Alarme, kein einziger zu einem Gerät, das es noch gibt.** Alle aus
+gelöschten Demo- und Prüfbeständen: „Kardiologie Nord" stammt aus dem alten
+Demoszenario, „KT-8444d3f1" ist ein Lasttestgerät, „Praxis" die Vorgabe aus der
+Zeit vor der Mandantenfähigkeit.
+
+Die Ursache steckt im Alarmmodell selbst. Ein Alarm schließt sich, wenn ein
+Agent meldet, dass der Zustand weg ist — bewusst automatisch, damit niemand
+Alarme wegklicken muss. Für ein **gelöschtes** Gerät kommt diese Meldung nie.
+Der Alarm bleibt für immer offen, und die wichtigste Seite des Produkts füllt
+sich mit Rauschen.
+
+### Was gebaut wurde
+
+**Schließen statt löschen.** Der Datensatz bleibt, nur `behoben_am` wird
+gesetzt. Der Alarm verschwindet aus der Liste — was der PO wollte — und bleibt
+nachvollziehbar (ADR-0005). Ein `DELETE` würde die Frage „warum war dieses
+Gerät drei Wochen lang nicht erreichbar?" unbeantwortbar machen.
+
+**Es hebt das Problem nicht auf.** Besteht die Ursache weiter, meldet der Agent
+den Alarm im nächsten Prüflauf erneut. Dafür gibt es einen eigenen Test: Ein
+Wegklicken, das eine echte Störung dauerhaft verschwinden ließe, wäre genau der
+Fehler, den man unter Zeitdruck macht.
+
+**Die Sammelaktion nennt die Zahl.** „Alle 11 Alarme schließen?" ist etwas
+anderes als „Alle Alarme schließen?", wenn man dreihundert hat. Und sie trifft
+nur den eigenen Geltungsbereich.
+
+### Und die Ursache
+
+Die Funktion räumt auf; sie beseitigt nicht, was den Müll erzeugt. Deshalb
+nehmen `Demodaten.loeschen` und `Lasterzeuger.entfernen` jetzt die Alarme ihrer
+Geräte mit.
+
+> Dasselbe Muster wie beim Löschen des Demobestands eine Woche zuvor: Der Agent
+> legt Zeilen an, die kein Demo-Kennzeichen tragen, weil er den Unterschied gar
+> nicht kennt. Wer aufräumt, muss über den **Bezug** aufräumen, nicht über das
+> Kennzeichen. Beim dritten Mal sollte ich das eigentlich von selbst mitdenken.

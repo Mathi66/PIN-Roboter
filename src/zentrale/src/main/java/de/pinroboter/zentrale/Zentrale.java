@@ -2082,9 +2082,12 @@ public class Zentrale {
         // Prüfeinrichtung nicht mehr „Praxis" hieß.
         var offen = alarme.offene(bereich(c));
         if (offen.isEmpty()) return "";
+        boolean darfSchliessen = rechte(c).darfBestandPflegen();
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>Alarme <span class=\"zaehler\">"
-                + offen.size() + " offen</span></h3><div class=\"rollbar\"><table><tbody>");
+                + offen.size() + " offen</span>"
+                + (darfSchliessen ? alleSchliessenKnopf(offen.size()) : "")
+                + "</h3><div class=\"rollbar\"><table><tbody>");
         for (var a : offen) {
             s.append("""
                     <tr class="%s"><td style="width:9rem">
@@ -2101,15 +2104,39 @@ public class Zentrale {
                             esc(a.meldung()),
                             a.handlung() == null ? ""
                                 : "<div class=\"handlung\">" + esc(a.handlung()) + "</div>",
-                            a.quittiert()
+                            (a.quittiert()
                                 ? "<span class=\"feldhinweis\">quittiert von "
                                   + esc(a.quittiertVon()) + "</span>"
                                 : "<button class=\"knopf\" title=\"Bestätigt, dass Sie sich "
                                   + "um diesen Alarm gekümmert haben; er bleibt im Protokoll\" "
                                   + "aria-label=\"Alarm quittieren\" hx-post=\"/alarme/" + a.id()
-                                  + "/quittieren\" hx-target=\"body\">Quittieren</button>"));
+                                  + "/quittieren\" hx-target=\"body\">Quittieren</button>")
+                            + (darfSchliessen
+                                ? "<button class=\"knopf klein\" title=\"Nimmt diesen Alarm "
+                                  + "aus der Liste. Er bleibt im Protokoll; besteht die Ursache "
+                                  + "weiter, meldet der Roboter ihn erneut\" "
+                                  + "aria-label=\"Alarm schließen\" hx-post=\"/alarme/" + a.id()
+                                  + "/schliessen\" hx-target=\"body\">Schließen</button>"
+                                : "")));
         }
         return s.append("</tbody></table></div></div>").toString();
+    }
+
+    /**
+     * Die Sammelaktion im Alarmkopf.
+     *
+     * <p>Mit Rückfrage, und die Rückfrage <b>nennt die Zahl</b>: „Alle 11
+     * Alarme schließen?" ist etwas anderes als „Alle Alarme schließen?", wenn
+     * man dreihundert hat. Destruktive Sammelaktionen ohne Mengenangabe sind
+     * die häufigste Ursache für ein „das wollte ich nicht".
+     */
+    private String alleSchliessenKnopf(int zahl) {
+        return """
+                <button class="knopf" hx-post="/alarme/alle-schliessen" hx-target="body"
+                        hx-confirm="Alle %d Alarme schließen? Sie verschwinden aus der Liste und bleiben im Protokoll. Störungen, die weiter bestehen, meldet der Roboter erneut."
+                        title="Nimmt alle Alarme Ihres Zuständigkeitsbereichs aus der Liste; sie bleiben im Protokoll"
+                        aria-label="Alle %d Alarme schließen">Alle schließen</button>"""
+                .formatted(zahl, zahl);
     }
 
     /**
@@ -2938,6 +2965,42 @@ public class Zentrale {
                         "Alarm " + id + " quittiert",
                         "Quittieren heißt „zur Kenntnis genommen“ — der Alarm bleibt bestehen, "
                         + "solange der Zustand besteht.");
+            }
+            c.header("HX-Refresh", "true").result("");
+        });
+
+        // Einen Alarm von Hand schliessen. Anders als Quittieren nimmt das ihn
+        // aus der Liste der offenen - noetig fuer Alarme zu Geraeten, die es
+        // nicht mehr gibt und fuer die deshalb nie eine Behebungsmeldung kommt.
+        app.post("/alarme/{id}/schliessen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(),
+                    "Das Schließen von Alarmen")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            var b = angemeldeter(c);
+            if (alarme.schliessen(id, bereich(c))) {
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ALARM_GESCHLOSSEN, true, b.anzeigename(), null,
+                        "Alarm " + id + " von Hand geschlossen",
+                        "Der Alarm verschwindet aus der Liste, bleibt aber im Protokoll. "
+                        + "Besteht die Ursache weiter, meldet der Agent ihn erneut.");
+            }
+            c.header("HX-Refresh", "true").result("");
+        });
+
+        // Sammelaktion: alles wegräumen, was im eigenen Bereich offen ist.
+        app.post("/alarme/alle-schliessen", c -> {
+            if (abgewiesen(c, rechte(c).darfBestandPflegen(),
+                    "Das Schließen von Alarmen")) return;
+            var b = angemeldeter(c);
+            int zahl = alarme.alleSchliessen(bereich(c));
+            if (zahl > 0) {
+                // Die ZAHL gehoert ins Protokoll: Ohne sie weiss hinterher
+                // niemand, ob drei oder dreihundert Alarme verschwunden sind.
+                protokoll.anfuegen(bereich(c).bezeichnung(), null,
+                        Ereignisart.ALARM_GESCHLOSSEN, true, b.anzeigename(), null,
+                        zahl + " Alarm(e) von Hand geschlossen",
+                        "Sammelaktion aus der Lage-Übersicht. Die Alarme bleiben im "
+                        + "Protokoll; bestehende Störungen melden sich erneut.");
             }
             c.header("HX-Refresh", "true").result("");
         });

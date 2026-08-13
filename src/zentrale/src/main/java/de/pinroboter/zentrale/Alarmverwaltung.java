@@ -157,6 +157,61 @@ public class Alarmverwaltung {
     }
 
     /**
+     * Schließt einen Alarm von Hand (Vorgabe PO, 13.08.2026).
+     *
+     * <h2>Warum es das braucht — und warum es nicht „löschen" heißt</h2>
+     *
+     * {@link #beheben} wird ausgelöst, wenn ein Agent meldet, dass der Zustand
+     * weg ist. Für ein Gerät, das es <b>nicht mehr gibt</b>, kommt diese
+     * Meldung nie: Der Alarm bleibt ewig offen. Am 13.08.2026 standen so elf
+     * Alarme in der Lage-Übersicht, jeder einzelne zu einem Kartenterminal aus
+     * einem längst gelöschten Demo- oder Prüfbestand.
+     *
+     * <p><b>Gelöscht wird nichts.</b> Der Datensatz bleibt, {@code behoben_am}
+     * wird gesetzt — der Alarm verschwindet damit aus der Liste der offenen,
+     * bleibt aber nachvollziehbar (ADR-0005). Ein echtes {@code DELETE} würde
+     * die Frage „warum war das Gerät drei Wochen lang nicht erreichbar?"
+     * unbeantwortbar machen.
+     *
+     * <p><b>Es hebt das Problem nicht auf.</b> Besteht die Ursache weiter,
+     * meldet der Agent den Alarm im nächsten Prüflauf erneut. Das ist gewollt:
+     * Ein Wegklicken, das eine echte Störung dauerhaft verschwinden ließe, wäre
+     * genau der Fehler, den man unter Zeitdruck macht.
+     *
+     * @return ob geschlossen wurde; {@code false} auch außerhalb des Bereichs
+     */
+    public boolean schliessen(long id, Geltungsbereich bereich) {
+        if (bereich.leer()) return false;
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE alarm SET behoben_am = now() WHERE id = ? AND behoben_am IS NULL"
+                + bereich.bedingung("organisation_id"))) {
+            p.setLong(1, id);
+            bereich.wertSetzen(db.verbindung(), p, 2);
+            return p.executeUpdate() == 1;
+        } catch (SQLException e) { return false; }
+    }
+
+    /**
+     * Schließt alle offenen Alarme des Geltungsbereichs auf einmal.
+     *
+     * <p>Der Geltungsbereich ist auch hier die Grenze: Eine Sammelaktion, die
+     * versehentlich fremde Mandanten trifft, ist schlimmer als gar keine. Wer
+     * für eine Betriebsstätte zuständig ist, räumt nur deren Alarme weg.
+     *
+     * @return wie viele geschlossen wurden — die Zahl gehört in die Rückmeldung
+     *         und ins Protokoll, sonst weiß hinterher niemand, was passiert ist
+     */
+    public int alleSchliessen(Geltungsbereich bereich) {
+        if (bereich.leer()) return 0;
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE alarm SET behoben_am = now() WHERE behoben_am IS NULL"
+                + bereich.bedingung("organisation_id"))) {
+            bereich.wertSetzen(db.verbindung(), p, 1);
+            return p.executeUpdate();
+        } catch (SQLException e) { return 0; }
+    }
+
+    /**
      * Offene Alarme im Geltungsbereich.
      *
      * <p>Ein Alarm nennt Gerät und Handlungsempfehlung — er verrät damit

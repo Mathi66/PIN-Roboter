@@ -687,6 +687,28 @@ Zusammengehörige Ereignisse werden als ein Vorgang dargestellt.
 - Alarme sind quittierbar; Quittierung wird protokolliert.
 - Ein behobener Zustand schließt den Alarm automatisch.
 
+### FA-ALA-030 — Alarme von Hand schließen · MUSS · V1 · PO 13.08.2026
+Alarme lassen sich einzeln und als Sammelaktion aus der Lage-Übersicht
+entfernen.
+
+*Anlass:* Ein Alarm wird geschlossen, wenn ein Agent meldet, dass der Zustand
+behoben ist. Für ein Gerät, das es **nicht mehr gibt**, kommt diese Meldung nie
+— der Alarm bleibt für immer offen und macht die Lage-Übersicht unbrauchbar.
+
+*Akzeptanz:*
+- Ein Alarm lässt sich einzeln schließen, und alle offenen des eigenen
+  Geltungsbereichs auf einmal.
+- **Geschlossen heißt nicht gelöscht.** Der Datensatz bleibt erhalten
+  (ADR-0005); nur `behoben_am` wird gesetzt.
+- **Es hebt das Problem nicht auf.** Besteht die Ursache weiter, meldet der
+  Agent den Alarm im nächsten Prüflauf erneut — nachgewiesen.
+- Die Sammelaktion fragt zurück und **nennt dabei die Zahl** der betroffenen
+  Alarme.
+- Die Sammelaktion trifft ausschließlich den eigenen Geltungsbereich.
+- Schließen wird protokolliert, bei der Sammelaktion **mit der Anzahl**.
+- Beim Löschen von Demo- und Lasttestbestand gehen deren Alarme mit — sonst
+  entstehen die unauflösbaren Karteileichen erneut.
+
 ### FA-ALA-020 — Benachrichtigung per E-Mail · SOLL · V1 · PO ✓ (freigegeben 06.08.2026)
 *Akzeptanz:*
 - SMTP konfigurierbar, mit Testversand aus der Oberfläche.
