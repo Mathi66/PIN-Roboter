@@ -10,6 +10,46 @@ Nummer. Kein `:latest`.
 
 ---
 
+## 0.3.1 — Der Standort-Agent erreicht eine Zentrale hinter TLS
+
+**Fehlerbehebung.** Für die Zentrale auf Labs ändert sich nichts an Betrieb oder
+Konfiguration; ein Deploy ist trotzdem sinnvoll, weil die Versionen der beiden
+Bausteine zusammenpassen sollen.
+
+| Angabe | Wert |
+|---|---|
+| Images | `ghcr.io/mathi66/pin-roboter:0.3.1` **und neu** `ghcr.io/mathi66/pin-roboter-agent:0.3.1` |
+| Schema-Änderung | **keine** |
+| Neue Env | keine |
+| Neue Volumes | keine für die Zentrale. Der Agent braucht `/daten` (Token, Schlüsselpaar, PIN-Ablage) — er läuft aber im Praxisnetz, nicht auf Labs. |
+| Prüfung danach | `/health` meldet `{"status":"ok","db":true,"version":"0.3.1"}` |
+| Rückfall | `0.3.0` — genügt, da keine Schemaänderung |
+
+**Was behoben ist**
+
+Der Standort-Agent sprach mit *allem* über denselben TLS-Client: Konnektor,
+Kartenterminal **und** Zentrale. Dessen Vertrauensspeicher enthält
+ausschließlich die CA aus `CA_URL` — die TI-Strecke. Steht die Zentrale hinter
+einem Reverse Proxy mit einem Zertifikat von Let's Encrypt, scheitert die
+Verbindung am Vertrauensanker. Im Entwicklungsstack fiel das nie auf, weil die
+Zentrale dort über schlichtes `http` erreichbar war.
+
+Der Agent nutzt für die Zentrale jetzt einen eigenen Client mit dem
+System-Vertrauensspeicher. Die Einschränkung auf TLS 1.2 und zwei Cipher-Suites
+aus `[gemSpec_Krypt]` gilt weiterhin für Konnektor und Kartenterminal — dort
+gehört sie hin.
+
+> Gemessen gegen `pin-roboter.lab.vps.nieting.de`: Die Cipher-Suites hätten
+> sogar gepasst (Caddy kann TLS 1.2 mit `ECDHE-ECDSA-AES128-GCM-SHA256`). Es
+> scheiterte allein am Vertrauensanker.
+
+**Neu: Image für den Standort-Agenten**
+
+Bis 0.3.0 baute der Workflow nur die Zentrale — den Agenten gab es lediglich als
+Quelltext. Er wird jetzt unter derselben Version mitveröffentlicht.
+
+---
+
 ## 0.3.0 — Erstinbetriebnahme auf Labs
 
 **Erste Auslieferung an DevOps.** Alle Angaben zur Ersteinrichtung stehen in

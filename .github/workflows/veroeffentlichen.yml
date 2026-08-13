@@ -142,7 +142,7 @@ jobs:
           echo "Beenden dauerte ${DAUER}s"
           [ "$DAUER" -le 10 ] || { echo "::error::Beenden dauerte ${DAUER}s, erlaubt sind 10"; exit 1; }
 
-      - name: Veröffentlichen
+      - name: Zentrale veröffentlichen
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -157,13 +157,36 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
+      # Der Standort-Agent läuft NICHT auf Labs, sondern im Praxisnetz — er
+      # braucht trotzdem ein Image. Ohne dieses gäbe es die Zentrale zum Ziehen
+      # und den Agenten nur als Quelltext (Befund 13.08.2026).
+      #
+      # Gleiche Version wie die Zentrale, auch wenn sich nur eines geändert hat:
+      # DevOps steuert beide über eine gemeinsame Variable, und zwei Bausteine
+      # mit auseinanderlaufenden Nummern sind im Störungsfall nicht zuzuordnen.
+      - name: Standort-Agent veröffentlichen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: BAUSTEIN=agent
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}-agent:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
       - name: Zusammenfassung
         run: |
           {
             echo "### PIN-Roboter ${{ steps.version.outputs.version }} veröffentlicht"
             echo ""
             echo "\`\`\`"
-            echo "Image: $IMAGE:${{ steps.version.outputs.version }}"
+            echo "Zentrale: $IMAGE:${{ steps.version.outputs.version }}"
+            echo "Agent:    $IMAGE-agent:${{ steps.version.outputs.version }}"
             echo "\`\`\`"
             echo ""
             echo "Smoke-Test bestanden: startet gehärtet (read_only, cap_drop ALL),"

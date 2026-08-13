@@ -3162,3 +3162,57 @@ einen Dienst, der 196 MiB braucht. Beim Image ist Alpine keine Option — wir
 brauchen Brainpool aus BouncyCastle und haben die TLS-Kette nur auf dieser
 Kombination gemessen. `jlink` wäre der nächste Schritt, vor einem
 Produktionsdeployment ohnehin.
+
+
+---
+
+## Der Agent konnte die Zentrale gar nicht erreichen
+
+Der PO fragte, wie er den Standort-Agenten mit der frisch veröffentlichten
+Instanz auf Labs verbindet. Vor der Anleitung die Prüfung, ob es überhaupt geht
+— und es ging nicht.
+
+**Der Agent sprach mit allem über denselben TLS-Client.** Konnektor,
+Kartenterminal und Zentrale. Dessen Vertrauensspeicher enthält ausschließlich
+die CA aus `CA_URL`, also die TI-Strecke. Gegen ein Zertifikat von Let's Encrypt
+scheitert er am Vertrauensanker.
+
+Aufgefallen ist es nie, weil die Zentrale im Entwicklungsstack über schlichtes
+`http` erreichbar war. Erst der echte Betrieb hinter einem Reverse Proxy legt es
+frei — dasselbe Muster wie beim fehlenden `Secure` am Sitzungscookie zwei
+Stunden zuvor: **eine Annahme über die Auslieferungsumgebung, die im Prototyp
+nie geprüft werden konnte.**
+
+### Was das Messen genauer gemacht hat
+
+Ich hatte zwei Ursachen vermutet: den Vertrauensanker **und** die Einschränkung
+auf TLS 1.2 mit zwei Cipher-Suites aus `[gemSpec_Krypt]`. Der Test gegen
+`pin-roboter.lab.vps.nieting.de` zeigte: Die Suiten passen sogar, Caddy kann
+`ECDHE-ECDSA-AES128-GCM-SHA256` über TLS 1.2. Es scheiterte allein am
+Vertrauensanker.
+
+Hätte ich nur gelesen statt gemessen, hätte ich an der Cipher-Liste
+herumgeschraubt — und damit eine gemSpec-Vorgabe aufgeweicht, die für die
+TI-Strecke richtig ist.
+
+### Die Lösung
+
+Zwei Clients statt einem. Die Trennung ist ohnehin die richtige: Konnektor und
+Kartenterminal sind Chipkartenidentitäten auf Brainpool-Kurven mit
+selbstsignierten oder gematik-CAs — die eigene Zentrale ist gewöhnliches
+Web-TLS. Beides in einer Konfiguration zu führen war der Fehler.
+
+### Zweiter Fund
+
+**Es gab kein Image für den Standort-Agenten.** Der Workflow baute nur die
+Zentrale; den Agenten hätte der PO selbst bauen müssen. Er wird jetzt unter
+derselben Version mitveröffentlicht — zwei Bausteine mit auseinanderlaufenden
+Nummern sind im Störungsfall nicht zuzuordnen.
+
+### Und eine Lehre über das Prüfen selbst
+
+Die acht Fehlanmeldungen aus meiner Bremsen-Prüfung und der abgelehnte
+Registrierungsversuch standen im Fachprotokoll, bevor ich sie erwähnt hatte —
+der PO fand sie dort und fragte, was da los sei. Prüfungen gegen eine Instanz,
+die jemand anderem gehört und die er beobachtet, gehören **vorher angekündigt**,
+nicht hinterher erklärt. Das Protokoll ist unveränderlich; die Einträge bleiben.

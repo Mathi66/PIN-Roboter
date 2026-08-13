@@ -53,6 +53,42 @@ public final class TlsClient {
 
     private TlsClient() {}
 
+    /**
+     * Der Client für die <b>Zentrale</b> — gewöhnliches Web-TLS.
+     *
+     * <h2>Warum ein zweiter Client nötig ist</h2>
+     *
+     * Bis zum 13.08.2026 sprach der Agent mit <em>allem</em> über denselben
+     * Client: Konnektor, Kartenterminal und Zentrale. Das fiel nicht auf, weil
+     * die Zentrale im Entwicklungsstack über schlichtes {@code http} erreichbar
+     * war. Sobald sie hinter einem Reverse Proxy mit einem Zertifikat von
+     * Let's Encrypt steht, scheitert die Verbindung: Der Vertrauensspeicher
+     * des TI-Clients enthält <b>ausschließlich</b> die CA aus {@code CA_URL} —
+     * kein öffentliches Wurzelzertifikat.
+     *
+     * <p>Gemessen am 13.08.2026 gegen {@code pin-roboter.lab.vps.nieting.de}:
+     * Die Cipher-Suites hätten sogar gepasst (Caddy kann TLS 1.2 mit
+     * {@code ECDHE-ECDSA-AES128-GCM-SHA256}). Es scheiterte allein am
+     * Vertrauensanker.
+     *
+     * <h2>Warum das nicht dieselben Regeln sind</h2>
+     *
+     * Die Einschränkung auf TLS 1.2 und zwei Cipher-Suites stammt aus
+     * {@code [gemSpec_Krypt]} und gilt für die <b>TI-Strecke</b> — Konnektor
+     * und Kartenterminal mit ihren Brainpool-Chipkartenidentitäten. Für die
+     * Verbindung zur eigenen Zentrale gilt sie nicht; dort ist TLS 1.3 mit dem
+     * System-Vertrauensspeicher das Richtige und Sicherere.
+     *
+     * <p>Beides in einem Client zu führen war der Fehler: zwei völlig
+     * verschiedene Gegenstellen mit einer Konfiguration.
+     */
+    public static HttpClient fuerZentrale() {
+        return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NEVER)   // ein Umzug wäre ein Fehler
+                .build();
+    }
+
     /** Baut einen HTTP-Client, der der übergebenen CA vertraut. */
     public static HttpClient mitVertrauensanker(String caPem) throws Exception {
         SSLContext ctx = kontext(caPem);

@@ -23,6 +23,12 @@ public class Agent {
 
     private final KonnektorClient konnektor;
     private final HttpClient http;
+    /**
+     * Eigener Client für die Zentrale (13.08.2026). Der TI-Client vertraut nur
+     * der CA aus {@code CA_URL} und käme an einem öffentlichen Zertifikat nicht
+     * vorbei — siehe {@link TlsClient#fuerZentrale()}.
+     */
+    private final HttpClient zentraleHttp;
     private final URI terminalBasis;
     private final URI zentrale;
     private final Verifikationsablauf ablauf;
@@ -196,6 +202,12 @@ public class Agent {
 
     Agent(KonnektorClient konnektor, HttpClient http, URI terminalBasis, URI zentrale,
           URI smcbBasis) {
+        this(konnektor, http, TlsClient.fuerZentrale(), terminalBasis, zentrale, smcbBasis);
+    }
+
+    Agent(KonnektorClient konnektor, HttpClient http, HttpClient zentraleHttp,
+          URI terminalBasis, URI zentrale, URI smcbBasis) {
+        this.zentraleHttp = zentraleHttp;
         this.konnektor = konnektor; this.http = http;
         this.terminalBasis = terminalBasis; this.zentrale = zentrale;
         this.smcb = new SmcbVerbindungen(http, terminalBasis, smcbBasis, new Kartenkenntnis(),
@@ -394,7 +406,7 @@ public class Agent {
     private void intervalleAbrufen() {
         if (agentToken == null) return;
         try {
-            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/intervalle"))
+            var a = zentraleHttp.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/intervalle"))
                             .header("X-Agent-Token", agentToken)
                             .timeout(Duration.ofSeconds(10)).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -525,7 +537,7 @@ public class Agent {
         if (agentToken == null || schluessel == null) return;
         String antwort;
         try {
-            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/pin-auftraege"))
+            var a = zentraleHttp.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/pin-auftraege"))
                             .header("X-Agent-Token", agentToken)
                             .timeout(Duration.ofSeconds(15)).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
@@ -768,7 +780,7 @@ public class Agent {
         }
 
         try {
-            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/registrieren"))
+            var a = zentraleHttp.send(HttpRequest.newBuilder(zentrale.resolve("/api/registrieren"))
                     .header("X-Registrierung", registrierungsgeheimnis)
                     .timeout(Duration.ofSeconds(15))
                     .POST(HttpRequest.BodyPublishers.noBody()).build(),
@@ -826,7 +838,7 @@ public class Agent {
     private boolean senden(String pfad, String json) {
         if (agentToken == null) return false;
         try {
-            var a = http.send(HttpRequest.newBuilder(zentrale.resolve(pfad))
+            var a = zentraleHttp.send(HttpRequest.newBuilder(zentrale.resolve(pfad))
                             .header("Content-Type", "application/json")
                             .header("X-Agent-Token", agentToken)
                             .timeout(Duration.ofSeconds(10))
@@ -841,7 +853,7 @@ public class Agent {
     private boolean notAusAbfragen() {
         if (agentToken == null) return notAus;
         try {
-            var a = http.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/notaus"))
+            var a = zentraleHttp.send(HttpRequest.newBuilder(zentrale.resolve("/api/agent/notaus"))
                     .header("X-Agent-Token", agentToken)
                     .timeout(Duration.ofSeconds(5)).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
