@@ -141,6 +141,14 @@ final class Symbole {
                 <path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/>""");
     }
 
+    /** Herunterladen — Pfeil in eine Ablage. */
+    static String herunterladen() {
+        return svg("""
+                <path d="M12 3.6v11.2"/>
+                <path d="m7.6 10.4 4.4 4.4 4.4-4.4"/>
+                <path d="M4.5 17.4v1.6a1.6 1.6 0 0 0 1.6 1.6h11.8a1.6 1.6 0 0 0 1.6-1.6v-1.6"/>""");
+    }
+
     /** Benutzerkonto. */
     static String benutzer() {
         return svg("""

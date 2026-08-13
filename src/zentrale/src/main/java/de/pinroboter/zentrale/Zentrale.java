@@ -1260,14 +1260,26 @@ public class Zentrale {
                     <div class="feldgruppe"><label for="ag-einr">Einrichtung</label>
                       <select id="ag-einr" name="einrichtung" aria-describedby="ag-hilfe">%s</select></div>
                     <div class="feldaktion">
-                      <button id="ag-k" class="knopf haupt" type="submit" title="Erzeugt einen einmaligen Code, mit dem sich ein Standort-Agent anmeldet" aria-label="Erzeugt einen einmaligen Code, mit dem sich ein Standort-Agent anmeldet">Zugangscode erzeugen</button></div>
+                      <button id="ag-p" class="knopf haupt" type="submit"
+                              formaction="/agenten/paket" formmethod="post"
+                              title="Lädt eine fertige Konfiguration samt Anleitung herunter — mit Zugangscode, den Sie nicht abtippen müssen"
+                              aria-label="Einrichtungspaket herunterladen">%s Einrichtungspaket herunterladen</button>
+                      <button id="ag-k" class="knopf" type="submit"
+                              hx-post="/agenten/geheimnis" hx-target="#agentGeheimnis" hx-swap="innerHTML"
+                              title="Zeigt nur den einmaligen Zugangscode an, ohne Konfigurationsdateien"
+                              aria-label="Nur den Zugangscode anzeigen">Nur Zugangscode</button></div>
                   </div>
                   <p id="ag-hilfe" class="hilfe">Alles, was dieser Agent meldet — Geräte, Alarme,
-                     Protokolleinträge — gehört zu dieser Einrichtung. Sie lässt sich später nicht
-                     ändern; ein Agent steht in genau einer Praxis.</p>
+                     Protokolleinträge — gehört zu dieser Einrichtung.
+                     <br><strong>Das Einrichtungspaket</strong> enthält eine fertige
+                     <code>docker-compose.yml</code>, eine vorausgefüllte Konfiguration mit der
+                     Adresse dieser Zentrale und dem Zugangscode sowie eine Anleitung. In der
+                     Praxis sind nur noch die Adressen von Konnektor und Kartenterminals
+                     einzutragen, dann <code>docker compose up -d</code>.
+                     <br>Der Zugangscode gilt <strong>einmalig und 24 Stunden</strong>.</p>
                 </form>
                 <div id="agentGeheimnis"></div>
-                </div>""".formatted(auswahl);
+                </div>""".formatted(auswahl, Symbole.herunterladen());
     }
 
     private String agententafel(Geltungsbereich bereich) {
@@ -1967,6 +1979,24 @@ public class Zentrale {
     private static String versionsanzeige() {
         String v = Versionspruefung.laufendeVersion();
         return "unbekannt".equals(v) ? "Entwicklungsstand" : "Version " + v;
+    }
+
+    /**
+     * Die Adresse, unter der die Zentrale gerade angesprochen wird.
+     *
+     * <p><b>Aus der Anfrage, nicht aus der Konfiguration.</b> Die Zentrale
+     * kennt ihren eigenen öffentlichen Namen nicht: Sie lauscht auf einem Port
+     * im Container, davor stehen Proxy, DNS und TLS. Was der Browser gerade
+     * benutzt, weiß nur der Browser — und er sagt es in {@code Host} und
+     * {@code X-Forwarded-Proto}.
+     *
+     * <p>Das ist auch der Grund, warum das Einrichtungspaket erst beim
+     * Herunterladen entsteht und nicht beim Bauen des Images.
+     */
+    private static String eigeneAdresse(Context c) {
+        String host = kopfWert(c, "Host");
+        if (host.isBlank()) host = "localhost:8090";
+        return (ueberHttps(c) ? "https://" : "http://") + host + "/";
     }
 
     /** Ändert dieser Aufruf etwas? Nur dann ist CSRF überhaupt ein Thema. */
@@ -4434,6 +4464,50 @@ public class Zentrale {
             }
             c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
                     angemeldeter(c)));
+        });
+
+        // Einrichtungspaket für einen Standort-Agenten (PO, 13.08.2026).
+        //
+        // POST, nicht GET: Der Aufruf ERZEUGT ein Registrierungsgeheimnis. Ein
+        // GET wäre von einem Vorschaubild oder einem Verlaufseintrag auslösbar
+        // und würde reihenweise gültige Geheimnisse in die Datenbank schreiben.
+        app.post("/agenten/paket", c -> {
+            var angemeldet = angemeldeter(c);
+            if (angemeldet == null
+                    || angemeldet.rolle() != Benutzerverwaltung.Rolle.ADMINISTRATOR) {
+                c.status(403).result("Nur Administratoren dürfen Agenten einrichten.");
+                return;
+            }
+            String bez  = Anmeldeseiten.feld(c, "bezeichnung");
+            String einr = Anmeldeseiten.feld(c, "einrichtung");
+            if (bez.isBlank()) bez = "Standort-Agent " + einr;
+
+            // Dieselbe Prüfung wie beim Geheimnis: Die Einrichtung muss eine
+            // vorhandene Organisationseinheit im eigenen Bereich sein. Ein
+            // Formularwert ist manipulierbar, und eine Mandantengrenze, die
+            // nur in der Auswahlliste besteht, ist keine.
+            if (einr.isBlank() || !bestand.organisationVorhanden(einr)) {
+                c.status(400).result("Bitte eine vorhandene Organisationseinheit wählen. "
+                        + "Der Agent meldet alles unter dieser Einheit; gibt es sie nicht, "
+                        + "lassen sich seine Geräte niemandem zuordnen.");
+                return;
+            }
+
+            String geheimnis = agenten.geheimnisAnlegen(bez, einr, angemeldet.anzeigename());
+            protokoll.anfuegen(einr, null, Ereignisart.AGENT_GEHEIMNIS_ERZEUGT, true,
+                    angemeldet.anzeigename(), null,
+                    "Einrichtungspaket für „" + bez + "“ heruntergeladen",
+                    "Das Paket enthält ein einmalig gültiges Registrierungsgeheimnis "
+                    + "(24 Stunden). Wer es besitzt, kann genau einen Agenten für diese "
+                    + "Einrichtung anmelden.");
+
+            byte[] zip = Agentenpaket.bauen(eigeneAdresse(c), geheimnis, einr, bez,
+                    Versionspruefung.laufendeVersion());
+            c.header("Content-Disposition",
+                    "attachment; filename=\"pin-roboter-agent.zip\"");
+            // Kein Zwischenspeicher: Die Datei enthält ein Geheimnis.
+            c.header("Cache-Control", "no-store");
+            c.contentType("application/zip").result(zip);
         });
 
         app.post("/agenten/geheimnis", c -> {

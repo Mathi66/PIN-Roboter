@@ -911,6 +911,23 @@ Systemnahe Funktionen liegen zusammen, getrennt vom Tagesgeschäft.
 - *Nachweis:* Ein Agent mit ungültigem oder bereits verbrauchtem Geheimnis wird
   abgewiesen; der Versuch wird protokolliert.
 
+### FA-AGT-050 — Einrichtungspaket für den Standort-Agenten · SOLL · V1 · PO 13.08.2026
+Die Zentrale stellt ein Paket bereit, mit dem sich ein Standort-Agent ohne
+Fachkenntnisse in Betrieb nehmen lässt.
+
+*Akzeptanz:*
+- Das Paket enthält eine lauffähige `docker-compose.yml`, eine Konfiguration
+  mit **bereits eingetragener Adresse dieser Zentrale** und einem gültigen
+  Zugangscode sowie eine Anleitung in verständlichem Deutsch.
+- Die Adresse der Zentrale wird **aus der Anfrage** abgeleitet, nicht
+  konfiguriert — sie kennt ihren öffentlichen Namen sonst nicht.
+- Der Download erzeugt den Zugangscode und wird protokolliert.
+- **Keine PIN, kein Datenbankkennwort, kein Schlüssel der Zentrale** im Paket.
+- Das Image wird **nicht** mitgeliefert: Es käme nie zu einem Update, und es
+  gäbe zwei Bezugswege zum selben Baustein.
+- Nachgewiesen ist nicht nur der Inhalt, sondern dass ein Agent aus diesem Paket
+  sich tatsächlich registriert und seinen Bestand meldet.
+
 ### FA-AGT-020 — Verbindung · MUSS · V1 · ADR-0002
 *Akzeptanz:*
 - Die Verbindung wird **vom Agenten ausgehend** aufgebaut; im Kundennetz sind

@@ -446,6 +446,30 @@ jemand anderen ein** — dann kennen es zwei.
 nächsten Anmeldung neu ein. Das dürfen nur Administratoren, und es steht im
 Protokoll.
 
+### Einen neuen Standort-Agenten einrichten
+
+**Verwaltung → Standort-Agenten → Einrichtungspaket herunterladen.**
+
+Wählen Sie zuerst die Einrichtung, für die der Agent arbeiten soll, und geben
+Sie ihm einen Namen. Sie bekommen eine ZIP-Datei mit drei Dateien:
+
+| Datei | Wozu |
+|---|---|
+| `docker-compose.yml` | die fertige Beschreibung — nichts daran zu ändern |
+| `.env` | Adresse dieser Zentrale und Zugangscode **schon eingetragen** |
+| `ANLEITUNG.md` | Schritt für Schritt, mit Fehlertabelle |
+
+Geben Sie das Paket an die Person weiter, die den Rechner in der Praxis
+betreut. Dort sind nur noch die Adressen von Konnektor und Kartenterminals
+einzutragen, dann startet sie den Agenten mit einem Befehl.
+
+> **Der Zugangscode im Paket gilt einmalig und 24 Stunden.** Danach brauchen Sie
+> ein neues Paket — das ist schnell erzeugt. Geben Sie die Datei nicht über
+> unverschlüsselte Wege weiter, solange der Code gültig ist.
+
+Sobald der Agent läuft, erscheint er in derselben Liste mit dem heutigen Datum
+unter „Zuletzt gesehen".
+
 ### Wenn ein Agent „Einrichtung unbekannt" meldet
 
 Unter **Verwaltung → Standort-Agenten** kann bei einem Agenten der Hinweis

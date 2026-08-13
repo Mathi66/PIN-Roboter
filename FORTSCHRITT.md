@@ -3290,3 +3290,48 @@ DevOps es gefunden — an einem Deploy, der am Health-Gate hängen bleibt.
 Jetzt BusyBox-`wget` statt bash, und der Healthcheck der Zentrale steht nur noch
 **im Image**: Der Eintrag im Compose hatte ihn überschrieben und dabei die
 Datenbankprüfung verloren, die er mitbringt.
+
+
+---
+
+## Ein Einrichtungspaket statt eines Downloads
+
+Der PO fragte, ob die Zentrale das Agent-Image zum Herunterladen anbieten kann,
+mit Anleitung zur lokalen Installation.
+
+Das Image selbst wäre der falsche Weg gewesen: 50 MB, die die Zentrale erst
+beschaffen müsste (sie hat keinen Docker-Zugriff), ein so verteilter Agent
+bekäme nie ein Update, und es gäbe zwei Bezugswege zum selben Baustein.
+
+Angeboten wird deshalb **das, was man sonst abtippt**: eine fertige
+`docker-compose.yml`, eine `.env` mit bereits eingetragener Zentralen-Adresse
+und Zugangscode, und eine Anleitung. Das Image kommt beim ersten Start aus GHCR.
+
+### Die Zentrale kennt ihre eigene Adresse nicht
+
+Das war der interessanteste Punkt beim Bauen. Die Zentrale lauscht auf einem
+Port im Container; davor stehen Proxy, DNS und TLS. Ihren öffentlichen Namen
+weiß nur der Browser — er steht in `Host` und `X-Forwarded-Proto`. Deshalb
+entsteht das Paket beim **Herunterladen** und nicht beim Bauen des Images.
+
+### Was der Ende-zu-Ende-Test gefunden hat
+
+Ich habe das Paket nicht nur erzeugt, sondern damit einen Agenten gestartet:
+entpacken, drei Adressen eintragen, `docker compose up -d`.
+
+```
+  TLS bereit (TLS 1.2, Brainpool über BouncyCastle)
+  Registrierung erfolgreich, Token erhalten
+  Bestand gemeldet: 36 Terminals, Informationsmodell gelesen
+```
+
+**Der erste Versuch scheiterte aber mit `unauthorized`.** Das GHCR-Repository
+ist privat — eine Praxis kann das Image ohne Zugangsdaten gar nicht ziehen.
+Elf Modultests prüfen den Inhalt des Pakets, und keiner hätte das gefunden: Der
+Fehler steckt nicht in den Dateien, sondern in der Welt, in der sie benutzt
+werden.
+
+Die Anleitung behandelt den Fall jetzt in einem eigenen Schritt und in der
+Fehlertabelle. Die eigentliche Entscheidung liegt beim PO: Soll das Agent-Image
+öffentlich sein? Es enthält keine Geheimnisse, und jede Praxis bräuchte sonst
+Zugangsdaten, die jemand verwalten muss.

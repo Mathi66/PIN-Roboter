@@ -149,6 +149,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 | | Anforderung | | Stand |
 |---|---|---|---|
 | **✔** | `FA-AGT-010` Registrierung <br><span style="opacity:.7">MUSS</span> |  | einmaliges Geheimnis gegen dauerhaftes Token. **Seit 09.08.2026 in der Oberfläche** (vorher nur über die Kommandozeile) und mit **Wahl der Einrichtung** — sie stammt aus der Registrierung, nicht aus der Meldung des Agenten. Seit 12.08.2026 **korrigierbar**: Wird die Einrichtung umbenannt, meldet der Agent sonst ins Leere; die Übersicht kennzeichnet das und die Zuordnung lässt sich ändern (`AGENT_ZUGEORDNET`, Sicherheitsstufe). [Umsetzung 19](03-umsetzung/19-pruefintervall-je-gruppe.md), [Umsetzung 16](03-umsetzung/16-organisationsstruktur.md) |
+| **✔** | `FA-AGT-050` Einrichtungspaket <br><span style="opacity:.7">SOLL</span> |  | ZIP mit `docker-compose.yml`, vorausgefüllter `.env` (Zentralen-Adresse aus der Anfrage, Zugangscode) und Anleitung. Ende zu Ende geprüft: Ein Agent aus diesem Paket registriert sich und meldet 36 Terminals. [Umsetzung 33](03-umsetzung/33-agenten-einrichtungspaket.md) |
 | **✔** | `FA-AGT-020` Verbindung <br><span style="opacity:.7">MUSS</span> |  | ausgehend aufgebaut, Token-authentisiert |
 | **✔** | `FA-AGT-030` Autonomer Weiterbetrieb <br><span style="opacity:.7">MUSS</span> |  | Agent arbeitet ohne Zentrale weiter |
 | **✔** | `FA-AGT-040` Versionsunterschiede <br><span style="opacity:.7">MUSS</span> |  | Protokollversion gemeldet, bewertet, angezeigt; kein Abweisen |
