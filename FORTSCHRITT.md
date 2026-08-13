@@ -3216,3 +3216,77 @@ Registrierungsversuch standen im Fachprotokoll, bevor ich sie erwähnt hatte —
 der PO fand sie dort und fragte, was da los sei. Prüfungen gegen eine Instanz,
 die jemand anderem gehört und die er beobachtet, gehören **vorher angekündigt**,
 nicht hinterher erklärt. Das Protokoll ist unveränderlich; die Einträge bleiben.
+
+
+---
+
+## Die Images waren zu 83 % Unterbau
+
+Der PO fragte nach der Größe und ob Ubuntu die kleinstmögliche Basis sei. Erst
+messen, was die Images ausmacht:
+
+| Bestandteil | Größe |
+|---|---|
+| `eclipse-temurin:21-jre` (Ubuntu + JRE) | **524 MB** |
+| PostgreSQL-Client (apt) | 65 MB |
+| unser Jar | 18 MB |
+
+**Nicht die Anwendung war groß, sondern ihr Unterbau.** Und nein, Ubuntu ist
+nicht das Minimum:
+
+| Basis | |
+|---|---|
+| `eclipse-temurin:21-jre` | 524 MB |
+| `eclipse-temurin:21-jre-alpine` | 286 MB |
+| `debian:13-slim` | 141 MB |
+| `alpine:3.21` | **12,9 MB** |
+
+### Nicht nur eine kleinere Basis, sondern weniger Java
+
+Der eigentliche Hebel ist `jlink`: eine Java-Laufzeit, die nur die Module
+enthält, die der Code wirklich benutzt. Welche das sind, ermittelt `jdeps`
+**beim Bauen aus dem Jar** — eine von Hand gepflegte Liste läuft dem Code
+hinterher, und ein fehlendes Modul fällt dann erst zur Laufzeit auf, im
+ungünstigsten Fall in einem selten benutzten Zweig.
+
+Drei Module muss man trotzdem von Hand ergänzen, weil `jdeps` sie nicht sehen
+kann: `jdk.crypto.ec` (der Provider wird zur Laufzeit geladen — ohne ihn fehlen
+die EC-Kurven), `jdk.localedata` und `java.logging`.
+
+| | vorher | jetzt |
+|---|---|---|
+| Zentrale, entpackt | 632 MB | **155 MB** |
+| Zentrale, Download | 142 MB | **58 MB** |
+| Agent, entpackt | 544 MB | **135 MB** |
+| Agent, Download | 125 MB | **50 MB** |
+
+### Die Annahme, die ich zwei Stunden zuvor noch verteidigt hatte
+
+Im Übergabedokument an DevOps stand von mir:
+
+> Ein Alpine-Basisimage scheidet aus — wir brauchen Brainpool-Kurven aus
+> BouncyCastle und haben die TLS-Kette nur auf dieser Kombination gemessen.
+
+Der erste Halbsatz war falsch, der zweite richtig. BouncyCastle ist **reines
+Java ohne JNI**; der Unterschied zwischen glibc und musl berührt es nicht. Ich
+hatte aus „nicht gemessen" ein „scheidet aus" gemacht — genau die Verwechslung,
+die CLAUDE.md verbietet.
+
+Also gemessen: Der vollständige PEviM-Durchstich läuft auf dem neuen Unterbau,
+die SMC-B wird freigeschaltet, die PIN geht über die Remote SMCB API,
+**null** TLS-Handshake-Fehler. Und `pg_dump` (jetzt 17 statt 18) gegen Server
+16 **und** 17 geprüft.
+
+### Was der Wechsel kaputt gemacht hat
+
+**Alle Healthchecks.** Sie riefen `bash -c '</dev/tcp/…'` — eine bash-Eigenheit,
+und im Alpine-Image gibt es keine bash. Container liefen, meldeten sich aber als
+ungesund; der Simulator riss über `depends_on` den Agenten mit.
+
+Aufgefallen ist das sofort, weil ich nach dem Umbau den Stack hochgefahren und
+hingesehen habe. Wäre ich beim „Image ist kleiner, fertig" geblieben, hätte
+DevOps es gefunden — an einem Deploy, der am Health-Gate hängen bleibt.
+
+Jetzt BusyBox-`wget` statt bash, und der Healthcheck der Zentrale steht nur noch
+**im Image**: Der Eintrag im Compose hatte ihn überschrieben und dabei die
+Datenbankprüfung verloren, die er mitbringt.

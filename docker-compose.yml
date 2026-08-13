@@ -32,7 +32,10 @@ services:
       - "8480:8480"   # Steuerung für Tests und Ausgabe des Vertrauensankers
       - "1025:1025"   # Auffang für Benachrichtigungsmails, nur für Nachweise
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8480' || exit 1"]
+      # wget statt bash: Seit dem Wechsel auf ein Alpine-Laufzeitbild
+      # (13.08.2026) gibt es keine bash mehr im Image, und /dev/tcp ist eine
+      # bash-Eigenheit. wget gehoert zu BusyBox und ist immer da.
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://localhost:8480/ca.pem || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -114,11 +117,9 @@ services:
       - "8090:8090"
     depends_on:
       datenbank: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8090' || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
+    # Kein healthcheck-Eintrag: Der im IMAGE ist der bessere. Er fragt /health
+    # und prueft damit auch die Datenbank, waehrend ein Portest nur sagt, dass
+    # jemand zuhoert. Ein Eintrag hier wuerde ihn ueberschreiben.
     volumes:
       - sicherungen:/sicherungen
 

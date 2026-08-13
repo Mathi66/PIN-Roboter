@@ -1,7 +1,7 @@
 # Übergabe an DevOps — PIN-Roboter auf Labs
 
 **Antwort auf:** Anforderungen an die Anwendung „PIN-Roboter" (DevOps, 12.08.2026)
-· **Stand:** 13.08.2026 · **Version:** 0.3.1
+· **Stand:** 13.08.2026 · **Version:** 0.3.2
 
 Alle Angaben sind **gemessen**, nicht geschätzt: an einem Container, der mit
 euren Vorgaben gestartet wurde (`read_only`, `cap_drop: ALL`,
@@ -168,7 +168,7 @@ stört das den Betrieb auf Labs nicht.
 | `pids_limit` | 512 für die Anwendung, 256 für die Datenbank |
 | fester Port, nur `expose` | 8090, `deploy/labs/docker-compose.yml` öffnet keinen Host-Port |
 | kein TLS im Container | die Zentrale spricht HTTP |
-| `/health` ohne Anmeldung, mit Version | `{"status":"ok","db":true,"version":"0.3.1"}`, 503 wenn die Datenbank fehlt |
+| `/health` ohne Anmeldung, mit Version | `{"status":"ok","db":true,"version":"0.3.2"}`, 503 wenn die Datenbank fehlt |
 | `HEALTHCHECK` im Image, ohne curl/wget | `docker/gesundheit.sh`, bash `/dev/tcp` |
 | Protokoll nach stdout | keine Logdateien im Container |
 | SIGTERM ≤ 10 s | **gemessen: 1 s** |
@@ -208,13 +208,19 @@ verändernden Aufruf — abgelehnt mit 403, nachgewiesen. Das ist der von OWASP
 als gleichwertig genannte Weg. Wenn ihr Tokens ausdrücklich verlangt, sagt
 Bescheid; das ist Arbeit, aber machbar.
 
-**3. Das Image ist 632 MB.** Groß für einen Dienst, der 196 MiB Arbeitsspeicher
-braucht. Ursache: `eclipse-temurin:21-jre` auf Ubuntu plus der
-PostgreSQL-Client für die Sicherung. Ein Alpine-Basisimage scheidet aus — wir
-brauchen Brainpool-Kurven aus BouncyCastle und haben die TLS-Kette nur auf
-dieser Kombination gemessen. Wenn die Größe stört, wäre ein `jlink`-Laufzeitbild
-der nächste Schritt; das würde ich vor einem Produktionsdeployment ohnehin
-angehen.
+**3. Erledigt seit 0.3.2: Imagegröße.** Die Images waren 632 MB (Zentrale) und
+544 MB (Agent). Mit einer per `jlink` zugeschnittenen Java-Laufzeit auf Alpine
+sind es jetzt **155 MB** und **135 MB**; der Download aus GHCR liegt bei 58
+beziehungsweise 50 MB.
+
+Zwei Folgen für euch:
+- **Keine bash mehr im Image.** Healthchecks oder `docker exec`-Aufrufe mit
+  `bash -c` müssen auf `sh` wechseln.
+- **PostgreSQL-Client ist Version 17** statt 18. Geprüft gegen Server 16 und 17.
+  Wer den Server auf 18 anhebt, muss den Client mitanheben.
+
+Der PEviM-Durchstich wurde auf dem neuen Unterbau neu gemessen: SMC-B wird
+freigeschaltet, null TLS-Handshake-Fehler.
 
 **4. Kein `HEALTHCHECK` für den Standort-Agenten.** Er hat keinen Port — er baut
 Verbindungen ausschließlich nach außen auf, damit im Kundennetz keine Freigabe
@@ -226,14 +232,14 @@ halber.
 ## 7. Übergabe für den ersten Rollout
 
 ```
-PIN-Roboter – Deploy v0.3.1 auf Labs
-Image:               ghcr.io/mathi66/pin-roboter:0.3.1
+PIN-Roboter – Deploy v0.3.2 auf Labs
+Image:               ghcr.io/mathi66/pin-roboter:0.3.2
 Schema-Änderung:     keine (0.3.0 → 0.3.1)
 Neue Env:            DB_PASSWORD (Pflicht), GEHEIMNIS_SCHLUESSEL (Pflicht),
                      PROTOKOLL_BUDGET, SICHERUNG_ABLAGE, SICHERUNG_PLAN,
                      START_ADMIN_* (nur zur Ersteinrichtung)
 Prüfung danach:      curl -s https://pin-roboter.lab.vps.nieting.de/health
-                     → {"status":"ok","db":true,"version":"0.3.1"}
+                     → {"status":"ok","db":true,"version":"0.3.2"}
                      Anmeldeseite erreichbar, Protokoll zeigt „Migration 27 angewendet"
 Rückfall:            0.3.0 — genügt, da keine Schemaänderung
 ```

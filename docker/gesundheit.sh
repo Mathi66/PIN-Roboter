@@ -1,30 +1,30 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Healthcheck des Containers (DevOps-Vorgabe 12.08.2026).
 #
-# Ohne curl und ohne wget: Beide fehlen in schlanken Basisimages, und ein
-# Healthcheck, der an einem Basisimage-Wechsel scheitert, ist eine Falle.
-# bash kann TCP von sich aus (/dev/tcp) — mehr braucht ein HTTP/1.0-Aufruf nicht.
+# /bin/sh, nicht bash: Seit dem Wechsel auf ein Alpine-Laufzeitbild (13.08.2026)
+# gibt es keine bash mehr im Image. Die vorige Fassung nutzte bash-eigenes
+# /dev/tcp — auf ash schlägt das fehl, und der Container wäre dauerhaft
+# ungesund gewesen.
 #
 # Geprüft wird NICHT nur, ob der Port offen ist. Ein Java-Prozess nimmt
 # Verbindungen an, lange bevor er arbeitsfähig ist; entscheidend ist die
 # Antwort "status":"ok" — sie schließt die Datenbank ein.
 #
 # Welcher Port geprüft wird, steht in /app/gesundheitsport. Die Datei entsteht
-# beim Bauen und nur für Bausteine, die eine HTTP-Schnittstelle haben: Der
-# Standort-Agent baut Verbindungen nur nach außen auf und hat keinen Port.
-# Für ihn gibt es nichts zu prüfen — Docker sieht ohnehin, ob der Prozess läuft.
-set -uo pipefail
+# beim Bauen und nur für Bausteine mit HTTP-Schnittstelle: Der Standort-Agent
+# baut Verbindungen nur nach außen auf und hat keinen Port.
+set -u
 
 PORTDATEI=/app/gesundheitsport
 [ -r "$PORTDATEI" ] || { echo "kein HTTP-Dienst in diesem Baustein"; exit 0; }
 PORT=$(cat "$PORTDATEI")
 
-exec 3<>"/dev/tcp/127.0.0.1/${PORT}" || { echo "Port ${PORT} antwortet nicht"; exit 1; }
-printf 'GET /health HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
-ANTWORT=$(timeout 3 cat <&3)
-exec 3<&-
+# wget gehört zu BusyBox und ist damit in jedem Alpine-Image vorhanden — ohne
+# ein zusätzliches Paket. curl fehlt dort und wird nicht nachinstalliert.
+ANTWORT=$(wget -q -T 3 -O - "http://127.0.0.1:${PORT}/health" 2>/dev/null) || {
+  echo "keine Antwort von Port ${PORT}"; exit 1; }
 
 case "$ANTWORT" in
   *'"status":"ok"'*) exit 0 ;;
-  *) echo "$ANTWORT" | tail -3; exit 1 ;;
+  *) echo "$ANTWORT"; exit 1 ;;
 esac

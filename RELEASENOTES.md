@@ -10,6 +10,52 @@ Nummer. Kein `:latest`.
 
 ---
 
+## 0.3.2 — Images auf ein Viertel verkleinert
+
+**Nur der Unterbau, keine Funktionsänderung.**
+
+| Angabe | Wert |
+|---|---|
+| Images | `ghcr.io/mathi66/pin-roboter:0.3.2`, `ghcr.io/mathi66/pin-roboter-agent:0.3.2` |
+| Schema-Änderung | **keine** |
+| Neue Env | keine |
+| Neue Volumes | keine |
+| Prüfung danach | `/health` meldet `{"status":"ok","db":true,"version":"0.3.2"}` |
+| Rückfall | `0.3.1` |
+
+**Was sich ändert**
+
+| | vorher | jetzt |
+|---|---|---|
+| Zentrale, entpackt | 632 MB | **155 MB** |
+| Zentrale, Download | 142 MB | **58 MB** |
+| Agent, entpackt | 544 MB | **135 MB** |
+| Agent, Download | 125 MB | **50 MB** |
+
+Gemessen war: Basisimage `eclipse-temurin:21-jre` 524 MB, PostgreSQL-Client
+65 MB, eigenes Jar 18 MB. Nicht die Anwendung war groß, sondern ihr Unterbau.
+
+Ersetzt durch eine **per jlink zugeschnittene Java-Laufzeit auf Alpine**. Die
+Modulliste wird beim Bauen mit `jdeps` aus dem Jar ermittelt, nicht von Hand
+gepflegt — eine gepflegte Liste läuft dem Code hinterher.
+
+**Für den Betrieb zu beachten**
+
+- Im Image gibt es **keine bash mehr**. Wer eigene Healthchecks oder
+  `docker exec`-Aufrufe mit `bash -c` verwendet, muss auf `sh` wechseln. Der
+  Healthcheck im Image nutzt jetzt BusyBox-`wget`.
+- Der **PostgreSQL-Client ist Version 17** statt 18 (Alpine-Paket). Geprüft
+  gegen Server 16 **und** 17: Auszug und Wiederherstellung funktionieren. Wer
+  den Server auf 18 anhebt, muss den Client mitanheben.
+
+**Nachgemessen, nicht angenommen:** Der vollständige PEviM-Durchstich läuft auf
+dem neuen Unterbau — SMC-B wird freigeschaltet, die PIN geht über die Remote
+SMCB API, **null** TLS-Handshake-Fehler. BouncyCastle ist reines Java; der
+Wechsel von glibc auf musl berührt die Brainpool-Kurven nicht. Das war die
+Annahme — jetzt ist es gemessen.
+
+---
+
 ## 0.3.1 — Der Standort-Agent erreicht eine Zentrale hinter TLS
 
 **Fehlerbehebung.** Für die Zentrale auf Labs ändert sich nichts an Betrieb oder
