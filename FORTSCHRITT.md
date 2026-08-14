@@ -3751,3 +3751,63 @@ sondern je Stelle eine inhaltliche Entscheidung.
 **Belegt:** 381 Modultests grün (5 neu). axe-core über 24 Seiten ohne Befund.
 Am laufenden Stack: alle Info-Knöpfe finden ihren Abschnitt, das Fenster öffnet,
 Fokus kehrt zurück, elf Kennungen liefern.
+
+### Zwei Rückfragen, die eine Architekturentscheidung umgeworfen haben
+
+Mathi las das Handbuch und stolperte über einen Satz: „Neben dem Agenten läuft
+ein Aktualisierungsdienst, der nachts um 3:30 Uhr nach einer neuen Fassung
+sieht." Seine Frage: „Ich dachte, eine selbstständige Aktualisierung ist nicht
+möglich?"
+
+Sie war möglich — es gab **zwei** Wege nebeneinander, den nächtlichen und den
+beauftragten. Das Handbuch erklärte ihr Verhältnis nicht, und mir war beim
+Schreiben nicht aufgefallen, dass der erste nach dem Bau des zweiten seinen
+Zweck verloren hatte.
+
+Mein Bedenken dazu war konkret: Der nächtliche Lauf zieht `stabil`. Wenn wir
+eine fehlerhafte Fassung freigeben, trifft es **in derselben Nacht alle
+Standorte gleichzeitig**. Eine Staffelung gibt es nicht. Entscheidung: nur noch
+auf Auftrag.
+
+Kurz darauf die zweite Rückfrage: „Wir wollten doch explizit nicht, dass der
+Agent Zugriffstoken lokal vorhält." Auch das stimmte — ich hatte es als
+Einschränkung dokumentiert, aber es blieb eine. Der Grund war ausgerechnet der
+nächtliche Lauf: Watchtower musste um halb vier allein an die Anmeldung kommen.
+
+**Ohne ihn fällt der Grund weg.** Der Token wird nur noch im Moment des Updates
+gebraucht.
+
+### Und dann noch das Werkzeug
+
+„Vielleicht ist Watchtower dafür nicht die günstigste Lösung, da er ja nichts
+überwachen soll." Genau. Ein Überwachungsdienst ohne Überwachungsaufgabe — und
+er liest seine Anmeldung *nur* aus einer Datei, die dafür liegen muss.
+
+Jetzt läuft ein eigener Dienst: `docker:28-cli`, 67 MB, mit einem Skript, das
+offen im Einrichtungspaket liegt. Vier Befehle, dieselben wie in der Anleitung
+für die Handaktualisierung. Wer es liest, weiß danach, was auf seinem Rechner
+passiert.
+
+Der Weg vom Agenten dorthin ist eine Datei in einem geteilten Volume statt
+eines HTTP-Aufrufs mit gemeinsamem Kennwort — einfacher **und** dichter: kein
+lauschender Dienst, kein Kennwort, keine Schnittstelle im Container-Netz. Das
+`AKTUALISIERUNG_TOKEN` in der `.env` ist damit entfallen.
+
+Der Token ist jetzt dreifach begrenzt: Die Zentrale gibt ihn **nur bei offenem
+Auftrag** heraus (sonst 403), er liegt Sekunden statt dauerhaft, und er geht
+über die Standardeingabe an `docker login` — steht also in keiner Prozessliste.
+Bleibt doch etwas liegen, räumt der Agent beim nächsten Start auf und sagt es.
+
+### Der Fund, den nur der laufende Stack liefern konnte
+
+Erster Anlauf: „Der Auftrag ließ sich nicht ablegen — ist /auftrag
+beschreibbar?" Docker legt ein leeres Volume als root an, der Agent läuft als
+10001. Die Lösung stand seit jeher im Dockerfile — für `/daten`. Für den neuen
+Briefkasten hatte ich sie vergessen.
+
+Kein Modultest hätte das gefunden. Genau dafür teste ich am laufenden System.
+
+**Belegt:** 386 Modultests grün (RegistrierzugangTest komplett neu, 12
+Prüfungen). axe-core über 24 Seiten ohne Befund. Am Stack durchgespielt: ohne
+Auftrag kein Token und 403 von der Zentrale; mit Auftrag Datei mit Rechten 600;
+nach einem Neustart ist sie weg, mit sichtbarer Meldung.

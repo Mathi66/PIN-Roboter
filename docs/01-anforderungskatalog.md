@@ -972,16 +972,27 @@ Besuch an jedem Praxisrechner ist dafür kein gangbarer Weg.
 - Die Programmablage bleibt **privat**. Die nötige Anmeldung steht **nicht** im
   Einrichtungspaket, nicht in der `.env` und nicht in der Prozessliste des
   Aktualisierungsdienstes.
-- Die Zentrale gibt sie **nur an registrierte Agenten** heraus; ein widerrufener
-  Agent bekommt nichts mehr.
+- Die Zentrale gibt sie **nur an registrierte Agenten mit offenem Auftrag**
+  heraus; ein widerrufener Agent bekommt nichts mehr, und ein Agent ohne Anlass
+  ebenfalls nicht.
 - Die Weitergabe ist **ab Werk abgeschaltet** und wird in der Verwaltung
   eingeschaltet. Wer einen Zugang hinterlegt, damit die Zentrale nach Updates
   sieht, hat damit nicht der Weitergabe zugestimmt.
 - **Not-Aus:** Abschalten entfernt die Anmeldung beim Agenten wieder — ohne sie
   holt die Aktualisierung kein Abbild mehr.
 - Der Aktualisierungsdienst hat **keinen direkten Zugriff auf den
-  Docker-Socket** (Socket-Proxy) und fasst nur die Container dieses Produkts an.
-- Ein begonnenes Update wird nachts ausgeführt, nicht während der Sprechzeit.
+  Docker-Socket** (Socket-Proxy) und fasst **nur den Agenten** an.
+- **Kein selbsttätiger Lauf.** Aktualisiert wird nur, was ein Mensch anstößt —
+  er wählt damit auch den Zeitpunkt. Ein nächtlicher Lauf träfe bei einer
+  fehlerhaften Freigabe alle Standorte in derselben Nacht (PO, 14.08.2026).
+- **Am Standort liegt kein Zugangstoken**, solange dort niemand aktualisiert.
+  Er wird bei einem Auftrag geholt, für den Vorgang abgelegt und danach
+  entfernt; ein liegengebliebener wird beim nächsten Start des Agenten
+  weggeräumt.
+- Der Token steht **in keiner Prozessliste** (Anmeldung über die
+  Standardeingabe) und wird nach dem Vorgang abgemeldet.
+- Das ausgeführte Skript liegt **offen im Einrichtungspaket**. Der Betreiber
+  kann nachlesen, was auf seinem Rechner geschieht.
 - *Nachweis:* Die Anmeldedatei erscheint beim Agenten nach dem Einschalten und
   verschwindet nach dem Abschalten; der Token steht in keinem Log, in keinem
   Protokoll und nicht im Klartext in der Datei.

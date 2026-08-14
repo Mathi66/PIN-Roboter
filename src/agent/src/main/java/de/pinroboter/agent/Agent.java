@@ -236,12 +236,20 @@ public class Agent {
         // Datenverzeichnis, weil Watchtower sie dort lesen muss — nicht in
         // einer Umgebungsvariablen, wo sie in "docker inspect" stünden.
         agent.registrierzugang = new Registrierzugang(
-                java.nio.file.Path.of(env("REGISTRY_VERZEICHNIS", "/daten/registry")),
                 agent.zentraleHttp, zentralenadresse.aktuell());
-
         agent.selbstaktualisierung = new Selbstaktualisierung(
-                env("AKTUALISIERUNG_URL", "http://aktualisierung:8080"),
-                System.getenv("AKTUALISIERUNG_TOKEN"));
+                java.nio.file.Path.of(env("AUFTRAG_VERZEICHNIS", "/auftrag")));
+
+        // Ein liegengebliebener Auftrag enthielte noch den Token. Nach einem
+        // geglückten Update kam der alte Agent nicht mehr zum Aufräumen — er
+        // wurde ausgetauscht. Also tut es der neue.
+        String aufgeraeumt = agent.selbstaktualisierung.beimStartAufraeumen();
+        if (aufgeraeumt != null) System.out.println("  " + aufgeraeumt);
+        String letztes = agent.selbstaktualisierung.ergebnisLesen();
+        if (letztes != null) {
+            System.out.println("  Letzte Aktualisierung: " + letztes);
+            agent.zustand.melden(true, "Die letzte Aktualisierung meldete: " + letztes);
+        }
 
         agent.zustand.grunddaten(bausteinversion(), zentralenadresse.aktuell().toString(),
                 konnektorUrl, intervall);
@@ -396,15 +404,6 @@ public class Agent {
                 zustand.notAus(notAus);
                 zustand.zentraleErreicht();
 
-                // Zugangsdaten für die Aktualisierung abgleichen. Nur bei einer
-                // Änderung entsteht eine Meldung — sonst stünde bei jedem Takt
-                // dieselbe Zeile im Puffer.
-                if (registrierzugang != null && agentToken != null) {
-                    String m = registrierzugang.abgleichen(agentToken);
-                    if (m != null) { System.out.println("  " + m); zustand.melden(false, m); }
-                    zustand.aktualisierung(registrierzugang.bereit(),
-                                           registrierzugang.registry());
-                }
                 aktualisierungsauftrag();
                 intervalleAbrufen();
                 var terminals = konnektor.terminals();
@@ -786,16 +785,34 @@ public class Agent {
         zustand.melden(false, "Die Zentrale hat die Aktualisierung auf Version "
                 + ziel + " angefordert.");
 
-        // Zuerst melden, dass wir es versuchen — danach sind wir womöglich weg.
-        var q = new LinkedHashMap<String, Object>();
-        q.put("angenommen", true);
-        q.put("zielversion", ziel);
-        senden("/api/agent/aktualisierung-quittung", alsJson(q));
+        // Die Zugangsdaten kommen JETZT und nur jetzt — nicht dauerhaft
+        // vorgehalten (PO, 14.08.2026). Scheitert schon das, brauchen wir gar
+        // nicht erst zu beauftragen.
+        var zugang = registrierzugang.holen(agentToken);
+        String fehler = zugang == null ? registrierzugang.letzterFehler() : null;
 
-        String fehler = selbstaktualisierung.anstossen();
+        if (fehler == null) {
+            // Zuerst melden, dass wir es versuchen — gleich sind wir weg.
+            var q = new LinkedHashMap<String, Object>();
+            q.put("angenommen", true);
+            q.put("zielversion", ziel);
+            senden("/api/agent/aktualisierung-quittung", alsJson(q));
+            zustand.aktualisierung(true, registrierzugang.registry());
+
+            try {
+                fehler = selbstaktualisierung.beauftragen(
+                        zugang.registry(), zugang.benutzer(), zugang.token(), ziel);
+            } finally {
+                // In jedem Fall aus dem Speicher: Der Auftrag liegt jetzt im
+                // Briefkasten, hier hat er nichts mehr verloren.
+                zugang.loeschen();
+            }
+        }
+
         if (fehler != null) {
-            // Wir leben noch — also war es nichts. Das muss die Zentrale
-            // erfahren, sonst wartet dort jemand zehn Minuten auf nichts.
+            // Wir leben noch — also ist nichts angestoßen worden. Das muss die
+            // Zentrale erfahren, sonst wartet dort jemand zehn Minuten.
+            zustand.aktualisierung(false, null);
             System.out.println("  Aktualisierung nicht angestoßen: " + fehler);
             zustand.melden(true, "Aktualisierung nicht angestoßen: " + fehler);
             var f = new LinkedHashMap<String, Object>();

@@ -58,6 +58,7 @@ final class Agentenpaket {
             eintrag(zip, "pin-roboter-agent/docker-compose.yml", compose(version));
             eintrag(zip, "pin-roboter-agent/.env",
                     env(zentraleUrl, geheimnis, einrichtung, bezeichnung));
+            eintrag(zip, "pin-roboter-agent/aktualisieren.sh", skript());
             eintrag(zip, "pin-roboter-agent/ANLEITUNG.md",
                     anleitung(zentraleUrl, einrichtung, bezeichnung));
         } catch (Exception e) {
@@ -122,11 +123,8 @@ final class Agentenpaket {
                     # weg.
                     environment:
                       OBERFLAECHE_ADRESSE: "0.0.0.0"
-                      # Wohin die Zugangsdaten für die Aktualisierung gehören.
-                      REGISTRY_VERZEICHNIS: /registry
-                      # Wo der Agent die Aktualisierung anstoßen kann, wenn die
-                      # Zentrale es verlangt. Kennwort steht in der .env.
-                      AKTUALISIERUNG_URL: http://aktualisierung:8080
+                      # Wohin der Agent einen Aktualisierungsauftrag legt.
+                      AUFTRAG_VERZEICHNIS: /auftrag
                     volumes:
                       # Token, Schlüsselpaar und die verschlüsselte PIN-Ablage.
                       # OHNE dieses Volume verliert der Agent nach jedem Neustart
@@ -134,11 +132,10 @@ final class Agentenpaket {
                       # weil sie für ein Schlüsselpaar verschlüsselt ist, das es dann
                       # nicht mehr gibt.
                       - agentdaten:/daten
-                      # Eigenes Volume NUR für die Zugangsdaten zur
-                      # Programmablage. Nicht in /daten: Dort liegen Token,
-                      # privater Schlüssel und die PIN-Ablage — die gehen die
-                      # Aktualisierung nichts an, auch nicht lesend.
-                      - registryzugang:/registry
+                      # Der Briefkasten für Aktualisierungsaufträge. Nicht in
+                      # /daten: Dort liegen Token, privater Schlüssel und die
+                      # PIN-Ablage — die gehen die Aktualisierung nichts an.
+                      - auftrag:/auftrag
                     # Der Agent soll auch auf schwacher Hardware mitlaufen.
                     mem_limit: 512m
                     security_opt: [no-new-privileges:true]
@@ -147,73 +144,59 @@ final class Agentenpaket {
                       driver: json-file
                       options: { max-size: "10m", max-file: "5" }
 
-                    labels:
-                      # Nur DIESER Container wird selbsttätig aktualisiert.
-                      com.centurylinklabs.watchtower.enable: "true"
-
-                  # ── Selbsttätige Aktualisierung ────────────────────────────
+                  # ── Aktualisierung auf Auftrag ─────────────────────────────
                   #
-                  # Holt neue Fassungen des Agenten aus der Programmablage und
-                  # startet ihn neu. Ohne das müsste jemand an jeden Rechner.
+                  # Tauscht den Agenten gegen eine neue Fassung aus, wenn die
+                  # Zentrale es verlangt. Von selbst tut dieser Dienst nichts —
+                  # er wartet auf eine Auftragsdatei, die der Agent schreibt.
                   #
-                  # Drei Vorkehrungen (CLAUDE.md, Watchtower-Vorbehalt):
-                  #  1. Nur der Agent, nichts anderes auf diesem Rechner
-                  #     (LABEL_ENABLE mit dem Label oben).
-                  #  2. Nur nachts — ein Neustart während der Sprechzeit
-                  #     unterbräche die Überwachung.
-                  #  3. Kein direkter Zugriff auf den Docker-Socket, sondern
-                  #     über einen Vermittler mit eingeschränkten Rechten.
+                  # Warum kein fertiges Werkzeug: Watchtower ist ein
+                  # ÜBERWACHUNGSdienst, und überwachen soll hier nichts. Was
+                  # gebraucht wird, sind vier Befehle — dieselben, die auch in
+                  # der Anleitung für die Aktualisierung von Hand stehen. Der
+                  # Betreiber kann „aktualisieren.sh“ lesen und versteht danach
+                  # genau, was auf seinem Rechner passiert.
+                  #
+                  # Vier Vorkehrungen:
+                  #  1. Nur der Agent wird angefasst (compose … agent), nichts
+                  #     anderes auf diesem Rechner.
+                  #  2. Nur auf Auftrag. Wer aktualisiert, wählt den Zeitpunkt.
+                  #  3. Kein direkter Docker-Socket, sondern ein Vermittler mit
+                  #     eingeschränkten Rechten.
+                  #  4. Die Zugangsdaten stehen NICHT hier. Sie stecken in der
+                  #     Auftragsdatei, die der Agent frisch von der Zentrale
+                  #     holt — und die dieser Dienst als Erstes löscht.
                   aktualisierung:
-                    image: containrrr/watchtower:1.7.1
+                    image: docker:28-cli
                     container_name: pin-roboter-aktualisierung
                     restart: unless-stopped
                     depends_on: [dockerzugang]
                     environment:
                       DOCKER_HOST: tcp://dockerzugang:2375
-                      WATCHTOWER_LABEL_ENABLE: "true"
-                      # Die Zugangsdaten zur Programmablage stehen NICHT hier,
-                      # sondern in einer Datei, die der Agent von der Zentrale
-                      # bezieht. Damit liegt der Token nicht in dieser Datei,
-                      # nicht in „docker inspect" und nicht in der Prozessliste
-                      # — und er lässt sich zentral tauschen statt vor Ort.
-                      #
-                      # Schaltet die Zentrale die Aktualisierung ab, löscht der
-                      # Agent die Datei. Dann findet Watchtower keine Anmeldung
-                      # mehr und holt nichts: Das IST der Schalter.
-                      DOCKER_CONFIG: /registry
-                      # 03:30 Uhr. Ortszeit des Rechners, siehe TZ unten.
-                      WATCHTOWER_SCHEDULE: "%s"
-                      # Alte Abbilder wegräumen — sonst füllt sich die Platte.
-                      WATCHTOWER_CLEANUP: "true"
-                      WATCHTOWER_INCLUDE_RESTARTING: "true"
-                      # Zusätzlich zum nächtlichen Lauf auf Zuruf: Damit kann
-                      # ein Administrator in der Zentrale einen einzelnen
-                      # Standort gezielt aktualisieren, statt bis morgen früh
-                      # zu warten (FA-AGT-100).
-                      #
-                      # PERIODIC_POLLS ist dabei nicht optional: Ohne diesen
-                      # Schalter läuft Watchtower im reinen Anfragebetrieb und
-                      # der nächtliche Plan oben wäre wirkungslos.
-                      WATCHTOWER_HTTP_API_UPDATE: "true"
-                      WATCHTOWER_HTTP_API_PERIODIC_POLLS: "true"
-                      WATCHTOWER_HTTP_API_TOKEN: ${AKTUALISIERUNG_TOKEN}
                       TZ: Europe/Berlin
                     volumes:
-                      # Nur lesend, und nur dieses eine Verzeichnis: Watchtower
-                      # braucht die Anmeldedatei, schreiben darf sie allein der
-                      # Agent. An das Datenverzeichnis kommt es nicht.
-                      - registryzugang:/registry:ro
+                      # Das Skript — lesbar, nachvollziehbar, nur lesend.
+                      - ./aktualisieren.sh:/aktualisieren.sh:ro
+                      # Diese Datei, damit compose weiß, wie der Agent
+                      # aussehen soll. Es muss nichts nachgebaut werden.
+                      - ./docker-compose.yml:/projekt/docker-compose.yml:ro
+                      - ./.env:/projekt/.env:ro
+                      # Der Briefkasten: Hier legt der Agent seinen Auftrag ab.
+                      - auftrag:/auftrag
+                    working_dir: /projekt
+                    entrypoint: ["/bin/sh", "/aktualisieren.sh"]
+                    security_opt: [no-new-privileges:true]
                     logging:
                       driver: json-file
                       options: { max-size: "10m", max-file: "3" }
 
-                  # Der Vermittler zum Docker-Dienst. Watchtower bekommt damit
-                  # NICHT den vollen Socket: Wer ihn hat, ist faktisch
+                  # Der Vermittler zum Docker-Dienst. Der Aktualisierer bekommt
+                  # damit NICHT den vollen Socket: Wer ihn hat, ist faktisch
                   # Administrator des ganzen Rechners.
                   #
-                  # Freigegeben ist nur, was zum Aktualisieren nötig ist. Nicht
-                  # freigegeben: exec (Befehle in fremden Containern ausführen),
-                  # volumes, networks, secrets, configs, swarm.
+                  # Freigegeben ist, was „compose up“ braucht. Nicht
+                  # freigegeben: exec — Befehle in fremden Containern
+                  # ausführen —, secrets, configs und swarm.
                   dockerzugang:
                     image: tecnativa/docker-socket-proxy:0.3.0
                     container_name: pin-roboter-dockerzugang
@@ -222,10 +205,13 @@ final class Agentenpaket {
                       CONTAINERS: "1"
                       IMAGES: "1"
                       POST: "1"
+                      # compose legt fehlende Netze und Volumes an und fragt
+                      # die Serverfassung ab. Ohne diese drei bricht es ab.
+                      NETWORKS: "1"
+                      VOLUMES: "1"
+                      INFO: "1"
                       # Ausdrücklich nicht:
                       EXEC: "0"
-                      VOLUMES: "0"
-                      NETWORKS: "0"
                       SECRETS: "0"
                       CONFIGS: "0"
                       SWARM: "0"
@@ -233,7 +219,6 @@ final class Agentenpaket {
                       TASKS: "0"
                       NODES: "0"
                       AUTH: "0"
-                      INFO: "0"
                     volumes:
                       - /var/run/docker.sock:/var/run/docker.sock:ro
                     # Er ist die einzige Stelle mit Socket-Zugriff und deshalb
@@ -244,8 +229,11 @@ final class Agentenpaket {
 
                 volumes:
                   agentdaten:
-                  registryzugang:
-                """.formatted(tag, "0 30 3 * * *");
+                  # Der Briefkasten zwischen Agent und Aktualisierung. Nur
+                  # diese beiden Dienste sehen ihn; ein Auftrag liegt darin
+                  # Sekunden, dann ist er gelesen und gelöscht.
+                  auftrag:
+                """.formatted(tag);
     }
 
     private static String env(String zentraleUrl, String geheimnis, String einrichtung,
@@ -299,18 +287,125 @@ final class Agentenpaket {
                 # bleiben hinterlegte PINs nur im Arbeitsspeicher und sind nach einem
                 # Neustart weg. Erzeugen mit:   openssl rand -base64 32
                 PIN_ABLAGE_SCHLUESSEL=
+                """.formatted(zentraleUrl, geheimnis, einrichtung, bezeichnung);
+    }
 
-                # ── Selbsttätige Aktualisierung ─────────────────────────────────
-                # Gemeinsames Kennwort zwischen Agent und Aktualisierungsdienst.
-                # Damit kann ein Administrator in der Zentrale diesen Standort
-                # gezielt aktualisieren. Es wirkt NUR innerhalb dieses Rechners und
-                # kann genau eines: „sieh jetzt nach einer neuen Fassung".
+    /**
+     * Das Aktualisierungsskript, das im Paket mitgeliefert wird.
+     *
+     * <h2>Warum ein eigenes Skript und kein fertiges Werkzeug</h2>
+     *
+     * Zuerst stand hier Watchtower. Das ist ein <b>Überwachungs</b>dienst — er
+     * sieht nach, ob es etwas Neues gibt, und handelt selbsttätig. Seit der PO
+     * entschieden hat, dass nur noch auf Auftrag aktualisiert wird
+     * (14.08.2026), überwacht hier nichts mehr: Gebraucht werden vier Befehle,
+     * genau die, die auch in der Anleitung für die Aktualisierung von Hand
+     * stehen.
+     *
+     * <p>Der zweite Grund wiegt schwerer. Watchtower liest seine Anmeldung nur
+     * aus einer {@code config.json}, die dafür auf der Platte liegen muss. Ein
+     * eigenes Skript kann den Token <b>über die Standardeingabe</b> annehmen —
+     * er steht dann in keiner Datei und in keiner Prozessliste, und
+     * {@code docker logout} räumt hinterher auf.
+     *
+     * <p>Der dritte: Der Betreiber kann diese Datei lesen. Danach weiß er
+     * genau, was auf seinem Rechner passiert. Das ist bei einem fremden Abbild
+     * nicht so.
+     */
+    private static String skript() {
+        return """
+                #!/bin/sh
+                # ═══════════════════════════════════════════════════════════════
+                #  PIN-Roboter — Aktualisierung des Standort-Agenten
                 #
-                # Für Sie erzeugt — bitte nicht ändern, sonst passen die beiden
-                # Dienste nicht mehr zusammen.
-                AKTUALISIERUNG_TOKEN=%s
-                """.formatted(zentraleUrl, geheimnis, einrichtung, bezeichnung,
-                              kennwort());
+                #  Dieser Dienst tut von sich aus NICHTS. Er wartet auf einen
+                #  Auftrag, den der Agent in /auftrag/auftrag ablegt, nachdem
+                #  die Zentrale ihn dazu angewiesen hat.
+                #
+                #  Was dann passiert, ist genau das, was Sie auch von Hand
+                #  eingeben würden:
+                #
+                #      docker login    (nur wenn die Ablage privat ist)
+                #      docker compose pull agent
+                #      docker compose up -d agent
+                #      docker logout
+                #
+                #  Angefasst wird ausschließlich der Dienst „agent". Was sonst
+                #  auf diesem Rechner läuft, bleibt unberührt.
+                # ═══════════════════════════════════════════════════════════════
+                set -u
+
+                AUFTRAG=/auftrag/auftrag
+                ERGEBNIS=/auftrag/ergebnis
+
+                melde() { echo "$(date '+%%Y-%%m-%%d %%H:%%M:%%S')  $1"; }
+
+                melde "Bereit. Warte auf einen Auftrag der Zentrale."
+                melde "Von selbst wird nichts aktualisiert."
+
+                while true; do
+                  if [ ! -f "$AUFTRAG" ]; then
+                    sleep 2
+                    continue
+                  fi
+
+                  # Zuerst lesen und SOFORT löschen: Im Auftrag steht das
+                  # Zugriffstoken. Es soll so kurz wie möglich auf der Platte
+                  # liegen — Sekunden, nicht Minuten.
+                  REGISTRY=$(sed -n '1p' "$AUFTRAG")
+                  BENUTZER=$(sed -n '2p' "$AUFTRAG")
+                  TOKEN=$(sed -n '3p' "$AUFTRAG")
+                  VERSION=$(sed -n '4p' "$AUFTRAG")
+                  rm -f "$AUFTRAG"
+
+                  melde "Auftrag erhalten: Aktualisierung auf $VERSION"
+
+                  FEHLER=""
+
+                  if [ -n "$REGISTRY" ] && [ -n "$BENUTZER" ] && [ -n "$TOKEN" ]; then
+                    # Der Token geht über die Standardeingabe, nicht als
+                    # Befehlszeilenargument: Sonst stünde er in der
+                    # Prozessliste, die jeder auf diesem Rechner lesen kann.
+                    if printf '%%s' "$TOKEN" | docker login "$REGISTRY" \
+                         -u "$BENUTZER" --password-stdin >/dev/null 2>&1; then
+                      melde "An der Programmablage angemeldet."
+                    else
+                      FEHLER="Die Programmablage hat die Zugangsdaten abgelehnt."
+                    fi
+                  fi
+                  TOKEN=""
+
+                  if [ -z "$FEHLER" ]; then
+                    melde "Hole das Abbild ..."
+                    if ! docker compose pull agent 2>&1; then
+                      FEHLER="Das Abbild ließ sich nicht holen. Gibt es die Version"
+                      FEHLER="$FEHLER $VERSION in der Programmablage?"
+                    fi
+                  fi
+
+                  if [ -z "$FEHLER" ]; then
+                    melde "Tausche den Agenten aus ..."
+                    # Nur den Agenten. Dieser Dienst und der Vermittler bleiben
+                    # unberührt — sonst beendete sich der Aktualisierer mitten
+                    # im eigenen Befehl.
+                    if ! docker compose up -d agent 2>&1; then
+                      FEHLER="Der Agent ließ sich nicht neu starten."
+                    fi
+                  fi
+
+                  # Aufräumen in jedem Fall: Die Anmeldung soll nicht liegen
+                  # bleiben, auch nicht nach einem Fehlschlag.
+                  docker logout "$REGISTRY" >/dev/null 2>&1 || true
+
+                  if [ -z "$FEHLER" ]; then
+                    melde "Fertig. Der Agent meldet sich gleich mit der neuen Version."
+                    echo "ok" > "$ERGEBNIS"
+                  else
+                    melde "FEHLGESCHLAGEN: $FEHLER"
+                    echo "$FEHLER" > "$ERGEBNIS"
+                  fi
+                done
+                """;
     }
 
     /**
@@ -464,25 +559,46 @@ final class Agentenpaket {
 
                 ## Aktualisierung
 
-                **Der Agent hält sich selbst aktuell.** Jede Nacht um 3:30 Uhr sieht er
-                nach, ob eine neue freigegebene Fassung vorliegt, holt sie und startet
-                sich neu. Der Neustart dauert wenige Sekunden.
+                **Der Agent aktualisiert sich nicht von selbst.** Er wird ausgetauscht,
+                wenn Ihre Zentrale es verlangt — und nur dann. Wer aktualisiert, wählt
+                damit auch den Zeitpunkt.
 
-                Ausgerollt wird nur, was **ausdrücklich freigegeben** wurde — nicht jede
-                Veröffentlichung. Ihre Zentrale zeigt unter „Verwaltung → Standort-Agenten“,
-                welche Fassung bei Ihnen läuft.
+                Angestoßen wird das in der Zentrale unter „Instanz → Standort-Agenten“.
+                Dort steht auch, welche Fassung bei Ihnen läuft und was bereitsteht.
 
-                Von Hand geht es auch jederzeit:
+                Der Austausch dauert wenige Sekunden. Währenddessen werden die
+                Kartenterminals kurz nicht überwacht — **bereits freigeschaltete Karten
+                bleiben freigeschaltet.**
+
+                Von Hand geht es jederzeit:
 
                 ```
-                docker compose pull
-                docker compose up -d
+                docker compose pull agent
+                docker compose up -d agent
                 ```
+
+                ### Was dabei auf Ihrem Rechner passiert
+
+                Genau diese vier Befehle — nachzulesen in `aktualisieren.sh`, die Datei
+                liegt offen in diesem Ordner:
+
+                ```
+                docker login          (nur wenn die Programmablage privat ist)
+                docker compose pull agent
+                docker compose up -d agent
+                docker logout
+                ```
+
+                Die Zugangsdaten für die Programmablage stehen **nicht** in diesen
+                Dateien. Der Agent holt sie im Moment der Aktualisierung von Ihrer
+                Zentrale, legt sie kurz ab, und der Aktualisierungsdienst löscht sie als
+                Erstes wieder. Auf einem Rechner, an dem gerade nichts aktualisiert
+                wird, liegt kein Zugangstoken.
 
                 ### Wenn Sie das nicht möchten
 
-                Manche Häuser wollen jede Änderung selbst bestimmen. Dann in der
-                `docker-compose.yml` die beiden Dienste `aktualisierung` und
+                Manche Häuser wollen jede Änderung selbst am Rechner vornehmen. Dann in
+                der `docker-compose.yml` die beiden Dienste `aktualisierung` und
                 `dockerzugang` entfernen (oder auskommentieren) und statt `:stabil` eine
                 feste Nummer eintragen, etwa `:0.4.0`. Danach:
 
@@ -490,13 +606,16 @@ final class Agentenpaket {
                 docker compose up -d
                 ```
 
+                Ein Aktualisierungsauftrag aus der Zentrale scheitert dann mit einer
+                verständlichen Meldung — es geht nichts kaputt.
+
                 ### Zur Sicherheit
 
-                Für die Aktualisierung läuft ein zweiter kleiner Dienst mit, der Docker
-                steuern darf — allerdings **nur eingeschränkt**: Er darf Container
-                auflisten, neu starten und Abbilder holen. Nicht erlaubt sind unter
-                anderem Befehle in fremden Containern und der Zugriff auf Datenträger.
-                Der Agent selbst ist der einzige Container, der aktualisiert wird.
+                Der Aktualisierungsdienst darf Docker steuern, allerdings **nur
+                eingeschränkt**: Container auflisten und neu starten, Abbilder holen.
+                Nicht erlaubt sind unter anderem Befehle in fremden Containern und der
+                Zugriff auf Datenträger. Angefasst wird ausschließlich der Agent.
+
                 """.formatted(einrichtung, bezeichnung, zentraleUrl);
     }
 }

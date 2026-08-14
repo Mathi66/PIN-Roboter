@@ -1,8 +1,16 @@
-# 35 — Selbsttätige Aktualisierung des Standort-Agenten
+# 35 — Aktualisierung des Standort-Agenten
 
-**Stand:** umgesetzt (13.08.2026) · **Vorgabe:** PO, 13.08.2026
-· Grundsatzentscheidung: CLAUDE.md, Abschnitt „Betrieb und Auslieferung"
+**Stand:** umgesetzt (13.08.2026), **grundlegend geändert am 14.08.2026**
+· **Vorgabe:** PO, 13. und 14.08.2026
 
+> **Achtung, historisches Dokument.** Der hier beschriebene nächtliche Lauf mit
+> Watchtower ist **abgeschafft**. Was heute gilt, steht in
+> [Umsetzung 39](39-aktualisierung-auf-auftrag.md); die Steuerung in der
+> Oberfläche in [Umsetzung 36](36-agent-updatesteuerung.md).
+>
+> Dieses Dokument bleibt stehen, weil es die Überlegungen enthält, die zu der
+> Änderung geführt haben — und weil ein Architektur-Log, aus dem Irrwege
+> verschwinden, den Eindruck erweckt, es habe nie welche gegeben.
 ---
 
 ## Der Anlass

@@ -3665,35 +3665,57 @@ ANAUS=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
 [ "$ANAUS" = "false" ] && AA=ja || AA=nein
 ergebnis "die Weitergabe an Agenten ist ab Werk abgeschaltet ($ANAUS)" "$AA"
 
-# Ohne Einschaltung darf die Zentrale nichts herausgeben.
-docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && AB=nein || AB=ja
-ergebnis "der Agent hat keine Zugangsdaten, solange nichts eingeschaltet ist" "$AB"
+# Ohne Auftrag darf am Standort KEIN Token liegen (PO, 14.08.2026).
+docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && AB=nein || AB=ja
+ergebnis "am Standort liegt kein Zugangstoken, solange kein Auftrag vorliegt" "$AB"
+
+# Und die Zentrale gibt auch keinen heraus, wenn ein Agent ohne Anlass fragt.
+AGT_TOK=$(docker exec pr-agt sh -c 'cat /daten/token 2>/dev/null')
+if [ -n "$AGT_TOK" ]; then
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: $AGT_TOK" \
+         $BASIS/api/agent/registry)
+  [ "$CODE" = "403" ] && AB2=ja || AB2=nein
+  ergebnis "ein Agent ohne Auftrag bekommt keine Zugangsdaten (HTTP $CODE)" "$AB2"
+fi
 
 # Einschalten — ueber die Oberflaeche, nicht per SQL.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=1" -o /dev/null
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=an" -o /dev/null
 ANEIN=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
 [ "$ANEIN" = "true" ] && AC=ja || AC=nein
 ergebnis "der Schalter in der Verwaltung wirkt ($ANEIN)" "$AC"
 
-# Der Agent holt sie im naechsten Takt ab.
+# Erst MIT einem Auftrag holt der Agent die Zugangsdaten — und legt sie in den
+# Briefkasten fuer den Aktualisierungsdienst.
+AID_U=$(sql "SELECT id FROM agent WHERE aktiv ORDER BY id DESC LIMIT 1")
+curl -s -b "$KEKSE" -X POST $BASIS/agenten/$AID_U/aktualisierung \
+  -d "zielversion=1.2.0" -o /dev/null
 for _ in $(seq 60); do
-  docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && break
+  docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && AD=ja || AD=nein
-ergebnis "der Agent legt die Zugangsdaten ab" "$AD"
+docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && AD=ja || AD=nein
+ergebnis "mit einem Auftrag legt der Agent die Zugangsdaten in den Briefkasten" "$AD"
 
 if [ "$AD" = "ja" ]; then
-  CFG=$(docker exec pr-agt sh -c 'cat /daten/registry/config.json')
-  # Docker-Format: Ein eigenes Format waere wertlos, Watchtower liest genau dieses.
-  ERWARTET=$(printf 'pin-roboter:ghp-testaufbau-1234567890' | base64 | tr -d '\n')
-  case "$CFG" in *"$ERWARTET"*) AE1=ja ;; *) AE1=nein ;; esac
-  ergebnis "sie stehen im Docker-Format, das die Aktualisierung liest" "$AE1"
-  case "$CFG" in *ghp-testaufbau-1234567890*) AE2=nein ;; *) AE2=ja ;; esac
-  ergebnis "der Token steht nicht zusaetzlich im Klartext in der Datei" "$AE2"
-  RECHTE=$(docker exec pr-agt sh -c 'stat -c %a /daten/registry/config.json' 2>/dev/null)
-  case "$RECHTE" in *0) AE3=ja ;; *) AE3=nein ;; esac
-  ergebnis "die Datei ist nicht welt-lesbar (Rechte $RECHTE)" "$AE3"
+  AUFTRAG=$(docker exec pr-agt sh -c 'cat /auftrag/auftrag')
+  case "$AUFTRAG" in *ghp-testaufbau-1234567890*) AE1=ja ;; *) AE1=nein ;; esac
+  ergebnis "der Token ist dabei — der Aktualisierer braucht ihn" "$AE1"
+  case "$AUFTRAG" in *1.2.0*) AE2=ja ;; *) AE2=nein ;; esac
+  ergebnis "und die Zielversion" "$AE2"
+  RECHTE=$(docker exec pr-agt sh -c 'stat -c %a /auftrag/auftrag' 2>/dev/null)
+  [ "$RECHTE" = "600" ] && AE3=ja || AE3=nein
+  ergebnis "nur der Eigentuemer darf lesen (Rechte $RECHTE)" "$AE3"
+
+  # Der Kern: Nach einem Neustart darf kein Token liegen bleiben. Im Betrieb
+  # ist der Container nach einem geglueckten Update ausgetauscht worden — der
+  # alte Agent kam nicht mehr zum Aufraeumen.
+  docker restart pr-agt >/dev/null
+  for _ in $(seq 40); do
+    docker logs pr-agt 2>&1 | grep -q "liegengebliebener Aktualisierungsauftrag" && break
+    sleep 1
+  done
+  docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && AE4=nein || AE4=ja
+  ergebnis "nach einem Neustart liegt kein Token mehr im Briefkasten" "$AE4"
 fi
 
 # Ohne gueltiges Agent-Token gibt die Zentrale nichts heraus.
@@ -3710,15 +3732,12 @@ docker logs pr-zen 2>&1 | grep -qF "ghp-testaufbau" && TREFFER=$((TREFFER+1))
 [ $TREFFER -eq 0 ] && AG=ja || AG=nein
 ergebnis "der Token erscheint weder in Logs noch im Protokoll (Treffer: $TREFFER)" "$AG"
 
-# Der Not-Aus: Abschalten muss die Datei ENTFERNEN. Bliebe sie liegen, liefe
-# die Aktualisierung weiter und der Schalter waere eine Anzeige ohne Wirkung.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=0" -o /dev/null
-for _ in $(seq 60); do
-  docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 || break
-  sleep 1
-done
-docker exec pr-agt sh -c 'ls /daten/registry/config.json' >/dev/null 2>&1 && AH=nein || AH=ja
-ergebnis "das Abschalten entfernt die Zugangsdaten wieder" "$AH"
+# Der Not-Aus: Abgeschaltet gibt die Zentrale keine Zugangsdaten mehr heraus,
+# und eine Aktualisierung scheitert mit einer verstaendlichen Meldung.
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=aus" -o /dev/null
+AN_AUS=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
+[ "$AN_AUS" = "false" ] && AH=ja || AH=nein
+ergebnis "die Weitergabe laesst sich wieder abschalten ($AN_AUS)" "$AH"
 
 # ---------------------------------------------------------------- FA-AGT-090
 # Zustand der Standort-Agenten: stumm und veraltet.
@@ -3740,7 +3759,7 @@ ergebnis "der Agent meldet seine Version, nicht „unbekannt\" ($AGT_VERSION)" "
 docker stop pr-agt >/dev/null
 
 # (1) veraltet: aeltere Version, lange genug her, Weitergabe eingeschaltet.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=1" -o /dev/null
+curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=an" -o /dev/null
 docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
   "UPDATE agent SET bausteinversion = '0.0.1', version_seit = now() - interval '5 days',
                     zuletzt_gesehen = now() WHERE id = $AID" >/dev/null

@@ -183,7 +183,7 @@ services:
       # schwacher oder fremder Hardware mitlaufen können.
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
       OBERFLAECHE_ADRESSE: "0.0.0.0"
-      REGISTRY_VERZEICHNIS: "/registry"
+      AUFTRAG_VERZEICHNIS: "/auftrag"
     # Die Oberflaeche des Agenten (PO, 13.08.2026). Im Container an 0.0.0.0
     # gebunden — ein dort an 127.0.0.1 gebundener Dienst waere per Port-Mapping
     # gar nicht erreichbar. Die Beschraenkung macht das Mapping unten:
@@ -197,16 +197,16 @@ services:
       # muesste sich neu registrieren und jede hinterlegte PIN waere unbrauchbar,
       # weil sie fuer ein Schluesselpaar verschluesselt ist, das es nicht mehr gibt.
       - agentdaten:/daten
-      # Zugangsdaten zur Programmablage — eigenes Volume, damit die
-      # Aktualisierung nicht an Token, Schluessel und PIN-Ablage kommt.
-      - registryzugang:/registry
+      # Briefkasten fuer Aktualisierungsauftraege — eigenes Volume, damit
+      # die Aktualisierung nicht an Token, Schluessel und PIN-Ablage kommt.
+      - auftrag:/auftrag
     depends_on:
       simulator: { condition: service_healthy }
       zentrale:  { condition: service_healthy }
 
 volumes:
   agentdaten:
-  registryzugang:
+  auftrag:
   # Sicherungen liegen NICHT bei den Betriebsdaten (ADR-0010): Der häufigste
   # Verlustfall ist ein versehentliches "docker compose down -v".
   sicherungen:

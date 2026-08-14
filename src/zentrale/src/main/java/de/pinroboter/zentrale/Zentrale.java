@@ -775,10 +775,11 @@ public class Zentrale {
     /**
      * Wie lange ein Agent hinter der Zentrale zurückbleiben darf.
      *
-     * <p>Watchtower läuft im Auslieferungszustand einmal nachts. Drei Tage
-     * sind drei verpasste Gelegenheiten — davor wäre jede Meldung nur Lärm,
-     * etwa wenn die Zentrale gerade aktualisiert wurde und die Agenten in der
-     * kommenden Nacht ohnehin nachziehen.
+     * <p>Seit dem 14.08.2026 wird nur noch auf Auftrag aktualisiert. Drei Tage
+     * Rückstand heißen also: Es hat drei Tage lang niemand angestoßen — oder
+     * ein Versuch ist gescheitert. Beides gehört gemeldet, aber nicht sofort:
+     * Direkt nach einer Aktualisierung der Zentrale hinken alle Agenten
+     * naturgemäß hinterher.
      */
     private static final java.time.Duration VERALTET_AB = java.time.Duration.ofDays(3);
 
@@ -1405,17 +1406,17 @@ public class Zentrale {
                 .formatted(
                     Bedienelemente.info("agent-weitergabe", "die selbsttätige Aktualisierung"),
                     an ? "ok" : "unbekannt",
-                    an ? "✓ eingeschaltet — Agenten aktualisieren sich selbst"
-                       : "× ausgeschaltet — Agenten bleiben auf ihrem Stand",
+                    an ? "✓ eingeschaltet — Aktualisierung auf Auftrag möglich"
+                       : "× ausgeschaltet — keine Aktualisierung möglich",
                     tokenDa ? "" : "<div class=\"hinweis\">Zuerst oben einen Zugang mit Token "
                             + "hinterlegen. Ohne ihn gibt es nichts weiterzugeben.</div>",
-                    an ? "Selbsttätige Aktualisierung abschalten? Die Agenten bleiben auf ihrem "
-                       + "jetzigen Stand, bis Sie sie wieder einschalten."
-                       : "Selbsttätige Aktualisierung einschalten? Die Agenten holen sich ab "
-                       + "der nächsten Nacht die jeweils freigegebene Fassung.",
+                    an ? "Weitergabe abschalten? Aktualisierungen scheitern danach, bis Sie "
+                       + "sie wieder einschalten."
+                       : "Weitergabe einschalten? Die Zugangsdaten gehen dann an einen "
+                       + "Agenten, sobald für ihn ein Aktualisierungsauftrag vorliegt.",
                     an ? "aus" : "an",
                     an ? "warnend" : "haupt",
-                    an ? "Nimmt den Agenten die Zugangsdaten; sie bleiben auf ihrem Stand"
+                    an ? "Nimmt den Agenten die Zugangsdaten; Aktualisierungen scheitern danach"
                        : "Gibt den Agenten die Zugangsdaten, damit sie sich aktualisieren können",
                     an ? "Selbsttätige Aktualisierung abschalten"
                        : "Selbsttätige Aktualisierung einschalten",
@@ -4755,10 +4756,11 @@ public class Zentrale {
                     true, angemeldeter(c).anzeigename(), null,
                     "Selbsttätige Aktualisierung der Standort-Agenten "
                             + (an ? "eingeschaltet" : "abgeschaltet"),
-                    an ? "Die Agenten erhalten die Zugangsdaten zur Programmablage und holen "
-                         + "sich die jeweils freigegebene Fassung."
-                       : "Die Agenten erhalten keine Zugangsdaten mehr und bleiben auf ihrem "
-                         + "jetzigen Stand.");
+                    an ? "Ein Agent bekommt die Zugangsdaten zur Programmablage, sobald für "
+                         + "ihn ein Aktualisierungsauftrag vorliegt — nicht dauerhaft und "
+                         + "nicht ohne Anlass."
+                       : "Die Agenten bekommen keine Zugangsdaten mehr. Aktualisierungen "
+                         + "scheitern ab sofort mit einer verständlichen Meldung.");
             c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)),
                     angemeldeter(c)));
         });
@@ -5276,6 +5278,24 @@ public class Zentrale {
          * es dafür braucht.
          */
         app.get("/api/agent/registry", c -> {
+            var agent = (Agentenverwaltung.Agent) c.attribute("agent");
+
+            // NUR bei einem offenen Auftrag (PO, 14.08.2026). Ein Agent, der
+            // ohne Anlass fragt, bekommt nichts — auch nicht, wenn die
+            // Weitergabe eingeschaltet ist.
+            //
+            // Bis heute gab die Zentrale die Zugangsdaten jedem registrierten
+            // Agenten heraus, jederzeit. Das war nötig, solange nachts von
+            // selbst aktualisiert wurde. Seit das entfällt, gibt es keinen
+            // Grund mehr, einen Token auf einen Praxisrechner zu legen, an
+            // dem gerade niemand etwas aktualisiert.
+            var auftrag = agentupdates.offener(agent.id());
+            if (auftrag == null) {
+                c.status(403).json(Map.of("verfuegbar", false,
+                        "grund", "Für diesen Agenten liegt kein Aktualisierungsauftrag vor."));
+                return;
+            }
+
             var z = versionen.agentenzugang();
             if (z == null) {
                 c.json(Map.of("verfuegbar", false));

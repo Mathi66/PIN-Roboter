@@ -957,30 +957,76 @@ final class HandbuchInhalt {
             Zentrale, bleibt die alte bestehen. Ein Tippfehler kann den Agenten nicht
             abschneiden.</p>
 
-            <h2>Selbsttätige Aktualisierung</h2>
+            <h2>Wie der Austausch abläuft</h2>
             <section data-hilfe="agent-weitergabe">
-            <p>Neben dem Agenten läuft ein Aktualisierungsdienst, der nachts um 3:30
-            Uhr nach einer neuen Fassung sieht. Drei Vorkehrungen sind eingebaut:</p>
+            <p>Neben dem Agenten läuft ein zweiter Dienst, der ihn austauschen kann.
+            <b>Von selbst tut er nichts</b> — er wartet auf einen Auftrag.</p>
+
+            <div class="hb-merke">
+              <b>Es gibt keine nächtliche Aktualisierung.</b>
+              <p>Bis zum 14.08.2026 sah dieser Dienst nachts um halb vier selbst nach
+              neuen Fassungen. Das ist abgeschafft: Eine fehlerhafte Freigabe hätte in
+              derselben Nacht <em>alle</em> Standorte gleichzeitig getroffen, und eine
+              Staffelung gibt es nicht. Aktualisiert wird nur, was ein Mensch
+              anstößt — und er wählt damit auch den Zeitpunkt.</p>
+            </div>
+
+            <p>Was dann passiert, ist genau das, was Sie auch von Hand eingeben
+            würden:</p>
+            <ol class="hb-liste">
+              <li><code>docker login</code> — nur wenn die Programmablage privat ist</li>
+              <li><code>docker compose pull agent</code></li>
+              <li><code>docker compose up -d agent</code></li>
+              <li><code>docker logout</code></li>
+            </ol>
+            <p>Das Skript dazu liegt <b>offen im Einrichtungspaket</b>
+            (<code>aktualisieren.sh</code>). Wer es liest, weiß danach genau, was auf
+            seinem Rechner geschieht — bei einem fremden Programm ist das nicht so.</p>
+
+            <p>Drei Vorkehrungen:</p>
             <ul class="hb-liste">
-              <li><b>Nur der Agent</b> wird angefasst — was sonst auf dem Rechner
+              <li><b>Nur der Agent</b> wird angefasst. Was sonst auf dem Rechner
                   läuft, bleibt unberührt.</li>
-              <li><b>Nur nachts.</b> Ein Neustart während der Sprechzeit unterbräche
-                  die Überwachung.</li>
               <li><b>Kein direkter Zugriff auf den Docker-Dienst</b>, sondern über
                   einen Vermittler mit eingeschränkten Rechten. Wer den Docker-Dienst
                   hat, ist faktisch Administrator des Rechners.</li>
+              <li><b>Kein Netzwerkdienst.</b> Der Agent legt seinen Auftrag in ein
+                  Verzeichnis, das nur diese beiden Dienste sehen. Es gibt keine
+                  Schnittstelle, die jemand im Netz erreichen könnte.</li>
             </ul>
-            <p>Die Anmeldung für die Programmablage steht <strong>nicht</strong> im
-            Einrichtungspaket. Der Agent holt sie von der Zentrale — dort wird sie
-            einmal gepflegt statt in jeder Praxis. Sie ist ab Werk abgeschaltet und
-            wird unter <b>Instanz → Produktversion → Selbsttätige Aktualisierung der Agenten</b> eingeschaltet. Abschalten
-            entfernt sie beim Agenten wieder; ohne sie holt die Aktualisierung
-            nichts — das ist zugleich der Not-Aus für die Aktualisierung.</p>
+            </section>
+
+            <h3>Wo die Zugangsdaten herkommen</h3>
+            <section data-hilfe="agent-zugangsdaten">
+            <p>Die Programmablage ist privat; ohne Anmeldung kommt kein Agent an sein
+            Programm. Sie steht <b>nicht im Einrichtungspaket</b> — sonst stünde
+            derselbe Token in jeder Praxis, und ein Wechsel hieße: an jeden Rechner.</p>
+
+            <div class="hb-merke">
+              <b>Die Zugangsdaten liegen nicht dauerhaft am Standort.</b>
+              <p>Der Agent holt sie erst, wenn ein Auftrag vorliegt, und legt sie
+              zusammen mit dem Auftrag ab. Der Aktualisierer löscht die Datei als
+              Erstes, meldet sich damit an und meldet sich hinterher wieder ab. Auf
+              einem Rechner, an dem gerade niemand aktualisiert, ist kein Token.</p>
+            </div>
+
+            <p>Die Zentrale gibt sie außerdem <b>nur bei einem offenen Auftrag</b>
+            heraus. Ein Agent, der ohne Anlass fragt, bekommt nichts.</p>
+
+            <p>Eingeschaltet wird die Weitergabe unter <b>Instanz → Produktversion →
+            Selbsttätige Aktualisierung der Agenten</b>. Ab Werk ist sie aus: Wer
+            einen Zugang hinterlegt, damit die Zentrale nach Updates sieht, hat damit
+            nicht der Weitergabe zugestimmt. Abschalten ist der Not-Aus — ohne
+            Anmeldung wird kein Programm geholt.</p>
 
             <p>Der Token sollte auf <code>read:packages</code> beschränkt sein; mehr
             braucht ein Agent nie. Wird ein Agent widerrufen, bekommt er keine
             Zugangsdaten mehr — ein kompromittierter Praxisrechner lässt sich so
             ausschließen, ohne den Token überall zu tauschen.</p>
+
+            <p class="hb-fussnote">Ehrlich zur Grenze: Wer in dem Moment, in dem ein
+            Update läuft, Administrator des Praxisrechners ist, kommt an den Token.
+            Gewonnen ist die Zeit — Sekunden statt dauerhaft.</p>
             </section>
 
             <h2>Gezielt aktualisieren</h2>
@@ -1048,10 +1094,10 @@ final class HandbuchInhalt {
 
             <p>Die drei häufigsten Ursachen:</p>
             <ol class="hb-liste">
-              <li><b>Die Aktualisierungsdienste laufen dort nicht.</b> Manche Häuser
-                  entfernen sie bewusst aus dem Einrichtungspaket. Dann muss vor Ort
+              <li><b>Der Aktualisierungsdienst läuft dort nicht.</b> Manche Häuser
+                  entfernen ihn bewusst aus dem Einrichtungspaket. Dann muss vor Ort
                   von Hand aktualisiert werden:
-                  <code>docker compose pull &amp;&amp; docker compose up -d</code></li>
+                  <code>docker compose pull agent &amp;&amp; docker compose up -d agent</code></li>
               <li><b>Die Zugangsdaten wurden abgelehnt.</b> Neues Token unter
                   <b>Instanz → Produktversion</b> hinterlegen — die Agenten übernehmen
                   es im nächsten Takt.</li>

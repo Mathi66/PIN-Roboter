@@ -10,25 +10,23 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Die Zugangsdaten zur Programmablage, die der Agent von der Zentrale bezieht.
+ * Der Weg der Zugangsdaten zur Programmablage (FA-AGT-100, PO 14.08.2026).
  *
- * <h2>Worum es geht</h2>
+ * <h2>Was sich am 14.08.2026 geändert hat</h2>
  *
- * Die Programmablage ist privat (PO, 13.08.2026). Damit die selbsttätige
- * Aktualisierung an das Abbild kommt, braucht sie eine Anmeldung. Sie in jedes
- * Einrichtungspaket zu schreiben hieße: derselbe Token in jeder Praxis,
- * tauschbar nur vor Ort. Stattdessen holt der Agent ihn bei der Zentrale.
+ * Vorher lagen die Zugangsdaten <b>dauerhaft</b> auf dem Praxisrechner, damit
+ * der nächtliche Lauf sie lesen konnte. Diesen Lauf gibt es nicht mehr;
+ * aktualisiert wird nur auf Auftrag. Damit werden sie nur im Moment des
+ * Updates gebraucht.
  *
- * <p>Die Prüfungen hier sind zur Hälfte Abschaltprüfungen: Der Schalter in der
- * Zentrale wirkt nur, wenn der Agent die Datei auch wieder <b>entfernt</b>.
- * Bliebe sie liegen, liefe die Aktualisierung weiter — und der Schalter wäre
- * eine Anzeige ohne Wirkung.
+ * <p>Die Prüfungen hier sind deshalb zur Hälfte Aufräumprüfungen: Ein Token,
+ * der nach dem Vorgang liegen bleibt, ist der eigentliche Fehler — und er
+ * fällt niemandem auf, weil alles funktioniert.
  */
 class RegistrierzugangTest {
 
@@ -54,150 +52,167 @@ class RegistrierzugangTest {
     @AfterEach
     void abraeumen() { if (server != null) server.stop(0); }
 
-    private Registrierzugang zugang(Path verzeichnis) {
-        return new Registrierzugang(verzeichnis, HttpClient.newHttpClient(), basis);
+    private Registrierzugang zugang() {
+        return new Registrierzugang(HttpClient.newHttpClient(), basis);
     }
 
+    // ────────────────────────────────────────────── Holen bei der Zentrale
+
     @Test
-    @DisplayName("Freigegebene Zugangsdaten landen im Docker-Format auf der Platte")
-    void schreibt(@TempDir Path tmp) throws Exception {
+    @DisplayName("Freigegebene Zugangsdaten kommen an — und nichts wird gespeichert")
+    void holt() {
         antwort.set("""
                 {"verfuegbar":true,"registry":"ghcr.io","benutzer":"mathi66","token":"ghp-geheim-1"}""");
-        var z = zugang(tmp);
+        var r = zugang();
+        var z = r.holen("agent-token-1");
 
-        assertNotNull(z.abgleichen("agent-token-1"), "Die Änderung muss gemeldet werden");
+        assertNotNull(z);
+        assertEquals("ghcr.io", z.registry());
+        assertEquals("mathi66", z.benutzer());
+        assertArrayEquals("ghp-geheim-1".toCharArray(), z.token());
         assertEquals("agent-token-1", gesehenerToken.get(),
                 "Ohne Agent-Token dürfte die Zentrale nichts herausgeben");
-
-        Path datei = tmp.resolve("config.json");
-        assertTrue(Files.exists(datei));
-        String inhalt = Files.readString(datei, StandardCharsets.UTF_8);
-
-        // Watchtower liest genau dieses Format; ein eigenes wäre wertlos.
-        String erwartet = Base64.getEncoder().encodeToString(
-                "mathi66:ghp-geheim-1".getBytes(StandardCharsets.UTF_8));
-        assertTrue(inhalt.contains("\"ghcr.io\""), inhalt);
-        assertTrue(inhalt.contains(erwartet), "Die Anmeldung fehlt oder ist falsch kodiert");
-        assertFalse(inhalt.contains("ghp-geheim-1"),
-                "Der Token steht im Base64-Feld, nicht zusätzlich im Klartext");
+        assertNull(r.letzterFehler());
     }
 
     @Test
-    @DisplayName("Die Datei ist nicht für alle lesbar")
-    void rechte(@TempDir Path tmp) throws Exception {
+    @DisplayName("Der Token lässt sich aus dem Speicher löschen")
+    void tokenLoeschbar() {
+        // Ein String bliebe im Zeichenvorrat liegen und ließe sich nicht
+        // überschreiben — dieselbe Überlegung wie bei den PINs (ADR-0009).
         antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"t"}""");
-        zugang(tmp).abgleichen("a");
-        Path datei = tmp.resolve("config.json");
+                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"geheim"}""");
+        var z = zugang().holen("a");
+        z.loeschen();
+        assertArrayEquals(new char[]{0, 0, 0, 0, 0, 0}, z.token());
+    }
+
+    @Test
+    @DisplayName("Ohne Auftrag gibt die Zentrale nichts heraus")
+    void ohneAuftrag() {
+        // Die Zentrale antwortet mit 403, wenn kein Auftrag vorliegt. Das ist
+        // der Kern der Änderung: Auf einem Rechner, an dem niemand
+        // aktualisiert, liegt kein Token.
+        status.set(403);
+        antwort.set("""
+                {"verfuegbar":false,"grund":"kein Auftrag"}""");
+        var r = zugang();
+        assertNull(r.holen("a"));
+        assertTrue(r.letzterFehler().contains("Auftrag"), r.letzterFehler());
+    }
+
+    @Test
+    @DisplayName("Abgeschaltete Weitergabe wird verständlich gemeldet")
+    void abgeschaltet() {
+        antwort.set("""
+                {"verfuegbar":false}""");
+        var r = zugang();
+        assertNull(r.holen("a"));
+        assertTrue(r.letzterFehler().contains("abgeschaltet"), r.letzterFehler());
+        assertTrue(r.letzterFehler().contains("Produktversion"),
+                "Die Meldung muss sagen, wo es einzuschalten ist: " + r.letzterFehler());
+    }
+
+    @Test
+    @DisplayName("Unvollständige Angaben werden abgelehnt statt halb benutzt")
+    void unvollstaendig() {
+        antwort.set("""
+                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":""}""");
+        var r = zugang();
+        assertNull(r.holen("a"));
+        assertNotNull(r.letzterFehler());
+    }
+
+    @Test
+    @DisplayName("Eine nicht erreichbare Zentrale meldet einen lesbaren Grund")
+    void zentraleWeg() {
+        server.stop(0);
+        server = null;
+        var r = zugang();
+        assertNull(r.holen("a"));
+        assertNotNull(r.letzterFehler());
+        assertFalse(r.letzterFehler().contains("null"),
+                "Die Meldung muss lesbar sein: " + r.letzterFehler());
+    }
+
+    // ───────────────────────────────────────────── Der Briefkasten
+
+    @Test
+    @DisplayName("Der Auftrag landet im Briefkasten und ist nicht welt-lesbar")
+    void auftragAblegen(@TempDir Path tmp) throws Exception {
+        var s = new Selbstaktualisierung(tmp);
+        assertNull(s.beauftragen("ghcr.io", "u", "geheim".toCharArray(), "1.2.0"));
+
+        Path datei = tmp.resolve("auftrag");
+        assertTrue(Files.exists(datei));
+        var zeilen = Files.readAllLines(datei);
+        assertEquals("ghcr.io", zeilen.get(0));
+        assertEquals("u", zeilen.get(1));
+        assertEquals("geheim", zeilen.get(2));
+        assertEquals("1.2.0", zeilen.get(3));
+
         try {
             var rechte = Files.getPosixFilePermissions(datei);
             assertFalse(rechte.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ),
-                    "Zugangsdaten dürfen nicht welt-lesbar sein: " + rechte);
+                    "Im Auftrag steht ein Token: " + rechte);
+            assertFalse(rechte.contains(java.nio.file.attribute.PosixFilePermission.GROUP_READ),
+                    "Auch die Gruppe hat hier nichts zu suchen: " + rechte);
         } catch (UnsupportedOperationException aufWindows) {
             Assumptions.abort("Dateisystem ohne POSIX-Rechte");
         }
     }
 
     @Test
-    @DisplayName("Ein zweiter Abgleich ohne Änderung meldet nichts")
-    void keineWiederholungsmeldung(@TempDir Path tmp) {
-        // Sonst stünde bei einem Takt von 60 s jede Minute dieselbe Zeile in
-        // den Meldungen und verdeckte alles andere.
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"t"}""");
-        var z = zugang(tmp);
-        assertNotNull(z.abgleichen("a"));
-        assertNull(z.abgleichen("a"));
-        assertNull(z.abgleichen("a"));
+    @DisplayName("Ohne Aktualisierungsdienst wird kein Auftrag abgelegt")
+    void ohneDienst(@TempDir Path tmp) {
+        // Manche Häuser entfernen die Dienste bewusst. Dann darf kein Token
+        // ins Nichts geschrieben werden — und die Meldung muss den Weg von
+        // Hand nennen.
+        var s = new Selbstaktualisierung(tmp.resolve("gibt-es-nicht"));
+        assertFalse(s.eingerichtet());
+        String f = s.beauftragen("ghcr.io", "u", "geheim".toCharArray(), "1.2.0");
+        assertNotNull(f);
+        assertTrue(f.contains("compose pull"), "Die Meldung muss den Handweg nennen: " + f);
     }
 
     @Test
-    @DisplayName("Ein neuer Token wird übernommen")
-    void tokenwechsel(@TempDir Path tmp) throws Exception {
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"alt"}""");
-        var z = zugang(tmp);
-        z.abgleichen("a");
+    @DisplayName("Ein liegengebliebener Auftrag wird beim Start entfernt")
+    void liegengebliebenes(@TempDir Path tmp) throws Exception {
+        // Der Fall, auf den es ankommt: Nach einem geglückten Update wurde der
+        // alte Agent ausgetauscht, bevor er aufräumen konnte. Bliebe die Datei
+        // liegen, läge auch der Token weiter da.
+        Files.writeString(tmp.resolve("auftrag"), "ghcr.io\\nu\\ngeheim\\n1.2.0\\n");
+        var s = new Selbstaktualisierung(tmp);
 
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"neu"}""");
-        assertNotNull(z.abgleichen("a"), "Der Wechsel muss gemeldet werden");
-
-        String erwartet = Base64.getEncoder().encodeToString(
-                "u:neu".getBytes(StandardCharsets.UTF_8));
-        assertTrue(Files.readString(tmp.resolve("config.json")).contains(erwartet),
-                "Ein Tausch in der Zentrale muss ohne Besuch vor Ort wirken — "
-                + "das ist der ganze Zweck der Übung");
+        String m = s.beimStartAufraeumen();
+        assertNotNull(m, "Das Aufräumen muss sichtbar sein, nicht stillschweigend");
+        assertFalse(Files.exists(tmp.resolve("auftrag")),
+                "Ein Token darf nach dem Vorgang nicht liegen bleiben");
     }
 
     @Test
-    @DisplayName("Abgeschaltet in der Zentrale heißt: Datei weg")
-    void abschalten(@TempDir Path tmp) throws Exception {
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"t"}""");
-        var z = zugang(tmp);
-        z.abgleichen("a");
-        assertTrue(Files.exists(tmp.resolve("config.json")));
-
-        antwort.set("""
-                {"verfuegbar":false}""");
-        assertNotNull(z.abgleichen("a"), "Das Abschalten muss sichtbar gemeldet werden");
-        assertFalse(Files.exists(tmp.resolve("config.json")),
-                "Bleibt die Datei liegen, ist der Schalter in der Zentrale wirkungslos");
+    @DisplayName("Ohne liegengebliebenen Auftrag gibt es nichts zu melden")
+    void nichtsLiegengeblieben(@TempDir Path tmp) {
+        assertNull(new Selbstaktualisierung(tmp).beimStartAufraeumen());
     }
 
     @Test
-    @DisplayName("Unvollständige Angaben zählen wie abgeschaltet")
-    void unvollstaendig(@TempDir Path tmp) throws Exception {
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":""}""");
-        var z = zugang(tmp);
-        assertNull(z.abgleichen("a"));
-        assertFalse(Files.exists(tmp.resolve("config.json")),
-                "Eine halbe Anmeldung ist schlechter als keine — sie scheitert erst "
-                + "beim Abholen des Abbilds");
+    @DisplayName("Ein Fehlschlag des Aktualisierers erreicht den neuen Agenten")
+    void ergebnisWirdGelesen(@TempDir Path tmp) throws Exception {
+        Files.writeString(tmp.resolve("ergebnis"), "Die Programmablage hat abgelehnt.");
+        var s = new Selbstaktualisierung(tmp);
+
+        assertEquals("Die Programmablage hat abgelehnt.", s.ergebnisLesen());
+        assertFalse(Files.exists(tmp.resolve("ergebnis")),
+                "Gelesen ist erledigt — sonst meldet jeder Neustart dasselbe");
+        assertNull(s.ergebnisLesen());
     }
 
     @Test
-    @DisplayName("Eine Zentrale, die den Pfad nicht kennt, ändert nichts")
-    void aeltereZentrale(@TempDir Path tmp) throws Exception {
-        // Beim Rollout laufen kurzzeitig neue Agenten gegen eine alte Zentrale.
-        // Ein 404 darf keine vorhandene Anmeldung löschen.
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"t"}""");
-        var z = zugang(tmp);
-        z.abgleichen("a");
-
-        status.set(404);
-        antwort.set("nicht gefunden");
-        assertNull(z.abgleichen("a"));
-        assertTrue(Files.exists(tmp.resolve("config.json")),
-                "Der vorhandene Stand muss stehen bleiben");
-    }
-
-    @Test
-    @DisplayName("Eine nicht erreichbare Zentrale ändert nichts")
-    void zentraleWeg(@TempDir Path tmp) throws Exception {
-        antwort.set("""
-                {"verfuegbar":true,"registry":"ghcr.io","benutzer":"u","token":"t"}""");
-        var z = zugang(tmp);
-        z.abgleichen("a");
-        server.stop(0);
-        server = null;
-
-        assertNull(z.abgleichen("a"), "Ein Netzwerkausfall ist keine Zustandsänderung");
-        assertTrue(Files.exists(tmp.resolve("config.json")));
-    }
-
-    @Test
-    @DisplayName("Ohne je Zugangsdaten gesehen zu haben wird nichts gemeldet")
-    void stillImRegelfall(@TempDir Path tmp) {
-        // Der Regelfall beim Kunden: Die Weitergabe ist gar nicht eingeschaltet.
-        // Dann darf der Agent nicht bei jedem Takt etwas zu sagen haben.
-        antwort.set("""
-                {"verfuegbar":false}""");
-        var z = zugang(tmp);
-        assertNull(z.abgleichen("a"));
-        assertNull(z.abgleichen("a"));
+    @DisplayName("Ein erfolgreicher Lauf meldet nichts")
+    void erfolgIstStill(@TempDir Path tmp) throws Exception {
+        Files.writeString(tmp.resolve("ergebnis"), "ok");
+        assertNull(new Selbstaktualisierung(tmp).ergebnisLesen(),
+                "Erfolg braucht keine Meldung — die neue Version ist die Meldung");
     }
 }

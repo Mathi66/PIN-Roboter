@@ -29,13 +29,17 @@ class AgentenpaketTest {
     }
 
     @Test
-    @DisplayName("Das Paket enthält genau die drei Dateien, die jemand braucht")
-    void dreiDateien() {
+    @DisplayName("Das Paket enthält genau die vier Dateien, die jemand braucht")
+    void vierDateien() {
         var p = paket();
-        assertEquals(3, p.size(), "Mehr Dateien heißt mehr Fragen: " + p.keySet());
+        assertEquals(4, p.size(), "Mehr Dateien heißt mehr Fragen: " + p.keySet());
         assertTrue(p.containsKey("pin-roboter-agent/docker-compose.yml"));
         assertTrue(p.containsKey("pin-roboter-agent/.env"));
         assertTrue(p.containsKey("pin-roboter-agent/ANLEITUNG.md"));
+        // Seit dem 14.08.2026 dazu: Das Aktualisierungsskript liegt offen
+        // dabei, statt in einem fremden Abbild zu stecken. Wer es liest, weiß
+        // danach genau, was auf seinem Rechner passiert.
+        assertTrue(p.containsKey("pin-roboter-agent/aktualisieren.sh"));
     }
 
     @Test
@@ -84,26 +88,14 @@ class AgentenpaketTest {
     }
 
     @Test
-    @DisplayName("Die Aktualisierung fasst nur den Agenten an und nur nachts")
-    void aktualisierungEingegrenzt() {
-        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
-        assertTrue(yml.contains("WATCHTOWER_LABEL_ENABLE"),
-                "Ohne Label-Filter würde jeder Container auf dem Rechner aktualisiert");
-        assertTrue(yml.contains("com.centurylinklabs.watchtower.enable"),
-                "Das Label am Agenten fehlt — dann aktualisiert sich gar nichts");
-        assertTrue(yml.contains("WATCHTOWER_SCHEDULE"),
-                "Ein Neustart während der Sprechzeit unterbricht die Überwachung");
-    }
-
-    @Test
-    @DisplayName("Watchtower bekommt den Docker-Socket nicht direkt")
+    @DisplayName("Der Aktualisierer bekommt den Docker-Socket nicht direkt")
     void keinDirekterSocket() {
         // Wer den Socket hat, ist faktisch Administrator des Rechners
         // (CLAUDE.md, Watchtower-Vorbehalt). Nur der Vermittler darf ihn sehen.
         String yml = paket().get("pin-roboter-agent/docker-compose.yml");
         assertTrue(yml.contains("docker-socket-proxy"), yml);
         assertTrue(yml.contains("DOCKER_HOST: tcp://dockerzugang:2375"),
-                "Watchtower muss über den Vermittler gehen");
+                "Der Aktualisierer muss über den Vermittler gehen");
         assertTrue(yml.contains("EXEC: \"0\""),
                 "Befehle in fremden Containern dürfen nicht erlaubt sein");
         // Genau EINE Einbindezeile — nicht ein Vorkommen: Die Zeile nennt den
@@ -147,31 +139,6 @@ class AgentenpaketTest {
         assertTrue(gesehen.containsKey("agent"), "Der Dienst „agent“ fehlt: " + gesehen.keySet());
     }
 
-    @Test
-    @DisplayName("Die Aktualisierung lässt sich aus der Zentrale anstoßen")
-    void aufZuruf() {
-        // Ohne HTTP-API könnte ein Administrator nur bis zum nächsten
-        // nächtlichen Lauf warten — bei einer Fehlerbehebung, die genau an
-        // diesem Standort gebraucht wird, ist das keine Antwort.
-        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
-        assertTrue(yml.contains("WATCHTOWER_HTTP_API_UPDATE: \"true\""), yml);
-        assertTrue(yml.contains("WATCHTOWER_HTTP_API_PERIODIC_POLLS: \"true\""),
-                "Ohne diesen Schalter wäre der nächtliche Plan wirkungslos");
-        assertTrue(yml.contains("AKTUALISIERUNG_URL: http://aktualisierung:8080"),
-                "Der Agent muss wissen, wen er fragen soll");
-
-        // Das Kennwort steht in der .env und ist je Paket ein anderes.
-        String env1 = paket().get("pin-roboter-agent/.env");
-        String env2 = paket().get("pin-roboter-agent/.env");
-        String t1 = zeile(env1, "AKTUALISIERUNG_TOKEN="), t2 = zeile(env2, "AKTUALISIERUNG_TOKEN=");
-        assertTrue(t1.length() > 20, "Kennwort zu kurz: " + t1);
-        assertNotEquals(t1, t2,
-                "Ein festes Kennwort wäre in jeder Praxis dasselbe — wer eines kennt, "
-                + "könnte überall Neustarts auslösen");
-        assertTrue(yml.contains("WATCHTOWER_HTTP_API_TOKEN: ${AKTUALISIERUNG_TOKEN}"),
-                "Das Kennwort gehört in die .env, nicht ins Compose");
-    }
-
     private static String zeile(String text, String beginn) {
         return text.lines().filter(z -> z.startsWith(beginn))
                 .map(z -> z.substring(beginn.length()).strip())
@@ -179,29 +146,80 @@ class AgentenpaketTest {
     }
 
     @Test
-    @DisplayName("Die Anmeldung kommt aus einem eigenen Volume, nicht aus dem Datenverzeichnis")
-    void anmeldungGetrennt() {
-        // Der Token steht nicht im Paket, sondern wird vom Agenten aus der
-        // Zentrale geholt und abgelegt. Watchtower liest ihn — und darf dabei
-        // NICHT an /daten kommen: Dort liegen Token, privater Schlüssel und die
-        // PIN-Ablage.
-        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
-
-        assertTrue(yml.contains("DOCKER_CONFIG: /registry"),
-                "Ohne diesen Zeiger findet die Aktualisierung die Anmeldung nicht");
-        assertTrue(yml.contains("REGISTRY_VERZEICHNIS: /registry"),
-                "Der Agent muss dorthin schreiben, wo Watchtower liest");
-        assertTrue(yml.contains("registryzugang:/registry:ro"),
-                "Watchtower darf nur lesen — schreiben tut allein der Agent");
-        assertFalse(yml.contains("agentdaten:/registry"),
-                "Das Datenverzeichnis geht die Aktualisierung nichts an");
-
-        // Und der Token selbst steht nirgends im Paket.
+    @DisplayName("Die Zugangsdaten stehen nirgends im Paket")
+    void keinTokenImPaket() {
+        // Der Kern der Änderung vom 14.08.2026: Der Token liegt nicht mehr
+        // dauerhaft auf dem Praxisrechner. Er kommt erst mit dem Auftrag —
+        // und im Paket steht er gar nicht.
         for (var e : paket().entrySet()) {
             assertFalse(e.getValue().contains("ghp_"),
-                    "In " + e.getKey() + " steht ein Token — genau das sollte "
-                    + "die Weitergabe über die Zentrale verhindern");
+                    "In " + e.getKey() + " steht ein Token");
+            assertFalse(e.getValue().contains("DOCKER_CONFIG"),
+                    "In " + e.getKey() + " liegt noch der alte Weg über eine "
+                    + "dauerhafte config.json");
         }
+    }
+
+    @Test
+    @DisplayName("Der Briefkasten ist getrennt vom Datenverzeichnis")
+    void briefkastenGetrennt() {
+        // In /daten liegen Token, privater Schlüssel und die PIN-Ablage. Die
+        // gehen die Aktualisierung nichts an.
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+        assertTrue(yml.contains("auftrag:/auftrag"), yml);
+        assertTrue(yml.contains("AUFTRAG_VERZEICHNIS: /auftrag"),
+                "Der Agent muss wissen, wohin er den Auftrag legt");
+        assertFalse(yml.contains("agentdaten:/auftrag"),
+                "Das Datenverzeichnis gehört nicht in den Briefkasten");
+        // Der Aktualisierer bekommt das Datenverzeichnis nirgends zu sehen.
+        int nachAktualisierung = yml.indexOf("aktualisierung:");
+        int nachDockerzugang = yml.indexOf("dockerzugang:");
+        String block = yml.substring(nachAktualisierung, nachDockerzugang);
+        assertFalse(block.contains("agentdaten"),
+                "Die Aktualisierung darf /daten nicht sehen:\n" + block);
+    }
+
+    @Test
+    @DisplayName("Der Aktualisierer tut von selbst nichts")
+    void nurAufAuftrag() {
+        // Kein Zeitplan, kein periodischer Lauf: Eine fehlerhafte Freigabe
+        // träfe sonst in derselben Nacht alle Standorte gleichzeitig.
+        String yml = paket().get("pin-roboter-agent/docker-compose.yml");
+        assertFalse(yml.contains("SCHEDULE"),
+                "Ein Zeitplan hieße: Aktualisierung ohne Entscheidung");
+        assertFalse(yml.contains("PERIODIC_POLLS"), yml);
+        assertFalse(yml.contains("watchtower"),
+                "Ein Überwachungsdienst für eine Aufgabe ohne Überwachung");
+
+        String skript = paket().get("pin-roboter-agent/aktualisieren.sh");
+        assertNotNull(skript, "Das Skript fehlt im Paket");
+        assertTrue(skript.contains("Von selbst wird nichts aktualisiert"),
+                "Der Betreiber soll beim Lesen sofort sehen, dass hier nichts "
+                + "von allein passiert");
+    }
+
+    @Test
+    @DisplayName("Das Skript nimmt den Token über die Standardeingabe")
+    void tokenNichtInDerProzessliste() {
+        String skript = paket().get("pin-roboter-agent/aktualisieren.sh");
+        assertTrue(skript.contains("--password-stdin"),
+                "Als Befehlszeilenargument stünde der Token in der Prozessliste, "
+                + "die jeder auf diesem Rechner lesen kann");
+        assertFalse(skript.contains("-p \"$TOKEN\""), skript);
+        assertTrue(skript.contains("rm -f \"$AUFTRAG\""),
+                "Der Auftrag muss als Erstes gelöscht werden — er enthält den Token");
+        assertTrue(skript.contains("docker logout"),
+                "Nach dem Vorgang darf keine Anmeldung liegen bleiben");
+    }
+
+    @Test
+    @DisplayName("Angefasst wird nur der Agent")
+    void nurDerAgent() {
+        String skript = paket().get("pin-roboter-agent/aktualisieren.sh");
+        assertTrue(skript.contains("docker compose pull agent"),
+                "Ohne den Dienstnamen zöge compose alles neu");
+        assertTrue(skript.contains("docker compose up -d agent"),
+                "Sonst beendete sich der Aktualisierer mitten im eigenen Befehl");
     }
 
     @Test
@@ -240,7 +258,7 @@ class AgentenpaketTest {
     void sonderzeichen() {
         var p = entpacken(Agentenpaket.bauen(ZENTRALE, GEHEIM,
                 "Gynäkologie Südpark & Co", "Agent \"Süd\"", "0.3.2"));
-        assertEquals(3, p.size());
+        assertEquals(4, p.size());
         assertTrue(p.get("pin-roboter-agent/ANLEITUNG.md").contains("Gynäkologie Südpark & Co"));
     }
 
@@ -281,11 +299,17 @@ class AgentenpaketTest {
     @DisplayName("Die Anleitung erklärt die Aktualisierung und wie man sie abstellt")
     void anleitungErklaertAktualisierung() {
         String md = paket().get("pin-roboter-agent/ANLEITUNG.md");
-        assertTrue(md.contains("3:30"), "Wann aktualisiert wird, gehört genannt");
+        assertTrue(md.contains("aktualisiert sich nicht von selbst"),
+                "Der wichtigste Satz: Hier passiert nichts ohne Entscheidung");
         assertTrue(md.contains("Wenn Sie das nicht möchten"),
-                "Manche Häuser wollen jede Änderung selbst bestimmen");
-        assertTrue(md.contains("freigegeben"),
-                "Dass nicht jede Veröffentlichung ausgerollt wird, ist der Kern");
+                "Manche Häuser wollen jede Änderung selbst am Rechner vornehmen");
+        assertTrue(md.contains("bleiben freigeschaltet"),
+                "Die Beruhigung, auf die es in einer Praxis ankommt");
+        assertTrue(md.contains("aktualisieren.sh"),
+                "Der Betreiber soll wissen, wo er nachlesen kann, was passiert");
+        assertTrue(md.contains("liegt kein Zugangstoken"),
+                "Dass am Standort kein Token liegt, ist der Kern der Änderung "
+                + "vom 14.08.2026 — das gehört in die Anleitung");
     }
 
     // ------------------------------------------------------------- Kleinteile

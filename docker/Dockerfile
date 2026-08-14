@@ -92,7 +92,14 @@ RUN chmod 0555 /app/gesundheit.sh && \
 # frisch erzeugtes benanntes Volume uebernimmt Eigentuemer und Rechte des
 # Mountpunkts aus dem Image. Fehlt das Verzeichnis, gehoert das Volume root -
 # und der Container laeuft als Nicht-Root (NFA-SIC-030).
-RUN mkdir -p /daten /sicherungen && chown 10001:10001 /daten /sicherungen
+# /auftrag ist der Briefkasten zum Aktualisierungsdienst (FA-AGT-100). Er muss
+# hier angelegt werden, nicht erst beim Mounten: Docker übernimmt die Rechte
+# des Verzeichnisses aus dem Abbild, wenn ein leeres Volume daraufgelegt wird.
+# Ohne diesen Schritt gehört das Volume root, und der Agent — der als 10001
+# läuft — kann nichts hineinlegen. Am 14.08.2026 am laufenden Stack gemessen:
+# „Der Auftrag ließ sich nicht ablegen … ist /auftrag beschreibbar?"
+RUN mkdir -p /daten /sicherungen /auftrag \
+ && chown 10001:10001 /daten /sicherungen /auftrag
 USER 10001
 
 # Dokumentiert den Port im Image. Oeffnet nichts — das Veroeffentlichen
