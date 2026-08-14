@@ -3,8 +3,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent><groupId>de.pinroboter</groupId><artifactId>pin-roboter</artifactId>
-    <version>0.3.2</version><relativePath>../../pom.xml</relativePath></parent>
+    <version>1</version><relativePath>../../pom.xml</relativePath></parent>
   <artifactId>zentrale</artifactId>
+  <!-- Produktversion der ZENTRALE. Sie wird unabhängig vom Agenten erhöht
+       (ADR-0013). Der Vertrag zwischen beiden ist nicht diese Nummer, sondern
+       die Protokollversion. -->
+  <version>0.4.0</version>
   <dependencies>
     <dependency><groupId>de.pinroboter</groupId><artifactId>gemeinsam</artifactId></dependency>
     <dependency><groupId>io.javalin</groupId><artifactId>javalin</artifactId></dependency>

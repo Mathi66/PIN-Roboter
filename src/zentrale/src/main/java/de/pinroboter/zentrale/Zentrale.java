@@ -414,7 +414,15 @@ public class Zentrale {
                                 "Bitte am Standort prüfen, ob der Container läuft.");
                     }
                 } catch (InterruptedException e) { return; }
-                  catch (Exception ignored) { }
+                  catch (Exception e) {
+                    // NICHT verschlucken: Fällt diese Schleife aus, werden
+                    // Alarme nicht mehr geschlossen und Aufträge laufen nie
+                    // ab — beides sieht aus wie ein Fehler an ganz anderer
+                    // Stelle. Am 14.08.2026 schloss sich ein Stummalarm im
+                    // Prüflauf nicht, und der Grund war nicht auffindbar.
+                    System.err.println("Agentenzustände nicht prüfbar: "
+                            + de.pinroboter.gemeinsam.Netzfehler.klartext(e));
+                }
             }
         });
 
@@ -775,7 +783,7 @@ public class Zentrale {
     /**
      * Wie lange ein Agent hinter der Zentrale zurückbleiben darf.
      *
-     * <p>Seit dem 14.08.2026 wird nur noch auf Auftrag aktualisiert. Drei Tage
+     * <p>Seit dem 14.08.2026 wird nur auf Auftrag aktualisiert. Drei Tage
      * Rückstand heißen also: Es hat drei Tage lang niemand angestoßen — oder
      * ein Versuch ist gescheitert. Beides gehört gemeldet, aber nicht sofort:
      * Direkt nach einer Aktualisierung der Zentrale hinken alle Agenten
@@ -792,23 +800,26 @@ public class Zentrale {
      * erreichbar ist — das alles sieht die Zentrale nicht, und der Agent selbst
      * auch nicht: Er hat bewusst keinen Zugriff auf den Docker-Dienst. Was
      * beide sehen, ist das Ergebnis. Läuft ein Agent mehrere Tage auf einer
-     * älteren Version, obwohl die Weitergabe der Zugangsdaten eingeschaltet
-     * ist, dann greift die selbsttätige Aktualisierung nicht — gleich aus
-     * welchem Grund. Genau das ist die Aussage, die ein Administrator braucht.
+     * älteren Fassung, als in der Programmablage bereitsteht, dann ist dort
+     * etwas liegengeblieben — es hat niemand angestoßen, oder ein Versuch ist
+     * gescheitert. Genau das ist die Aussage, die ein Administrator braucht.
      *
-     * <p>Ohne eingeschaltete Weitergabe wird <b>nicht</b> alarmiert: Dann
-     * aktualisiert jemand von Hand, und ein Rückstand ist seine Entscheidung.
+     * <p>Verglichen wird mit der neuesten <b>Agent</b>-Fassung, nicht mit der
+     * Version der Zentrale: Beide werden getrennt versioniert (ADR-0013).
+     * Ist keine Fassung bekannt, wird nicht alarmiert — ohne Maßstab wäre jede
+     * Meldung geraten.
      */
     private void agentenzustaendePruefen() {
-        String zentralenversion = Versionspruefung.laufendeVersion();
-        boolean weitergabe;
-        try {
-            var z = versionen.agentenzugang();
-            weitergabe = z != null;
-        } catch (Exception e) {
-            weitergabe = false;
-        }
-
+        // Verglichen wird mit der neuesten Fassung, die es FÜR DEN AGENTEN
+        // gibt — nicht mit der Version der Zentrale. Beide werden getrennt
+        // versioniert (ADR-0013); ihre Nummern zu vergleichen ergäbe seit dem
+        // 14.08.2026 keinen Sinn mehr.
+        //
+        // Ist keine Fassung bekannt — etwa weil kein Zugang zur Programmablage
+        // hinterlegt ist —, wird nicht alarmiert. Ohne Vergleichsmaßstab wäre
+        // jede Meldung geraten.
+        var agentfassungen = versionen.agentversionen();
+        String neueste = agentfassungen.isEmpty() ? null : agentfassungen.get(0);
         try (var p = db.verbindung().prepareStatement("""
                 SELECT id, bezeichnung, einrichtung, zuletzt_gesehen,
                        bausteinversion, version_seit
@@ -849,21 +860,19 @@ public class Zentrale {
                                 abschluss, gut || fertig == null ? null : fertig.meldung());
                     }
 
-                    boolean veraltet = !stumm && weitergabe
+                    boolean veraltet = !stumm && neueste != null
                             && version != null && !version.isBlank()
                             && !version.equals("unbekannt")
-                            && !version.equals(zentralenversion)
+                            && Versionspruefung.neuer(neueste, version)
                             && seit != null
                             && seit.toInstant().isBefore(Instant.now().minus(VERALTET_AB));
                     pruefe(einrichtung, veraltet, objekt, Alarmverwaltung.Art.AGENT_VERALTET,
-                            "Der Standort-Agent „%s“ läuft seit über %d Tagen auf Version %s, "
+                            "Der Standort-Agent „%s“ läuft seit über %d Tagen auf Version %s. "
                             .formatted(bez, VERALTET_AB.toDays(), nz(version))
-                            + "die Zentrale auf " + zentralenversion
-                            + ". Die selbsttätige Aktualisierung greift dort nicht.",
-                            "Bitte am betroffenen Rechner prüfen, ob der Dienst „aktualisierung“ "
-                            + "läuft: docker compose logs aktualisierung. Häufigste Ursache sind "
-                            + "abgelehnte Zugangsdaten zur Programmablage — die lassen sich unter "
-                            + "„Instanz“ neu hinterlegen.");
+                            + "Bereit steht " + nz(neueste) + ".",
+                            "Unter „Instanz → Standort-Agenten“ lässt sich die Aktualisierung "
+                            + "anstoßen. Ist sie bereits gescheitert, steht dort die Ursache; "
+                            + "am Standort selbst hilft „docker compose logs aktualisierung“.");
                 }
             }
         } catch (java.sql.SQLException e) {
@@ -1366,82 +1375,13 @@ public class Zentrale {
                 <form method="post" action="/verwaltung/registry/pruefen" class="abstand-oben">
                   <button class="knopf" type="submit" title="Fragt die Registry sofort ab, statt auf die tägliche Prüfung zu warten" aria-label="Fragt die Registry sofort ab, statt auf die tägliche Prüfung zu warten">Jetzt auf neue Versionen prüfen</button>
                 </form>
-                %s
                 </div>""".formatted(esc(nz(registryFeld("registry"))), esc(nz(registryFeld("abbild"))),
                         esc(nz(registryFeld("benutzer"))),
                         z.zugangHinterlegt() ? "Ein Token ist hinterlegt."
-                                             : "Es ist kein Token hinterlegt.",
-                        agentenaktualisierung(z.zugangHinterlegt())));
+                                             : "Es ist kein Token hinterlegt."));
         return s.append("</div>").toString();
     }
 
-    /**
-     * Der Schalter für die selbsttätige Aktualisierung der Standort-Agenten
-     * (PO, 13.08.2026).
-     *
-     * <p>Er gibt keinen Befehl, sondern gibt etwas <b>heraus</b>: die
-     * Zugangsdaten zur Programmablage. Ohne sie kommt ein Agent im Praxisnetz
-     * nicht an sein Abbild — die Aktualisierung unterbleibt, ohne dass dort
-     * jemand etwas umstellen muss.
-     *
-     * <p>Das ist zugleich der Not-Aus: Stellt sich eine Fassung als fehlerhaft
-     * heraus, schaltet man hier ab, und keine weitere Praxis zieht sie nach.
-     */
-    private String agentenaktualisierung(boolean tokenDa) {
-        boolean an = versionen.agentenzugang() != null;
-        return """
-                <div class="tafel abstand-oben"><h3>Selbsttätige Aktualisierung der Agenten
-                  %s</h3>
-                <div class="karte-leib">
-                <p><span class="marke %s">%s</span></p>
-                %s
-                <form method="post" action="/verwaltung/registry/agenten" class="abstand-oben"
-                      onsubmit="return confirm('%s')">
-                  <input type="hidden" name="an" value="%s">
-                  <button class="knopf %s" type="submit"
-                          title="%s"
-                          aria-label="%s">%s</button>
-                </form>
-                </div></div>"""
-                .formatted(
-                    Bedienelemente.info("agent-weitergabe", "die selbsttätige Aktualisierung"),
-                    an ? "ok" : "unbekannt",
-                    an ? "✓ eingeschaltet — Aktualisierung auf Auftrag möglich"
-                       : "× ausgeschaltet — keine Aktualisierung möglich",
-                    tokenDa ? "" : "<div class=\"hinweis\">Zuerst oben einen Zugang mit Token "
-                            + "hinterlegen. Ohne ihn gibt es nichts weiterzugeben.</div>",
-                    an ? "Weitergabe abschalten? Aktualisierungen scheitern danach, bis Sie "
-                       + "sie wieder einschalten."
-                       : "Weitergabe einschalten? Die Zugangsdaten gehen dann an einen "
-                       + "Agenten, sobald für ihn ein Aktualisierungsauftrag vorliegt.",
-                    an ? "aus" : "an",
-                    an ? "warnend" : "haupt",
-                    an ? "Nimmt den Agenten die Zugangsdaten; Aktualisierungen scheitern danach"
-                       : "Gibt den Agenten die Zugangsdaten, damit sie sich aktualisieren können",
-                    an ? "Selbsttätige Aktualisierung abschalten"
-                       : "Selbsttätige Aktualisierung einschalten",
-                    an ? "Abschalten" : "Einschalten");
-    }
-
-    private String registryFeld(String spalte) {
-        try (var p = db.verbindung().prepareStatement(
-                "SELECT " + spalte + " FROM registry_zugang WHERE nur_eine")) {
-            try (var rs = p.executeQuery()) { return rs.next() ? rs.getString(1) : null; }
-        } catch (java.sql.SQLException e) { return null; }
-    }
-
-    /**
-     * Formular zum Einrichten eines Agenten (FA-AGT-010).
-     *
-     * <p>Bis zum 09.08.2026 gab es das nur über die Kommandozeile — in der
-     * Oberfläche fehlte es ganz. Ein Betreiber ohne IT-Personal konnte damit
-     * keinen zweiten Standort anbinden.
-     *
-     * <p><b>Die Einrichtung wird hier gewählt</b>, nicht später vom Agenten
-     * gemeldet. Das ist der einzige Zeitpunkt, an dem ein Mensch weiß, wo das
-     * Gerät steht — und es ist die sichere Richtung: Ein Agent könnte sonst
-     * Geräte einer fremden Einrichtung unterschieben.
-     */
     private String agentAnlegenFormular(Geltungsbereich bereich) {
         var einheiten = bestand.organisationen(bereich);
 
@@ -1503,6 +1443,19 @@ public class Zentrale {
                 </div>""".formatted(auswahl, Symbole.herunterladen());
     }
 
+    /**
+     * Ein einzelnes Feld des Registry-Zugangs.
+     *
+     * <p>Der Spaltenname kommt ausschließlich aus dem Quelltext dieser Klasse,
+     * nie aus einer Eingabe — sonst wäre das eine Einschleusungsstelle.
+     */
+    private String registryFeld(String spalte) {
+        try (var p = db.verbindung().prepareStatement(
+                "SELECT " + spalte + " FROM registry_zugang WHERE nur_eine")) {
+            try (var rs = p.executeQuery()) { return rs.next() ? rs.getString(1) : null; }
+        } catch (java.sql.SQLException e) { return null; }
+    }
+
     private String agententafel(Geltungsbereich bereich) {
         return agententafel(bereich, true);
     }
@@ -1515,6 +1468,7 @@ public class Zentrale {
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Standort-Agenten "
                 + "<span class=\"zaehler\">" + liste.size() + "</span> "
                 + Bedienelemente.info("agent-aktualisierung", "Standort-Agenten")
+                + Bedienelemente.info("protokollversion", "Protokollversionen")
                 + "</h3>");
         if (liste.isEmpty()) {
             return s.append("""
@@ -4743,26 +4697,6 @@ public class Zentrale {
                 versionen.pruefen();
             }
             c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)), angemeldeter(c)));
-        });
-
-        app.post("/verwaltung/registry/agenten", c -> {
-            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(),
-                    "Das Steuern der Agenten-Aktualisierung")) return;
-            boolean an = "an".equals(Anmeldeseiten.feld(c, "an"));
-            versionen.anAgenten(an);
-            // Sicherheitsstufe: Hier wird entschieden, ob Zugangsdaten das Haus
-            // verlassen — und ob in Praxen ungefragt neue Fassungen anlaufen.
-            protokoll.anfuegen(Fachprotokoll.INSTANZ, null, Ereignisart.EINSTELLUNG_GEAENDERT,
-                    true, angemeldeter(c).anzeigename(), null,
-                    "Selbsttätige Aktualisierung der Standort-Agenten "
-                            + (an ? "eingeschaltet" : "abgeschaltet"),
-                    an ? "Ein Agent bekommt die Zugangsdaten zur Programmablage, sobald für "
-                         + "ihn ein Aktualisierungsauftrag vorliegt — nicht dauerhaft und "
-                         + "nicht ohne Anlass."
-                       : "Die Agenten bekommen keine Zugangsdaten mehr. Aktualisierungen "
-                         + "scheitern ab sofort mit einer verständlichen Meldung.");
-            c.html(seite("verwaltung", verwaltungsSeite(null, null, bereich(c)),
-                    angemeldeter(c)));
         });
 
         app.post("/verwaltung/registry/pruefen", c -> {

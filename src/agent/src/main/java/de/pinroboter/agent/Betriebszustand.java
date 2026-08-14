@@ -266,19 +266,19 @@ final class Betriebszustand {
                           + "(openssl rand -base64 32), dann neu starten. "
                           + "Ohne ihn müssen PINs nach jedem Neustart erneut hinterlegt werden."));
 
-        // Ohne diesen Punkt bliebe eine nicht greifende Aktualisierung
-        // monatelang unbemerkt — und genau dann fehlen die Fehlerbehebungen,
-        // für die sie eingebaut wurde.
-        l.add(new Schritt("Selbsttätige Aktualisierung", aktualisierungBereit,
+        // Dieser Punkt gilt immer als erfüllt: Dass gerade nicht aktualisiert
+        // wird, ist der Normalzustand, kein Mangel. Ob eine Aktualisierung
+        // ANKOMMT, prüft die Zentrale — sie kennt die verfügbaren Fassungen
+        // und alarmiert, wenn ein Standort zurückhängt (FA-AGT-090).
+        l.add(new Schritt("Aktualisierung möglich", true,
                 aktualisierungBereit
-                        ? "Zugangsdaten zur Programmablage liegen vor" + (aktualisierungStand == null
-                                ? "." : " (" + aktualisierungStand + ").")
-                        : "Keine Zugangsdaten — der Agent aktualisiert sich nicht selbst.",
-                aktualisierungBereit ? null
-                        : "In der Zentrale unter „Instanz“ → „Programmablage“ die Weitergabe "
-                          + "an Agenten einschalten. Bis dahin muss jede neue Version hier "
-                          + "von Hand eingespielt werden: docker compose pull && "
-                          + "docker compose up -d"));
+                        ? "Ein Auftrag der Zentrale wird gerade ausgeführt"
+                          + (aktualisierungStand == null ? "." : " (" + aktualisierungStand + ").")
+                        : "Bereit. Aktualisiert wird nur auf Auftrag der Zentrale.",
+                // Kein Mangel: So soll es sein. Der Punkt steht hier, damit
+                // sichtbar ist, dass es diesen Weg gibt — und ob er gerade
+                // benutzt wird.
+                null));
 
         return l;
     }

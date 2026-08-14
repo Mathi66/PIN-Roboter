@@ -16,9 +16,12 @@ name: Stabile Version freigeben
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Bereits veröffentlichte Version, z. B. 0.4.0"
-        required: true
+      zentrale:
+        description: "Version der Zentrale, z. B. 0.4.0 — leer lassen, um sie nicht zu ändern"
+        required: false
+      agent:
+        description: "Version des Agenten, z. B. 0.4.1 — leer lassen, um ihn nicht zu ändern"
+        required: false
       bestaetigung:
         description: 'Zum Bestätigen "ausrollen" eingeben'
         required: true
@@ -54,9 +57,13 @@ jobs:
       # den Tag ins Leere zeigen lassen.
       - name: Version muss veröffentlicht sein
         run: |
-          for N in "$IMAGE" "$IMAGE-agent"; do
-            if ! docker manifest inspect "$N:${{ inputs.version }}" >/dev/null 2>&1; then
-              echo "::error::$N:${{ inputs.version }} gibt es nicht in GHCR."
+          [ -n "${{ inputs.zentrale }}${{ inputs.agent }}" ] \
+            || { echo "::error::Mindestens eine Version angeben."; exit 1; }
+          for PAAR in "$IMAGE:${{ inputs.zentrale }}" "$IMAGE-agent:${{ inputs.agent }}"; do
+            N="${PAAR%:*}"; V="${PAAR##*:}"
+            [ -n "$V" ] || continue
+            if ! docker manifest inspect "$N:$V" >/dev/null 2>&1; then
+              echo "::error::$N:$V gibt es nicht in GHCR."
               exit 1
             fi
           done
@@ -66,21 +73,24 @@ jobs:
       # ausgerollt wird sie aber vom Deploy-Skript, nicht von Watchtower.
       - name: „stabil" umhängen
         run: |
-          for N in "$IMAGE" "$IMAGE-agent"; do
-            docker buildx imagetools create -t "$N:stabil" "$N:${{ inputs.version }}"
-            echo "$N:stabil zeigt jetzt auf ${{ inputs.version }}"
+          for PAAR in "$IMAGE:${{ inputs.zentrale }}" "$IMAGE-agent:${{ inputs.agent }}"; do
+            N="${PAAR%:*}"; V="${PAAR##*:}"
+            [ -n "$V" ] || { echo "$N bleibt, wie es ist"; continue; }
+            docker buildx imagetools create -t "$N:stabil" "$N:$V"
+            echo "$N:stabil zeigt jetzt auf $V"
           done
 
       - name: Zusammenfassung
         run: |
           {
-            echo "### Version ${{ inputs.version }} ist jetzt die stabile"
+            echo "### Neue stabile Fassungen"
             echo ""
             echo "Standort-Agenten mit selbsttätiger Aktualisierung ziehen sie im"
             echo "nächsten Wartungsfenster nach."
             echo ""
             echo '```'
-            echo "$IMAGE:stabil        → ${{ inputs.version }}"
-            echo "$IMAGE-agent:stabil  → ${{ inputs.version }}"
+            [ -n "${{ inputs.zentrale }}" ] && echo "$IMAGE:stabil        → ${{ inputs.zentrale }}"
+            [ -n "${{ inputs.agent }}" ]    && echo "$IMAGE-agent:stabil  → ${{ inputs.agent }}"
+            true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

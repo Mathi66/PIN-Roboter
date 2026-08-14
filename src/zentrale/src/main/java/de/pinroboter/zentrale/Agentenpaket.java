@@ -531,7 +531,7 @@ final class Agentenpaket {
                 | Meldung | Bedeutung |
                 |---|---|
                 | `unauthorized` / `denied` beim Herunterladen | Die Programmablage ist nicht öffentlich. Schritt 2 ausführen; Zugangsdaten bekommen Sie von Ihrem Dienstleister. |
-                | Der Agent bleibt auf einer alten Version | Prüfen Sie unter <http://127.0.0.1:8091>, ob „Selbsttätige Aktualisierung" erfüllt ist. Fehlt sie, ist die Weitergabe in der Zentrale nicht eingeschaltet. Sonst hilft `docker compose logs aktualisierung`. |
+                | Der Agent bleibt auf einer alten Version | Prüfen Sie unter <http://127.0.0.1:8091>, ob „Aktualisierung möglich" erfüllt ist. Fehlt der Punkt, ist die Weitergabe in der Zentrale nicht eingeschaltet. Sonst hilft `docker compose logs aktualisierung`. |
                 | `Unbekanntes Registrierungsgeheimnis` | Das Geheimnis ist abgelaufen (24 Stunden) oder schon benutzt. Laden Sie in der Zentrale ein neues Paket herunter. |
                 | `Warte auf den Simulator` / keine Verbindung zum Konnektor | `KONNEKTOR_URL` prüfen. Ist der Rechner im selben Netz wie der Konnektor? |
                 | `malformed PEM data` | `CA_URL` zeigt nicht auf ein Zertifikat. |

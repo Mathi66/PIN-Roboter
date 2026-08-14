@@ -167,16 +167,20 @@ public class Versionspruefung {
      * <p><b>Der Token gehört auf {@code read:packages} beschränkt.</b> Mehr
      * braucht ein Agent nie, und mehr sollte er im Ernstfall nicht hergeben.
      *
-     * @return {@code null}, wenn nichts eingerichtet ist oder die Weitergabe
-     *         abgeschaltet wurde
+     * <p>Herausgegeben werden sie nur, wenn für den fragenden Agenten ein
+     * Aktualisierungsauftrag vorliegt — das prüft der Aufrufer. Ein
+     * zusätzlicher Schalter davor wäre eine Hürde, die man einmal umlegt und
+     * nie wieder ansieht (PO, 14.08.2026): Jeder Auftrag ist ohnehin eine
+     * bewusste Handlung eines Administrators.
+     *
+     * @return {@code null}, wenn kein Zugang eingerichtet ist
      */
     public Agentenzugang agentenzugang() {
         try (PreparedStatement p = db.verbindung().prepareStatement(
-                "SELECT registry, benutzer, token_chiffrat, an_agenten "
+                "SELECT registry, benutzer, token_chiffrat "
                 + "FROM registry_zugang WHERE nur_eine")) {
             try (ResultSet rs = p.executeQuery()) {
                 if (!rs.next()) return null;
-                if (!rs.getBoolean("an_agenten")) return null;
                 String benutzer = rs.getString("benutzer");
                 String ch = rs.getString("token_chiffrat");
                 if (benutzer == null || benutzer.isBlank() || ch == null || tresor == null) {
@@ -255,24 +259,6 @@ public class Versionspruefung {
 
     /** Zugangsdaten für die Programmablage. Der Token ist Klartext — sparsam behandeln. */
     public record Agentenzugang(String registry, String benutzer, String token) {}
-
-    /**
-     * Schaltet die Weitergabe an Agenten ein oder aus.
-     *
-     * <p>Ausgeschaltet können sich Agenten nicht mehr selbst aktualisieren:
-     * Ohne Zugangsdaten kommt Watchtower nicht an das Abbild. Das ist der
-     * Not-Aus für die Aktualisierung — kein zusätzlicher Mechanismus, sondern
-     * das Vorenthalten dessen, was es dafür braucht.
-     */
-    public void anAgenten(boolean an) {
-        try (PreparedStatement p = db.verbindung().prepareStatement(
-                "UPDATE registry_zugang SET an_agenten = ? WHERE nur_eine")) {
-            p.setBoolean(1, an);
-            p.executeUpdate();
-        } catch (SQLException e) {
-            System.err.println("Weitergabe an Agenten nicht änderbar: " + e.getMessage());
-        }
-    }
 
     /**
      * Fragt die Registry ab und merkt sich das Ergebnis.

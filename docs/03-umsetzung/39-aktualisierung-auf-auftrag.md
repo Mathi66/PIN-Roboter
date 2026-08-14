@@ -68,25 +68,27 @@ Von drei Wegen fiel die Wahl auf den mittleren:
 
 ## Wie es jetzt läuft
 
-```
-Administrator ──► Auftrag in der Zentrale
-                       │
-Agent (Prüftakt) ──────┤ holt den Auftrag
-                       │ holt die Zugangsdaten  ← nur jetzt, nur bei Auftrag
-                       │ quittiert
-                       ▼
-                  /auftrag/auftrag        4 Zeilen, Rechte 600
-                       │
-Aktualisierer ─────────┤ liest und LÖSCHT als Erstes
-                       │ docker login (Token über stdin)
-                       │ docker compose pull agent
-                       │ docker compose up -d agent   ← Agent wird ersetzt
-                       │ docker logout
-                       ▼
-Agent (neu) ───────────┤ räumt beim Start einen liegengebliebenen Auftrag weg
-                       │ meldet seine Version
-                       ▼
-              ERFOLGREICH  oder  FEHLGESCHLAGEN
+```mermaid
+sequenceDiagram
+    participant AD as Administrator
+    participant Z as Zentrale
+    participant A as Standort-Agent
+    participant U as Aktualisierer
+
+    AD->>Z: Aktualisierung auf 0.4.1 anfordern
+    A->>Z: holt den Auftrag (Prüftakt)
+    A->>Z: holt die Zugangsdaten<br/>— nur jetzt, nur bei Auftrag
+    A->>Z: quittiert (danach ist er gleich weg)
+    A->>U: /auftrag/auftrag — 4 Zeilen, Rechte 600
+    Note over U: liest und LÖSCHT als Erstes
+    U->>U: docker login (Token über stdin)
+    U->>U: docker compose pull agent
+    U->>U: docker compose up -d agent
+    Note over A,U: der Agent wird ersetzt
+    U->>U: docker logout
+    A->>A: räumt beim Start Liegengebliebenes weg
+    A->>Z: meldet seine Version
+    Note over Z: erfolgreich — oder nach 10 min fehlgeschlagen
 ```
 
 ### Der Briefkasten statt eines Netzwerkdienstes

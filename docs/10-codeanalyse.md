@@ -209,6 +209,48 @@ Agenten geschieht, die auf eine gelöschte Einheit zeigen.
 > Es ist dasselbe Muster wie beim fest verdrahteten „Praxis": Ein Text, der eine
 > Beziehung tragen soll. Er sieht so lange richtig aus, bis jemand umbenennt.
 
+### 3.6 Die Systemnachweise teilen sich einen Zustand
+
+**Befund vom 14.08.2026, aufgedeckt durch vier Vollläufe hintereinander.**
+
+`pruefungen/systemnachweise.sh` führt rund 500 Prüfungen **nacheinander gegen
+denselben laufenden Stand** aus. Jeder Block hinterlässt Zustand: einen offenen
+Aktualisierungsauftrag, einen genullten Token, einen gestoppten Container, eine
+zurückdatierte Zeitmarke.
+
+Solange niemand etwas ändert, funktioniert das. Ändert man einen Block, kippen
+die danach — und zwar mit Meldungen, die auf das Produkt zeigen statt auf die
+Ursache. Die Bilanz der vier Läufe:
+
+| Lauf | Befunde | davon am Produkt |
+|---|---|---|
+| 1 | 9 | **1** — beim Kürzen war Handbuchwissen verloren gegangen |
+| 2 | 8 | 0 — Folgen der Korrektur aus Lauf 1 |
+| 3 | 2 | 0 |
+| 4 | 5 | 0 — drei davon, weil ein Nachweis den Token nullte und nicht zurückstellte |
+
+**Was das kostet:** Ein Vollauf dauert 25 Minuten. Vier Runden, um überwiegend
+die Nachweise selbst zu reparieren, sind kein vertretbares Verhältnis.
+
+**Was zu tun wäre** (nicht getan, bewusst offen):
+
+- Jeder Block räumt auf, was er anlegt — als feste Regel, nicht nach Gefühl.
+- Blöcke, die den Stack verändern (Container stoppen, Budget ändern), laufen
+  am Ende oder in einem eigenen Lauf.
+- Ein Nachweis, der einen anderen voraussetzt, sagt das ausdrücklich, statt
+  sich auf die Reihenfolge zu verlassen.
+
+**Ein Befund bleibt ungeklärt:** „Der Alarm schließt sich, sobald der Agent
+wieder meldet" scheiterte im Prüfstand dreimal. Derselbe Ablauf im
+Entwicklungsstack läuft in 43 Sekunden durch — Alarm entsteht nach 37 s,
+schließt nach 43 s, kein Fehler in der Prüfschleife der Zentrale. Der
+Produktcode stimmt also; was im Prüfstand anders ist, war nach dessen
+Abräumen nicht mehr greifbar.
+
+Der Nachweis gibt seit dem 14.08.2026 im Fehlerfall aus, was er vorfindet:
+Alter der letzten Meldung, Einrichtung von Alarm und Agent, sowie gemeldete
+Fehler aus der Prüfschleife. Die Zentrale verschluckt Ausnahmen dort nicht mehr.
+
 ## 4. Was gut ist und so bleiben soll
 
 Damit ein späterer Umbau nicht versehentlich zerstört, was trägt:

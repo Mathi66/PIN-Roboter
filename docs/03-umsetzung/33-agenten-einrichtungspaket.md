@@ -24,12 +24,14 @@ Das Image kommt beim ersten Start aus GHCR.
 
 ## Was im Paket steckt
 
-```
-pin-roboter-agent/
-├── docker-compose.yml   Image mit fester Version, Volume, mem_limit, cap_drop
-├── .env                 Zentralen-Adresse und Zugangscode bereits eingetragen
-└── ANLEITUNG.md         vier Schritte, Werte-Tabelle, Fehlertabelle
-```
+Im Ordner `pin-roboter-agent/`:
+
+| Datei | Inhalt |
+|---|---|
+| `docker-compose.yml` | Image mit fester Version, Volume, `mem_limit`, `cap_drop` |
+| `.env` | Zentralen-Adresse und Zugangscode bereits eingetragen |
+| `ANLEITUNG.md` | vier Schritte, Werte-Tabelle, Fehlertabelle |
+| `aktualisieren.sh` | das Skript für die Aktualisierung auf Auftrag |
 
 ## Drei Entscheidungen
 

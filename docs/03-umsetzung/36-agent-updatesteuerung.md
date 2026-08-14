@@ -25,12 +25,11 @@ genügt nicht in zwei Fällen, die am Anfang eines Produkts der Regelfall sind:
 In der Agentenliste unter „Instanz" trägt jede Zeile eine Spalte
 **„Version & Aktualisierung"**. Alles zu einer Frage steht dort beieinander:
 
-```
-0.3.2   [1.2.0 verfügbar]
-        ┌──────────────┐
-        │ 1.2.0      ▾ │  [Aktualisieren]
-        └──────────────┘
-```
+| Zeile | Inhalt |
+|---|---|
+| oben | die laufende Version, daneben eine Marke, wenn etwas Neueres bereitsteht |
+| darunter | Auswahlfeld mit den verfügbaren Fassungen und der Knopf „Aktualisieren" |
+| bei Bedarf | Zustand des laufenden Auftrags oder Ergebnis des letzten Versuchs |
 
 **Warum alles in einer Zelle:** Die Frage lautet nie „welche Version läuft
 dort", sondern immer „läuft dort die richtige, und wenn nicht, was tue ich".
@@ -65,17 +64,16 @@ verifiziert, sondern nur nachgezogen.
 
 ## Der Ablauf
 
-```
-Administrator ──► ANGEFORDERT      Zielversion, wer, wann, Ausgangsversion
-                       │
-Agent (Prüftakt) ──────┤ holt ab
-                       │ quittiert ZUERST
-                       ▼
-                  ANGESTOSSEN      danach verschwindet sein Container
-                       │
-Agent (neu) ───────────┤ meldet seine Version
-                       ▼
-        ERFOLGREICH  oder  FEHLGESCHLAGEN
+```mermaid
+stateDiagram-v2
+    [*] --> ANGEFORDERT: Administrator wählt eine Zielversion
+    ANGEFORDERT --> ANGESTOSSEN: Agent holt den Auftrag ab<br/>und quittiert ZUERST
+    ANGESTOSSEN --> ERFOLGREICH: Agent meldet sich<br/>mit der Zielversion
+    ANGESTOSSEN --> FEHLGESCHLAGEN: nach 10 Minuten<br/>ohne neue Version
+    ANGEFORDERT --> ABGEBROCHEN: von Hand abgebrochen
+    ERFOLGREICH --> [*]
+    FEHLGESCHLAGEN --> [*]
+    ABGEBROCHEN --> [*]
 ```
 
 **Der Agent quittiert, bevor er anstößt.** Im Erfolgsfall ersetzt der

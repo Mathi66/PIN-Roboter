@@ -1,7 +1,7 @@
 # Übergabe an DevOps — PIN-Roboter auf Labs
 
 **Antwort auf:** Anforderungen an die Anwendung „PIN-Roboter" (DevOps, 12.08.2026)
-· **Stand:** 13.08.2026 · **Version:** 0.3.2
+· **Stand:** 14.08.2026 · **Zentrale:** 0.4.0 · **Agent:** 0.4.0
 
 Alle Angaben sind **gemessen**, nicht geschätzt: an einem Container, der mit
 euren Vorgaben gestartet wurde (`read_only`, `cap_drop: ALL`,
@@ -16,7 +16,7 @@ erfüllen, steht in Abschnitt 6 — mit Begründung, nicht weggelassen.
 |---|---|
 | Container | `pin-roboter` (Anwendung), `pin-roboter-db` (PostgreSQL) |
 | Image | `ghcr.io/mathi66/pin-roboter:X.Y.Z`, **nur `linux/amd64`** |
-| Zweites Image | `ghcr.io/mathi66/pin-roboter-agent:X.Y.Z` — der Standort-Agent. Läuft **im Praxisnetz, nicht auf Labs**; unter derselben Version veröffentlicht, damit die Bausteine zusammenpassen. |
+| Zweites Image | `ghcr.io/mathi66/pin-roboter-agent:X.Y.Z` — der Standort-Agent. Läuft **im Praxisnetz, nicht auf Labs**. **Eigene Version** ([ADR-0013](adr/0013-getrennte-versionierung-von-zentrale-und-agent.md)): Am Agenten wird häufiger nachgearbeitet. Zusammengehalten werden beide durch die Protokollversion, nicht durch die Nummer. |
 | Port im Container | **8090** (HTTP, kein TLS), im Image als `EXPOSE 8090` |
 | Benutzer im Image | **UID 10001, GID 10001** (`roboter`), gesetzt per `groupadd`/`useradd` |
 | Prozesse | ein Dienst je Container, kein Supervisor, kein Cron |
@@ -186,7 +186,9 @@ stört das den Betrieb auf Labs nicht.
 | Sitzungs-Cookies | `HttpOnly`, `SameSite=Strict` (strenger als das geforderte `Lax`), `Secure` bei HTTPS, 8 h Lebensdauer, neue Kennung nach der Anmeldung |
 | TOTP | **Pflicht, nicht abschaltbar** |
 | Anmeldungen protokollieren | Erfolg und Fehlschlag mit Zeit und Adresse im Fachprotokoll |
-| GitHub Actions, GHCR, Tag ohne `v`, kein `:latest` | `.github/workflows/veroeffentlichen.yml` |
+| GitHub Actions, GHCR, kein `:latest` | `.github/workflows/veroeffentlichen.yml` |
+| **Tags je Baustein:** `zentrale-X.Y.Z`, `agent-X.Y.Z` | ein Tag veröffentlicht nur seinen Baustein |
+| Freigabe als `stabil` je Baustein einzeln | `.github/workflows/stabil-freigeben.yml`, beide Felder optional |
 | Smoke-Test im Workflow | startet das Image gehärtet, prüft `/health`, Version, UID, SIGTERM |
 | unveränderliche Tags | der Workflow bricht ab, wenn der Tag in GHCR existiert |
 | `RELEASENOTES.md` | im Repositoriumswurzelverzeichnis |

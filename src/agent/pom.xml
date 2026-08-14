@@ -3,8 +3,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent><groupId>de.pinroboter</groupId><artifactId>pin-roboter</artifactId>
-    <version>0.3.2</version><relativePath>../../pom.xml</relativePath></parent>
+    <version>1</version><relativePath>../../pom.xml</relativePath></parent>
   <artifactId>agent</artifactId>
+  <!-- Produktversion des AGENTEN. Sie wird unabhängig von der Zentrale erhöht
+       (ADR-0013) — hier wird häufiger nachgearbeitet, weil die Erfahrung mit
+       Kartenterminals und Konnektoren erst wächst. Der Vertrag zwischen beiden
+       ist nicht diese Nummer, sondern die Protokollversion. -->
+  <version>0.4.0</version>
   <dependencies>
     <dependency><groupId>de.pinroboter</groupId><artifactId>gemeinsam</artifactId></dependency>
     <dependency><groupId>org.bouncycastle</groupId><artifactId>bcprov-jdk18on</artifactId></dependency>

@@ -3811,3 +3811,90 @@ Kein Modultest hätte das gefunden. Genau dafür teste ich am laufenden System.
 Prüfungen). axe-core über 24 Seiten ohne Befund. Am Stack durchgespielt: ohne
 Auftrag kein Token und 403 von der Zentrale; mit Auftrag Datei mit Rechten 600;
 nach einem Neustart ist sie weg, mit sichtbarer Meldung.
+
+### Getrennte Versionen für Zentrale und Agent
+
+Der PO hat die gemeinsame Nummer verworfen:
+
+> Eine gleichlaufende Versionierung beider Komponenten ist für die Zukunft
+> unpraktisch. Wir werden am Agenten öfter nacharbeiten müssen, da wir mit den
+> KT und Konnektoren noch Erfahrung sammeln werden.
+
+Das trifft den Kern. Der Agent spricht mit **fremden Geräten**, deren Verhalten
+wir erst kennenlernen. Jede Eigenheit dort führt zu einer Nacharbeit am
+Agenten — und zu keiner Zeile in der Zentrale. Bei gemeinsamer Nummer entstünde
+jedes Mal eine neue Fassung der Zentrale, in der sich nichts geändert hat.
+
+Jetzt: Das Eltern-POM ist eine **Bauklammer** ohne Produktversion, Zentrale und
+Agent tragen eigene Nummern, und die Tags heißen `zentrale-0.4.0` und
+`agent-0.4.0`. Ein Tag veröffentlicht nur seinen Baustein; `stabil` wird je
+Baustein freigegeben. Zusammengehalten werden beide durch die
+**Protokollversion** — die gibt es seit FA-AGT-040 genau dafür.
+
+Eine Folge musste ich mitziehen: Der Alarm „Agent veraltet" verglich die
+Agentversion mit der **Zentralen**version. Das war schon vorher fragwürdig und
+wäre jetzt schlicht falsch. Verglichen wird nun mit der neuesten verfügbaren
+Agent-Fassung; ist keine bekannt, wird nicht alarmiert.
+
+Auf die Frage, ob wir dafür zwei Git-Repositories brauchen, habe ich abgeraten:
+`de.pinroboter.gemeinsam` ist der Vertrag zwischen beiden — Protokollversion,
+PIN-Zustände, Ereignisarten, Verschlüsselungsformat. Getrennte Repositories
+hätten nur zwei Auswege: duplizieren oder als eigenes Artefakt versionieren.
+Das Duplizieren ist genau das Muster, das heute schon zweimal zugeschlagen hat.
+
+### Der Vollauf hat neun Befunde geliefert
+
+Genau dafür ist er da. Der wichtigste war ein **echter Fehler von mir**: Beim
+Ersetzen der Fließtexte durch Info-Knöpfe ist die Erklärung verschwunden, dass
+ein Agent mit fremder Protokollversion *nicht abgewiesen* wird — weil das keine
+PIN-Verifikation an diesem Standort hieße. Ich hatte selbst geschrieben, dass
+ohne Handbuchabschnitt beim Kürzen Wissen verloren geht, und es dann getan.
+Steht jetzt im Handbuch, mit eigenem Info-Knopf.
+
+Zwei Nachweise maßen etwas anderes, als sie behaupteten: Einer durchsuchte die
+ganze Gruppenseite nach dem Namen einer fremden Einrichtung — der dort völlig
+zu Recht im Auswahlfeld steht. Der andere wartete pauschal 90 Sekunden und
+sagte im Fehlerfall nicht, ob der Agent fehlte oder der Alarm hing.
+
+Vier Nachweise prüften den Weitergabe-Schalter, den es nicht mehr gibt. Und
+fünf ASCII-Zeichnungen in den Umsetzungsdokumenten verstießen gegen die Regel,
+dass Diagramme außerhalb der ADRs Mermaid sein müssen.
+
+### Und dann acht Folgebefunde durch meine eigene Korrektur
+
+Ich hatte dem Prüfagenten den Briefkasten ergänzt, damit ein Nachweis bestehen
+kann. Damit gelingt der Anstoß dort jetzt — und alle Nachweise, die auf den
+sofortigen Fehlschlag setzten, kippten um. Dazu blockierte ein offen
+gebliebener Auftrag den nächsten Prüfblock, weil je Agent nur einer offen sein
+darf.
+
+Beim Alarm, der sich nicht schloss, konnte ich die Ursache nicht mehr messen —
+der Prüfstand war abgeräumt. Statt zu raten habe ich Sichtbarkeit eingebaut:
+Die Agentenschleife verschluckt Ausnahmen nicht mehr. Fällt sie aus, werden
+Alarme nicht geschlossen und Aufträge laufen nie ab — beides sieht aus wie ein
+Fehler an ganz anderer Stelle.
+
+### Vier Vollläufe für einen Produktbefund — was daran falsch lief
+
+Der PO hat die Prüfläufe abgebrochen und die Qualitätssicherung übernommen. Der
+Anlass war berechtigt, und er gehört festgehalten.
+
+Ich habe nach vier großen Umbauten an einem Tag — Weitergabe-Schalter entfernt,
+Versionierung getrennt, Aktualisierung auf Auftrag umgestellt, Fließtexte durch
+Info-Knöpfe ersetzt — einen Vollauf gestartet, obwohl absehbar war, dass die
+Nachweise dazu nicht mehr passen. Erwartbar waren die ersten neun Befunde.
+
+Der eigentliche Fehler kam danach: Nach dem **zweiten** Lauf, in dem alle acht
+Befunde Folgen meiner eigenen Korrektur waren, hätte ich anhalten und das
+ansprechen müssen. Stattdessen habe ich zwei weitere Runden gedreht — jede
+25 Minuten, in denen der PO nichts bedienen konnte. Genau der Zustand, den er
+am 13.08.2026 mit „Vollauf nur vor Release" abstellen wollte.
+
+Die Bilanz: **ein** Produktbefund in vier Läufen (verlorenes Handbuchwissen),
+alles andere Nachweise. Die Ursache dafür steht als Befund 3.6 in
+[docs/10-codeanalyse.md](docs/10-codeanalyse.md) — die Nachweise teilen sich
+einen Zustand, und wer einen ändert, kippt die danach.
+
+Was ich anders machen muss: Nach einem Umbau erst die betroffenen Nachweise
+durchgehen, dann den Lauf starten. Und wenn zwei Runden nichts am Produkt
+finden, ist das ein Grund anzuhalten, nicht weiterzumachen.

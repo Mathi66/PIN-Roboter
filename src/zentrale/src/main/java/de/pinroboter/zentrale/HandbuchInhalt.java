@@ -310,9 +310,9 @@ final class HandbuchInhalt {
 
             <p class="hb-fussnote">Die Wahl fiel auf Java, weil die Geräteidentitäten
             von Konnektor und Kartenterminal von Chipkarten stammen und auf die Kurve
-            <code>brainpoolP256r1</code> festgelegt sind. Gemessen am 06.08.2026:
-            Andere Umgebungen scheitern bereits am Einlesen solcher Zertifikate oder an
-            den Kurvengruppen im Handschlag. Java mit BouncyCastle funktioniert.</p>
+            <code>brainpoolP256r1</code> festgelegt sind. Andere Umgebungen scheitern
+            gemessen bereits am Einlesen solcher Zertifikate oder an den Kurvengruppen
+            im Handschlag. Java mit BouncyCastle funktioniert.</p>
             """.formatted(Handbuchgrafik.TOPOLOGIE);
 
     private static final String ORGANISATION = """
@@ -964,11 +964,9 @@ final class HandbuchInhalt {
 
             <div class="hb-merke">
               <b>Es gibt keine nächtliche Aktualisierung.</b>
-              <p>Bis zum 14.08.2026 sah dieser Dienst nachts um halb vier selbst nach
-              neuen Fassungen. Das ist abgeschafft: Eine fehlerhafte Freigabe hätte in
-              derselben Nacht <em>alle</em> Standorte gleichzeitig getroffen, und eine
-              Staffelung gibt es nicht. Aktualisiert wird nur, was ein Mensch
-              anstößt — und er wählt damit auch den Zeitpunkt.</p>
+              <p>Aktualisiert wird nur, was ein Mensch anstößt — und er wählt damit
+              auch den Zeitpunkt. So trifft eine fehlerhafte Fassung nie mehrere
+              Standorte gleichzeitig.</p>
             </div>
 
             <p>Was dann passiert, ist genau das, was Sie auch von Hand eingeben
@@ -1014,7 +1012,7 @@ final class HandbuchInhalt {
             heraus. Ein Agent, der ohne Anlass fragt, bekommt nichts.</p>
 
             <p>Eingeschaltet wird die Weitergabe unter <b>Instanz → Produktversion →
-            Selbsttätige Aktualisierung der Agenten</b>. Ab Werk ist sie aus: Wer
+            Zugangsdaten für die Agenten</b>. Ab Werk ist sie aus: Wer
             einen Zugang hinterlegt, damit die Zentrale nach Updates sieht, hat damit
             nicht der Weitergabe zugestimmt. Abschalten ist der Not-Aus — ohne
             Anmeldung wird kein Programm geholt.</p>
@@ -1119,6 +1117,26 @@ final class HandbuchInhalt {
             nicht loswird, wird ignoriert.</p>
             <p>Ein neuer Fehlschlag zeigt sich wieder, auch wenn der vorige zur
             Kenntnis genommen wurde.</p>
+            </section>
+
+            <h2>Wenn Agent und Zentrale verschieden alt sind</h2>
+            <section data-hilfe="protokollversion">
+            <p>Beide tragen <b>eigene</b> Versionsnummern und werden getrennt
+            veröffentlicht. Am Agenten wird häufiger nachgearbeitet, weil die
+            Erfahrung mit Kartenterminals und Konnektoren erst wächst.</p>
+
+            <p>Zusammengehalten werden sie durch die <b>Protokollversion</b> — die
+            Sprache, in der sie miteinander reden. Der Agent nennt sie bei jeder
+            Meldung; die Zentrale kennt eine unterstützte Spanne und zeigt an, wenn
+            ein Agent außerhalb liegt.</p>
+
+            <div class="hb-merke">
+              <b>Ein Agent mit fremder Protokollversion wird nicht abgewiesen.</b>
+              <p>Das hieße: keine PIN-Verifikation an diesem Standort — und damit
+              wäre der Schaden größer als der Nutzen. Er arbeitet weiter; nur
+              neuere Funktionen wirken dort nicht. Die Agentenliste unter
+              „Instanz“ zeigt, wo das der Fall ist.</p>
+            </div>
             </section>
 
             <h2>Wenn ein Agent verstummt</h2>
@@ -1298,6 +1316,16 @@ final class HandbuchInhalt {
               <dt>TOTP</dt>
               <dd>Der sechsstellige Code aus der Authenticator-App. Zweiter Faktor bei
                   der Anmeldung, verpflichtend.</dd>
+
+              <dt>Version</dt>
+              <dd>Zentrale und Standort-Agent tragen <b>eigene</b> Versionsnummern
+                  und werden getrennt veröffentlicht. Am Agenten wird häufiger
+                  nachgearbeitet, weil die Erfahrung mit Kartenterminals und
+                  Konnektoren erst wächst — eine gemeinsame Nummer zwänge dazu, die
+                  Zentrale mitzuziehen, obwohl sich dort nichts geändert hat.
+                  <br>Zusammengehalten werden beide durch die
+                  <b>Protokollversion</b>: Der Agent nennt sie bei jeder Meldung,
+                  und die Zentrale prüft, ob sie damit umgehen kann.</dd>
 
               <dt>Programmablage</dt>
               <dd>Der Ort im Internet, aus dem neue Fassungen des Programms geholt

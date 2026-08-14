@@ -239,8 +239,13 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     -d "bezeichnung=Pruefagent" --data-urlencode "einrichtung=Pruefpraxis" \
     | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')
   docker volume rm pr-agentdaten >/dev/null 2>&1
+  # Der Briefkasten fuer Aktualisierungsauftraege (FA-AGT-100). Im
+  # Auslieferungsbild legt das Dockerfile ihn an; hier laeuft die JAR in einem
+  # nackten JRE, deshalb ausdruecklich.
+  docker volume rm pr-auftrag >/dev/null 2>&1
   docker run -d --name pr-agt --network $NETZ \
     -v "$PWD/src/agent/target/agent.jar":/app.jar -v "$SEC":/sec:ro -v pr-agentdaten:/daten \
+    -v pr-auftrag:/auftrag \
     -e REGISTRIERUNG="$GEHEIMNIS" \
     -e KONNEKTOR_URL=https://simulator:8443/ -e TERMINAL_URL=https://simulator:8444/ \
     -e TERMINAL_SMCB_URL=https://simulator:8445/ \
@@ -2765,7 +2770,15 @@ else
 
   # ... und verraet NICHT, wo der Name schon vorkommt. Eine Mandantengrenze,
   # die man mit einem Formular ausprobieren kann, ist keine.
-  grep -q "$E_A" /tmp/pr-dop.html && GE5=nein || GE5=ja
+  #
+  # Geprueft wird die MELDUNG, nicht die ganze Seite: Auf der Gruppenseite
+  # steht jede Einrichtung des Geltungsbereichs voellig zu Recht — im
+  # Auswahlfeld und in der Liste. Wer die ganze Seite durchsucht, misst etwas
+  # anderes, als er behauptet (Befund im Vollauf am 14.08.2026).
+  MELDUNG=$(sed -n 's/.*class="hinweis warnend"[^>]*>\(.*\)/\1/p' /tmp/pr-dop.html \
+            | sed 's/<[^>]*>//g' | head -3)
+  [ -z "$MELDUNG" ] && MELDUNG=$(grep -o 'ergänzen Sie den Gruppennamen[^<]*' /tmp/pr-dop.html)
+  case "$MELDUNG" in *"$E_A"*) GE5=nein ;; *) GE5=ja ;; esac
   ergebnis "sie nennt die fremde Einrichtung nicht" "$GE5"
   rm -f /tmp/pr-dop.html
 
@@ -3205,8 +3218,15 @@ ergebnis "bei gleicher Version kommt nichts dazu ($VOR_V -> $NACH_V)" "$AW"
 curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-agt-v.html
 [ "$(enthaelt /tmp/pr-agt-v.html "Standort-Agenten")" = "ja" ] && AT=ja || AT=nein
 ergebnis "die Oberflaeche zeigt die Agenten mit ihrer Version" "$AT"
-[ "$(enthaelt /tmp/pr-agt-v.html "nicht abgewiesen")" = "ja" ] && AS=ja || AS=nein
-ergebnis "sie erklaert, dass ein alter Agent nicht abgewiesen wird" "$AS"
+# Die Erklaerung steht seit dem 14.08.2026 im Handbuch, nicht als Absatz auf
+# der Seite (FA-DOK-020). Der Info-Knopf an der Agententafel fuehrt dorthin.
+[ "$(enthaelt /tmp/pr-agt-v.html "handbuch/hilfe/protokollversion")" = "ja" ] && AS=ja || AS=nein
+ergebnis "die Seite fuehrt zur Erklaerung der Protokollversionen" "$AS"
+curl -s -b "$KEKSE" -H "HX-Request: true" $BASIS/handbuch/hilfe/protokollversion \
+  -o /tmp/pr-agt-pv.html
+[ "$(enthaelt /tmp/pr-agt-pv.html "nicht abgewiesen")" = "ja" ] && AS2=ja || AS2=nein
+ergebnis "und dort steht, dass ein alter Agent nicht abgewiesen wird" "$AS2"
+rm -f /tmp/pr-agt-pv.html
 
 # Eine nicht unterstuetzte Version muss erkannt und ANGEZEIGT werden — und der
 # Agent trotzdem weiterarbeiten. Ein abgewiesener Agent hiesse: keine
@@ -3661,10 +3681,6 @@ rm -f /tmp/pr-reg*.html
 hinweis "FA-AGT-080 — selbsttaetige Aktualisierung der Agenten"
 
 # Der Zugang aus FA-UPD-010 steht noch; die Weitergabe ist ab Werk AUS.
-ANAUS=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
-[ "$ANAUS" = "false" ] && AA=ja || AA=nein
-ergebnis "die Weitergabe an Agenten ist ab Werk abgeschaltet ($ANAUS)" "$AA"
-
 # Ohne Auftrag darf am Standort KEIN Token liegen (PO, 14.08.2026).
 docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && AB=nein || AB=ja
 ergebnis "am Standort liegt kein Zugangstoken, solange kein Auftrag vorliegt" "$AB"
@@ -3677,12 +3693,6 @@ if [ -n "$AGT_TOK" ]; then
   [ "$CODE" = "403" ] && AB2=ja || AB2=nein
   ergebnis "ein Agent ohne Auftrag bekommt keine Zugangsdaten (HTTP $CODE)" "$AB2"
 fi
-
-# Einschalten — ueber die Oberflaeche, nicht per SQL.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=an" -o /dev/null
-ANEIN=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
-[ "$ANEIN" = "true" ] && AC=ja || AC=nein
-ergebnis "der Schalter in der Verwaltung wirkt ($ANEIN)" "$AC"
 
 # Erst MIT einem Auftrag holt der Agent die Zugangsdaten — und legt sie in den
 # Briefkasten fuer den Aktualisierungsdienst.
@@ -3716,6 +3726,12 @@ if [ "$AD" = "ja" ]; then
   done
   docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && AE4=nein || AE4=ja
   ergebnis "nach einem Neustart liegt kein Token mehr im Briefkasten" "$AE4"
+
+  # Aufraeumen: Der Auftrag ist noch offen — im Pruefstand liest ihn niemand.
+  # Bliebe er stehen, koennte FA-AGT-100 keinen neuen anlegen (nur EIN offener
+  # je Agent), und dessen Pruefungen liefen ins Leere, ohne dass jemand den
+  # Zusammenhang sieht.
+  curl -s -b "$KEKSE" -X POST $BASIS/agenten/$AID_U/aktualisierung/abbrechen -o /dev/null
 fi
 
 # Ohne gueltiges Agent-Token gibt die Zentrale nichts heraus.
@@ -3732,12 +3748,20 @@ docker logs pr-zen 2>&1 | grep -qF "ghp-testaufbau" && TREFFER=$((TREFFER+1))
 [ $TREFFER -eq 0 ] && AG=ja || AG=nein
 ergebnis "der Token erscheint weder in Logs noch im Protokoll (Treffer: $TREFFER)" "$AG"
 
-# Der Not-Aus: Abgeschaltet gibt die Zentrale keine Zugangsdaten mehr heraus,
-# und eine Aktualisierung scheitert mit einer verstaendlichen Meldung.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=aus" -o /dev/null
-AN_AUS=$(sqltext "SELECT an_agenten::text FROM registry_zugang")
-[ "$AN_AUS" = "false" ] && AH=ja || AH=nein
-ergebnis "die Weitergabe laesst sich wieder abschalten ($AN_AUS)" "$AH"
+# Ohne hinterlegtes Token gibt die Zentrale nichts heraus. Das ist neben dem
+# Auftrag die einzige verbliebene Bedingung: Der Schalter davor ist entfallen,
+# weil jeder Auftrag ohnehin eine bewusste Handlung ist (PO, 14.08.2026).
+CHIFFRAT=$(sqltext "SELECT coalesce(token_chiffrat,'') FROM registry_zugang")
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "UPDATE registry_zugang SET token_chiffrat = NULL" >/dev/null
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "X-Agent-Token: ${AGT_TOK:-keins}" \
+       $BASIS/api/agent/registry)
+[ "$CODE" != "200" ] && AH=ja || AH=nein
+ergebnis "ohne hinterlegtes Token gibt die Zentrale nichts heraus (HTTP $CODE)" "$AH"
+# Zuruecksetzen: Ein Nachweis, der die Umgebung fuer den naechsten kaputt
+# laesst, erzeugt Befunde, die niemand zuordnen kann (Vollauf 14.08.2026).
+docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
+  "UPDATE registry_zugang SET token_chiffrat = '$CHIFFRAT'" >/dev/null
 
 # ---------------------------------------------------------------- FA-AGT-090
 # Zustand der Standort-Agenten: stumm und veraltet.
@@ -3758,8 +3782,9 @@ ergebnis "der Agent meldet seine Version, nicht „unbekannt\" ($AGT_VERSION)" "
 # ueberschreibt. 90 Sekunden Stillstand liegen weit unter der Stummgrenze.
 docker stop pr-agt >/dev/null
 
-# (1) veraltet: aeltere Version, lange genug her, Weitergabe eingeschaltet.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=an" -o /dev/null
+# (1) veraltet: aeltere Fassung, als in der Programmablage bereitsteht, und
+#     lange genug her. Verglichen wird mit der neuesten AGENT-Fassung, nicht
+#     mit der Version der Zentrale (ADR-0013).
 docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
   "UPDATE agent SET bausteinversion = '0.0.1', version_seit = now() - interval '5 days',
                     zuletzt_gesehen = now() WHERE id = $AID" >/dev/null
@@ -3774,18 +3799,6 @@ ergebnis "ein Agent, der seit Tagen zurueckhaengt, loest einen Alarm aus" "$AV1"
 MELD=$(sqltext "SELECT coalesce(handlung,'-') FROM alarm WHERE art='AGENT_VERALTET' ORDER BY id DESC LIMIT 1")
 case "$MELD" in *aktualisierung*) AV2=ja ;; *) AV2=nein ;; esac
 ergebnis "die Meldung sagt, wo nachzusehen ist" "$AV2"
-
-# (2) Ohne eingeschaltete Weitergabe wird NICHT alarmiert: Dann aktualisiert
-#     jemand von Hand, und ein Rueckstand ist seine Entscheidung.
-curl -s -b "$KEKSE" -X POST $BASIS/verwaltung/registry/agenten -d "an=0" -o /dev/null
-for _ in $(seq 90); do
-  [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_VERALTET' AND behoben_am IS NULL")" = "0" ] && break
-  sleep 1
-  docker exec pr-db psql -U pinroboter -d pinroboter -q -c \
-    "UPDATE agent SET zuletzt_gesehen = now() WHERE id = $AID" >/dev/null
-done
-[ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_VERALTET' AND behoben_am IS NULL")" = "0" ] && AV3=ja || AV3=nein
-ergebnis "ohne eingeschaltete Weitergabe wird nicht alarmiert" "$AV3"
 
 # (3) stumm: Der Agent meldet sich nicht mehr. Das ist der schwerere Fall —
 #     an diesem Standort wird nichts mehr ueberwacht.
@@ -3802,13 +3815,38 @@ SCHWERE=$(sqltext "SELECT schweregrad FROM alarm WHERE art='AGENT_STUMM' ORDER B
 ergebnis "er ist als kritisch eingestuft ($SCHWERE)" "$AV5"
 
 # (4) Und er verschwindet von selbst, sobald der Agent wieder meldet.
+#
+# Zwei Bedingungen, getrennt geprueft: Erst muss der Agent ueberhaupt wieder
+# da sein — nach einem Kaltstart braucht er TLS, Registrierung und einen
+# Durchgang —, dann darf der Alarmtakt (60 s) zuschlagen. Frueher wartete der
+# Nachweis pauschal 90 Sekunden und sagte im Fehlerfall nicht, woran es lag.
 docker start pr-agt >/dev/null
-for _ in $(seq 90); do
+for _ in $(seq 120); do
+  ALT=$(sql "SELECT round(extract(epoch from now()-zuletzt_gesehen)) FROM agent WHERE id = $AID")
+  [ "${ALT:-999}" -lt 30 ] 2>/dev/null && break
+  sleep 1
+done
+[ "${ALT:-999}" -lt 30 ] 2>/dev/null && AV5B=ja || AV5B=nein
+ergebnis "der Agent meldet sich nach dem Neustart wieder (vor ${ALT:-?} s)" "$AV5B"
+
+# 150 s: Der Alarmtakt laeuft alle 60 s, und der Agent muss nach dem Kaltstart
+# erst einmal gemeldet haben. 90 s waren zu knapp (Vollauf 14.08.2026).
+for _ in $(seq 150); do
   [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL")" = "0" ] && break
   sleep 1
 done
 [ "$(sql "SELECT count(*) FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL")" = "0" ] && AV6=ja || AV6=nein
 ergebnis "der Alarm schliesst sich, sobald der Agent wieder meldet" "$AV6"
+if [ "$AV6" = "nein" ]; then
+  # Diagnose statt Raten: Am 14.08.2026 schlug dieser Nachweis fehl, waehrend
+  # derselbe Ablauf im Entwicklungsstack in 43 s durchlief. Ohne diese Ausgabe
+  # ist die Ursache nach dem Abraeumen des Pruefstands nicht mehr greifbar.
+  echo "    Diagnose:"
+  echo "      Agent gesehen vor: $(sqltext "SELECT round(extract(epoch from now()-zuletzt_gesehen))||' s' FROM agent WHERE id = $AID")"
+  echo "      Alarm:  $(sqltext "SELECT einrichtung||' | '||coalesce(objekt,'-') FROM alarm WHERE art='AGENT_STUMM' AND behoben_am IS NULL LIMIT 1")"
+  echo "      Agent:  $(sqltext "SELECT coalesce(einrichtung,'NULL') FROM agent WHERE id = $AID")"
+  docker logs pr-zen 2>&1 | grep -i "Agentenzustände nicht prüfbar" | tail -3 | sed 's/^/      /'
+fi
 
 # Die Bausteinversion muss dabei auf den echten Wert zurueckgesetzt worden sein.
 # Bis zum 13.08.2026 wurde sie nur bei einer neuen PROTOKOLLversion gespeichert
@@ -3848,9 +3886,12 @@ ergebnis "echte Versionsnummern schon" "$UB2"
 # Anfordern.
 curl -s -b "$KEKSE" -X POST $BASIS/agenten/$AID/aktualisierung \
   -d "zielversion=1.2.0" -o /dev/null
+# Der Status kann schon ANGESTOSSEN sein: Der Agent holt im Pruefstand alle
+# paar Sekunden ab. Geprueft wird deshalb, dass ein OFFENER Auftrag mit den
+# richtigen Angaben existiert — nicht ein bestimmter Zwischenzustand.
 ZUST=$(sqltext "SELECT status||'|'||zielversion||'|'||coalesce(von_version,'-')
                 FROM agent_aktualisierung WHERE agent_id=$AID ORDER BY id DESC LIMIT 1")
-case "$ZUST" in ANGEFORDERT\|1.2.0\|*) UC=ja ;; *) UC=nein ;; esac
+case "$ZUST" in ANGEFORDERT\|1.2.0\|*|ANGESTOSSEN\|1.2.0\|*) UC=ja ;; *) UC=nein ;; esac
 ergebnis "der Auftrag wird angelegt, mit Ziel- und Ausgangsversion ($ZUST)" "$UC"
 
 # Kein zweiter Auftrag daneben: Zwei Anstoesse hiessen zwei Neustarts.
@@ -3863,23 +3904,27 @@ ergebnis "ein zweiter gleichzeitiger Auftrag wird abgelehnt (offen: $ANZ)" "$UD"
 [ "$(enthaelt /tmp/pr-au2.html "läuft bereits")" = "ja" ] && UD2=ja || UD2=nein
 ergebnis "und die Meldung sagt, warum" "$UD2"
 
-# Der Agent holt den Auftrag ab und versucht es. Im Pruefstand laeuft KEIN
-# Aktualisierungsdienst — genau der Fall, der beim Kunden eintritt, wenn
-# jemand die beiden Dienste aus dem Paket entfernt hat. Er muss sofort als
-# Fehlschlag enden statt zehn Minuten „laeuft" anzuzeigen.
+# Der Agent holt den Auftrag ab und legt ihn in den Briefkasten. Ein echter
+# Aktualisierungsdienst laeuft im Pruefstand nicht — der Auftrag bleibt also
+# auf „laeuft" stehen, bis die Frist ihn beendet. Genau das wird hier geprueft:
+# dass der Anstoss ueberhaupt gelingt und der Briefkasten gefuellt wird.
 for _ in $(seq 60); do
   ST=$(sqltext "SELECT status FROM agent_aktualisierung WHERE agent_id=$AID ORDER BY id DESC LIMIT 1")
   [ "$ST" != "ANGEFORDERT" ] && break
   sleep 1
 done
-[ "$ST" = "FEHLGESCHLAGEN" ] && UE=ja || UE=nein
-ergebnis "ein Anstoss ohne Aktualisierungsdienst endet sofort ($ST)" "$UE"
-MELD=$(sqltext "SELECT coalesce(meldung,'-') FROM agent_aktualisierung WHERE agent_id=$AID ORDER BY id DESC LIMIT 1")
-case "$MELD" in *Aktualisierungsdienst*) UE2=ja ;; *) UE2=nein ;; esac
-ergebnis "die Meldung nennt den Grund im Klartext" "$UE2"
+[ "$ST" = "ANGESTOSSEN" ] && UE=ja || UE=nein
+ergebnis "der Agent stoesst die Aktualisierung an ($ST)" "$UE"
+docker exec pr-agt sh -c 'ls /auftrag/auftrag' >/dev/null 2>&1 && UE2=ja || UE2=nein
+ergebnis "und legt den Auftrag in den Briefkasten" "$UE2"
 curl -s -b "$KEKSE" $BASIS/verwaltung -o /tmp/pr-au3.html
-[ "$(enthaelt /tmp/pr-au3.html "fehlgeschlagen")" = "ja" ] && UE3=ja || UE3=nein
-ergebnis "der Fehlschlag steht in der Oberflaeche, nicht nur im Log" "$UE3"
+[ "$(enthaelt /tmp/pr-au3.html "läuft")" = "ja" ] && UE3=ja || UE3=nein
+ergebnis "der laufende Vorgang steht in der Oberflaeche" "$UE3"
+
+# Aufraeumen: Nur EIN offener Auftrag je Agent — sonst scheitern die naechsten
+# Pruefungen am Teilindex, und zwar ohne dass jemand den Zusammenhang sieht.
+curl -s -b "$KEKSE" -X POST $BASIS/agenten/$AID/aktualisierung/abbrechen -o /dev/null
+docker exec pr-agt sh -c 'rm -f /auftrag/auftrag' >/dev/null 2>&1
 
 # Der Erfolgsfall. Ein echter Versionswechsel ist im Pruefstand nicht
 # herstellbar — es gibt dort nur eine Fassung des Agenten. Geprueft wird

@@ -91,14 +91,13 @@ den man nicht wechseln kann, ist ein Token, den man nicht sperrt.
 **Stattdessen holt der Agent ihn bei der Zentrale ab.** Sie kennt ihn ohnehin,
 denn sie prüft damit selbst auf neue Versionen.
 
-```
-Zentrale                          Standort-Agent            Aktualisierung
-  registry_zugang                   /api/agent/registry
-  (Token verschlüsselt,     ──────► nur mit Agent-Token
-   ADR-0008)                                │
-  an_agenten = true/false                   ▼
-                                    /registry/config.json ──► DOCKER_CONFIG
-                                    (eigenes Volume, ro)
+```mermaid
+flowchart LR
+    Z["Zentrale<br/>registry_zugang<br/>(Token verschlüsselt, ADR-0008)"]
+    A["Standort-Agent<br/>fragt /api/agent/registry<br/>mit seinem Token"]
+    D["config.json<br/>eigenes Volume, nur lesend"]
+    W["Aktualisierung<br/>DOCKER_CONFIG"]
+    Z --> A --> D --> W
 ```
 
 **Vier Eigenschaften, auf die es ankommt:**

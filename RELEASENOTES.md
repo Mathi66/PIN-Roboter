@@ -4,9 +4,50 @@ Für DevOps. Nicht die Funktionen stehen hier im Vordergrund, sondern das,
 wonach beim Deploy gehandelt wird: Schemaänderungen, Umgebungsvariablen,
 Volumes, Prüfschritte, Rückfall.
 
-Versionsschema: Git-Tag `vX.Y.Z` → Image `ghcr.io/mathi66/pin-roboter:X.Y.Z`
-(ohne führendes `v`). Tags sind unveränderlich; ein Fehler bekommt eine neue
-Nummer. Kein `:latest`.
+**Versionsschema seit 0.4.0** ([ADR-0013](docs/adr/0013-getrennte-versionierung-von-zentrale-und-agent.md)):
+Zentrale und Agent tragen **eigene** Nummern und werden getrennt veröffentlicht.
+
+| Git-Tag | Image |
+|---|---|
+| `zentrale-X.Y.Z` | `ghcr.io/mathi66/pin-roboter:X.Y.Z` |
+| `agent-X.Y.Z` | `ghcr.io/mathi66/pin-roboter-agent:X.Y.Z` |
+
+Ein Tag veröffentlicht **nur seinen Baustein**. Tags sind unveränderlich; ein
+Fehler bekommt eine neue Nummer. Kein `:latest`. Bis 0.3.2 galt `vX.Y.Z` für
+beide zugleich.
+
+---
+
+## Zentrale 0.4.0 und Agent 0.4.0 — Aktualisierung auf Auftrag, Handbuch, Hilfe
+
+| Angabe | Wert |
+|---|---|
+| Images | `ghcr.io/mathi66/pin-roboter:0.4.0`, `ghcr.io/mathi66/pin-roboter-agent:0.4.0` |
+| Schema-Änderung | **ja** — Migrationen 28 bis 33, laufen automatisch |
+| Neue Env (Agent) | `AUFTRAG_VERZEICHNIS` (Vorgabe `/auftrag`) |
+| Entfallene Env | `REGISTRY_VERZEICHNIS`, `AKTUALISIERUNG_TOKEN` |
+| Neue Volumes | `auftrag` beim Agenten; `registryzugang` entfällt |
+| Prüfung danach | `/health` meldet `{"status":"ok","db":true,"version":"0.4.0"}` |
+| Rückfall | `0.3.2` — die Migrationen sind additiv, nur Migration 33 entfernt eine ungenutzte Spalte |
+
+**Für DevOps wesentlich**
+
+- **Zwei Tags statt einem.** Wer beide Bausteine veröffentlichen will, setzt
+  `zentrale-0.4.0` **und** `agent-0.4.0`.
+- **Das Einrichtungspaket enthält eine vierte Datei** (`aktualisieren.sh`) und
+  zwei zusätzliche Dienste (`aktualisierung`, `dockerzugang`). Der
+  Socket-Vermittler braucht jetzt auch `NETWORKS`, `VOLUMES` und `INFO`.
+- **Kein Watchtower mehr**, kein nächtlicher Lauf. Aktualisiert wird nur auf
+  Auftrag aus der Zentrale.
+- **Am Standort liegt kein Zugangstoken**, solange dort nichts aktualisiert
+  wird.
+
+**Was Anwender sehen**
+
+- Handbuch als eigener Punkt in der Oberfläche, durchsuchbar
+- Info-Knöpfe an Kacheln und Feldern, die den passenden Handbuchabschnitt zeigen
+- Agentenliste mit Version, verfügbaren Fassungen und gezielter Aktualisierung
+- Alarme für stumme und zurückhängende Agenten
 
 ---
 

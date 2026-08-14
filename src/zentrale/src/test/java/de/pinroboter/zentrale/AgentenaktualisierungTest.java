@@ -9,19 +9,22 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Die Weitergabe der Zugangsdaten zur Programmablage an die Standort-Agenten
- * (PO, 13.08.2026).
+ * Die Zugangsdaten zur Programmablage, die an Standort-Agenten gehen
+ * (FA-AGT-080, PO 14.08.2026).
  *
- * <h2>Warum es diesen Schalter gibt</h2>
+ * <h2>Wo die Absicherung liegt</h2>
  *
- * Die Programmablage bleibt privat. Damit ein Agent sich selbst aktualisieren
- * kann, braucht die Aktualisierung eine Anmeldung — und die kennt nur die
- * Zentrale. Sie gibt sie an registrierte Agenten weiter.
+ * Bis zum 14.08.2026 stand vor der Weitergabe ein Schalter. Er war als Not-Aus
+ * gedacht, solange nachts von selbst aktualisiert wurde. Seit nur noch auf
+ * Auftrag aktualisiert wird, ist jeder Vorgang ohnehin eine bewusste Handlung —
+ * ein Schalter davor wäre eine Hürde, die man einmal umlegt und nie wieder
+ * ansieht.
  *
- * <p>Das ist eine Weitergabe von Zugangsdaten, also nichts, was stillschweigend
- * geschieht. Deshalb steht sie <b>ab Werk aus</b> und ist mit einem Schalter
- * verbunden, der auch als Not-Aus taugt: Ohne Anmeldung holt die Aktualisierung
- * kein Abbild mehr.
+ * <p>Die Absicherung liegt jetzt dort, wo sie wirkt: <b>Die Zentrale gibt die
+ * Zugangsdaten nur heraus, wenn für den fragenden Agenten ein Auftrag
+ * vorliegt.</b> Das prüft {@code ZentraleTest} beziehungsweise der
+ * Systemnachweis; hier geht es um die Ebene darunter — dass überhaupt die
+ * richtigen Daten herauskommen und der Token verschlüsselt liegt.
  */
 @EnabledIfEnvironmentVariable(named = "TEST_DB_URL", matches = ".+")
 class AgentenaktualisierungTest {
@@ -54,19 +57,9 @@ class AgentenaktualisierungTest {
     }
 
     @Test
-    @DisplayName("Ab Werk ist die Weitergabe aus — auch mit hinterlegtem Zugang")
-    void vorgabeIstAus() throws Exception {
-        zugangEinrichten("ghp-testtoken-1");
-        assertNull(vp.agentenzugang(),
-                "Wer einen Zugang hinterlegt, damit die Zentrale nach Updates sieht, "
-                + "hat damit nicht der Weitergabe an jeden Agenten zugestimmt");
-    }
-
-    @Test
-    @DisplayName("Eingeschaltet liefert sie Registry, Benutzer und Token im Klartext")
-    void eingeschaltet() throws Exception {
+    @DisplayName("Sie liefert Registry, Benutzer und Token im Klartext")
+    void liefert() throws Exception {
         zugangEinrichten("ghp-testtoken-2");
-        vp.anAgenten(true);
 
         var z = vp.agentenzugang();
         assertNotNull(z);
@@ -78,22 +71,9 @@ class AgentenaktualisierungTest {
     }
 
     @Test
-    @DisplayName("Ausgeschaltet wird er sofort wieder vorenthalten")
-    void notAus() throws Exception {
-        zugangEinrichten("ghp-testtoken-3");
-        vp.anAgenten(true);
-        assertNotNull(vp.agentenzugang());
-
-        vp.anAgenten(false);
-        assertNull(vp.agentenzugang(),
-                "Der Not-Aus wirkt nur, wenn die Zentrale ab sofort nichts mehr herausgibt");
-    }
-
-    @Test
     @DisplayName("Der Token liegt verschlüsselt in der Datenbank, nicht im Klartext")
     void nichtImKlartext() throws Exception {
         zugangEinrichten("ghp-testtoken-4");
-        vp.anAgenten(true);
 
         try (Statement s = db.verbindung().createStatement();
              var rs = s.executeQuery("SELECT token_chiffrat FROM registry_zugang")) {
@@ -113,7 +93,6 @@ class AgentenaktualisierungTest {
         try (Statement s = db.verbindung().createStatement()) {
             s.executeUpdate("UPDATE registry_zugang SET benutzer = NULL");
         }
-        vp.anAgenten(true);
         assertNull(vp.agentenzugang(),
                 "Eine halbe Anmeldung scheitert erst beim Abholen des Abbilds — "
                 + "dort sieht sie niemand");

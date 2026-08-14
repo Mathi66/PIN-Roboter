@@ -951,8 +951,8 @@ public class Datenbank implements AutoCloseable {
         //
         // Ohne diesen Zeitstempel lässt sich nicht unterscheiden, ob ein Agent
         // seit zehn Minuten hinterherhinkt (normal, die Zentrale wurde gerade
-        // aktualisiert) oder seit zwei Wochen (die selbsttätige Aktualisierung
-        // greift nicht — und genau dafür wurde sie eingebaut).
+        // aktualisiert) oder seit zwei Wochen (dort hat niemand aktualisiert,
+        // oder es ist gescheitert).
         //
         // Vorbelegt mit "jetzt": Für vorhandene Agenten ist der wahre Wert
         // nicht rekonstruierbar. Die Karenzzeit läuft damit ab der Migration
@@ -1019,6 +1019,20 @@ public class Datenbank implements AutoCloseable {
         migration(32, """
             ALTER TABLE agent_aktualisierung
               ADD COLUMN IF NOT EXISTS zur_kenntnis_am TIMESTAMPTZ;
+            """);
+
+        // ── 33 · Der Schalter für die Weitergabe entfällt ────────────────────
+        //
+        // Er war als Not-Aus gedacht, solange nachts von selbst aktualisiert
+        // wurde. Seit nur noch auf Auftrag aktualisiert wird (PO, 14.08.2026),
+        // ist jeder Vorgang ohnehin eine bewusste Handlung — ein Schalter
+        // davor ist eine Hürde, die man einmal umlegt und nie wieder ansieht.
+        //
+        // Die Absicherung liegt jetzt dort, wo sie wirkt: Die Zentrale gibt
+        // Zugangsdaten nur heraus, wenn für den fragenden Agenten ein Auftrag
+        // vorliegt.
+        migration(33, """
+            ALTER TABLE registry_zugang DROP COLUMN IF EXISTS an_agenten;
             """);
     }
 
