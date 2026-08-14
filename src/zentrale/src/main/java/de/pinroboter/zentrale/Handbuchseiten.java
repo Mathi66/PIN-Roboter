@@ -162,6 +162,55 @@ final class Handbuchseiten {
     }
 
     /**
+     * Ein Handbuchabschnitt, wie er im Hilfefenster erscheint (FA-DOK-020).
+     *
+     * <p>Drei Teile: woher der Text stammt, der Text selbst, und ein Weg ins
+     * volle Kapitel. Der letzte ist wichtig — eine Kurzhilfe beantwortet die
+     * Frage von jetzt, aber manchmal ist die eigentliche Frage eine größere.
+     */
+    static String hilfe(Handbuch.Hilfe h) {
+        return """
+                <div class="hilfe-kopf">
+                  <div>
+                    <div class="hilfe-herkunft">%s %s</div>
+                    <h2 id="hilfefenster-titel">%s</h2>
+                  </div>
+                  <button class="hilfe-zu" type="button" onclick="pinHilfeZu()"
+                          aria-label="Hilfe schließen"><span aria-hidden="true">×</span></button>
+                </div>
+                <div class="hilfe-leib">%s</div>
+                <div class="hilfe-fuss">
+                  <a href="/handbuch/%s" class="knopf klein">Im Handbuch weiterlesen</a>
+                </div>"""
+                .formatted(h.kapitel().symbol(), esc(h.kapitel().titel()),
+                        esc(h.titel() == null ? h.kapitel().titel() : h.titel()),
+                        h.inhalt(), esc(h.kapitel().kennung()));
+    }
+
+    /**
+     * Wenn es zu einer Kennung nichts gibt.
+     *
+     * <p>Ein Info-Knopf, der ins Leere führt, ist schlimmer als keiner: Wer
+     * ihn drückt, hat eine Frage. Deshalb wenigstens der Weg ins Handbuch.
+     */
+    static String hilfeFehlt(String kennung) {
+        return """
+                <div class="hilfe-kopf">
+                  <div><h2 id="hilfefenster-titel">Dazu steht noch nichts im Handbuch</h2></div>
+                  <button class="hilfe-zu" type="button" onclick="pinHilfeZu()"
+                          aria-label="Hilfe schließen"><span aria-hidden="true">×</span></button>
+                </div>
+                <div class="hilfe-leib">
+                  <p>Für „%s“ ist noch kein Abschnitt hinterlegt. Bitte melden Sie das —
+                     eine fehlende Erklärung ist ein Mangel, kein Zufall.</p>
+                </div>
+                <div class="hilfe-fuss">
+                  <a href="/handbuch" class="knopf klein">Handbuch öffnen</a>
+                </div>"""
+                .formatted(esc(kennung));
+    }
+
+    /**
      * Hebt den gesuchten Begriff im Auszug hervor.
      *
      * <p>Erst escapen, dann markieren — andersherum würde die Markierung

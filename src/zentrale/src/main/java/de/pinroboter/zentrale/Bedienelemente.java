@@ -142,6 +142,56 @@ final class Bedienelemente {
      * Ereignis, das das kleine „x" im Suchfeld auslöst. Ohne das bliebe die
      * Liste nach dem Leeren gefiltert.
      */
+    /**
+     * Ein Info-Knopf, der den passenden Abschnitt des Handbuchs zeigt
+     * (FA-DOK-020, PO 14.08.2026).
+     *
+     * <h2>Warum nicht einfach ein Absatz daneben</h2>
+     *
+     * Erklärender Text neben jedem Bedienelement summiert sich. Eine Seite mit
+     * acht Feldern trägt dann acht Absätze, die beim <b>ersten</b> Mal helfen
+     * und danach jeden Tag im Weg stehen — und wer die Oberfläche kennt, liest
+     * sie ohnehin nicht mehr.
+     *
+     * <p>Schwerer wiegt: Derselbe Sachverhalt stand zweimal im Produkt, hier
+     * und im Handbuch. Zwei Fassungen laufen auseinander, sobald sich etwas
+     * ändert, und niemand merkt es, weil beide für sich plausibel bleiben.
+     *
+     * <p>Deshalb: <b>Der Text steht nur im Handbuch.</b> Hier steht ein Knopf,
+     * der ihn holt.
+     *
+     * <h2>Zur Gestaltung</h2>
+     *
+     * Klein, in der Farbe der Umgebung, direkt neben dem, was er erklärt. Er
+     * soll auffindbar sein, wenn man ihn sucht, und übersehbar, wenn nicht.
+     * Ohne JavaScript ist es ein gewöhnlicher Link ins Handbuch — die
+     * Erklärung darf nicht an einer Browsereinstellung hängen.
+     *
+     * @param kennung  Name eines {@code <section data-hilfe="…">} im Handbuch
+     * @param wozu     wofür die Hilfe gilt, für die Vorlesehilfe —
+     *                 „Prüfintervall“, nicht „diesen Punkt“
+     */
+    static String info(String kennung, String wozu) {
+        return """
+                <a class="info" href="/handbuch/hilfe/%s"
+                   hx-get="/handbuch/hilfe/%s" hx-target="#hilfeinhalt"
+                   hx-swap="innerHTML" onclick="pinHilfe(this); return false;"
+                   title="Was bedeutet %s?"
+                   aria-label="Hilfe zu %s öffnen"><span aria-hidden="true">?</span></a>"""
+                .formatted(esc(kennung), esc(kennung), esc(wozu), esc(wozu));
+    }
+
+    /**
+     * Eine Überschrift mit Info-Knopf.
+     *
+     * <p>Der Knopf gehört <b>in</b> die Überschrift, nicht darunter: Sonst
+     * steht er in der Vorleseabfolge zwischen Titel und Inhalt und wirkt wie
+     * ein eigener Punkt.
+     */
+    static String titelMitInfo(String titel, String kennung) {
+        return esc(titel) + " " + info(kennung, titel);
+    }
+
     static String suchleiste(String ziel, String auswahl, String wert,
                              String platzhalter, String beschriftung, String zusatz) {
         return """

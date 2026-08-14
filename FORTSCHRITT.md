@@ -3695,3 +3695,59 @@ zum guten Willen danach.
 **Belegt:** 376 Modultests grün (3 neu für die Kenntnisnahme). axe-core über
 24 Seiten ohne Befund, Kontraste bestanden. Am laufenden Stack durchgespielt:
 Knopf wirkt, Vorgang bleibt im Verlauf, Hinweis steht einmal statt je Zeile.
+
+### Der Text gehört an eine Stelle, nicht an zwei
+
+Mathis Auftrag klang nach Optik: Info-Knöpfe statt Erklärabsätze, damit es
+clean aussieht. Der wichtigere Teil steht in seinem Nebensatz — „nicht dass wir
+die Inhalte an zwei Stellen pflegen müssen".
+
+Genau dieses Muster hat mich in diesem Projekt schon dreimal erwischt: die
+Fehlerübersetzung, die es im Agenten gab und in der Zentrale nicht; der
+Manifest-Eintrag, den nur die Zentrale hatte; die Versionsprüfung, die zwei
+Abbilder kennen musste und eines abfragte. Jedes Mal war beides für sich
+plausibel, und deshalb fiel es monatelang nicht auf.
+
+Jetzt markiert `<section data-hilfe="…">` im Handbuchtext die Stellen, die auch
+als Kurzhilfe taugen. Die Oberfläche setzt daneben einen Knopf mit derselben
+Kennung. Wer das Handbuch ändert, ändert damit jede Hilfe, die daraus liest —
+auch der Fenstertitel ist die Überschrift aus dem Handbuch, keine zweite
+Pflegestelle.
+
+**Der Test, auf den es ankommt**, liest den Quelltext nach
+`Bedienelemente.info("…")` ab und prüft jede Kennung gegen das Handbuch. Ein
+Info-Knopf ins Leere ist schlimmer als keiner: Wer ihn drückt, hat eine Frage.
+Gegengeprüft durch Sabotage — er nennt Datei und Kennung.
+
+### Was bleibt und was geht
+
+Nicht jeder kurze Text ist Ballast. Die Trennlinie, die ich gezogen habe:
+**Was am Feld gilt, bleibt am Feld** — Format, Grenze, welcher Weg gerade offen
+ist. **Hintergrundwissen wandert ins Handbuch** — warum es die Einstellung
+gibt, was bei falscher Wahl passiert.
+
+Beim Sammelfenster hieß das: 310 Zeichen Erklärung raus, ein Satz bleibt („0
+bedeutet: jede Meldung sofort einzeln"). Der Rest steht im Kapitel „Alarme" und
+erscheint auf Knopfdruck.
+
+### Ein close-Ereignis, das nicht feuert
+
+Der Fokus muss beim Schließen dorthin zurück, wo er herkam. Naheliegend wäre
+ein Listener auf `close` — der feuert in dieser Engine aber nicht: `close()`
+schließt den Dialog, das Ereignis bleibt aus. Gemessen, nicht vermutet; mein
+erster Versuch ließ den Fokus auf dem Schließen-Knopf hängen.
+
+Jetzt setzen alle drei Wege, die ein Mensch geht, den Fokus selbst zurück:
+Knopf, Esc und Klick daneben.
+
+### Ehrlich zum Stand
+
+Von 58 Stellen mit Erklärtext sind 24 lang genug, um Kandidaten zu sein. Neun
+sind erledigt — Instanz, Benachrichtigung, die Konnektor-Formulare. Die übrigen
+brauchen jeweils erst einen Handbuchabschnitt, der den Inhalt trägt; ohne den
+ginge beim Kürzen Wissen verloren. Das ist kein Restaufwand für nebenbei,
+sondern je Stelle eine inhaltliche Entscheidung.
+
+**Belegt:** 381 Modultests grün (5 neu). axe-core über 24 Seiten ohne Befund.
+Am laufenden Stack: alle Info-Knöpfe finden ihren Abschnitt, das Fenster öffnet,
+Fokus kehrt zurück, elf Kennungen liefern.

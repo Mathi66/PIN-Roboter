@@ -1355,3 +1355,130 @@ div.geraetereihe { display:block; }
 .handlung > details { line-height: 1.5; }
 /* Der Knopf darunter braucht Luft, sonst klebt er am Text. */
 .handlung > .inlineform { margin-top: var(--r2); }
+
+/* ═════════════════════════════════════════════════════ Hilfe aus dem Handbuch
+   Erklärender Text stand bisher zweimal im Produkt: als Absatz neben dem
+   Bedienelement und noch einmal im Handbuch. Jetzt steht er nur dort, und die
+   Oberfläche holt ihn (FA-DOK-020).
+
+   Der Knopf muss zwei Dinge zugleich sein: auffindbar, wenn man ihn sucht, und
+   übersehbar, wenn nicht. Deshalb klein, rund, in der gedämpften Farbe — und
+   erst beim Überfahren im Akzent. */
+
+.info {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15rem; height: 1.15rem;
+  flex: none;
+  border: 1px solid var(--rand-bedien);
+  border-radius: 50%;
+  color: var(--gedaempft);
+  background: transparent;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: help;
+  /* Nicht am Text kleben, aber auch nicht davonlaufen. */
+  margin-left: var(--r1);
+  transition: color .12s, border-color .12s, background-color .12s;
+}
+.info:hover {
+  color: var(--auf-akzent);
+  background: var(--akzent);
+  border-color: var(--akzent);
+}
+.info:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 2px;
+}
+/* In einer Überschrift soll er die Zeilenhöhe nicht verändern. */
+h1 > .info, h2 > .info, h3 > .info, label > .info { vertical-align: baseline; }
+
+/* ── Das Fenster ──────────────────────────────────────────────────────────
+   Ein natives dialog-Element. Breite begrenzt auf die Lesebreite, nicht auf
+   den Platz: Ein Erklärtext über 900 px ist unlesbar, gerade weil Raum da ist. */
+
+.hilfefenster {
+  width: min(46rem, calc(100vw - 2 * var(--r5)));
+  max-height: min(80vh, 46rem);
+  padding: 0;
+  border: 1px solid var(--rand);
+  border-radius: var(--radius);
+  box-shadow: var(--schatten);
+  background: var(--karte);
+  color: var(--text);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.hilfefenster::backdrop {
+  background: rgba(16, 22, 35, .45);
+  backdrop-filter: blur(2px);
+}
+.hilfefenster > div { display: contents; }
+
+.hilfe-kopf {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--r4);
+  padding: var(--r4) var(--karte-x);
+  border-bottom: 1px solid var(--rand);
+  flex: none;
+}
+.hilfe-herkunft {
+  font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--akzent);
+}
+.hilfe-kopf h2 {
+  margin: 2px 0 0;
+  font-size: 1.15rem; font-weight: 660; letter-spacing: -.01em;
+  line-height: 1.25;
+}
+.hilfe-zu {
+  margin-left: auto;
+  flex: none;
+  width: 2rem; height: 2rem;
+  display: grid; place-items: center;
+  border: 1px solid var(--rand-bedien);
+  border-radius: var(--radius-klein);
+  background: transparent;
+  color: var(--gedaempft);
+  font-size: 1.1rem; line-height: 1;
+  cursor: pointer;
+}
+.hilfe-zu:hover { background: var(--grund-tief); color: var(--text); }
+.hilfe-zu:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
+
+.hilfe-leib {
+  padding: var(--r5) var(--karte-x);
+  overflow-y: auto;
+  line-height: 1.62;
+}
+/* Der Inhalt kommt aus dem Handbuch — er bringt dessen Bausteine mit. */
+.hilfe-leib > p:first-child { margin-top: 0; }
+.hilfe-leib > p:last-child  { margin-bottom: 0; }
+.hilfe-leib p { margin: 0 0 var(--r3); }
+.hilfe-leib h3 { font-size: .97rem; font-weight: 640; margin: var(--r4) 0 var(--r2); }
+.hilfe-leib .hb-tabelle { margin-bottom: var(--r3); }
+.hilfe-leib .hb-merke { margin: var(--r3) 0; }
+.hilfe-leib .hb-liste { padding-left: var(--r5); }
+.hilfe-leib code {
+  background: var(--grund-tief);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: .88em;
+}
+
+.hilfe-fuss {
+  padding: var(--r3) var(--karte-x);
+  border-top: 1px solid var(--rand);
+  background: var(--grund-tief);
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .hilfefenster { width: calc(100vw - 2 * var(--r3)); max-height: 88vh; }
+  .hilfe-kopf, .hilfe-leib, .hilfe-fuss { padding-left: var(--r4); padding-right: var(--r4); }
+}

@@ -364,6 +364,32 @@ final class HandbuchInhalt {
             gleichgesetzt. In der Praxis fallen beide oft zusammen — verlassen sollte
             man sich nicht darauf.</p>
 
+            <h2>Die Betriebsstätte</h2>
+            <section data-hilfe="betriebsstaette">
+            <p>Eine Einrichtung kann als <b>Betriebsstätte</b> gekennzeichnet sein. Das
+            heißt: Sie ist die Leistungserbringerinstitution — sie führt eine
+            <b>eigene SMC-B</b> und tritt gegenüber der Telematikinfrastruktur unter
+            eigenem Namen auf.</p>
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>BSNR</b></td><td>Die Betriebsstättennummer aus der
+                  vertragsärztlichen Versorgung.</td></tr>
+              <tr><td><b>Telematik-ID</b></td><td>Die Kennung der SMC-B in der
+                  Telematikinfrastruktur. Über sie ordnet der PIN-Roboter eine
+                  gefundene Karte der richtigen Einrichtung zu.</td></tr>
+              </tbody>
+            </table>
+            <p>Alle anderen Ebenen — Serviceorganisation, Verbund, Standort ohne eigene
+            Karte — sind reine <b>Gliederung</b>. Sie tragen keine SMC-B und keine
+            Telematik-ID.</p>
+            <div class="hb-merke">
+              <b>Warum die Unterscheidung zählt.</b>
+              <p>Ohne sie ließe sich eine gefundene SMC-B keiner Einrichtung sicher
+              zuordnen — und in einem Verbund mit mehreren Karten wüsste niemand,
+              welche PIN zu welcher gehört.</p>
+            </div>
+            </section>
+
             <h2>Rollen</h2>
 
             <table class="hb-tabelle">
@@ -593,13 +619,23 @@ final class HandbuchInhalt {
             </table>
 
             <h2>Benachrichtigung per E-Mail</h2>
+            <section data-hilfe="sammelfenster">
             <p>Je Einrichtung lässt sich einstellen, wer ab welcher Schwere eine Mail
-            bekommt. Wichtig ist dabei das <strong>Sammelfenster</strong>: Fällt ein
-            Konnektor mit fünfhundert Terminals aus, entstehen fünfhundert Alarme —
-            aber nur eine Mail, die sie zusammenfasst. Ohne diese Bremse wäre das
-            Postfach unbrauchbar, und zwar genau dann, wenn es gebraucht wird.</p>
+            bekommt.</p>
+            <div class="hb-merke">
+              <b>Das Sammelfenster ist die wichtigste Einstellung dieser Seite.</b>
+              <p>Fällt ein Konnektor mit fünfhundert Terminals aus, entstehen binnen
+              Sekunden fünfhundert Alarme — aber nur <em>eine</em> Mail, die sie
+              zusammenfasst. Ohne diese Bremse wäre das Postfach unbrauchbar, und zwar
+              genau dann, wenn es gebraucht wird.</p>
+            </div>
+            <p>Ein kurzes Fenster meldet schneller, ein langes fasst besser zusammen.
+            Bei wenigen Geräten sind 30 Sekunden vertretbar; bei hunderten sollten es
+            eher fünf Minuten sein. Gesammelt wird nur, was <b>neu</b> ist — ein
+            wiederkehrender Alarm desselben Zustands erzeugt keine zweite Mail.</p>
             <p>In keiner Mail steht eine PIN, ein Zugangsdatum oder ein
             Personenbezug.</p>
+            </section>
 
             <h2>Alle Alarme schließen</h2>
             <p>Auf der Lage-Übersicht gibt es eine Sammelaktion. Sie fragt vorher nach
@@ -780,12 +816,23 @@ final class HandbuchInhalt {
             immer für genau eine.</p>
 
             <h2>4 · Standort-Agent einrichten</h2>
+            <section data-hilfe="einrichtungspaket">
             <p>Unter <b>Bestand</b> das <b>Einrichtungspaket herunterladen</b>. Es
-            enthält eine fertige <code>docker-compose.yml</code>, eine vorausgefüllte
-            Konfiguration mit der Adresse dieser Zentrale und einem Zugangscode sowie
-            eine Anleitung in verständlicher Sprache. In der Praxis sind nur noch die
-            Adressen von Konnektor und Terminals einzutragen.</p>
-            <p>Der Zugangscode gilt <strong>einmalig und 24 Stunden</strong>.</p>
+            enthält alles, was am Standort gebraucht wird:</p>
+            <ul class="hb-liste">
+              <li>eine fertige <code>docker-compose.yml</code>,</li>
+              <li>eine vorausgefüllte Konfiguration mit der Adresse dieser Zentrale und
+                  einem Zugangscode,</li>
+              <li>eine Anleitung in verständlicher Sprache.</li>
+            </ul>
+            <p>In der Praxis sind nur noch die Adressen von Konnektor und
+            Kartenterminals einzutragen, dann <code>docker compose up -d</code>.</p>
+            <p><b>Die Wahl der Einrichtung ist wesentlich:</b> Alles, was dieser Agent
+            meldet — Geräte, Alarme, Protokolleinträge —, gehört zu ihr. Sie lässt sich
+            später korrigieren, ohne den Agenten neu einzurichten.</p>
+            <p>Der Zugangscode gilt <strong>einmalig und 24 Stunden</strong>. Danach
+            hilft ein neues Paket; der alte Code ist dann wertlos.</p>
+            </section>
 
             <h2>5 · Prüfen</h2>
             <p>Nach dem Start meldet sich der Agent binnen Sekunden. In der
@@ -796,6 +843,86 @@ final class HandbuchInhalt {
 
             <h2>6 · PINs hinterlegen</h2>
             <p>Der letzte Schritt. Danach arbeitet der Roboter.</p>
+
+            <h2>Der Aufrufkontext des Konnektors</h2>
+            <section data-hilfe="aufrufkontext">
+            <p>Jeder Aufruf an den Konnektor trägt drei Angaben mit sich, an denen er
+            erkennt, <em>in wessen Namen</em> gefragt wird:</p>
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>Mandant</b></td><td>Für welche Einrichtung. Nicht zu
+                  verwechseln mit den Einrichtungen des PIN-Roboters — der Konnektor
+                  führt seine eigene Liste.</td></tr>
+              <tr><td><b>Clientsystem</b></td><td>Welches Programm fragt. Für uns ist
+                  das der PIN-Roboter.</td></tr>
+              <tr><td><b>Arbeitsplatz</b></td><td>Von welchem Platz aus. Bestimmt mit,
+                  welche Kartenterminals überhaupt sichtbar sind.</td></tr>
+              </tbody>
+            </table>
+            <div class="hb-merke">
+              <b>Stimmt einer der drei Werte nicht, weist der Konnektor jede Anfrage
+              ab.</b>
+              <p>Ein Tippfehler zeigt sich deshalb nicht als halbe Funktion, sondern
+              als vollständiger Ausfall dieses Standorts. Die Werte stehen in der
+              Verwaltungsoberfläche des Konnektors — abtippen ist die häufigste
+              Fehlerquelle bei der Inbetriebnahme.</p>
+            </div>
+            <p>Lässt sich das Informationsmodell des Konnektors auslesen, bietet der
+            PIN-Roboter die vorhandenen Werte zur <b>Auswahl</b> an. Das ist der
+            sicherere Weg.</p>
+            </section>
+
+            <h2>Die Webadmin-Schnittstelle</h2>
+            <section data-hilfe="webadmin">
+            <p>Neben der von der gematik spezifizierten Fachschnittstelle bieten manche
+            Konnektoren eine <b>Verwaltungsschnittstelle</b> an. Über sie lässt sich das
+            Informationsmodell auslesen: welche Kartenterminals es gibt, wie sie heißen,
+            welche Mandanten und Arbeitsplätze eingerichtet sind.</p>
+            <div class="hb-merke">
+              <b>Diese Schnittstelle ist herstellerspezifisch und nirgends
+              spezifiziert.</b>
+              <p>Deshalb ist alles, was auf ihr beruht, im PIN-Roboter
+              <b>optional</b>. Ohne sie funktioniert die Kernfunktion vollständig — es
+              entfällt nur der Komfort, Geräte und Kontextwerte automatisch zu
+              erkennen. Wäre sie Voraussetzung, wäre das Produkt an einen
+              Konnektorhersteller gekettet.</p>
+            </div>
+            <p>Ist sie nicht erreichbar, weist die Oberfläche darauf hin, statt das
+            Feld einfach leer zu lassen.</p>
+            </section>
+
+            <h2>Die Programmablage</h2>
+            <section data-hilfe="programmablage">
+            <p>Neue Fassungen des PIN-Roboters liegen in einer <b>Programmablage</b> im
+            Internet — technisch eine Container-Registry. Die Zentrale sieht dort
+            regelmäßig nach, ob es etwas Neueres gibt, und zeigt an, was sich ändern
+            würde.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>Registry</b></td><td>Die Adresse der Ablage, bei uns
+                  <code>ghcr.io</code>.</td></tr>
+              <tr><td><b>Abbild</b></td><td>Der Name des Programms dort, etwa
+                  <code>mathi66/pin-roboter</code>. Der Agent liegt unter demselben
+                  Namen mit dem Zusatz <code>-agent</code>.</td></tr>
+              <tr><td><b>Benutzername</b></td><td>Nur nötig, wenn die Ablage nicht
+                  öffentlich ist.</td></tr>
+              <tr><td><b>Zugriffstoken</b></td><td>Das Kennwort für die Ablage. Es wird
+                  verschlüsselt gespeichert und <b>nie wieder angezeigt</b>. Ein leeres
+                  Feld lässt das gespeicherte Token unverändert.</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>Der Roboter liest nur.</b>
+              <p>Er lädt keine Fassung selbst ein und braucht keinen Zugriff auf den
+              Docker-Dienst. Was er hier tut, ist nachsehen und anzeigen — die
+              Entscheidung bleibt bei einem Menschen.</p>
+            </div>
+
+            <p>Das Token sollte auf <code>read:packages</code> beschränkt sein. Mehr
+            braucht weder die Zentrale noch ein Agent.</p>
+            </section>
 
             <h2>Netzwerk</h2>
             <table class="hb-tabelle">
@@ -831,6 +958,7 @@ final class HandbuchInhalt {
             abschneiden.</p>
 
             <h2>Selbsttätige Aktualisierung</h2>
+            <section data-hilfe="agent-weitergabe">
             <p>Neben dem Agenten läuft ein Aktualisierungsdienst, der nachts um 3:30
             Uhr nach einer neuen Fassung sieht. Drei Vorkehrungen sind eingebaut:</p>
             <ul class="hb-liste">
@@ -845,24 +973,107 @@ final class HandbuchInhalt {
             <p>Die Anmeldung für die Programmablage steht <strong>nicht</strong> im
             Einrichtungspaket. Der Agent holt sie von der Zentrale — dort wird sie
             einmal gepflegt statt in jeder Praxis. Sie ist ab Werk abgeschaltet und
-            wird unter <b>Instanz → Programmablage</b> eingeschaltet. Abschalten
+            wird unter <b>Instanz → Produktversion → Selbsttätige Aktualisierung der Agenten</b> eingeschaltet. Abschalten
             entfernt sie beim Agenten wieder; ohne sie holt die Aktualisierung
-            nichts.</p>
+            nichts — das ist zugleich der Not-Aus für die Aktualisierung.</p>
+
+            <p>Der Token sollte auf <code>read:packages</code> beschränkt sein; mehr
+            braucht ein Agent nie. Wird ein Agent widerrufen, bekommt er keine
+            Zugangsdaten mehr — ein kompromittierter Praxisrechner lässt sich so
+            ausschließen, ohne den Token überall zu tauschen.</p>
+            </section>
 
             <h2>Gezielt aktualisieren</h2>
-            <p>In der Agentenliste unter <b>Instanz</b> steht je Agent die laufende
-            Version, was bereitsteht und ein Knopf. Der Agent holt den Auftrag im
-            nächsten Prüftakt ab und tauscht sich aus.</p>
+            <section data-hilfe="agent-aktualisierung">
+            <p>In der Agentenliste unter <b>Instanz</b> trägt jeder Agent die Spalte
+            <b>Version &amp; Aktualisierung</b>. Dort stehen die laufende Version, was
+            in der Programmablage bereitsteht, und ein Knopf. Der Agent holt den
+            Auftrag im nächsten Prüftakt ab — meist binnen Sekunden — und tauscht sich
+            aus.</p>
+
+            <p>Die Auswahl steht auf der <b>neuesten</b> Fassung, lässt aber auch
+            ältere zu: Manchmal will man an einem Standort bewusst zurück, etwa wenn
+            sich eine neue Fassung dort als unpassend erweist.</p>
+
             <div class="hb-merke">
               <b>Erfolgreich ist die Aktualisierung erst, wenn der Agent sich mit der
               neuen Version wiedermeldet.</b>
-              <p>Nicht seine Quittung entscheidet — er quittiert, bevor sein Container
-              ersetzt wird. Kommt er mit der alten Version oder gar nicht wieder, gilt
-              der Auftrag nach zehn Minuten als gescheitert und nennt die Ursache.</p>
+              <p>Nicht seine Quittung entscheidet — er quittiert, <em>bevor</em> sein
+              Container ersetzt wird, denn danach kann er nichts mehr sagen. Gemessen
+              wird also das Ergebnis, nicht die Absicht.</p>
             </div>
+
             <p>Während der Aktualisierung ist der Standort etwa eine Minute lang nicht
             überwacht. <strong>Bereits freigeschaltete Karten bleiben
             freigeschaltet</strong> — es fehlt nur die Aufsicht.</p>
+            </section>
+
+            <h3>Warum nur Versionsnummern zur Auswahl stehen</h3>
+            <section data-hilfe="agent-zielversion">
+            <p>In der Programmablage gibt es neben den Nummern auch <b>Zeiger</b> wie
+            <code>stabil</code> — sie verweisen jeweils auf die freigegebene Fassung.
+            Zur gezielten Aktualisierung stehen sie <b>nicht</b> zur Wahl.</p>
+            <p>Der Grund: Ein Agent meldet immer die <b>Nummer</b> aus seinem
+            Programm, nie den Zeiger, über den er geholt wurde. Ein Auftrag
+            „aktualisiere auf <code>stabil</code>“ wäre deshalb nie erfüllbar — der
+            Agent käme mit <code>1.2.0</code> wieder, das Ziel hieße
+            <code>stabil</code>, und nach zehn Minuten stünde ein Fehlschlag da,
+            obwohl alles geklappt hat.</p>
+            <p>Der nächtliche Lauf benutzt den Zeiger weiterhin. Dort wird nichts
+            verifiziert, sondern nur nachgezogen.</p>
+            </section>
+
+            <h3>Wenn es nicht klappt</h3>
+            <section data-hilfe="agent-fehlschlag">
+            <table class="hb-tabelle">
+              <thead><tr><th>Anzeige</th><th>Bedeutung</th></tr></thead>
+              <tbody>
+              <tr><td><span class="marke">angefordert</span></td>
+                  <td>Der Auftrag liegt bereit. Der Agent holt ihn im nächsten
+                      Prüftakt ab.</td></tr>
+              <tr><td><span class="marke">läuft</span></td>
+                  <td>Der Agent hat angestoßen und tauscht sich gerade aus. Die
+                      Anzeige aktualisiert sich alle fünf Sekunden von selbst.</td></tr>
+              <tr><td><span class="marke ok">erfolgreich</span></td>
+                  <td>Der Agent meldet sich mit der Zielversion. Verifiziert.</td></tr>
+              <tr><td><span class="marke fehler">fehlgeschlagen</span></td>
+                  <td>Entweder scheiterte schon der Anstoß, oder der Agent kam
+                      binnen zehn Minuten nicht mit der neuen Version zurück.</td></tr>
+              </tbody>
+            </table>
+
+            <p><b>Der Agent läuft dabei unverändert weiter.</b> Ein fehlgeschlagener
+            Abruf lässt den alten Container unangetastet — der Standort ist nicht
+            ausgefallen, er hängt nur zurück.</p>
+
+            <p>Die drei häufigsten Ursachen:</p>
+            <ol class="hb-liste">
+              <li><b>Die Aktualisierungsdienste laufen dort nicht.</b> Manche Häuser
+                  entfernen sie bewusst aus dem Einrichtungspaket. Dann muss vor Ort
+                  von Hand aktualisiert werden:
+                  <code>docker compose pull &amp;&amp; docker compose up -d</code></li>
+              <li><b>Die Zugangsdaten wurden abgelehnt.</b> Neues Token unter
+                  <b>Instanz → Produktversion</b> hinterlegen — die Agenten übernehmen
+                  es im nächsten Takt.</li>
+              <li><b>Die Version gibt es dort nicht.</b> Prüfen, ob sie in der
+                  Programmablage wirklich veröffentlicht wurde.</li>
+            </ol>
+            <p>Am Standort selbst hilft <code>docker compose logs aktualisierung</code>.</p>
+            </section>
+
+            <h3>Abbrechen und zur Kenntnis nehmen</h3>
+            <section data-hilfe="agent-abbrechen">
+            <p>Ein <b>laufender</b> Auftrag lässt sich abbrechen. Das nimmt ihn aus der
+            Anzeige; hat der Agent bereits angestoßen, läuft die Aktualisierung vor Ort
+            trotzdem zu Ende — abgebrochen wird die Erwartung, nicht der Vorgang.</p>
+            <p>Ein <b>fehlgeschlagener</b> Auftrag bleibt in der Zeile stehen, bis
+            jemand ihn mit <b>Zur Kenntnis</b> ausblendet. Er verschwindet damit aus
+            der Übersicht, bleibt aber im Verlauf und im Protokoll. Wer die Ursache
+            behoben hat, wird die Meldung so wieder los — und eine Meldung, die man
+            nicht loswird, wird ignoriert.</p>
+            <p>Ein neuer Fehlschlag zeigt sich wieder, auch wenn der vorige zur
+            Kenntnis genommen wurde.</p>
+            </section>
 
             <h2>Wenn ein Agent verstummt</h2>
             <p>Meldet er länger als 15 Minuten nichts, entsteht ein kritischer Alarm:
@@ -959,7 +1170,7 @@ final class HandbuchInhalt {
 
             <h2>„Ein Agent bleibt auf einer alten Version“</h2>
             <ol class="hb-liste">
-              <li>Ist die Weitergabe unter <b>Instanz → Programmablage</b>
+              <li>Ist die Weitergabe unter <b>Instanz → Produktversion</b>
                   eingeschaltet?</li>
               <li>Am Standort: <code>docker compose logs aktualisierung</code>.</li>
               <li>Wurde die Version in der Programmablage überhaupt veröffentlicht?</li>

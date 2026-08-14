@@ -1272,7 +1272,8 @@ public class Zentrale {
      */
     private String versionstafel() {
         var z = versionen.zustand();
-        StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Produktversion");
+        StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Produktversion "
+                + Bedienelemente.info("programmablage", "die Programmablage"));
 
         // Bei einem Abfragefehler steht in der Kopfzeile NICHT „Sicherheitsupdate
         // verfügbar“. Am 14.08.2026 zeigte die Seite beides gleichzeitig: oben
@@ -1356,11 +1357,7 @@ public class Zentrale {
                       <input id="rg-tok" name="token" type="password" maxlength="400"
                              autocomplete="new-password" aria-describedby="rg-tok-hilfe"></div>
                   </div>
-                  <p id="rg-tok-hilfe" class="hilfe">%s Es wird verschlüsselt gespeichert und
-                     lässt sich nicht wieder anzeigen. Ein leeres Feld lässt das gespeicherte
-                     Token unverändert. Der Roboter <strong>liest nur</strong> — er braucht
-                     keinen Zugriff auf den Docker-Dienst und führt kein Update selbst aus
-                     (ADR-0001).</p>
+                  <p id="rg-tok-hilfe" class="hilfe">%s</p>
                   <div class="reihe-frei">
                     <button class="knopf haupt" type="submit" title="Speichert die Registry-Zugangsdaten verschlüsselt" aria-label="Speichert die Registry-Zugangsdaten verschlüsselt">Zugang speichern</button>
                   </div>
@@ -1392,13 +1389,9 @@ public class Zentrale {
     private String agentenaktualisierung(boolean tokenDa) {
         boolean an = versionen.agentenzugang() != null;
         return """
-                <div class="tafel abstand-oben"><h3>Selbsttätige Aktualisierung der Agenten</h3>
+                <div class="tafel abstand-oben"><h3>Selbsttätige Aktualisierung der Agenten
+                  %s</h3>
                 <div class="karte-leib">
-                <p class="unterzeile">Die Standort-Agenten in den Praxen holen ihre
-                   Aktualisierung aus derselben Programmablage. Weil sie privat ist, brauchen
-                   sie dafür Zugangsdaten — <strong>diese hier</strong>. Sie werden über die
-                   bestehende, verschlüsselte Verbindung übergeben und stehen damit nicht in
-                   jedem Einrichtungspaket.</p>
                 <p><span class="marke %s">%s</span></p>
                 %s
                 <form method="post" action="/verwaltung/registry/agenten" class="abstand-oben"
@@ -1408,12 +1401,9 @@ public class Zentrale {
                           title="%s"
                           aria-label="%s">%s</button>
                 </form>
-                <p class="hilfe">Der Token sollte auf <code>read:packages</code> beschränkt
-                   sein — mehr braucht ein Agent nie. Wird ein Agent widerrufen, bekommt er
-                   keine Zugangsdaten mehr; ein kompromittierter Praxisrechner lässt sich so
-                   ausschließen, ohne den Token überall zu tauschen.</p>
                 </div></div>"""
                 .formatted(
+                    Bedienelemente.info("agent-weitergabe", "die selbsttätige Aktualisierung"),
                     an ? "ok" : "unbekannt",
                     an ? "✓ eingeschaltet — Agenten aktualisieren sich selbst"
                        : "× ausgeschaltet — Agenten bleiben auf ihrem Stand",
@@ -1522,7 +1512,9 @@ public class Zentrale {
         // 150 Abfragen für dieselbe Antwort.
         var agentversionen = versionen.agentversionen();
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Standort-Agenten "
-                + "<span class=\"zaehler\">" + liste.size() + "</span></h3>");
+                + "<span class=\"zaehler\">" + liste.size() + "</span> "
+                + Bedienelemente.info("agent-aktualisierung", "Standort-Agenten")
+                + "</h3>");
         if (liste.isEmpty()) {
             return s.append("""
                     <p class="leer">Noch kein Agent registriert. Unter „Bestand" lässt sich ein
@@ -1597,14 +1589,6 @@ public class Zentrale {
         }
 
         s.append(agentAnlegenFormular(bereich));
-        s.append("""
-                <div class="karte-leib">
-                  <p class="hilfe">Die Zentrale unterstützt die Protokollversionen %d bis %d.
-                     Ein Agent außerhalb dieser Spanne wird <strong>nicht abgewiesen</strong> —
-                     das hieße: keine PIN-Verifikation an diesem Standort. Er arbeitet weiter,
-                     nur neuere Funktionen wirken dort nicht.</p>
-                </div>""".formatted(de.pinroboter.gemeinsam.Protokollversion.AELTESTE_UNTERSTUETZTE,
-                        de.pinroboter.gemeinsam.Protokollversion.AKTUELL));
         return s.append("</div>").toString();
     }
 
@@ -3122,7 +3106,16 @@ public class Zentrale {
                 <div class="rahmen">
                 %s
                 <main id="inhalt">%s</main>
-                </div></body></html>"""
+                </div>
+                <!-- Ein Fenster für alle Hilfen (FA-DOK-020). Ein natives
+                     dialog-Element: Esc schließt, der Fokus bleibt darin
+                     gefangen, und ein Screenreader kündigt es als Dialog an.
+                     Nachgebaut bekäme man das nicht geschenkt. -->
+                <dialog id="hilfefenster" class="hilfefenster"
+                        aria-labelledby="hilfefenster-titel">
+                  <div id="hilfeinhalt"></div>
+                </dialog>
+                </body></html>"""
                 .formatted(seitenleiste(aktiv, angemeldet), inhalt);
     }
 
@@ -4907,6 +4900,27 @@ public class Zentrale {
                     Handbuchseiten.seite(null, q,
                             Handbuchseiten.treffer(q, Handbuch.suchen(q))),
                     angemeldeter(c)));
+        });
+
+        /**
+         * FA-DOK-020: Ein Abschnitt des Handbuchs als Kurzhilfe.
+         *
+         * <p>Mit JavaScript landet die Antwort im Dialog; ohne JavaScript ist
+         * derselbe Pfad eine gewöhnliche Seite. Eine Erklärung darf nicht an
+         * einer Browsereinstellung hängen.
+         */
+        app.get("/handbuch/hilfe/{kennung}", c -> {
+            var h = Handbuch.hilfe(c.pathParam("kennung"));
+            if (h == null) {
+                // Kein toter Klick: Wer hierher kommt, wollte etwas wissen.
+                c.status(404).html(Handbuchseiten.hilfeFehlt(c.pathParam("kennung")));
+                return;
+            }
+            if ("true".equals(c.header("HX-Request"))) {
+                c.html(Handbuchseiten.hilfe(h));
+                return;
+            }
+            c.html(seite("handbuch", Handbuchseiten.seite(h.kapitel(), null), angemeldeter(c)));
         });
 
         app.get("/handbuch/{kapitel}", c -> {

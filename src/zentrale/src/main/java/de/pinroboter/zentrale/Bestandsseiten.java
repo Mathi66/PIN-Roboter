@@ -546,29 +546,23 @@ final class Bestandsseiten {
             // muss die Oberflaeche auf die entfallende Unterstuetzung hinweisen -
             // und darf nicht so tun, als fehle etwas Pflichtiges.
             return """
-                    <div class="tafel"><h3>Informationsmodell des Konnektors</h3>
+                    <div class="tafel"><h3>Informationsmodell des Konnektors %s</h3>
                     <div class="karte-leib">%s
-                      <p class="hilfe">Diese Schnittstelle ist herstellerspezifisch und von der
-                         gematik nicht spezifiziert. Ohne sie funktioniert alles weiter — die
-                         Werte des Aufrufkontexts (Mandant, Clientsystem, Arbeitsplatz) sind
-                         dann von Hand einzutragen, statt zur Auswahl zu stehen.</p>
                     </div></div>"""
+                    .formatted(Bedienelemente.info("webadmin", "das Informationsmodell"))
                     .formatted(Anmeldeseiten.meldung(
                             "Das Informationsmodell ist derzeit nicht abrufbar. "
                             + "Die Unterstützung beim Einrichten entfällt dadurch.", "warnend"));
         }
         return """
                 <div class="tafel"><h3>Informationsmodell des Konnektors
-                  <span class="zaehler">gelesen %s</span></h3>
+                  <span class="zaehler">gelesen %s</span> %s</h3>
                 <div class="karte-leib">
-                  <p class="hilfe">Aus diesen Werten setzt sich der Aufrufkontext zusammen
-                     (<code>TUC_KON_000</code>). Sie beim Erfassen eines Konnektors
-                     <strong>auszuwählen statt abzutippen</strong> beseitigt die häufigste
-                     Fehlerquelle bei der Inbetriebnahme: Ein Tippfehler zeigt sich später
-                     nur als unspezifischer Zugriffsfehler.</p>
                   <pre class="modell">%s</pre>
                 </div></div>"""
-                .formatted(esc(nz(m.gesehen())), esc(nz(m.inhalt())));
+                .formatted(esc(nz(m.gesehen())),
+                        Bedienelemente.info("webadmin", "das Informationsmodell"),
+                        esc(nz(m.inhalt())));
     }
 
     // ------------------------------------------------------- Einzelbearbeitung
@@ -1292,26 +1286,27 @@ final class Bestandsseiten {
                                               String mandant, String clientsystem,
                                               String arbeitsplatz) {
         boolean ausModell = kontext != null && kontext.vorhanden();
+        // Kein Erklärabsatz mehr: Was der Aufrufkontext ist und warum ein
+        // Tippfehler den ganzen Standort lahmlegt, steht im Handbuch. Hier
+        // bleibt nur, was für DIESES Formular gilt — welcher Weg gerade offen
+        // ist (FA-DOK-020).
         String einleitung = ausModell
                 ? """
-                  <p class="hilfe">Diese Werte stammen aus dem Informationsmodell des Konnektors
-                     und begleiten jeden Aufruf. <strong>Auswählen statt abtippen</strong> —
-                     ein Tippfehler zeigt sich später nur als unspezifischer Zugriffsfehler.
-                     Über „anderer Wert“ lässt sich jederzeit ein nicht gemeldeter Wert
-                     eintragen.</p>"""
+                  <p class="hilfe">Aus dem Informationsmodell des Konnektors.
+                     <strong>Auswählen statt abtippen.</strong> Über „anderer Wert“
+                     lässt sich ein nicht gemeldeter Wert eintragen.</p>"""
                 : """
-                  <p class="hilfe">Diese drei Werte stehen in der Konfiguration des Konnektors
-                     und begleiten jeden Aufruf. Ein Tippfehler zeigt sich später nur als
-                     unspezifischer Zugriffsfehler — deshalb sorgfältig übertragen.
-                     <em>Sobald ein Standort-Agent das Informationsmodell gelesen hat, stehen
-                     sie hier zur Auswahl.</em></p>""";
+                  <p class="hilfe">Aus der Konfiguration des Konnektors zu übertragen.
+                     <em>Sobald ein Standort-Agent das Informationsmodell gelesen hat,
+                     stehen sie hier zur Auswahl.</em></p>""";
 
         return """
-                <fieldset><legend>Aufrufkontext</legend>
+                <fieldset><legend>Aufrufkontext %s</legend>
                   %s
                   <div class="feldreihe">%s%s%s</div>
                 </fieldset>"""
-                .formatted(einleitung,
+                .formatted(Bedienelemente.info("aufrufkontext", "den Aufrufkontext"),
+                        einleitung,
                         kontextFeld(praefix + "-man", "mandantId", "Mandanten-ID",
                                 ausModell ? kontext.mandanten() : List.of(), mandant),
                         kontextFeld(praefix + "-cli", "clientsystemId", "Clientsystem-ID",

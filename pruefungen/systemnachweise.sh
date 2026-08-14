@@ -3994,6 +3994,68 @@ ergebnis "kein Attribut wird durch ein Anfuehrungszeichen zerlegt" "$HJ"
 
 rm -f /tmp/pr-hb*.html
 
+# ---------------------------------------------------------------- FA-DOK-020
+# Hilfe aus dem Handbuch (PO, 14.08.2026).
+#
+# Erklaerender Text stand zweimal im Produkt: neben dem Bedienelement und im
+# Handbuch. Zwei Fassungen laufen auseinander, sobald sich etwas aendert.
+# Jetzt gibt es eine Quelle — geprueft wird, dass die Kette haelt.
+hinweis "FA-DOK-020 — Hilfe kommt aus dem Handbuch"
+
+# Der Kern: KEIN Info-Knopf darf ins Leere fuehren. Geprueft wird gegen die
+# ausgelieferten Seiten, nicht gegen den Quelltext — hier zaehlt, was ankommt.
+# Auch die Formularseiten: Dort sitzen die Knoepfe an den Feldern, und genau
+# dort werden sie gebraucht.
+SEITEN="/ /geraete /gruppen /bestand /benachrichtigung /verwaltung /organisation \
+        /benutzer /protokoll /einstellungen /bestand/konnektor/neu \
+        /bestand/terminal/neu /organisation/neu"
+INFO_GESAMT=0; INFO_TOT=0
+for pfad in $SEITEN; do
+  curl -s -b "$KEKSE" "$BASIS$pfad" -o /tmp/pr-info.html
+  for ziel in $(grep -oE 'class="info" href="/handbuch/hilfe/[a-z0-9-]+"' /tmp/pr-info.html \
+                | sed 's|.*/hilfe/||;s|"||' | sort -u); do
+    INFO_GESAMT=$((INFO_GESAMT+1))
+    C=$(curl -s -b "$KEKSE" -o /dev/null -w '%{http_code}' \
+        -H "HX-Request: true" "$BASIS/handbuch/hilfe/$ziel")
+    [ "$C" = "200" ] || { INFO_TOT=$((INFO_TOT+1)); echo "    tot: $ziel auf $pfad ($C)"; }
+  done
+done
+[ "$INFO_GESAMT" -gt 0 ] && [ "$INFO_TOT" -eq 0 ] && DA=ja || DA=nein
+ergebnis "alle $INFO_GESAMT Info-Knoepfe finden ihren Abschnitt" "$DA"
+
+# Der Abschnitt kommt wirklich aus dem Handbuch — dieselbe Quelle, ein Text.
+curl -s -b "$KEKSE" -H "HX-Request: true" $BASIS/handbuch/hilfe/sammelfenster \
+  -o /tmp/pr-hilfe.html
+[ "$(enthaelt /tmp/pr-hilfe.html "Sammelfenster")" = "ja" ] && DB=ja || DB=nein
+ergebnis "das Hilfefenster traegt den Inhalt des Abschnitts" "$DB"
+[ "$(enthaelt /tmp/pr-hilfe.html "hilfefenster-titel")" = "ja" ] && DB2=ja || DB2=nein
+ergebnis "es hat einen Titel, an dem der Dialog beschriftet wird" "$DB2"
+[ "$(enthaelt /tmp/pr-hilfe.html "/handbuch/alarme")" = "ja" ] && DB3=ja || DB3=nein
+ergebnis "und fuehrt ins volle Kapitel weiter" "$DB3"
+
+# Derselbe Text steht im Kapitel — nicht in zwei gepflegten Fassungen.
+curl -s -b "$KEKSE" $BASIS/handbuch/alarme -o /tmp/pr-kap.html
+[ "$(enthaelt /tmp/pr-kap.html "Das Sammelfenster ist die wichtigste Einstellung")" = "ja" ] \
+  && DC=ja || DC=nein
+ergebnis "derselbe Satz steht im Kapitel — eine Quelle, nicht zwei" "$DC"
+
+# Ohne JavaScript muss der Knopf ein gewoehnlicher Weg ins Handbuch sein.
+C=$(curl -s -b "$KEKSE" -o /tmp/pr-ohne.html -w '%{http_code}' $BASIS/handbuch/hilfe/sammelfenster)
+[ "$C" = "200" ] && [ "$(enthaelt /tmp/pr-ohne.html "hb-verzeichnis")" = "ja" ] && DD=ja || DD=nein
+ergebnis "ohne JavaScript liefert derselbe Pfad die Handbuchseite" "$DD"
+
+# Eine unbekannte Kennung endet nicht in einem toten Klick.
+C=$(curl -s -b "$KEKSE" -o /tmp/pr-404.html -w '%{http_code}' \
+    -H "HX-Request: true" $BASIS/handbuch/hilfe/gibt-es-nicht)
+[ "$C" = "404" ] && [ "$(enthaelt /tmp/pr-404.html "Handbuch")" = "ja" ] && DE=ja || DE=nein
+ergebnis "eine unbekannte Kennung fuehrt trotzdem ins Handbuch (HTTP $C)" "$DE"
+
+# Das Fenster gibt es auf jeder Seite — sonst haette der Knopf kein Ziel.
+[ "$(enthaelt /tmp/pr-info.html "id=\"hilfefenster\"")" = "ja" ] && DF=ja || DF=nein
+ergebnis "das Hilfefenster steckt im Seitengeruest" "$DF"
+
+rm -f /tmp/pr-info.html /tmp/pr-hilfe.html /tmp/pr-kap.html /tmp/pr-ohne.html /tmp/pr-404.html
+
 # ---------------------------------------------------------------- FA-BEN-035
 hinweis "FA-BEN-035 — Administratorkonto aus der Konfiguration"
 

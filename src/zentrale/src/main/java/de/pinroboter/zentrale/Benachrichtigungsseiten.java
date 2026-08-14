@@ -181,23 +181,21 @@ final class Benachrichtigungsseiten {
                         <option value="WARNUNG" selected>Warnungen und Kritisches</option>
                         <option value="HINWEIS">alles</option>
                       </select></div>
-                    <div class="feldgruppe"><label for="r-fenster">Sammelfenster (Sekunden)</label>
+                    <div class="feldgruppe"><label for="r-fenster">Sammelfenster (Sekunden)
+                      %s</label>
                       <input id="r-fenster" name="fenster" value="300" inputmode="numeric"
                              aria-describedby="r-fenster-hilfe"></div>
                   </div>
                   <p id="r-fenster-hilfe" class="hilfe">
-                    <strong>Die wichtigste Einstellung auf dieser Seite.</strong> Fällt ein
-                    Konnektor aus, entstehen binnen Sekunden hunderte Alarme. Der Roboter sammelt
-                    sie für die eingestellte Dauer und verschickt <em>eine</em> Nachricht mit einer
-                    Zusammenfassung. 0 bedeutet: jede Meldung sofort einzeln — bei wenigen Geräten
-                    sinnvoll, bei vielen nicht.
+                    0 bedeutet: jede Meldung sofort einzeln.
                   </p>
                   <div class="ankreuz">
                     <input id="r-aktiv" name="aktiv" type="checkbox" value="ja" checked>
                     <label for="r-aktiv">Aktiv</label>
                   </div>
                   <button class="knopf haupt" type="submit" title="Legt fest, wer ab welchem Schweregrad benachrichtigt wird" aria-label="Benachrichtigungsregel speichern">Regel speichern</button>
-                </form></div>""".formatted(auswahl));
+                </form></div>""".formatted(auswahl,
+                        Bedienelemente.info("sammelfenster", "das Sammelfenster")));
 
         return s.append("</div>").toString();
     }

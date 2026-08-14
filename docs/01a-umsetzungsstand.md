@@ -163,6 +163,7 @@ mit 84 Anforderungen · **268 Modultests, 298 Systemnachweise**
 
 | | Anforderung | Hardware | Stand |
 |---|---|---|---|
+| **◐** | `FA-DOK-020` Hilfe aus dem Handbuch <br><span style="opacity:.7">SOLL</span> |  | Mechanik fertig: 11 markierte Abschnitte, Info-Knopf, Dialog, ohne JavaScript ein Link ins Handbuch. Ein Test verhindert tote Knöpfe. **Angewendet auf Instanz, Benachrichtigung und die Konnektor-Formulare** — die übrigen Seiten tragen ihre Absätze noch. [Umsetzung 38](03-umsetzung/38-hilfe-aus-dem-handbuch.md) |
 | **✔** | `FA-DOK-010` Handbuch in der Oberfläche <br><span style="opacity:.7">SOLL</span> |  | 16 Kapitel in drei Teilen (Verstehen, Bedienen, Betreiben), fünf eingebettete Zeichnungen, serverseitige Suche mit Trefferauszug und Hervorhebung — auch ohne JavaScript. Eigener Navigationspunkt. axe-core ohne Befund. [Umsetzung 37](03-umsetzung/37-handbuch.md) |
 
 ## A.12 Datensicherung (FA-BAK)

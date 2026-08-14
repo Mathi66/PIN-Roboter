@@ -83,7 +83,8 @@ class HandbuchTest {
         // langer Texte nicht auf.
         for (var k : Handbuch.alle()) {
             for (String tag : new String[]{"div", "p", "table", "tbody", "tr", "td",
-                                           "ul", "ol", "li", "dl", "figure", "svg"}) {
+                                           "ul", "ol", "li", "dl", "figure", "svg",
+                                           "section", "details"}) {
                 long auf = zaehle(k.inhalt(), "<" + tag + " ") + zaehle(k.inhalt(), "<" + tag + ">");
                 long zu = zaehle(k.inhalt(), "</" + tag + ">");
                 assertEquals(auf, zu, k.kennung() + ": <" + tag + "> "
@@ -202,6 +203,90 @@ class HandbuchTest {
         // „PIN" soll nicht als „pin" erscheinen, nur weil klein gesucht wurde.
         assertTrue(html.contains("<mark>PIN</mark>"),
                 "Die Schreibweise im Text muss erhalten bleiben");
+    }
+
+    // ─────────────────────────────────── Hilfe aus dem Handbuch (FA-DOK-020)
+
+    @Test
+    @DisplayName("Jeder Info-Knopf im Code findet seinen Abschnitt im Handbuch")
+    void keinInfoKnopfInsLeere() throws Exception {
+        // Der wichtigste Test dieser Funktion. Ein Info-Knopf, der ins Leere
+        // führt, ist schlimmer als keiner: Wer ihn drückt, hat eine Frage.
+        // Gelesen wird der Quelltext, weil die Kennungen dort stehen — eine
+        // Liste von Konstanten wäre eine zweite Pflegestelle und damit genau
+        // das, was diese Funktion abschaffen soll.
+        var quellen = java.nio.file.Path.of("src/main/java/de/pinroboter/zentrale");
+        var muster = java.util.regex.Pattern.compile(
+                "Bedienelemente\\.info\\(\"([a-z0-9-]+)\"");
+        var fehlend = new java.util.TreeMap<String, String>();
+        int gefunden = 0;
+
+        try (var dateien = java.nio.file.Files.walk(quellen)) {
+            for (var d : dateien.filter(f -> f.toString().endsWith(".java")).toList()) {
+                String text = java.nio.file.Files.readString(d);
+                var t = muster.matcher(text);
+                while (t.find()) {
+                    gefunden++;
+                    if (Handbuch.hilfe(t.group(1)) == null) {
+                        fehlend.put(t.group(1), d.getFileName().toString());
+                    }
+                }
+            }
+        }
+        assertTrue(gefunden > 0, "Kein einziger Info-Knopf gefunden — stimmt der Pfad?");
+        assertTrue(fehlend.isEmpty(),
+                "Diese Info-Knöpfe zeigen ins Leere: " + fehlend);
+    }
+
+    @Test
+    @DisplayName("Jeder Abschnitt liefert Inhalt, Titel und Kapitelbezug")
+    void abschnitteVollstaendig() {
+        var kennungen = Handbuch.hilfekennungen();
+        assertFalse(kennungen.isEmpty(), "Es ist kein Abschnitt markiert");
+        for (String k : kennungen) {
+            var h = Handbuch.hilfe(k);
+            assertNotNull(h, k);
+            assertTrue(h.inhalt().length() > 80,
+                    k + " ist zu kurz für eine Erklärung: " + h.inhalt());
+            assertNotNull(h.kapitel(), k);
+            assertNotNull(h.titel(),
+                    k + " steht unter keiner Überschrift — dann fehlt dem Fenster "
+                    + "der Titel");
+            assertFalse(h.inhalt().contains("<section"),
+                    k + " enthält einen verschachtelten Abschnitt; die Extraktion "
+                    + "schneidet dann am falschen </section> ab");
+        }
+    }
+
+    @Test
+    @DisplayName("Eine unbekannte Kennung liefert nichts statt irgendetwas")
+    void unbekannteKennung() {
+        assertNull(Handbuch.hilfe("gibt-es-nicht"));
+        assertNull(Handbuch.hilfe(""));
+        assertNull(Handbuch.hilfe(null));
+    }
+
+    @Test
+    @DisplayName("Das Hilfefenster nennt Herkunft und führt ins Kapitel")
+    void hilfefenster() {
+        var h = Handbuch.hilfe(Handbuch.hilfekennungen().iterator().next());
+        String html = Handbuchseiten.hilfe(h);
+        assertTrue(html.contains("hilfefenster-titel"),
+                "Ohne diese Kennung kann der Dialog nicht beschriftet werden");
+        assertTrue(html.contains("/handbuch/" + h.kapitel().kennung()),
+                "Eine Kurzhilfe muss ins volle Kapitel führen — manchmal ist die "
+                + "eigentliche Frage eine größere");
+        assertTrue(html.contains("hilfe-zu"), "Es fehlt der Schließen-Knopf");
+    }
+
+    @Test
+    @DisplayName("Ein Info-Knopf ist auch ohne JavaScript ein Weg ins Handbuch")
+    void infoOhneJavaScript() {
+        String html = Bedienelemente.info("programmablage", "die Programmablage");
+        assertTrue(html.contains("href=\"/handbuch/hilfe/programmablage\""),
+                "Ohne echtes href hinge die Erklärung an einer Browsereinstellung");
+        assertTrue(html.contains("aria-label="),
+                "Ein Fragezeichen ohne Beschriftung ist für einen Screenreader stumm");
     }
 
     @Test

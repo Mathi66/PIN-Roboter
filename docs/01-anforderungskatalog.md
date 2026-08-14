@@ -1082,6 +1082,35 @@ Architektur, System und Bedienung und ist durchsuchbar.
 > Sekunden, ob jemand nachschlägt oder rät. Und ein beiliegendes PDF beschreibt
 > nach der ersten Aktualisierung eine andere Software als die, die läuft.
 
+### FA-DOK-020 — Hilfe aus dem Handbuch · SOLL · V1 · PO 14.08.2026
+Erklärender Text steht **nur im Handbuch**. Die Oberfläche holt ihn dort ab,
+statt ihn ein zweites Mal zu führen.
+
+*Akzeptanz:*
+- An Kacheln und Eingabefeldern steht ein **Info-Knopf**, der den passenden
+  Abschnitt des Handbuchs in einem Fenster zeigt.
+- **Eine Quelle.** Der Text existiert genau einmal — im Handbuch. Kein
+  Erklärabsatz in der Oberfläche wiederholt ihn.
+- **Kein Info-Knopf zeigt ins Leere.** Fehlt der Abschnitt, ist das ein Fehler,
+  kein leeres Fenster.
+- Das Fenster nennt, aus welchem Kapitel der Text stammt, und **führt dorthin
+  weiter** — manchmal ist die eigentliche Frage eine größere.
+- **Ohne JavaScript** ist der Knopf ein gewöhnlicher Link ins Handbuch. Eine
+  Erklärung darf nicht an einer Browsereinstellung hängen.
+- Tastaturbedienbar: Esc schließt, der Fokus kehrt dorthin zurück, wo er
+  herkam, und bleibt währenddessen im Fenster.
+- Was am **Feld** gilt (Format, Grenze, Pflichtangabe), bleibt am Feld. Ins
+  Handbuch wandert das **Hintergrundwissen** — warum es die Einstellung gibt
+  und was bei falscher Wahl passiert.
+- *Nachweis:* Alle Info-Knöpfe der ausgelieferten Seiten abgerufen, keiner tot;
+  derselbe Satz im Fenster und im Kapitel.
+
+> **Warum das mehr ist als Kosmetik:** Derselbe Sachverhalt stand zweimal im
+> Produkt. Zwei Fassungen laufen auseinander, sobald sich etwas ändert — und
+> niemand merkt es, weil beide für sich plausibel bleiben. Nebeneffekt: Eine
+> Seite mit acht Feldern trug acht Absätze, die beim ersten Mal helfen und
+> danach jeden Tag im Weg stehen.
+
 ---
 
 # Teil B — Nichtfunktionale Anforderungen

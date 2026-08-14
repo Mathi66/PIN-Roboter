@@ -98,6 +98,87 @@ public final class Handbuch {
     }
 
     /**
+     * Ein Ausschnitt des Handbuchs, der an einer Stelle der Oberfläche als
+     * Hilfe erscheint.
+     *
+     * @param kennung  der Name hinter {@code data-hilfe}
+     * @param kapitel  woher der Ausschnitt stammt — die Hilfe verlinkt dorthin
+     * @param titel    die Überschrift, unter der er im Handbuch steht
+     * @param inhalt   fertiges HTML
+     */
+    public record Hilfe(String kennung, Kapitel kapitel, String titel, String inhalt) { }
+
+    /**
+     * Holt einen benannten Ausschnitt aus dem Handbuch.
+     *
+     * <h2>Warum die Hilfe aus dem Handbuch kommt</h2>
+     *
+     * Erklärender Text stand bisher <b>zweimal</b> im Produkt: als Absatz neben
+     * dem Bedienelement und noch einmal im Handbuch. Zwei Fassungen desselben
+     * Sachverhalts laufen auseinander, sobald sich etwas ändert — und man merkt
+     * es nicht, weil beide für sich plausibel bleiben.
+     *
+     * <p>Deshalb gibt es nur noch <b>eine</b> Quelle. Im Handbuchtext markiert
+     * {@code <section data-hilfe="…">} die Stellen, die auch als Kurzhilfe
+     * taugen; die Oberfläche holt sie von dort. Wer das Handbuch ändert, ändert
+     * damit auch jede Hilfe, die daraus liest.
+     *
+     * <p>Als <b>Titel</b> dient die Überschrift, unter der der Abschnitt im
+     * Handbuch steht. Auch das ist bewusst keine zweite Pflegestelle.
+     *
+     * @return {@code null}, wenn es die Kennung nicht gibt
+     */
+    public static Hilfe hilfe(String kennung) {
+        if (kennung == null || kennung.isBlank()) return null;
+        String marke = "<section data-hilfe=\"" + kennung + "\">";
+
+        for (Kapitel k : KAPITEL) {
+            int von = k.inhalt().indexOf(marke);
+            if (von < 0) continue;
+            int inhaltVon = von + marke.length();
+            int bis = k.inhalt().indexOf("</section>", inhaltVon);
+            if (bis < 0) continue;   // unvollständig — dann lieber nichts
+            return new Hilfe(kennung, k,
+                    ueberschriftVor(k.inhalt(), von),
+                    k.inhalt().substring(inhaltVon, bis).trim());
+        }
+        return null;
+    }
+
+    /** Alle vorhandenen Kennungen — für die Prüfung, dass keine ins Leere zeigt. */
+    public static java.util.Set<String> hilfekennungen() {
+        var m = java.util.regex.Pattern.compile("<section data-hilfe=\"([a-z0-9-]+)\">");
+        var alle = new java.util.LinkedHashSet<String>();
+        for (Kapitel k : KAPITEL) {
+            var t = m.matcher(k.inhalt());
+            while (t.find()) alle.add(t.group(1));
+        }
+        return alle;
+    }
+
+    /**
+     * Die Überschrift, unter der ein Abschnitt steht.
+     *
+     * <p>Gesucht wird rückwärts nach dem nächsten {@code <h2>} oder
+     * {@code <h3>}. Findet sich keine, dient der Kapiteltitel — dann steht der
+     * Abschnitt gleich zu Beginn.
+     */
+    private static String ueberschriftVor(String inhalt, int stelle) {
+        int besteStelle = -1;
+        String beste = null;
+        for (String tag : new String[]{"h2", "h3"}) {
+            int auf = inhalt.lastIndexOf("<" + tag + ">", stelle);
+            if (auf < 0 || auf <= besteStelle) continue;
+            int zu = inhalt.indexOf("</" + tag + ">", auf);
+            if (zu < 0) continue;
+            besteStelle = auf;
+            beste = inhalt.substring(auf + tag.length() + 2, zu)
+                          .replaceAll("<[^>]*>", "").trim();
+        }
+        return beste;
+    }
+
+    /**
      * Sucht in Titeln und Text.
      *
      * <h2>Warum kein ausgefeiltes Verfahren</h2>
