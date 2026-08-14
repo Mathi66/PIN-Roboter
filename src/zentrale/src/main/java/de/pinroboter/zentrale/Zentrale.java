@@ -1302,10 +1302,19 @@ public class Zentrale {
         }
         s.append("<p class=\"hilfe\">Laufende Version: <code>").append(esc(z.laufendeVersion()))
          .append("</code>")
-         .append(z.zuletztGeprueft() == null ? " · noch nicht geprüft"
-                 : " · zuletzt geprüft " + esc(java.time.format.DateTimeFormatter
+         // „noch nicht geprüft“ las sich, als sei die laufende Version
+         // ungeprüft (Befund PO, 14.08.2026). Gemeint ist die Suche nach
+         // NEUEREN Versionen — und wenn kein Zugang hinterlegt ist, ist das
+         // auch keine offene Aufgabe, sondern schlicht nicht eingerichtet.
+         .append(z.zuletztGeprueft() != null
+                 ? " · zuletzt nach neueren Versionen gesehen: "
+                   + esc(java.time.format.DateTimeFormatter
                         .ofPattern("dd.MM.yyyy HH:mm").withZone(java.time.ZoneId.systemDefault())
-                        .format(z.zuletztGeprueft())))
+                        .format(z.zuletztGeprueft()))
+                 : registryFeld("registry") == null || registryFeld("registry").isBlank()
+                     ? " · es ist keine Programmablage hinterlegt, daher wird nicht nach "
+                       + "neueren Versionen gesucht"
+                     : " · es wurde noch nicht nach neueren Versionen gesehen")
          .append("</p></div>");
 
         if (!z.verfuegbare().isEmpty()) {
@@ -1384,12 +1393,13 @@ public class Zentrale {
         boolean an = versionen.agentenzugang() != null;
         return """
                 <div class="tafel abstand-oben"><h3>Selbsttätige Aktualisierung der Agenten</h3>
+                <div class="karte-leib">
                 <p class="unterzeile">Die Standort-Agenten in den Praxen holen ihre
                    Aktualisierung aus derselben Programmablage. Weil sie privat ist, brauchen
                    sie dafür Zugangsdaten — <strong>diese hier</strong>. Sie werden über die
                    bestehende, verschlüsselte Verbindung übergeben und stehen damit nicht in
                    jedem Einrichtungspaket.</p>
-                <p class="marke %s">%s</p>
+                <p><span class="marke %s">%s</span></p>
                 %s
                 <form method="post" action="/verwaltung/registry/agenten" class="abstand-oben"
                       onsubmit="return confirm('%s')">
@@ -1402,7 +1412,7 @@ public class Zentrale {
                    sein — mehr braucht ein Agent nie. Wird ein Agent widerrufen, bekommt er
                    keine Zugangsdaten mehr; ein kompromittierter Praxisrechner lässt sich so
                    ausschließen, ohne den Token überall zu tauschen.</p>
-                </div>"""
+                </div></div>"""
                 .formatted(
                     an ? "ok" : "unbekannt",
                     an ? "✓ eingeschaltet — Agenten aktualisieren sich selbst"
