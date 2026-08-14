@@ -158,12 +158,46 @@ ohne Fehlermeldung. Hier wäre `REGISTRY_VERZEICHNIS` verschwunden und die
 selbsttätige Aktualisierung stillschweigend ausgefallen. Ein Kommentarfehler
 sieht anders aus als ein Datenverlust; dieser sah aus wie einer.
 
+## Nachgebessert nach dem ersten Blick des PO (14.08.2026)
+
+Vier Befunde aus der laufenden Oberfläche:
+
+**„Die Registry konnte nicht abgefragt werden: null".** Viele Netzwerkausnahmen
+tragen keinen Meldungstext. Dieselbe Übersetzung war einen Tag zuvor im Agenten
+geschrieben und in der Zentrale vergessen worden — sie liegt jetzt einmal im
+gemeinsamen Modul (`Netzfehler.klartext`). Zwei Kopien laufen auseinander, eine
+Stelle nicht.
+
+**Widerspruch in der Kopfzeile.** Oben stand „Sicherheitsupdate verfügbar",
+darunter „lässt sich nicht abfragen". Die Marke behauptete eine frische
+Tatsache aus einem alten Stand. Bei einem Abfragefehler heißt es jetzt
+**„Stand unbekannt"**, und die Liste ist ausdrücklich als letzter bekannter
+Stand gekennzeichnet. Der Fehler ist in diesem Moment die wichtigere Aussage:
+Wir wissen es gerade nicht.
+
+**Der Fehlschlag blieb für immer stehen.** In der Sache richtig — der letzte
+Versuch *ist* gescheitert — aber ohne Ausweg. Wer die Ursache behoben hat oder
+bewusst nicht aktualisieren will, wurde die Meldung nicht los. Eine Meldung,
+die man nicht loswird, wird ignoriert, und dann ignoriert man auch die nächste.
+Jetzt gibt es **„Zur Kenntnis"**: Der Hinweis verschwindet aus der Zeile, der
+Vorgang bleibt im Verlauf. Ein neuer Fehlschlag zeigt sich wieder.
+
+**Die Zelle war überladen.** Der volle Fehlertext drückte die Tabellenzeile
+auseinander; bei dreißig Agenten wird eine Tabelle so unlesbar. Der Befund
+bleibt sichtbar, die Begründung liegt einen Klick tiefer — dasselbe Prinzip wie
+bei den technischen Fehlercodes im Protokoll. Und der Satz „Keine Versionen
+bekannt" stand in **jeder** Zeile, obwohl er eine Eigenschaft der Instanz
+beschreibt und nicht des einzelnen Agenten. Er steht jetzt einmal, direkt unter
+der Tabelle.
+
 ## Nachgewiesen
 
-`AgentenupdateTest` (10 Prüfungen): Auftrag mit Ziel- und Ausgangsversion; kein
+`AgentenupdateTest` (13 Prüfungen): Auftrag mit Ziel- und Ausgangsversion; kein
 Auftrag auf die laufende Version; nur einer gleichzeitig; **Erfolg erst bei der
 gemeldeten Zielversion**; Fristablauf mit und ohne Rückmeldung; sofortiges Ende
-bei gescheitertem Anstoß; Abbruch und neuer Anlauf; Verlauf bleibt erhalten.
+bei gescheitertem Anstoß; Abbruch und neuer Anlauf; Verlauf bleibt erhalten; ein Fehlschlag lässt sich
+zur Kenntnis nehmen, ohne ihn zu löschen; ein laufender Auftrag lässt sich
+nicht wegklicken; ein neuer Fehlschlag zeigt sich wieder.
 
 `AgentenpaketTest` (18 Prüfungen, davon 2 neu): HTTP-Schnittstelle samt
 periodischem Lauf, Kennwort je Paket verschieden und nur in der `.env` — und

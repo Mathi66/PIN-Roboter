@@ -168,6 +168,45 @@ class AgentenupdateTest {
     }
 
     @Test
+    @DisplayName("Ein Fehlschlag lässt sich zur Kenntnis nehmen, ohne ihn zu löschen")
+    void zurKenntnis() {
+        // Eine Meldung, die man nicht loswird, wird ignoriert — und dann
+        // ignoriert man auch die nächste (Befund PO, 14.08.2026). Gelöscht
+        // wird trotzdem nichts: Der Vorgang bleibt im Verlauf.
+        au.anfordern(agentId, "0.4.0", "pruefer", "AU Praxis");
+        au.angestossen(agentId, false, "Kein Aktualisierungsdienst.");
+        assertFalse(au.letzter(agentId).zurKenntnis());
+
+        assertNull(au.zurKenntnis(agentId));
+        assertTrue(au.letzter(agentId).zurKenntnis());
+        assertEquals(Agentenaktualisierung.Status.FEHLGESCHLAGEN,
+                au.letzter(agentId).status(), "Der Ausgang bleibt, was er war");
+        assertEquals(1, au.verlauf(agentId, 10).size(), "Der Vorgang bleibt im Verlauf");
+    }
+
+    @Test
+    @DisplayName("Ein laufender Auftrag lässt sich nicht wegklicken")
+    void laufendesNichtWegklickbar() {
+        au.anfordern(agentId, "0.4.0", "pruefer", "AU Praxis");
+        assertNotNull(au.zurKenntnis(agentId),
+                "Sonst verschwände eine laufende Aktualisierung aus der Anzeige");
+        assertFalse(au.offener(agentId).zurKenntnis());
+    }
+
+    @Test
+    @DisplayName("Ein neuer Versuch zeigt sich wieder, auch nach Kenntnisnahme")
+    void neuerVersuchZeigtSich() {
+        au.anfordern(agentId, "0.4.0", "pruefer", "AU Praxis");
+        au.angestossen(agentId, false, "erster Fehlschlag");
+        au.zurKenntnis(agentId);
+
+        au.anfordern(agentId, "0.5.0", "pruefer", "AU Praxis");
+        au.angestossen(agentId, false, "zweiter Fehlschlag");
+        assertFalse(au.letzter(agentId).zurKenntnis(),
+                "Ein neuer Fehlschlag darf nicht als bereits gesehen gelten");
+    }
+
+    @Test
     @DisplayName("Der Verlauf bleibt erhalten — auch der gescheiterte Versuch")
     void verlauf() {
         // „Wurde das je versucht?" ist die erste Frage bei einem Agenten, der

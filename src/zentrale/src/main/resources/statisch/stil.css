@@ -1331,3 +1331,27 @@ div.geraetereihe { display:block; }
   .hb { grid-template-columns: 1fr; }
   .hb-kapitel { box-shadow: none; border: none; padding: 0; }
 }
+
+/* ── Aufklappbares Detail in einer Tabellenzelle ────────────────────────────
+   Ein voller Fehlertext in der Zelle drückte die ganze Zeile auseinander; bei
+   dreißig Agenten wird eine Tabelle so unlesbar (Befund PO, 14.08.2026). Der
+   Befund bleibt sichtbar, die Begründung liegt einen Klick tiefer — dasselbe
+   Prinzip wie bei den technischen Fehlercodes im Protokoll. */
+
+.handlung > details { margin-top: var(--r1); }
+.handlung > details > summary {
+  cursor: pointer;
+  font-size: .8rem;
+  color: var(--akzent);
+  padding: 2px 0;
+  list-style-position: inside;
+}
+.handlung > details > summary:focus-visible {
+  outline: 2px solid var(--akzent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.handlung > details[open] > summary { margin-bottom: var(--r1); }
+.handlung > details { line-height: 1.5; }
+/* Der Knopf darunter braucht Luft, sonst klebt er am Text. */
+.handlung > .inlineform { margin-top: var(--r2); }

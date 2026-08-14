@@ -1031,6 +1031,11 @@ eines einzelnen Standorts an und bekommt ein belastbares Ergebnis.
 - Scheitert schon der Anstoß am Standort — etwa weil die Aktualisierungsdienste
   entfernt wurden —, endet der Auftrag **sofort** mit dem Grund im Klartext.
 - Ein laufender Auftrag ist **abbrechbar**; danach ist ein neuer Anlauf möglich.
+- Ein Fehlschlag lässt sich **zur Kenntnis nehmen** — er verschwindet aus der
+  Agentenzeile, bleibt aber im Verlauf. Eine Meldung, die man nicht loswird,
+  wird ignoriert, und dann ignoriert man auch die nächste.
+- Bei einem Abfragefehler zeigt die Oberfläche **nicht gleichzeitig** ein
+  Ergebnis als frische Tatsache. Ein alter Stand wird als solcher benannt.
 - Jeder Vorgang steht im Fachprotokoll: wer, wann, welche Version, welches
   Ergebnis.
 - Das Recht hängt an der **Instanzverwaltung**, nicht an der Bestandspflege:

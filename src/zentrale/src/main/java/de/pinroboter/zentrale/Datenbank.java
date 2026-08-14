@@ -1005,6 +1005,21 @@ public class Datenbank implements AutoCloseable {
               ADD COLUMN IF NOT EXISTS agent_versionen TEXT,
               ADD COLUMN IF NOT EXISTS agent_fehler    TEXT;
             """);
+
+        // ── 32 · Einen Fehlschlag zur Kenntnis nehmen ───────────────────────
+        //
+        // Ein gescheitertes Update blieb bisher für immer in der Agentenzeile
+        // stehen (Befund PO, 14.08.2026). Das ist in der Sache richtig — der
+        // letzte Versuch IST gescheitert — aber ohne Ausweg: Wer die Ursache
+        // behoben hat oder bewusst nicht aktualisieren will, konnte die
+        // Meldung nicht loswerden. Eine Meldung, die man nicht loswird, wird
+        // ignoriert, und dann ignoriert man auch die nächste.
+        //
+        // Gelöscht wird nichts: Der Auftrag bleibt im Verlauf.
+        migration(32, """
+            ALTER TABLE agent_aktualisierung
+              ADD COLUMN IF NOT EXISTS zur_kenntnis_am TIMESTAMPTZ;
+            """);
     }
 
     private void migration(int version, String sql) throws SQLException {

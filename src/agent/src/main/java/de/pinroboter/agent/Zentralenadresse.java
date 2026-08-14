@@ -128,31 +128,13 @@ final class Zentralenadresse {
     /**
      * Warum die Verbindung scheiterte — in Klartext.
      *
-     * <p>Viele Netzwerkausnahmen tragen <b>keine</b> Meldung: Aus
-     * {@code getMessage()} wird dann „null“, und die Anzeige lautete am
-     * 13.08.2026 „… nicht erreichbar: null“. Der Klassenname sagt mehr, ist
-     * aber Englisch und technisch — also übersetzt.
+     * <p>Die Übersetzung liegt seit dem 14.08.2026 im gemeinsamen Modul: Sie
+     * wurde hier geschrieben und in der Zentrale vergessen, wo daraufhin
+     * „… nicht abgefragt werden: null“ in der Oberfläche stand. Zwei Kopien
+     * laufen auseinander, eine Stelle nicht.
      */
     private static String grund(Exception e) {
-        String art = e.getClass().getSimpleName();
-        String text = e.getMessage();
-        String klartext = switch (art) {
-            case "UnknownHostException" ->
-                    "Der Rechnername ist im Netz nicht auflösbar";
-            case "ConnectException" ->
-                    "Es kam keine Verbindung zustande — falscher Port, oder nichts läuft dort";
-            case "HttpConnectTimeoutException", "ConnectTimeoutException" ->
-                    "Keine Antwort innerhalb von 8 Sekunden";
-            case "SSLHandshakeException" ->
-                    "Die verschlüsselte Verbindung kam nicht zustande "
-                    + "(passt das Zertifikat der Zentrale?)";
-            case "SSLException" -> "Fehler in der verschlüsselten Verbindung";
-            default -> null;
-        };
-        if (klartext == null) {
-            return (text == null || text.isBlank()) ? art : text;
-        }
-        return (text == null || text.isBlank()) ? klartext : klartext + " (" + text + ")";
+        return de.pinroboter.gemeinsam.Netzfehler.klartext(e);
     }
 
     /**

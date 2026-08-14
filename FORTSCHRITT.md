@@ -3649,3 +3649,49 @@ als keiner.
 ohne Befund, Kontraste bestanden. Im Browser gemessen: keine Textüberlappung in
 den fünf Zeichnungen, kein seitliches Rollen auf dem Tablet, Live-Suche liefert
 sieben Treffer mit Hervorhebung und aktualisierter Adresse.
+
+### Vier Befunde aus einem Blick auf die Oberfläche
+
+Mathi hat zwei Screenshots geschickt. Was darauf zu sehen war, hätte ich beim
+Bauen selbst sehen können — aber ich habe die Kette geprüft und nicht das Bild.
+
+**„Die Registry konnte nicht abgefragt werden: null".** Viele Netzwerkausnahmen
+tragen keinen Meldungstext. Genau diese Übersetzung hatte ich einen Tag zuvor
+im Agenten geschrieben — und in der Zentrale vergessen. Dasselbe Muster wie bei
+der Agentversion, die monatelang „unbekannt" war: ein Eintrag, den es an einer
+Stelle gab und an der anderen nicht. Sie liegt jetzt einmal im gemeinsamen
+Modul.
+
+**Ein Widerspruch, den die Seite gleichzeitig behauptete.** Oben die rote Marke
+„Sicherheitsupdate verfügbar", darunter „Die Registry lässt sich nicht
+abfragen". Beides zugleich kann nicht stimmen: Die Marke präsentierte einen
+alten Stand als frische Tatsache. Bei einem Abfragefehler steht dort jetzt
+**„Stand unbekannt"** — denn das ist in dem Moment die ehrliche Aussage.
+
+**Ein Fehlschlag, den man nicht loswird.** Er stand in der Agentenzeile und
+blieb dort. In der Sache richtig — der letzte Versuch *ist* gescheitert — aber
+ohne Ausweg. Wer die Ursache behoben hat, wurde die Meldung nicht los. Eine
+Meldung, die man nicht loswird, wird ignoriert, und dann ignoriert man auch die
+nächste. Jetzt gibt es „Zur Kenntnis": weg aus der Zeile, erhalten im Verlauf.
+
+**Derselbe Satz in jeder Zeile.** „Keine Versionen bekannt. Unter
+Programmablage oben einen Zugang hinterlegen" stand bei jedem Agenten — obwohl
+er eine Eigenschaft der Instanz beschreibt, nicht des einzelnen Standorts. Bei
+dreißig Agenten dreißigmal. Er steht jetzt einmal, direkt unter der Tabelle.
+Und der lange Fehlertext liegt einen Klick tiefer, statt die Zeile
+auseinanderzudrücken.
+
+### Und meine Testdaten in seinem Stack
+
+Der Registry-Zugang zeigte auf den Simulator, mit dessen erfundenen Versionen
+1.1.0 und 1.0.1 — das war meine Prüfung von gestern, die ich stehen ließ.
+Deshalb behauptete seine Oberfläche ein Sicherheitsupdate, das es nicht gibt.
+Entfernt, vorher gesichert. Der Simulator selbst war auch aus, weshalb der
+Agent nichts meldete und ein Stummalarm stand.
+
+Lehre: Wenn ich am Vorführstack teste, gehört das Aufräumen zum Test — nicht
+zum guten Willen danach.
+
+**Belegt:** 376 Modultests grün (3 neu für die Kenntnisnahme). axe-core über
+24 Seiten ohne Befund, Kontraste bestanden. Am laufenden Stack durchgespielt:
+Knopf wirkt, Vorgang bleibt im Verlauf, Hinweis steht einmal statt je Zeile.

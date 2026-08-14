@@ -69,7 +69,7 @@ public class Agentenaktualisierung {
     /** Ein Auftrag, wie ihn die Oberfläche zeigt. */
     public record Auftrag(long id, long agentId, String zielversion, String vonVersion,
                           Status status, Instant angefordertAm, String angefordertVon,
-                          Instant abgeschlossenAm, String meldung) {
+                          Instant abgeschlossenAm, String meldung, boolean zurKenntnis) {
 
         /** Wie lange der Auftrag schon offen ist — für die Anzeige „seit 2 min“. */
         public String dauer() {
@@ -254,6 +254,29 @@ public class Agentenaktualisierung {
         return abgelaufen;
     }
 
+    /**
+     * Nimmt den letzten Fehlschlag zur Kenntnis.
+     *
+     * <p>Er verschwindet damit aus der Agentenzeile, bleibt aber im Verlauf.
+     * Ohne diesen Weg stünde eine behobene Störung dort für immer — und eine
+     * Meldung, die man nicht loswird, wird ignoriert. Dann ignoriert man auch
+     * die nächste.
+     */
+    public String zurKenntnis(long agentId) {
+        var a = letzter(agentId);
+        if (a == null || a.status().offen()) {
+            return "Für diesen Agenten gibt es nichts zur Kenntnis zu nehmen.";
+        }
+        try (PreparedStatement p = db.verbindung().prepareStatement(
+                "UPDATE agent_aktualisierung SET zur_kenntnis_am = now() WHERE id = ?")) {
+            p.setLong(1, a.id());
+            p.executeUpdate();
+            return null;
+        } catch (SQLException e) {
+            return "Der Hinweis ließ sich nicht ausblenden.";
+        }
+    }
+
     /** Die letzten Aufträge eines Agenten — für die Detailansicht. */
     public List<Auftrag> verlauf(long agentId, int anzahl) {
         var liste = new ArrayList<Auftrag>();
@@ -275,7 +298,7 @@ public class Agentenaktualisierung {
     private static String grundabfrage() {
         return """
                SELECT id, agent_id, zielversion, von_version, status, angefordert_am,
-                      angefordert_von, abgeschlossen_am, meldung
+                      angefordert_von, abgeschlossen_am, meldung, zur_kenntnis_am
                  FROM agent_aktualisierung""";
     }
 
@@ -302,7 +325,8 @@ public class Agentenaktualisierung {
                 rs.getTimestamp("angefordert_am").toInstant(),
                 rs.getString("angefordert_von"),
                 fertig == null ? null : fertig.toInstant(),
-                rs.getString("meldung"));
+                rs.getString("meldung"),
+                rs.getTimestamp("zur_kenntnis_am") != null);
     }
 
     private void aktualisieren(long id, Status status, Instant fertig, String meldung) {

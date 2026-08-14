@@ -348,7 +348,10 @@ public class Versionspruefung {
             merken(null, "Die Registry antwortet nicht innerhalb von "
                     + GEDULD.toSeconds() + " Sekunden.");
         } catch (Exception e) {
-            merken(null, "Die Registry konnte nicht abgefragt werden: " + e.getMessage());
+            // Nicht e.getMessage(): Viele Netzwerkausnahmen tragen keinen Text,
+            // und dann stand hier wörtlich „… abgefragt werden: null“.
+            merken(null, "Die Programmablage ist nicht erreichbar. "
+                    + de.pinroboter.gemeinsam.Netzfehler.klartext(e));
         }
         return zustand();
     }
@@ -477,8 +480,8 @@ public class Versionspruefung {
                 }
             }
         } catch (Exception e) {
-            fehler = "Die Versionen des Agenten ließen sich nicht abfragen: "
-                   + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            fehler = "Die Versionen des Agenten ließen sich nicht abfragen. "
+                   + de.pinroboter.gemeinsam.Netzfehler.klartext(e);
         }
 
         // Neueste zuerst — in der Oberfläche steht die naheliegende Wahl oben.

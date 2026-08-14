@@ -1273,19 +1273,31 @@ public class Zentrale {
     private String versionstafel() {
         var z = versionen.zustand();
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Produktversion");
-        if (z.sicherheitsupdateOffen()) {
+
+        // Bei einem Abfragefehler steht in der Kopfzeile NICHT „Sicherheitsupdate
+        // verfügbar“. Am 14.08.2026 zeigte die Seite beides gleichzeitig: oben
+        // die rote Marke, darunter „lässt sich nicht abfragen“. Wer das liest,
+        // weiß nicht, woran er ist — die Marke behauptet eine frische Tatsache,
+        // die aus einem alten Stand stammt. Der Fehler ist in diesem Moment die
+        // wichtigere Aussage, denn er heißt: Wir wissen es gerade nicht.
+        if (z.fehler() != null) {
+            s.append(" <span class=\"marke unbekannt\">Stand unbekannt</span>");
+        } else if (z.sicherheitsupdateOffen()) {
             s.append(" <span class=\"marke fehler\"><span class=\"sym\">!</span>"
                     + "Sicherheitsupdate verfügbar</span>");
         } else if (z.neueVerfuegbar()) {
             s.append(" <span class=\"marke warnung\">neue Version verfügbar</span>");
-        } else if (z.fehler() == null && z.zuletztGeprueft() != null) {
+        } else if (z.zuletztGeprueft() != null) {
             s.append(" <span class=\"marke ok\"><span class=\"sym\">✓</span>aktuell</span>");
         }
         s.append("</h3><div class=\"karte-leib\">");
 
         if (z.fehler() != null) {
-            s.append("<div class=\"hinweis warnend\"><div><strong>Die Registry lässt sich "
-                    + "nicht abfragen.</strong> ").append(esc(z.fehler()))
+            s.append("<div class=\"hinweis warnend\"><div><strong>Die Programmablage "
+                    + "lässt sich nicht abfragen.</strong> ").append(esc(z.fehler()))
+             .append(z.verfuegbare().isEmpty() ? ""
+                     : " Die Liste unten zeigt den <strong>letzten bekannten Stand</strong>"
+                       + " — ob inzwischen etwas dazugekommen ist, weiß diese Instanz nicht.")
              .append("</div></div>");
         }
         s.append("<p class=\"hilfe\">Laufende Version: <code>").append(esc(z.laufendeVersion()))
@@ -1298,7 +1310,9 @@ public class Zentrale {
 
         if (!z.verfuegbare().isEmpty()) {
             s.append("<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
-                    + "Verfügbare Versionen</caption><thead><tr>"
+                    + (z.fehler() == null ? "Verfügbare Versionen"
+                                          : "Zuletzt bekannte Versionen — Stand nicht bestätigt")
+                    + "</caption><thead><tr>"
                     + "<th scope=\"col\">Version</th><th scope=\"col\">Art</th>"
                     + "<th scope=\"col\">Was sich ändert</th></tr></thead><tbody>");
             for (var v : z.verfuegbare()) {
@@ -1555,6 +1569,23 @@ public class Zentrale {
              .append("</td></tr>");
         }
         s.append("</tbody></table></div>");
+
+        // Direkt unter die Tabelle, nicht hinter das Anlegeformular: Der
+        // Hinweis erklärt, warum in der Spalte nebenan nichts zur Auswahl
+        // steht. Zwischen Befund und Erklärung gehört nichts.
+        String agentfehler = versionen.agentfehler();
+        if (agentversionen.isEmpty()) {
+            s.append("<div class=\"karte-leib\"><div class=\"hinweis\"><div>")
+             .append("<strong>Für die Agenten sind keine Versionen bekannt.</strong> ")
+             .append(agentfehler == null
+                     ? "Hinterlegen Sie oben unter „Produktversion“ einen Zugang zur "
+                       + "Programmablage. Danach steht in der Spalte „Version &amp; "
+                       + "Aktualisierung“, was zur Verfügung steht, und die "
+                       + "Aktualisierung lässt sich je Standort anstoßen."
+                     : esc(agentfehler))
+             .append("</div></div></div>");
+        }
+
         s.append(agentAnlegenFormular(bereich));
         s.append("""
                 <div class="karte-leib">
@@ -1634,12 +1665,25 @@ public class Zentrale {
         // Ergebnis des letzten Versuchs — aber nur, solange es noch etwas sagt.
         // Ein Erfolg von vorgestern ist Rauschen; ein Fehlschlag bleibt stehen,
         // bis jemand es erneut versucht.
-        if (letzter != null) {
+        // Der Befund bleibt kurz; die Begründung steht aufgeklappt darunter.
+        // Bis zum 14.08.2026 stand der volle Fehlertext in der Tabellenzelle
+        // und drückte die ganze Zeile auseinander — bei dreißig Agenten wird
+        // eine Tabelle so unlesbar.
+        if (letzter != null && !letzter.zurKenntnis()) {
             if (letzter.status() == Agentenaktualisierung.Status.FEHLGESCHLAGEN) {
                 z.append("""
-                        <div class="handlung"><span class="marke fehler">Aktualisierung auf %s
-                          fehlgeschlagen</span><div>%s</div></div>"""
-                        .formatted(esc(letzter.zielversion()), esc(nz(letzter.meldung()))));
+                        <div class="handlung">
+                          <span class="marke fehler">Aktualisierung auf %s fehlgeschlagen</span>
+                          <details><summary>Woran es lag</summary>%s</details>
+                          <form method="post" action="/agenten/%d/aktualisierung/kenntnis"
+                                class="inlineform">
+                            <button class="knopf klein" type="submit"
+                                    title="Blendet den Hinweis aus. Der Vorgang bleibt im Protokoll."
+                                    aria-label="Hinweis zu %s ausblenden">Zur Kenntnis</button>
+                          </form>
+                        </div>"""
+                        .formatted(esc(letzter.zielversion()), esc(nz(letzter.meldung())),
+                                a.id(), esc(a.bezeichnung())));
             } else if (letzter.status() == Agentenaktualisierung.Status.ERFOLGREICH
                     && letzter.abgeschlossenAm() != null
                     && letzter.abgeschlossenAm().isAfter(Instant.now().minus(
@@ -1654,16 +1698,11 @@ public class Zentrale {
 
         if (!darf) return z.toString();
 
-        if (verfuegbar.isEmpty()) {
-            String grund = versionen.agentfehler();
-            z.append("<div class=\"hilfe\">")
-             .append(grund == null
-                     ? "Keine Versionen bekannt. Unter „Programmablage“ oben einen Zugang "
-                       + "hinterlegen — dann erscheint hier, was zur Verfügung steht."
-                     : esc(grund))
-             .append("</div>");
-            return z.toString();
-        }
+        // Kein Hinweis je Zeile: Warum keine Versionen bekannt sind, ist eine
+        // Eigenschaft der Instanz, nicht dieses Agenten. Bei dreißig Agenten
+        // stand derselbe Satz dreißigmal in der Tabelle und blähte sie auf
+        // (Befund PO, 14.08.2026). Er steht jetzt einmal unter der Tafel.
+        if (verfuegbar.isEmpty()) return z.toString();
 
         StringBuilder opt = new StringBuilder();
         for (String v : verfuegbar) {
@@ -4880,6 +4919,21 @@ public class Zentrale {
             String ziel = Anmeldeseiten.feld(c, "zielversion");
             String fehler = agentupdates.anfordern(id, ziel,
                     angemeldeter(c).anzeigename(), agenten.einrichtungVon(id));
+            c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
+                    angemeldeter(c)));
+        });
+
+        /**
+         * FA-AGT-100: Einen Fehlschlag zur Kenntnis nehmen.
+         *
+         * <p>Er verschwindet aus der Agentenzeile, bleibt aber im Verlauf.
+         * Eine Meldung, die man nicht loswird, wird ignoriert — und dann
+         * ignoriert man auch die nächste.
+         */
+        app.post("/agenten/{id}/aktualisierung/kenntnis", c -> {
+            if (abgewiesen(c, rechte(c).darfInstanzVerwalten(), "Diese Aktion")) return;
+            long id = Long.parseLong(c.pathParam("id"));
+            String fehler = agentupdates.zurKenntnis(id);
             c.html(seite("verwaltung", verwaltungsSeite(fehler, null, bereich(c)),
                     angemeldeter(c)));
         });
