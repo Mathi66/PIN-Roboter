@@ -56,6 +56,7 @@ for paar in "uebersicht:/" "geraete:/geraete" "bestand:/bestand" "gruppen:/grupp
             "benutzer:/benutzer" "verwaltung:/verwaltung" "protokoll:/protokoll" \
             "ermittelt:/bestand/ermittelt" "organisation:/organisation" \
             "handbuch:/handbuch" "handbuch-tabelle:/handbuch/alarme" \
+            "handbuch-bestand:/handbuch/bestand" \
             "handbuch-glossar:/handbuch/begriffe" \
             "handbuch-suche:/handbuch/suche?q=PIN"; do
   curl -s -b "$KEKSE" "$BASIS${paar#*:}" > "$SEITEN/${paar%%:*}.html"

@@ -114,14 +114,31 @@ erscheint auf Knopfdruck.
 | Konnektor anlegen/bearbeiten | zwei Absätze zum Aufrufkontext |
 | Informationsmodell | zwei Absätze zur Webadmin-Schnittstelle |
 
-**Noch offen:** Von 58 Stellen mit `class="hilfe"` oder `class="unterzeile"`
-sind 24 länger als 150 Zeichen und damit Kandidaten. Neun davon sind erledigt.
-Die übrigen — vor allem in der Organisationsverwaltung, bei den Demodaten und
-in der Benutzerverwaltung — brauchen jeweils erst einen Handbuchabschnitt, der
-den Inhalt trägt. Ohne den ginge beim Kürzen Wissen verloren.
+**Die Handbuchabschnitte für die übrigen Stellen sind geschrieben** (15.08.2026).
+Zwölf neue Abschnitte decken die verbliebenen 19 Erklärtexte ab:
 
-Das ist kein Restaufwand, den man nebenbei erledigt: Jede Stelle ist eine
-inhaltliche Entscheidung darüber, was Hintergrund ist und was zum Feld gehört.
+| Abschnitt | Kapitel | ersetzt Text in |
+|---|---|---|
+| `vorgabegruppe` | Gerätegruppen | Gruppenverwaltung (2 Texte) |
+| `gruppe-einrichtung` | Gerätegruppen | Gruppenverwaltung |
+| `pin-hinterlegen` | PINs hinterlegen | Bestandsseiten (2 Texte) |
+| `pin-aendern` | PINs hinterlegen | Bestandsseiten |
+| `bezeichnung-eindeutig` | Organisation | Organisationsverwaltung |
+| `mail-verschluesselung` | Alarme | Benachrichtigung |
+| `nur-smcb` | Verfahren | Bestandsseiten |
+| `konnektor-adresse` | **Bestand pflegen** (neu) | Bestandsseiten |
+| `konnektor-mitnutzung` | Bestand pflegen | Bestandsseiten (2 Texte) |
+| `geraet-ohne-konnektor` | Bestand pflegen | Bestandsseiten |
+| `firmwarestand` | Bestand pflegen | Bestandsübersicht |
+| `demodaten` | Inbetriebnahme | Instanz-Seite (2 Texte) |
+
+Dazu ein **neues Kapitel „Bestand pflegen"** im Teil *Betreiben* — Konnektoren,
+Kartenterminals und Firmware hatten bisher keinen Ort im Handbuch, obwohl
+gerade dort die meisten Erklärtexte hingen.
+
+**Noch offen:** Das Ersetzen in der Oberfläche selbst. Solange beides
+nebeneinander steht, gibt es die Doppelung, die diese Funktion abschaffen soll —
+allerdings jetzt mit einer Quelle, aus der die Oberfläche schöpfen kann.
 
 ## Neue Handbuchabschnitte
 

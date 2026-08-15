@@ -59,6 +59,8 @@ final class HandbuchInhalt {
 
         ziel.add(new Handbuch.Kapitel("inbetriebnahme", "Inbetriebnahme",
                 "Von der leeren Instanz zum laufenden Betrieb", O, "⚙", INBETRIEBNAHME));
+        ziel.add(new Handbuch.Kapitel("bestand", "Bestand pflegen",
+                "Konnektoren, Kartenterminals, Firmware", O, "🗄", BESTAND));
         ziel.add(new Handbuch.Kapitel("agenten", "Standort-Agenten betreiben",
                 "Einrichten, überwachen, aktualisieren", O, "📡", AGENTEN));
         ziel.add(new Handbuch.Kapitel("sicherung", "Datensicherung",
@@ -222,6 +224,24 @@ final class HandbuchInhalt {
             Terminal mitten im Update könnte im ungünstigen Fall als Fehlversuch
             zählen.</p>
 
+            <h2>Nur die SMC-B</h2>
+            <section data-hilfe="nur-smcb">
+            <p>Die PIN-Automatik ist <b>ausschließlich für SMC-B</b> zulässig (gematik
+            <code>A_24080</code>). Beim Erfassen eines Kartenterminals wird deshalb
+            angegeben, ob dort eine SMC-B steckt.</p>
+
+            <p>Für Terminals ohne SMC-B bleibt die Automatik abgewählt. Diese Geräte
+            werden <b>erfasst und überwacht</b> — Erreichbarkeit, Firmware, Zustand —,
+            aber nie verifiziert.</p>
+
+            <div class="hb-merke">
+              <b>Das ist keine technische Grenze, sondern eine gewollte.</b>
+              <p>Für eGK und HBA wäre eine automatische Freischaltung das Gegenteil
+              dessen, wofür eine PIN da ist: Sie gehören einem Menschen, der
+              anwesend sein soll, wenn seine Karte benutzt wird.</p>
+            </div>
+            </section>
+
             <h2>Was das Verfahren voraussetzt</h2>
 
             <ul class="hb-liste">
@@ -363,6 +383,28 @@ final class HandbuchInhalt {
             Zuordnung wird ausdrücklich hinterlegt, nicht stillschweigend
             gleichgesetzt. In der Praxis fallen beide oft zusammen — verlassen sollte
             man sich nicht darauf.</p>
+
+            <h2>Bezeichnungen müssen eindeutig sein</h2>
+            <section data-hilfe="bezeichnung-eindeutig">
+            <p>Der Name einer Einrichtung muss instanzweit eindeutig sein — auch
+            gegenüber Einrichtungen, die jemand anders betreut.</p>
+
+            <div class="hb-merke">
+              <b>Der Grund steht im Protokoll.</b>
+              <p>Dort erscheint die Bezeichnung ohne die Spalte daneben, aus der
+              hervorginge, um welches Haus es geht. Wer im Nachhinein einen Vorgang
+              zuordnen will, hat dann zwei Zeilen „Notaufnahme“ und keine Möglichkeit,
+              sie zu unterscheiden. Dasselbe gilt für Auswahlfelder.</p>
+            </div>
+
+            <p>Ergänzen Sie deshalb eine Kennzeichnung des Hauses:
+            <b>„Notaufnahme Nordstadt“</b> statt „Notaufnahme“. Ein doppelter Name
+            wird abgelehnt; die Meldung sagt, wie er zu ergänzen ist — <em>ohne</em> zu
+            verraten, wo er schon vorkommt. Eine Mandantengrenze, die man mit einem
+            Formular ausprobieren kann, ist keine.</p>
+
+            <p>Für <b>Gerätegruppen</b> gilt dieselbe Regel aus demselben Grund.</p>
+            </section>
 
             <h2>Die Betriebsstätte</h2>
             <section data-hilfe="betriebsstaette">
@@ -637,6 +679,24 @@ final class HandbuchInhalt {
             Personenbezug.</p>
             </section>
 
+            <h2>Verschlüsselter Mailversand</h2>
+            <section data-hilfe="mail-verschluesselung">
+            <p>Der PIN-Roboter kann verlangen, dass der Mailserver eine verschlüsselte
+            Verbindung anbietet, und den Versand sonst abbrechen.</p>
+
+            <div class="hb-merke">
+              <b>Ohne diese Einstellung wird auch an Server gesendet, die keine
+              Verschlüsselung anbieten.</b>
+              <p>Die Nachricht wäre auf dem Weg mitlesbar. Vertretbar ist das nur,
+              wenn der Server im eigenen Netz steht und dieses Netz vertrauenswürdig
+              ist.</p>
+            </div>
+
+            <p>In einer Mail steht ohnehin nie eine PIN, ein Zugangsdatum oder ein
+            Personenbezug — wohl aber, an welchem Standort welches Gerät klemmt. Das
+            ist eine Information über Ihre Einrichtung, die nicht jeden angeht.</p>
+            </section>
+
             <h2>Alle Alarme schließen</h2>
             <p>Auf der Lage-Übersicht gibt es eine Sammelaktion. Sie fragt vorher nach
             und nennt die Anzahl. Alarme, deren Ursache weiter besteht, entstehen im
@@ -651,14 +711,23 @@ final class HandbuchInhalt {
             geht.</p>
 
             <h2>Schritt für Schritt</h2>
+            <section data-hilfe="pin-hinterlegen">
             <ol class="hb-liste">
               <li>Unter <b>Kartenterminals</b> das Gerät öffnen.</li>
               <li>Bei der SMC-B auf <b>PIN hinterlegen</b>.</li>
               <li>Die PIN eingeben und bestätigen.</li>
             </ol>
-            <p>Beim Absenden wird sie <strong>im Browser verschlüsselt</strong>, für
-            genau den Agenten dieses Standorts. Sie verlässt Ihren Rechner nie im
-            Klartext.</p>
+
+            <p>Beim Absenden wird sie <strong>im Browser verschlüsselt</strong> — für
+            genau den Standort-Agenten dieses Hauses und für sonst niemanden. Sie
+            verlässt Ihren Rechner nie im Klartext, wird nirgends im Klartext
+            gespeichert und erscheint in keinem Protokoll.</p>
+
+            <p>Beim Agenten liegt sie verschlüsselt. <b>Anzeigen lässt sie sich
+            nirgends</b> — auch nicht gekürzt, auch nicht als Administrator. Die
+            Oberfläche zeigt ausschließlich, <em>ob</em> eine hinterlegt ist. Zum
+            Ändern gibt man eine neue ein; die alte wird nicht gebraucht, um sie zu
+            ersetzen.</p>
 
             <div class="hb-merke">
               <b>Prüfen Sie die PIN, bevor Sie sie hinterlegen.</b>
@@ -667,13 +736,26 @@ final class HandbuchInhalt {
               „Automatik angehalten“ und jemand muss ran. Im Zweifel einmal am
               Terminal von Hand eingeben.</p>
             </div>
+            </section>
 
-            <h2>Ändern und löschen</h2>
-            <p>Beides geht an derselben Stelle. Beim Ändern werden alte und neue PIN
-            gebraucht — die Änderung geschieht auf der Karte. Schlägt sie fehl, bleibt
-            die hinterlegte PIN unverändert; sonst hätte der Agent eine PIN im
-            Speicher, die auf der Karte nicht gilt, und würde reihenweise Fehlversuche
-            erzeugen.</p>
+            <h2>Die PIN auf der Karte ändern</h2>
+            <section data-hilfe="pin-aendern">
+            <p>Das ist etwas anderes als „eine andere PIN hinterlegen“: Hier wird die
+            PIN <b>auf der Karte selbst</b> geändert (gematik <code>A_24082</code>) und
+            danach im PIN-Roboter neu hinterlegt. Gebraucht werden dafür die bisherige
+            und die neue.</p>
+
+            <div class="hb-merke">
+              <b>Auch das Ändern kann die Karte sperren.</b>
+              <p>Stimmt die bisherige PIN nicht, zählt ein Fehlversuch — genau wie bei
+              der Verifikation. Bleibt nur noch ein Versuch übrig, bricht der Roboter
+              ab, statt die Sperre zu riskieren.</p>
+            </div>
+
+            <p>Schlägt die Änderung fehl, bleibt die hinterlegte PIN <b>unverändert</b>.
+            Sonst hätte der Agent eine PIN im Speicher, die auf der Karte nicht gilt —
+            und würde damit reihenweise Fehlversuche erzeugen.</p>
+            </section>
 
             <h2>Nach einer Wiederherstellung</h2>
             <p>PINs sind für den Schlüssel eines bestimmten Agenten verschlüsselt. Wird
@@ -681,10 +763,6 @@ final class HandbuchInhalt {
             führt dann eine Liste <b>„PINs neu zu hinterlegen“</b> — sie erscheint nur,
             wenn wirklich etwas fehlt.</p>
 
-            <h2>Was Sie nie sehen werden</h2>
-            <p>Eine hinterlegte PIN lässt sich nirgends anzeigen — auch nicht gekürzt,
-            auch nicht als Administrator. Die Oberfläche zeigt ausschließlich, <em>ob</em>
-            eine hinterlegt ist.</p>
             """;
 
     private static final String GRUPPEN = """
@@ -713,11 +791,42 @@ final class HandbuchInhalt {
               „Alle Geräte (Praxis Nord)“.</p>
             </div>
 
-            <h2>Neue Geräte</h2>
+            <h2>Die Vorgabegruppe</h2>
+            <section data-hilfe="vorgabegruppe">
             <p>Ein erstmals erkanntes Kartenterminal landet automatisch in der
-            Vorgabegruppe seiner Einrichtung. Es wird also <strong>sofort
+            <b>Vorgabegruppe</b> seiner Einrichtung. Es wird also <strong>sofort
             überwacht</strong>, bevor jemand es zuordnet. Ein Gerät, das erst nach
             manueller Einordnung überwacht wird, ist ein Gerät, das man vergisst.</p>
+
+            <p><b>Jede Einrichtung hat genau eine.</b> Um sie zu wechseln, öffnen Sie
+            die Gruppe, die es künftig sein soll, und machen sie dort zur Vorgabe —
+            nicht umgekehrt. Die bisherige verliert die Rolle automatisch.</p>
+
+            <div class="hb-merke">
+              <b>Ein Wechsel ändert nichts an vorhandenen Zuordnungen.</b>
+              <p>Er ändert nur, wo <em>künftige</em> Geräte auftauchen. Wer erwartet,
+              dass sich damit auch der Bestand umsortiert, sucht die Geräte hinterher
+              an der falschen Stelle.</p>
+            </div>
+            </section>
+
+            <h2>Die Einrichtung einer Gruppe steht fest</h2>
+            <section data-hilfe="gruppe-einrichtung">
+            <p>Eine Gerätegruppe liegt in <b>genau einer</b> Einrichtung, und das lässt
+            sich nachträglich nicht ändern.</p>
+
+            <div class="hb-merke">
+              <b>Ein Wechsel würde die Geräte über die Mandantengrenze tragen.</b>
+              <p>Alles, was in der Gruppe hängt, wäre plötzlich in der Sicht eines
+              anderen Hauses — samt Alarmen und Protokolleinträgen. Das ist kein
+              Sonderfall, den man abfangen könnte, sondern der Grund, warum es die
+              Grenze gibt.</p>
+            </div>
+
+            <p>Wird für einen anderen Standort eine Gruppe gebraucht, legen Sie sie
+            <b>dort</b> an. Geräte lassen sich einzeln umhängen; die Gruppe selbst
+            bleibt, wo sie ist.</p>
+            </section>
 
             <h2>Zeitfenster</h2>
             <p>Je Gruppe lassen sich Zeitfenster hinterlegen — für die spätere
@@ -924,6 +1033,38 @@ final class HandbuchInhalt {
             braucht weder die Zentrale noch ein Agent.</p>
             </section>
 
+            <h2>Zum Ausprobieren: Demo- und Lastdaten</h2>
+            <section data-hilfe="demodaten">
+            <p>Unter <b>Instanz</b> lassen sich zwei Datensätze anlegen, die niemand im
+            Echtbetrieb braucht — beide sind vollständig wieder entfernbar.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>Demodatensatz</b></td>
+                  <td>Ein vollständiger MVZ-Verbund: 3 Standorte mit je 2
+                      Facharztpraxen und 1 Allgemeinpraxis, je Praxis ein Konnektor
+                      mit eigener SMC-B, ein Empfangsplatz mit SMC-B-Terminal und
+                      drei Behandlerplätze mit Terminals ohne SMC-B. Dazu
+                      Benutzerkonten auf allen drei Berechtigungsebenen.</td></tr>
+              <tr><td><b>Lastdatensatz</b></td>
+                  <td>Ein Bestand in der Größe des Mengengerüsts. Damit lassen sich
+                      die Zielwerte für Antwortzeiten <em>auf dieser Hardware
+                      nachmessen</em>, statt sie zu schätzen.</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>Wozu der Demodatensatz gut ist.</b>
+              <p>Die Oberfläche verhält sich mit einem Gerät anders als mit
+              vierzig — Suche, Filter und Gruppierung zeigen ihren Nutzen erst dann.
+              Wer das Produkt bewerten oder Personal einarbeiten will, sieht mit
+              einer leeren Instanz nicht, worum es geht.</p>
+            </div>
+
+            <p>Beide Datensätze sind als solche gekennzeichnet und lassen sich in einem
+            Zug wieder löschen. Echte Daten bleiben dabei unberührt.</p>
+            </section>
+
             <h2>Netzwerk</h2>
             <table class="hb-tabelle">
               <tbody>
@@ -935,6 +1076,87 @@ final class HandbuchInhalt {
                   Aktualisierung</td></tr>
               </tbody>
             </table>
+            """;
+
+    private static final String BESTAND = """
+            <p class="anriss">Der Standort-Agent findet Kartenterminals von selbst und
+            trägt sie ein. Von Hand erfasst wird, was er nicht sehen kann — und
+            gepflegt wird, was er nicht wissen kann.</p>
+
+            <h2>Einen Konnektor erfassen</h2>
+            <section data-hilfe="konnektor-adresse">
+            <p>Gebraucht wird die <b>Adresse</b>: Rechnername oder IP-Adresse,
+            wahlweise mit Port. Beim Speichern wird geprüft, ob dort etwas
+            antwortet.</p>
+
+            <p>Ein <b>noch nicht angeschlossener</b> Konnektor lässt sich trotzdem
+            erfassen. Das ist Absicht: Man richtet oft ein, bevor die Hardware steht,
+            und ein Formular, das das verhindert, zwingt dazu, den Vorgang später
+            noch einmal von vorn zu beginnen.</p>
+
+            <p>Dazu kommen die drei Werte des <a href="/handbuch/inbetriebnahme">Aufrufkontexts</a> —
+            Mandant, Clientsystem, Arbeitsplatz. Stimmt einer nicht, weist der
+            Konnektor jede Anfrage ab.</p>
+            </section>
+
+            <h2>Einen fremden Konnektor mitnutzen</h2>
+            <section data-hilfe="konnektor-mitnutzung">
+            <p>In einem Verbund betreibt oft <b>eine</b> Einrichtung den Konnektor,
+            und andere hängen ihre Kartenterminals daran. Der PIN-Roboter unterscheidet
+            deshalb zwischen <b>Betreiber</b> und <b>Mitnutzer</b>.</p>
+
+            <table class="hb-tabelle">
+              <thead><tr><th></th><th>Betreiber</th><th>Mitnutzer</th></tr></thead>
+              <tbody>
+              <tr><td>Konnektor sehen</td><td>ja</td><td>ja</td></tr>
+              <tr><td>eigene Terminals zuordnen</td><td>ja</td><td>ja</td></tr>
+              <tr><td>Zugangsdaten ändern</td><td>ja</td><td><b>nein</b></td></tr>
+              <tr><td>Konnektor löschen</td><td>ja</td><td><b>nein</b></td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>So kann keine Einrichtung ein Gerät umkonfigurieren, an dem andere
+              hängen.</b>
+              <p>Ein geänderter Aufrufkontext oder ein gelöschter Konnektor legt
+              nicht nur den eigenen Standort lahm, sondern alle, die mitnutzen. Diese
+              Grenze verhindert das — nicht durch Sorgfalt, sondern durch fehlende
+              Rechte.</p>
+            </div>
+            </section>
+
+            <h2>Ein Terminal ohne Konnektor</h2>
+            <section data-hilfe="geraet-ohne-konnektor">
+            <p>Ein Kartenterminal lässt sich erfassen, bevor es einem Konnektor
+            zugeordnet ist. Es wird dann <b>verwaltet, aber nicht freigeschaltet</b>.</p>
+
+            <p>Der Grund liegt im Verfahren: <b>Die Verifikation löst der Konnektor
+            aus</b>, nicht der PIN-Roboter. Ohne ihn gibt es niemanden, der die PIN
+            entgegennimmt — das Gerät steht in der Liste, wird überwacht, nimmt aber
+            an der Automatik nicht teil.</p>
+
+            <p>Sobald das Terminal am Konnektor angemeldet ist, lässt sich dieser hier
+            nachtragen. Ab dann läuft es mit.</p>
+            </section>
+
+            <h2>Firmware-Stände im Blick</h2>
+            <section data-hilfe="firmwarestand">
+            <p>Der PIN-Roboter zeigt je Gerät den gemeldeten Firmware-Stand und
+            markiert, welche Geräte hinter dem aktuellsten zurückliegen.</p>
+
+            <div class="hb-merke">
+              <b>Als „aktuellster Stand“ gilt die höchste vorkommende Version je
+              Modell.</b>
+              <p>Einen <em>Sollstand</em> kennt der Roboter nicht — die Firmware kommt
+              vom Hersteller des Geräts, nicht von uns. Was hier steht, ist also ein
+              Vergleich innerhalb Ihres Bestands, keine Aussage darüber, ob es beim
+              Hersteller etwas Neueres gibt.</p>
+            </div>
+
+            <p>Nützlich ist das trotzdem: Weicht ein einzelnes Gerät von zwanzig
+            gleichen ab, ist es dort liegengeblieben. Und ein Terminal, das PEviM
+            nicht unterstützt, hat fast immer eine zu alte Firmware.</p>
+            </section>
             """;
 
     private static final String AGENTEN = """
