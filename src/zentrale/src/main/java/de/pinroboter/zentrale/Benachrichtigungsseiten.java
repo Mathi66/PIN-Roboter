@@ -82,11 +82,10 @@ final class Benachrichtigungsseiten {
 
                   <div class="ankreuz">
                     <input id="m-tls" name="tls" type="checkbox" value="ja" %s>
-                    <label for="m-tls">Verschlüsselung verlangen (empfohlen)</label>
+                    <label for="m-tls">Verschlüsselung verlangen (empfohlen) """
+                    + Bedienelemente.info("mail-verschluesselung", "die Verschlüsselung") + """
+                    </label>
                   </div>
-                  <p class="hilfe">Ohne diese Einstellung wird auch an Mailserver gesendet, die
-                     keine Verschlüsselung anbieten. Die Nachricht wäre auf dem Weg mitlesbar —
-                     vertretbar nur, wenn der Server im eigenen Netz steht.</p>
 
                   <button class="knopf haupt" type="submit" title="Speichert die Zugangsdaten verschlüsselt; das Kennwort erscheint nie im Protokoll" aria-label="Mailserver speichern">Mailserver speichern</button>
                 </form>"""

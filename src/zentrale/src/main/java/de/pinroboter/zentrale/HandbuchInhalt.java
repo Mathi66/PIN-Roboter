@@ -384,6 +384,37 @@ final class HandbuchInhalt {
             gleichgesetzt. In der Praxis fallen beide oft zusammen — verlassen sollte
             man sich nicht darauf.</p>
 
+            <h2>Welche Ebene wofür</h2>
+            <section data-hilfe="organisationsebenen">
+            <p>Die Struktur ist frei aufbaubar — aber nur <b>eine</b> Ebene trägt
+            fachliche Bedeutung.</p>
+
+            <table class="hb-tabelle">
+              <thead><tr><th>Ebene</th><th>Wofür</th></tr></thead>
+              <tbody>
+              <tr><td><b>Betriebsstätte</b></td>
+                  <td>Die Leistungserbringerinstitution: Sie trägt BSNR, SMC-B und
+                      Telematik-ID. <b>Nur hier</b> hängen Geräte und Karten.</td></tr>
+              <tr><td>Trägergesellschaft</td>
+                  <td>Wem das Ganze gehört. Freiwillig.</td></tr>
+              <tr><td>Standort</td>
+                  <td>Fasst mehrere Betriebsstätten räumlich zusammen. Freiwillig.</td></tr>
+              <tr><td>Leistungserbringer</td>
+                  <td>Das zugelassene MVZ als Ganzes. Freiwillig.</td></tr>
+              <tr><td>Fachbereich</td>
+                  <td>Gliedert eine große Betriebsstätte. Steht <b>nur unterhalb von
+                      ihr</b>; darunter lässt sich nichts mehr anlegen.</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>Eine Einzelpraxis braucht zwei Ebenen.</b>
+              <p>Trägergesellschaft und Betriebsstätte — mehr nicht. Die übrigen Ebenen
+              sind für Häuser gedacht, die sie wirklich haben. Wer eine Struktur baut,
+              die es in der Wirklichkeit nicht gibt, pflegt sie hinterher.</p>
+            </div>
+            </section>
+
             <h2>Bezeichnungen müssen eindeutig sein</h2>
             <section data-hilfe="bezeichnung-eindeutig">
             <p>Der Name einer Einrichtung muss instanzweit eindeutig sein — auch
@@ -424,6 +455,10 @@ final class HandbuchInhalt {
             <p>Alle anderen Ebenen — Serviceorganisation, Verbund, Standort ohne eigene
             Karte — sind reine <b>Gliederung</b>. Sie tragen keine SMC-B und keine
             Telematik-ID.</p>
+
+            <p><b>Beide Angaben sind freiwillig.</b> Liegen sie noch nicht vor, lassen
+            sie sich später nachtragen; die Einrichtung funktioniert auch ohne sie. Die
+            BSNR ist mit der zuständigen Kassenärztlichen Vereinigung abzustimmen.</p>
             <div class="hb-merke">
               <b>Warum die Unterscheidung zählt.</b>
               <p>Ohne sie ließe sich eine gefundene SMC-B keiner Einrichtung sicher

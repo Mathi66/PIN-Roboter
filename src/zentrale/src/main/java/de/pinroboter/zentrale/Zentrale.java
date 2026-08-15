@@ -1430,17 +1430,13 @@ public class Zentrale {
                               title="Zeigt nur den einmaligen Zugangscode an, ohne Konfigurationsdateien"
                               aria-label="Nur den Zugangscode anzeigen">Nur Zugangscode</button></div>
                   </div>
-                  <p id="ag-hilfe" class="hilfe">Alles, was dieser Agent meldet — Geräte, Alarme,
-                     Protokolleinträge — gehört zu dieser Einrichtung.
-                     <br><strong>Das Einrichtungspaket</strong> enthält eine fertige
-                     <code>docker-compose.yml</code>, eine vorausgefüllte Konfiguration mit der
-                     Adresse dieser Zentrale und dem Zugangscode sowie eine Anleitung. In der
-                     Praxis sind nur noch die Adressen von Konnektor und Kartenterminals
-                     einzutragen, dann <code>docker compose up -d</code>.
-                     <br>Der Zugangscode gilt <strong>einmalig und 24 Stunden</strong>.</p>
+                  <p id="ag-hilfe" class="hilfe">Alles, was dieser Agent meldet, gehört zu
+                     dieser Einrichtung. Der Zugangscode gilt
+                     <strong>einmalig und 24 Stunden</strong>. %s</p>
                 </form>
                 <div id="agentGeheimnis"></div>
-                </div>""".formatted(auswahl, Symbole.herunterladen());
+                </div>""".formatted(auswahl, Symbole.herunterladen(),
+                        Bedienelemente.info("einrichtungspaket", "das Einrichtungspaket"));
     }
 
     /**
@@ -1754,13 +1750,8 @@ public class Zentrale {
         } else {
             s.append("""
                     <p class="unterzeile">
-                      Legt einen vollständigen MVZ-Verbund zum Ausprobieren an:
-                      3 Standorte mit je 2 Facharztpraxen und 1 Allgemeinpraxis,
-                      je Praxis ein Konnektor mit eigener SMC-B, ein Empfangs-Arbeitsplatz
-                      mit SMC-B-Terminal und drei Behandler-Arbeitsplätze mit je einem
-                      Terminal ohne SMC-B.
-                      Dazu Benutzerkonten auf allen drei Berechtigungsebenen und
-                      3 Administratoren.
+                      Legt einen vollständigen MVZ-Verbund zum Ausprobieren an. """
+                      + Bedienelemente.info("demodaten", "die Demodaten") + """
                     </p>
                     <form method="post" action="/verwaltung/demodaten/anlegen">
                       <button class="knopf haupt" type="submit"
@@ -1779,8 +1770,8 @@ public class Zentrale {
                   <span class="zaehler">%s</span></h3>
                 <div class="karte-leib">
                   <p class="unterzeile">Legt einen Bestand in der Größe des Mengengerüsts an
-                     (%d Kartenterminals), damit sich die Zielwerte aus NFA-LEI-010 auf
-                     dieser Hardware nachmessen lassen — statt sie zu schätzen.</p>
+                     (%d Kartenterminals), um die Zielwerte auf dieser Hardware
+                     nachzumessen. %s</p>
                   <div class="hinweis">Alle erzeugten Datensätze sind als Demo gekennzeichnet
                      und lassen sich rückstandsfrei entfernen. Echte Bestandsdaten bleiben
                      unberührt.</div>
@@ -1794,7 +1785,9 @@ public class Zentrale {
                 </div></div>"""
                 .formatted(lastVorhanden == 0 ? "kein Testbestand"
                                 : lastVorhanden + " Testgeräte vorhanden",
-                        Lasterzeuger.TERMINALS_ZIEL, Lasterzeuger.TERMINALS_ZIEL,
+                        Lasterzeuger.TERMINALS_ZIEL,
+                        Bedienelemente.info("demodaten", "den Lastdatensatz"),
+                        Lasterzeuger.TERMINALS_ZIEL,
                         Lasterzeuger.TERMINALS_ZIEL,
                         lastVorhanden == 0 ? "" : """
                         <form method="post" action="/verwaltung/lasttest/entfernen">
@@ -1903,11 +1896,8 @@ public class Zentrale {
                                value="60" size="6"></div>
                       <div class="feldaktion">%s</div>
                     </form>
-                    <p id="bez-hilfe" class="hilfe">Die Bezeichnung muss <strong>eindeutig</strong>
-                       sein — auch gegenüber anderen Betriebsstätten. Sie erscheint in
-                       Auswahlfeldern und im Protokoll, wo die Spalte „Einrichtung" nicht
-                       danebensteht. Ergänzen Sie deshalb eine Kennzeichnung der Praxis:
-                       „Notaufnahme Nordstadt" statt „Notaufnahme".</p>
+                    <p id="bez-hilfe" class="hilfe">Muss <strong>eindeutig</strong> sein —
+                       auch gegenüber anderen Betriebsstätten. %s</p>
                   </div>
                 </div>
                 <div class="tafel"><h3>Gruppen <span class="zaehler">%d</span></h3>
@@ -1920,6 +1910,7 @@ public class Zentrale {
                            Bedienelemente.absenden("Gruppe anlegen",
                                    "Legt eine neue Gerätegruppe mit diesem Prüfintervall an",
                                    Bedienelemente.Art.HAUPT, null),
+                           Bedienelemente.info("bezeichnung-eindeutig", "eindeutige Namen"),
                            gruppen.alle(bereich(c)).size(),
                            Bedienelemente.suchleiste("/teil/gruppen", "#gruppen",
                                    param(c, "suche"),
@@ -2199,13 +2190,12 @@ public class Zentrale {
                       <input id="d-iv" name="intervall" type="text" inputmode="numeric"
                              size="6" value="%d"></div>
                   </div>
-                  <p class="hilfe">Die Einrichtung <strong>%s</strong> lässt sich nicht ändern:
-                     Eine Gruppe liegt in genau einer Einrichtung (FA-GER-050), und ein Wechsel
-                     würde ihre Geräte über die Mandantengrenze tragen. Für einen anderen
-                     Standort bitte dort eine eigene Gruppe anlegen.</p>
+                  <p class="hilfe">Die Einrichtung <strong>%s</strong> lässt sich nicht
+                     ändern. %s</p>
                   %s
                 </form></div>""".formatted(gr.id(), esc(gr.bezeichnung()),
                         gr.pruefintervallSekunden(), esc(gr.einrichtung()),
+                        Bedienelemente.info("gruppe-einrichtung", "die Einrichtung einer Gruppe"),
                         Bedienelemente.absenden("Änderungen speichern",
                                 "Übernimmt Bezeichnung und Prüfintervall dieser Gruppe",
                                 Bedienelemente.Art.HAUPT, null)));
@@ -2214,18 +2204,17 @@ public class Zentrale {
         s.append("<div class=\"tafel\"><h3>Vorgabegruppe</h3>");
         if (gr.istVorgabe()) {
             s.append("""
-                    <p class="hilfe">Neu erkannte Geräte dieser Einrichtung landen in dieser
-                       Gruppe. Um das zu ändern, öffnen Sie die Gruppe, die es künftig sein
-                       soll — jede Einrichtung hat genau eine Vorgabegruppe.</p>""");
+                    <p class="hilfe">Neu erkannte Geräte dieser Einrichtung landen hier. """
+                    + Bedienelemente.info("vorgabegruppe", "die Vorgabegruppe") + """
+                     </p>""");
         } else {
             s.append("""
                     <form method="post" action="/gruppen/%d/vorgabe" class="maske">
-                      <p class="hilfe">Neu erkannte Geräte dieser Einrichtung landen zurzeit in
-                         einer anderen Gruppe. Diese hier zur Vorgabe zu machen, ändert nichts
-                         an den vorhandenen Zuordnungen — nur daran, wo künftige Geräte
-                         auftauchen.</p>
+                      <p class="hilfe">Neu erkannte Geräte landen zurzeit in einer anderen
+                         Gruppe. %s</p>
                       %s
                     </form>""".formatted(gr.id(),
+                            Bedienelemente.info("vorgabegruppe", "die Vorgabegruppe"),
                             Bedienelemente.absenden("Zur Vorgabegruppe machen",
                                     "Neu erkannte Geräte dieser Einrichtung landen künftig hier",
                                     Bedienelemente.Art.NEBEN, null)));
@@ -2717,9 +2706,10 @@ public class Zentrale {
         s.append("</tbody></table></div>");
         s.append("""
                 <div class="karte-leib">
-                  <p class="hilfe">Als „aktuellster Stand" gilt die höchste vorkommende Version
-                     je Modell. Einen Sollstand kennt der Roboter nicht — die Firmware kommt vom
-                     Hersteller des Geräts, nicht von uns.</p>
+                  <p class="hilfe">Verglichen wird innerhalb Ihres Bestands, nicht mit dem
+                     Hersteller. """
+                  + Bedienelemente.info("firmwarestand", "die Firmware-Stände") + """
+                  </p>
                 </div>""");
         return s.append("</div>").toString();
     }

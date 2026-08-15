@@ -1,6 +1,6 @@
 # 38 — Hilfe kommt aus dem Handbuch
 
-**Stand:** Mechanik umgesetzt, Anwendung begonnen (14.08.2026)
+**Stand:** umgesetzt (14.08.2026), Oberfläche vollständig umgestellt (15.08.2026)
 · **Anforderung:** `FA-DOK-020` · **Vorgabe:** PO, 14.08.2026
 · baut auf [Umsetzung 37](37-handbuch.md)
 
@@ -136,9 +136,27 @@ Dazu ein **neues Kapitel „Bestand pflegen"** im Teil *Betreiben* — Konnektor
 Kartenterminals und Firmware hatten bisher keinen Ort im Handbuch, obwohl
 gerade dort die meisten Erklärtexte hingen.
 
-**Noch offen:** Das Ersetzen in der Oberfläche selbst. Solange beides
-nebeneinander steht, gibt es die Doppelung, die diese Funktion abschaffen soll —
-allerdings jetzt mit einer Quelle, aus der die Oberfläche schöpfen kann.
+**Umgestellt am 15.08.2026.** In der Oberfläche steht damit **kein
+Erklärabsatz über 150 Zeichen** mehr; gemessen mit demselben Ausdruck, der die
+Kandidaten gefunden hat: von 24 auf 0.
+
+Was an den Feldern geblieben ist, ist der feldbezogene Rest — zwei Beispiele:
+
+| vorher | jetzt |
+|---|---|
+| „Rechnername oder IP-Adresse, wahlweise mit Port. Die Erreichbarkeit wird beim Speichern geprüft; ein noch nicht angeschlossener Konnektor lässt sich trotzdem erfassen." | „Rechnername oder IP-Adresse, wahlweise mit Port." + Knopf |
+| „Ohne Konnektor wird das Gerät erfasst und verwaltet, nimmt aber nicht an der PIN-Automatik teil: Die Verifikation löst der Konnektor aus. …" | „Ohne Konnektor nimmt das Gerät **nicht an der PIN-Automatik teil**." + Knopf |
+
+Zwei Stellen behalten bewusst eine dynamische Angabe, weil sie zum Fall gehört
+und nicht ins Handbuch passt: „Betrieben von **X**" beim fremden Konnektor und
+„Die Einrichtung **Y** lässt sich nicht ändern" bei einer Gerätegruppe. Der
+Grund dahinter steht im Handbuch, die Tatsache am Feld.
+
+**Ein Abschnitt kam beim Umstellen dazu:** `organisationsebenen`. Der Text an
+der Maske erklärte nicht nur die Betriebsstätte, sondern die ganze Hierarchie —
+Trägergesellschaft, Standort, Leistungserbringer, Fachbereich und die Regel,
+dass eine Einzelpraxis zwei Ebenen braucht. Das stand im Handbuch nirgends.
+Ohne den neuen Abschnitt wäre beim Kürzen wieder Wissen verschwunden.
 
 ## Neue Handbuchabschnitte
 

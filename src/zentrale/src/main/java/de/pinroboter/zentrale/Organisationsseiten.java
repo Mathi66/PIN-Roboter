@@ -230,13 +230,11 @@ final class Organisationsseiten {
             return "<div class=\"tafel\"><h3>Angaben zur Betriebsstätte</h3>" + werte + "</div>";
         }
         return """
-                <div class="tafel"><h3>Angaben zur Betriebsstätte</h3>
-                <p class="hilfe">Diese Betriebsstätte ist die Leistungserbringerinstitution:
-                   Sie führt eine eigene SMC-B. Über die <strong>Telematik-ID</strong> wird
-                   ihre institutionelle Identität in der TI abgebildet, die
-                   <strong>BSNR</strong> stellt den Bezug zur Abrechnung her.
-                   Beide Angaben sind freiwillig — falls sie noch nicht vorliegen, lassen sie
-                   sich später nachtragen. Die BSNR ist mit der zuständigen KV abzustimmen.</p>
+                <div class="tafel"><h3>Angaben zur Betriebsstätte """
+                + Bedienelemente.info("betriebsstaette", "die Betriebsstätte") + """
+                     </h3>
+                <p class="hilfe">Beide Angaben sind freiwillig und lassen sich
+                   nachtragen.</p>
                 <form method="post" action="/organisation/%d/ti-identitaet" class="maske">
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="o-bsnr">Betriebsstättennummer</label>
@@ -343,12 +341,10 @@ final class Organisationsseiten {
                     <div class="feldgruppe"><label for="n-eltern">Unterhalb von</label>
                       <select id="n-eltern" name="elternId" required>%s</select></div>
                   </div>
-                  <p id="n-art-hilfe" class="hilfe">Die <strong>Betriebsstätte</strong> ist die
-                     Leistungserbringerinstitution: Sie trägt BSNR, SMC-B und Telematik-ID.
-                     Alle anderen Ebenen sind freiwillig — eine Einzelpraxis besteht aus
-                     Trägergesellschaft und Betriebsstätte, mehr braucht es nicht.
-                     Ein <strong>Fachbereich</strong> gliedert eine große Betriebsstätte und
-                     steht nur unterhalb von ihr; darunter lässt sich nichts mehr anlegen.</p>
+                  <p id="n-art-hilfe" class="hilfe">Nur die <strong>Betriebsstätte</strong>
+                     trägt SMC-B und Geräte; alle anderen Ebenen sind freiwillig. """
+                     + Bedienelemente.info("organisationsebenen", "die Ebenen") + """
+                     </p>
                   <button class="knopf haupt" type="submit" title="Legt die Einheit mit den eingegebenen Angaben an" aria-label="Legt die Einheit mit den eingegebenen Angaben an">Einheit anlegen</button>
                 </form></div>""".formatted(eltern);
     }

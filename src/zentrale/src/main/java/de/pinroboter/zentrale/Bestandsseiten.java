@@ -646,18 +646,16 @@ final class Bestandsseiten {
      */
     private static String nurLesenTafel(Bestandsverwaltung.Konnektor k) {
         return """
-                <div class="tafel"><h3>Konnektor eines anderen Betreibers</h3>
-                <p class="hilfe">Diesen Konnektor betreibt <strong>%s</strong>. Sie nutzen ihn mit:
-                   Ihre Kartenterminals lassen sich ihm zuordnen, seine Einstellungen ändert
-                   aber nur der Betreiber. So kann keine Einrichtung ein Gerät umkonfigurieren,
-                   an dem andere hängen.</p>
+                <div class="tafel"><h3>Konnektor eines anderen Betreibers %s</h3>
+                <p class="hilfe">Betrieben von <strong>%s</strong> — Sie nutzen ihn mit.</p>
                 <dl class="angaben">
                   <dt>Bezeichnung</dt><dd>%s</dd>
                   <dt>Adresse</dt><dd><code>%s</code></dd>
                   <dt>Modell</dt><dd>%s</dd>
                   <dt>Zustand</dt><dd>%s</dd>
                 </dl></div>"""
-                .formatted(esc(k.organisation()), esc(k.bezeichnung()), esc(k.adresse()),
+                .formatted(Bedienelemente.info("konnektor-mitnutzung", "die Mitnutzung"),
+                        esc(k.organisation()), esc(k.bezeichnung()), esc(k.adresse()),
                         esc(k.modell() == null || k.modell().isBlank() ? "— nicht angegeben" : k.modell()),
                         k.aktiv() ? "aktiv — der Roboter spricht ihn an"
                                   : "deaktiviert — der Roboter lässt ihn in Ruhe");
@@ -679,10 +677,9 @@ final class Bestandsseiten {
         if (!nutzer.isEmpty()) s.append(" <span class=\"zaehler\">").append(nutzer.size()).append("</span>");
         s.append("</h3>");
         s.append("""
-                <p class="hilfe">Betrieben wird dieser Konnektor von <strong>%s</strong>.
-                   Wer ihn mitnutzt, sieht ihn und kann ihm eigene Kartenterminals zuordnen —
-                   Zugangsdaten ändern oder ihn löschen kann nur der Betreiber.</p>"""
-                .formatted(esc(k.organisation())));
+                <p class="hilfe">Betrieben von <strong>%s</strong>. %s</p>"""
+                .formatted(esc(k.organisation()),
+                        Bedienelemente.info("konnektor-mitnutzung", "die Mitnutzung")));
 
         if (nutzer.isEmpty()) {
             s.append("<p class=\"leer\">Diesen Konnektor nutzt nur seine betreibende "
@@ -959,9 +956,8 @@ final class Bestandsseiten {
         } else if (hinterlegt) {
             s.append("""
                     <p class="marke ok"><span class="sym">✓</span>PIN hinterlegt</p>
-                    <p class="hilfe">Die PIN liegt verschlüsselt beim Standort-Agenten.
-                       Sie lässt sich hier nicht anzeigen — auch nicht von einem
-                       Administrator. Zum Ändern eine neue PIN eingeben.</p>""");
+                    <p class="hilfe">Zum Ändern eine neue PIN eingeben. """
+                    + Bedienelemente.info("pin-hinterlegen", "hinterlegte PINs") + "</p>");
         } else {
             s.append("""
                     <p class="marke">Keine PIN hinterlegt</p>
@@ -995,9 +991,8 @@ final class Bestandsseiten {
                            maxlength="16" aria-describedby="pinHilfe">
                   </div>
                   <p id="pinHilfe" class="hilfe">
-                    Die PIN wird in Ihrem Browser verschlüsselt und ausschließlich für den
-                    Standort-Agenten lesbar übertragen. Sie wird nirgends im Klartext
-                    gespeichert und erscheint in keinem Protokoll.
+                    Wird im Browser verschlüsselt — die Zentrale sieht sie nie. """
+                    + Bedienelemente.info("pin-hinterlegen", "den Weg der PIN") + """
                   </p>
                   <p id="pinMeldung" class="hilfe" role="status" aria-live="polite"></p>
                   <button class="knopf haupt" type="submit"
@@ -1032,10 +1027,8 @@ final class Bestandsseiten {
                         </div>
                       </div>
                       <p id="pinAenderHilfe" class="hilfe">
-                        Die PIN wird <strong>auf der Karte selbst</strong> geändert
-                        (gematik A_24082) und danach hier neu hinterlegt. Stimmt die bisherige
-                        PIN nicht, zählt ein Fehlversuch — bei nur noch einem verbleibenden
-                        Versuch bricht der Roboter ab, statt die Sperre zu riskieren.
+                        Wird <strong>auf der Karte selbst</strong> geändert. """
+                        + Bedienelemente.info("pin-aendern", "das Ändern der PIN") + """
                       </p>
                       <p id="pinAenderMeldung" class="hilfe" role="status" aria-live="polite"></p>
                       <button class="knopf haupt" type="submit" title="Setzt eine neue PIN auf der Karte; die Zentrale sieht dabei weder alte noch neue PIN" aria-label="PIN ändern">PIN ändern</button>
@@ -1481,9 +1474,9 @@ final class Bestandsseiten {
                     <input id="k-adr" name="adresse" required maxlength="200"
                            placeholder="192.168.1.10:443"
                            aria-describedby="k-adr-hilfe">
-                    <p id="k-adr-hilfe" class="hilfe">Rechnername oder IP-Adresse, wahlweise mit Port.
-                       Die Erreichbarkeit wird beim Speichern geprüft; ein noch nicht
-                       angeschlossener Konnektor lässt sich trotzdem erfassen.</p>
+                    <p id="k-adr-hilfe" class="hilfe">Rechnername oder IP-Adresse, wahlweise
+                       mit Port. """ + Bedienelemente.info("konnektor-adresse", "die Adresse") + """
+                       </p>
                   </div>
                   <div class="feldgruppe">
                     <label for="k-mod">Modell <span class="optional">(optional)</span></label>
@@ -1551,10 +1544,10 @@ final class Bestandsseiten {
                         <option value="">— noch keiner zugeordnet —</option>%s</select>
                     </div>
                   </div>
-                  <p id="t-k-hilfe" class="hilfe">Ohne Konnektor wird das Gerät erfasst und
-                     verwaltet, nimmt aber <strong>nicht an der PIN-Automatik teil</strong>:
-                     Die Verifikation löst der Konnektor aus. Sobald das Gerät dort angemeldet
-                     ist, lässt sich der Konnektor hier nachtragen.</p>
+                  <p id="t-k-hilfe" class="hilfe">Ohne Konnektor nimmt das Gerät
+                     <strong>nicht an der PIN-Automatik teil</strong>. """
+                     + Bedienelemente.info("geraet-ohne-konnektor", "Geräte ohne Konnektor") + """
+                       </p>
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="t-bez">Bezeichnung</label>
                       <input id="t-bez" name="bezeichnung" required maxlength="120"
@@ -1592,9 +1585,9 @@ final class Bestandsseiten {
                       <input id="t-pevim" name="pevimAktiv" type="checkbox" value="ja">
                       <label for="t-pevim">PIN-Automatik nutzen (Managementschnittstelle freigeschaltet)</label>
                     </div>
-                    <p class="hilfe">Die PIN-Automatik ist ausschließlich für SMC-B zulässig
-                       (gematik A_24080). Für Terminals ohne SMC-B bleibt sie abgewählt —
-                       diese Geräte werden erfasst und überwacht, aber nie verifiziert.</p>
+                    <p class="hilfe">Nur für SMC-B zulässig. """
+                    + Bedienelemente.info("nur-smcb", "die Beschränkung auf SMC-B") + """
+                       </p>
                   </fieldset>
                   <button class="knopf haupt" type="submit" title="Legt das Kartenterminal mit diesen Angaben an" aria-label="Kartenterminal speichern">Kartenterminal speichern</button>
                 </form></div>""".formatted(organisationsOptionen(einrichtungen, null),
