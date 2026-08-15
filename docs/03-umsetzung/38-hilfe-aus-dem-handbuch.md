@@ -87,6 +87,51 @@ Engine nicht zuverlässig** — am 14.08.2026 gemessen: `dialog.close()` schlie�
 das Ereignis bleibt aus. Deshalb setzen alle drei Wege, die ein Mensch geht, den
 Fokus selbst zurück: Schließen-Knopf, Esc (`cancel`) und Klick daneben.
 
+### Ein „display" an der falschen Stelle
+
+**Gemeldet am 15.08.2026:** „Wenn ich die Info schließe, landet sie auf der
+Webseite." Der Erklärtext stand nach dem Schließen als gewöhnlicher Kasten
+mitten in der Seite, ohne Abdunklung, an der falschen Stelle.
+
+Die Ursache ist eine Zeile CSS. Der Browser blendet ein geschlossenes
+`<dialog>` über seine **eigene** Regel aus:
+
+```css
+dialog:not([open]) { display: none }   /* Regel des Browsers */
+```
+
+Autorenregeln schlagen Browserregeln. Ein schlichtes
+
+```css
+.hilfefenster { display: flex }
+```
+
+hebt die Ausblendung also auf — und zwar in **jedem** Zustand. Der Dialog
+funktioniert weiter (`showModal()` öffnet ihn modal, `close()` schließt ihn),
+nur sichtbar bleibt er trotzdem.
+
+Die Behebung ist, das `display` an `[open]` zu hängen:
+
+```css
+.hilfefenster { /* Maße, Rahmen, Farben */ }
+.hilfefenster[open] { display: flex; flex-direction: column; }
+```
+
+**Im Browser gemessen** (15.08.2026, `getComputedStyle`):
+
+| Zustand | mit der alten Regel | jetzt |
+|---|---|---|
+| geschlossen | `flex` — steht in der Seite | `none` |
+| geöffnet | `flex`, `:modal` trifft zu | `flex`, `:modal` trifft zu |
+| nach dem Schließen | `flex` — bleibt stehen | `none` |
+
+Der Test `geschlossenesFensterIstUnsichtbar` hält das fest: Er liest die
+CSS-Datei und lässt keine `display`-Angabe an einem Fenster-Selektor ohne
+`[open]` durch. **Durch Sabotage gegengeprüft** — und dabei gleich verbessert:
+Der erste Entwurf zitierte einen Kommentar als Selektor, weil er Kommentare
+nicht entfernt hatte. Eine Fehlermeldung, die auf die falsche Zeile zeigt, ist
+kaum besser als keine.
+
 ## Was bleibt und was geht
 
 Nicht jeder kurze Text ist Ballast. Die Trennlinie:

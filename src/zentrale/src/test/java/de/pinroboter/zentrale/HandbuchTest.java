@@ -304,6 +304,39 @@ class HandbuchTest {
         }
     }
 
+    @Test
+    @DisplayName("Das geschlossene Hilfefenster steht nicht in der Seite")
+    void geschlossenesFensterIstUnsichtbar() throws Exception {
+        // Der Browser blendet ein geschlossenes <dialog> über seine eigene
+        // Regel `dialog:not([open]) { display: none }` aus. Eine Autorenregel
+        // mit `display: …` schlägt diese — das Fenster bleibt dann nach dem
+        // Schließen als gewöhnlicher Kasten mitten in der Seite stehen.
+        // Am 15.08.2026 vom PO gemeldet; dieser Test hält den Fehler fest.
+        String css = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/main/resources/statisch/stil.css"));
+        // Kommentare zuerst weg: Sonst liest der Ausdruck den erklärenden
+        // Text als Selektor und meldet Unsinn — beim ersten Lauf passiert.
+        css = css.replaceAll("(?s)/\\*.*?\\*/", "");
+
+        // Jeder Regelblock, dessen Selektor das Fenster meint.
+        var block = java.util.regex.Pattern.compile(
+                "([^{}]*\\.hilfefenster[^{}]*)\\{([^}]*)\\}");
+        var treffer = block.matcher(css);
+        boolean gefunden = false;
+        while (treffer.find()) {
+            String selektor = treffer.group(1).trim();
+            String regeln = treffer.group(2);
+            if (!regeln.contains("display")) continue;
+            gefunden = true;
+            // Erlaubt: am geöffneten Fenster, und am Kind (`> div`), das
+            // nur die HTMX-Hülle durchreicht.
+            assertTrue(selektor.contains("[open]") || selektor.contains(">"),
+                    "Diese Regel macht das geschlossene Fenster sichtbar: "
+                    + selektor + " { " + regeln.trim() + " }");
+        }
+        assertTrue(gefunden, "Keine display-Regel gefunden — misst der Test noch, was er soll?");
+    }
+
     private static long zaehle(String text, String muster) {
         long n = 0;
         for (int i = text.indexOf(muster); i >= 0; i = text.indexOf(muster, i + 1)) n++;

@@ -1410,6 +1410,16 @@ h1 > .info, h2 > .info, h3 > .info, label > .info { vertical-align: baseline; }
   background: var(--karte);
   color: var(--text);
   overflow: hidden;
+}
+
+/* WICHTIG: „display" gehört an [open] und nirgendwo sonst.
+   Der Browser blendet ein geschlossenes dialog-Element über seine eigene
+   Regel `dialog:not([open]) { display: none }` aus. Eine Autorenregel mit
+   `display: flex` schlägt diese — das Fenster bleibt dann nach dem
+   Schließen als gewöhnlicher Kasten mitten in der Seite stehen, ohne
+   Abdunklung und an der falschen Stelle. Am 15.08.2026 vom PO gemeldet
+   und reproduziert. */
+.hilfefenster[open] {
   display: flex;
   flex-direction: column;
 }
