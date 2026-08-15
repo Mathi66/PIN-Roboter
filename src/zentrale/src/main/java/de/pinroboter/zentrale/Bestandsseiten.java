@@ -109,7 +109,7 @@ final class Bestandsseiten {
 
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\" id=\"konnektoren\"><h3>Konnektoren und Highspeed-Konnektoren <span class=\"zaehler\">")
-         .append(gefiltert.size()).append("</span></h3>");
+         .append(gefiltert.size()).append("</span>" + Bedienelemente.info("bestandslisten", "die Konnektorliste") + "</h3>");
         if (!liste.isEmpty()) {
             s.append(Bedienelemente.suchleiste("/bestand", "#konnektoren", suche,
                     "Bezeichnung, Einrichtung oder Adresse", "Konnektoren durchsuchen",
@@ -188,7 +188,7 @@ final class Bestandsseiten {
         Long filterKonnektor = f.konnektorId();
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\" id=\"terminals\"><h3>Kartenterminals <span class=\"zaehler\">")
-         .append(seite.gesamt()).append("</span></h3>");
+         .append(seite.gesamt()).append("</span>" + Bedienelemente.info("bestandslisten", "die Geräteliste") + "</h3>");
 
         // Suche und Filter laufen serverseitig - bei 5.000 Geraeten ist alles
         // andere unbrauchbar (FA-GER-060).
@@ -370,7 +370,7 @@ final class Bestandsseiten {
         s.append("<div class=\"tafel\"><h3>Abgleich mit dem Bestand <span class=\"zaehler\">")
          .append(funde.size()).append(" Gerät(e)");
         if (neu > 0) s.append(", ").append(neu).append(" noch nicht erfasst");
-        s.append("</span></h3>");
+        s.append("</span>" + Bedienelemente.info("bestandsabgleich", "den Abgleich") + "</h3>");
 
         s.append("""
                 <div class="hinweis">
@@ -546,7 +546,7 @@ final class Bestandsseiten {
             // muss die Oberflaeche auf die entfallende Unterstuetzung hinweisen -
             // und darf nicht so tun, als fehle etwas Pflichtiges.
             return """
-                    <div class="tafel"><h3>Informationsmodell des Konnektors %s</h3>
+                    <div class="tafel"><h3>Informationsmodell des Konnektors %s" + Bedienelemente.info("webadmin", "das Informationsmodell") + "</h3>
                     <div class="karte-leib">%s
                     </div></div>"""
                     .formatted(Bedienelemente.info("webadmin", "das Informationsmodell"))
@@ -556,7 +556,7 @@ final class Bestandsseiten {
         }
         return """
                 <div class="tafel"><h3>Informationsmodell des Konnektors
-                  <span class="zaehler">gelesen %s</span> %s</h3>
+                  <span class="zaehler">gelesen %s</span> %s" + Bedienelemente.info("webadmin", "das Informationsmodell") + "</h3>
                 <div class="karte-leib">
                   <pre class="modell">%s</pre>
                 </div></div>"""
@@ -625,7 +625,7 @@ final class Bestandsseiten {
 
         if (k.passwortHinterlegt()) {
             s.append("""
-                    <div class="tafel"><h3>Hinterlegtes Kennwort entfernen</h3>
+                    <div class="tafel"><h3>Hinterlegtes Kennwort entfernen" + Bedienelemente.info("geraetezugang", "Zugangsdaten") + "</h3>
                     <p class="unterzeile">Danach kann der Roboter sich an diesem Konnektor nicht
                        mehr selbsttätig anmelden.</p>
                     <form method="post" action="/bestand/konnektor/%d/kennwort-entfernen"
@@ -646,7 +646,9 @@ final class Bestandsseiten {
      */
     private static String nurLesenTafel(Bestandsverwaltung.Konnektor k) {
         return """
-                <div class="tafel"><h3>Konnektor eines anderen Betreibers %s</h3>
+                <div class="tafel"><h3>Konnektor eines anderen Betreibers
+                  """ + Bedienelemente.info("konnektor-mitnutzung", "die Mitnutzung") + """
+                  </h3>
                 <p class="hilfe">Betrieben von <strong>%s</strong> — Sie nutzen ihn mit.</p>
                 <dl class="angaben">
                   <dt>Bezeichnung</dt><dd>%s</dd>
@@ -654,8 +656,7 @@ final class Bestandsseiten {
                   <dt>Modell</dt><dd>%s</dd>
                   <dt>Zustand</dt><dd>%s</dd>
                 </dl></div>"""
-                .formatted(Bedienelemente.info("konnektor-mitnutzung", "die Mitnutzung"),
-                        esc(k.organisation()), esc(k.bezeichnung()), esc(k.adresse()),
+                .formatted(esc(k.organisation()), esc(k.bezeichnung()), esc(k.adresse()),
                         esc(k.modell() == null || k.modell().isBlank() ? "— nicht angegeben" : k.modell()),
                         k.aktiv() ? "aktiv — der Roboter spricht ihn an"
                                   : "deaktiviert — der Roboter lässt ihn in Ruhe");
@@ -675,7 +676,7 @@ final class Bestandsseiten {
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\"><h3>Mitnutzende Einrichtungen");
         if (!nutzer.isEmpty()) s.append(" <span class=\"zaehler\">").append(nutzer.size()).append("</span>");
-        s.append("</h3>");
+        s.append("" + Bedienelemente.info("konnektor-mitnutzung", "die Mitnutzung") + "</h3>");
         s.append("""
                 <p class="hilfe">Betrieben von <strong>%s</strong>. %s</p>"""
                 .formatted(esc(k.organisation()),
@@ -744,12 +745,12 @@ final class Bestandsseiten {
     static String kartenTafel(List<Ermittlung.Karte> karten) {
         if (karten.isEmpty()) {
             return """
-                    <div class="tafel"><h3>Karten im Terminal</h3>
+                    <div class="tafel"><h3>Karten im Terminal" + Bedienelemente.info("karten-im-terminal", "Karten im Terminal") + "</h3>
                     <p class="leer">Noch keine Karten gemeldet. Der Standort-Agent meldet sie,
                        sobald er das Gerät abgefragt hat.</p></div>""";
         }
         StringBuilder s = new StringBuilder("""
-                <div class="tafel"><h3>Karten im Terminal <span class="zaehler">%d</span></h3>
+                <div class="tafel"><h3>Karten im Terminal <span class="zaehler">%d</span>" + Bedienelemente.info("karten-im-terminal", "Karten im Terminal") + "</h3>
                 <div class="rollbar"><table>
                 <caption class="nurLeser">Karten im Kartenterminal</caption>
                 <thead><tr>
@@ -938,7 +939,7 @@ final class Bestandsseiten {
      */
     static String pinTafel(Bestandsverwaltung.Terminal t, String smcbHandle,
                            String schluessel, boolean hinterlegt, boolean auftragOffen) {
-        StringBuilder s = new StringBuilder("<div class=\"tafel\" id=\"pin\"><h3>SMC-B-PIN</h3>");
+        StringBuilder s = new StringBuilder("<div class=\"tafel\" id=\"pin\"><h3>SMC-B-PIN" + Bedienelemente.info("pin-hinterlegen", "die PIN") + "</h3>");
 
         if (!t.hatSmcb() || smcbHandle == null || smcbHandle.isBlank()) {
             return s.append("""

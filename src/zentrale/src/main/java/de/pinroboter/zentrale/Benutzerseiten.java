@@ -37,7 +37,7 @@ final class Benutzerseiten {
         if (neuesGeheimnis != null) {
             s.append("""
                     <div class="tafel"><h3>Einladung für %s
-                      <span class="zaehler">wird nur jetzt angezeigt</span></h3>
+                      <span class="zaehler">wird nur jetzt angezeigt</span>" + Bedienelemente.info("einmalige-anzeige", "die einmalige Anzeige") + "</h3>
                     <div class="karte-leib">
                       <div class="hinweis"><strong>Dieser Zugangscode erscheint genau einmal.</strong>
                         Geben Sie ihn der eingeladenen Person auf einem Weg weiter, den Sie
@@ -61,7 +61,7 @@ final class Benutzerseiten {
                                       Ansicht a) {
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\"><h3>Konten <span class=\"zaehler\">")
-         .append(gesamt).append("</span></h3>");
+         .append(gesamt).append("</span>" + Bedienelemente.info("konten", "Konten und Rollen") + "</h3>");
 
         s.append("""
                 <form method="get" action="/benutzer" class="filterleiste" role="search"
@@ -167,7 +167,7 @@ final class Benutzerseiten {
     private static String einladungsTafel(List<Einladungen.Einladung> liste, boolean darfVerwalten) {
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>Offene Einladungen <span class=\"zaehler\">"
-                + liste.size() + "</span></h3><div class=\"rollbar\"><table><thead><tr>"
+                + liste.size() + "</span>" + Bedienelemente.info("einladungen", "Einladungen") + "</h3><div class=\"rollbar\"><table><thead><tr>"
                 + "<th scope=\"col\">Benutzername</th><th scope=\"col\">Name</th>"
                 + "<th scope=\"col\">Rolle</th><th scope=\"col\">Gültig bis</th>"
                 + "<th scope=\"col\">Eingeladen von</th><th scope=\"col\">Aktion</th>"

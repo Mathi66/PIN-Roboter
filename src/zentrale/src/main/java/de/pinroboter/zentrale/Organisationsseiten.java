@@ -82,13 +82,13 @@ final class Organisationsseiten {
                                     boolean darfVerwalten) {
         if (baum.isEmpty()) {
             return """
-                    <div class="tafel"><h3>Struktur</h3>
+                    <div class="tafel"><h3>Struktur" + Bedienelemente.info("organisationsebenen", "die Struktur") + "</h3>
                     <p class="leer">Ihnen ist keine Organisationseinheit zugeordnet.
                        Wenden Sie sich an den Betreiber dieser Instanz.</p></div>""";
         }
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\"><h3>Struktur <span class=\"zaehler\">")
-         .append(baum.size()).append("</span></h3><div class=\"rollbar\"><table>")
+         .append(baum.size()).append("</span>" + Bedienelemente.info("organisationsebenen", "die Struktur") + "</h3><div class=\"rollbar\"><table>")
          .append("<caption class=\"nurLeser\">Organisationseinheiten, eingerückt nach Ebene</caption>")
          .append("<thead><tr><th scope=\"col\">Einheit</th><th scope=\"col\">Art</th>")
          .append("<th scope=\"col\">Enthält</th>")
@@ -174,7 +174,7 @@ final class Organisationsseiten {
                                           Organisationsverwaltung.Beziehungen b) {
         if (b == null) return "";
         StringBuilder s = new StringBuilder("""
-                <div class="tafel"><h3>Was zu dieser Einheit gehört</h3>
+                <div class="tafel"><h3>Was zu dieser Einheit gehört" + Bedienelemente.info("einheit-inhalt", "diese Ansicht") + "</h3>
                 <div class="karte-leib karte-leib"><div class="beziehungen">""");
 
         s.append(kachel(b.terminals(), "Kartenterminals",
@@ -227,7 +227,7 @@ final class Organisationsseiten {
                                 : "<code>" + esc(e.telematikId()) + "</code>");
 
         if (!darfVerwalten) {
-            return "<div class=\"tafel\"><h3>Angaben zur Betriebsstätte</h3>" + werte + "</div>";
+            return "<div class=\"tafel\"><h3>Angaben zur Betriebsstätte" + Bedienelemente.info("betriebsstaette", "die Betriebsstätte") + "</h3>" + werte + "</div>";
         }
         return """
                 <div class="tafel"><h3>Angaben zur Betriebsstätte """
@@ -256,7 +256,7 @@ final class Organisationsseiten {
     private static String aenderungstafel(Organisationsverwaltung.Einheit e,
                                           List<Organisationsverwaltung.Einheit> baum) {
         StringBuilder s = new StringBuilder(
-                "<div class=\"tafel\"><h3>Einheit ändern</h3><div class=\"maske\">");
+                "<div class=\"tafel\"><h3>Einheit ändern" + Bedienelemente.info("einheit-aendern", "das Ändern") + "</h3><div class=\"maske\">");
 
         s.append("""
                 <form method="post" action="/organisation/%d/umbenennen" class="feldreihe">

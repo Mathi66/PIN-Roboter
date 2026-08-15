@@ -1690,7 +1690,7 @@ public class Zentrale {
         if (fehlen.isEmpty()) return "";
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>PINs neu zu hinterlegen "
-                + "<span class=\"zaehler\">" + fehlen.size() + "</span></h3>"
+                + "<span class=\"zaehler\">" + fehlen.size() + "</span>" + Bedienelemente.info("pins-neu-hinterlegen", "fehlende PINs") + "</h3>"
                 + "<div class=\"karte-leib\">"
                 + "<div class=\"hinweis warnend\"><div><strong>Der Standort-Agent hat einen "
                 + "neuen Schlüssel.</strong> Das geschieht, wenn er neu aufgesetzt oder sein "
@@ -1723,7 +1723,7 @@ public class Zentrale {
     private String systemtestTafeln() {
         var b = demodaten.bestand();
         StringBuilder s = new StringBuilder();
-        s.append("<div class=\"tafel\"><h3>Demodatensatz</h3><div class=\"karte-leib\">");
+        s.append("<div class=\"tafel\"><h3>Demodatensatz" + Bedienelemente.info("demodaten", "den Demodatensatz") + "</h3><div class=\"karte-leib\">");
         if (b.vorhanden()) {
             s.append("""
                     <p>Ein Demodatensatz ist eingerichtet:</p>
@@ -1767,7 +1767,7 @@ public class Zentrale {
         int lastVorhanden = last.vorhandene();
         s.append("""
                 <div class="tafel"><h3>Leistungsmessung
-                  <span class="zaehler">%s</span></h3>
+                  <span class="zaehler">%s</span>" + Bedienelemente.info("demodaten", "die Leistungsmessung") + "</h3>
                 <div class="karte-leib">
                   <p class="unterzeile">Legt einen Bestand in der Größe des Mengengerüsts an
                      (%d Kartenterminals), um die Zielwerte auf dieser Hardware
@@ -1808,7 +1808,7 @@ public class Zentrale {
         if (neueKonten != null && !neueKonten.isEmpty()) {
             s.append("""
                     <div class="tafel"><h3>Angelegte Konten
-                      <span class="zaehler">werden nur jetzt angezeigt</span></h3>
+                      <span class="zaehler">werden nur jetzt angezeigt</span>" + Bedienelemente.info("einmalige-anzeige", "die einmalige Anzeige") + "</h3>
                     <div class="hinweis"><strong>Kennwort für alle Demo-Konten: <code>%s</code></strong>
                     Die Einmalkennwort-Schlüssel erscheinen nur auf dieser Seite. Notieren Sie,
                     was Sie brauchen — danach lassen sie sich nur über einen neuen
@@ -1882,7 +1882,7 @@ public class Zentrale {
                 null) + """
                 %s
                 <div class="tafel">
-                  <h3>Neue Gruppe</h3>
+                  <h3>Neue Gruppe" + Bedienelemente.info("geraetegruppen", "Gerätegruppen") + "</h3>
                   <div class="filter">
                     <form method="post" action="/gruppen" class="reihe-enden">
                       <div class="feldgruppe"><label for="bez">Bezeichnung</label>
@@ -1900,7 +1900,7 @@ public class Zentrale {
                        auch gegenüber anderen Betriebsstätten. %s</p>
                   </div>
                 </div>
-                <div class="tafel"><h3>Gruppen <span class="zaehler">%d</span></h3>
+                <div class="tafel"><h3>Gruppen <span class="zaehler">%d</span>" + Bedienelemente.info("geraetegruppen", "Gerätegruppen") + "</h3>
                   %s
                   <div id="gruppen">%s</div>
                 </div>"""
@@ -2179,7 +2179,7 @@ public class Zentrale {
         else if (erfolg != null) s.append(Anmeldeseiten.meldung(erfolg, "gut"));
 
         s.append("""
-                <div class="tafel"><h3>Stammdaten</h3>
+                <div class="tafel"><h3>Stammdaten" + Bedienelemente.info("gruppe-einrichtung", "die Stammdaten") + "</h3>
                 <form method="post" action="/gruppen/%d/aendern" class="maske">
                   <div class="feldreihe">
                     <div class="feldgruppe"><label for="d-bez">Bezeichnung</label>
@@ -2201,7 +2201,7 @@ public class Zentrale {
                                 Bedienelemente.Art.HAUPT, null)));
 
         // Vorgabe: der Ort, an dem neu erkannte Geraete landen.
-        s.append("<div class=\"tafel\"><h3>Vorgabegruppe</h3>");
+        s.append("<div class=\"tafel\"><h3>Vorgabegruppe" + Bedienelemente.info("vorgabegruppe", "die Vorgabegruppe") + "</h3>");
         if (gr.istVorgabe()) {
             s.append("""
                     <p class="hilfe">Neu erkannte Geräte dieser Einrichtung landen hier. """
@@ -2224,7 +2224,9 @@ public class Zentrale {
         // Die Geraete der Gruppe — nicht nur ihre Zahl.
         var geraeteDerGruppe = gruppen.geraeteDerGruppe(gr.id());
         s.append("<div class=\"tafel\"><h3>Geräte <span class=\"zaehler\">")
-         .append(geraeteDerGruppe.size()).append("</span></h3>");
+         .append(geraeteDerGruppe.size()).append("</span> ")
+         .append(Bedienelemente.info("geraetegruppen", "die Geräte einer Gruppe"))
+         .append("</h3>");
         if (geraeteDerGruppe.isEmpty()) {
             s.append("<p class=\"leer\">Dieser Gruppe ist noch kein Gerät zugeordnet. "
                    + "Im <a href=\"/bestand\">Bestand</a> lassen sich Geräte auswählen und "
@@ -2248,7 +2250,7 @@ public class Zentrale {
 
         if (!gr.istVorgabe()) {
             s.append("""
-                    <div class="tafel"><h3>Gruppe löschen</h3>
+                    <div class="tafel"><h3>Gruppe löschen" + Bedienelemente.info("geraetegruppen", "das Löschen") + "</h3>
                     <p class="hilfe">Die %d zugeordneten Geräte ziehen in die Vorgabegruppe von
                        „%s" um — kein Gerät fällt durch eine Löschung aus der Überwachung.</p>
                     <form method="post" action="/gruppen/%d/loeschen"
@@ -2535,7 +2537,7 @@ public class Zentrale {
                         .thenComparing(g -> g.terminalId)).toList();
 
         s.append("<div class=\"tafel\"><h3>Was zu tun ist <span class=\"zaehler\">")
-         .append(auffaellig.isEmpty() ? "nichts offen" : auffaellig.size() + " Punkte").append("</span></h3>");
+         .append(auffaellig.isEmpty() ? "nichts offen" : auffaellig.size() + " Punkte").append("</span>" + Bedienelemente.info("was-zu-tun-ist", "die Lage-Übersicht") + "</h3>");
         if (auffaellig.isEmpty()) {
             s.append("<p class=\"leer\">Alle überwachten Karten sind freigeschaltet. Es ist nichts zu tun.</p>");
         } else {
@@ -2599,7 +2601,7 @@ public class Zentrale {
                 "<div class=\"tafel\"><h3>Alarme <span class=\"zaehler\">"
                 + offen.size() + " offen</span>"
                 + (darfSchliessen ? alleSchliessenKnopf(offen.size()) : "")
-                + "</h3><div class=\"rollbar\"><table><tbody>");
+                + "" + Bedienelemente.info("alarme-bearbeiten", "Alarme") + "</h3><div class=\"rollbar\"><table><tbody>");
         for (var a : offen) {
             s.append("""
                     <tr class="%s"><td style="width:9rem">
@@ -2675,7 +2677,7 @@ public class Zentrale {
 
         StringBuilder s = new StringBuilder(
                 "<div class=\"tafel\"><h3>Firmware-Stände <span class=\"zaehler\">"
-                + jeModell.size() + " Modell(e)</span></h3><div class=\"rollbar\"><table>"
+                + jeModell.size() + " Modell(e)</span>" + Bedienelemente.info("firmwarestand", "Firmware-Stände") + "</h3><div class=\"rollbar\"><table>"
                 + "<caption class=\"nurLeser\">Verteilung der Firmware-Stände je Modell</caption>"
                 + "<thead><tr><th scope=\"col\">Modell</th><th scope=\"col\">Stand</th>"
                 + "<th scope=\"col\">Geräte</th><th scope=\"col\">Bewertung</th>"
@@ -2767,7 +2769,9 @@ public class Zentrale {
         // erzeugt nur Unruhe und Last.
         return seitenkopf("Kartenterminals",
                 "Zustand aller überwachten Geräte. Aktualisiert sich selbsttätig.", null) + """
-                <div class="tafel"><h3>Geräte <span class="zaehler"><span class="puls"></span> live</span></h3>
+                <div class="tafel"><h3>Geräte <span class="zaehler"><span class="puls"></span> live</span>
+                  """ + Bedienelemente.info("geraete-live", "die Live-Ansicht") + """
+                  </h3>
                 %s
                 <div id="geraete" hx-get="/teil/geraete" hx-trigger="load, every 5s"
                      hx-include=".geraetefilter" hx-swap="innerHTML">%s</div></div>
@@ -2902,8 +2906,8 @@ public class Zentrale {
         for (Ereignisart a : Ereignisart.values())
             arten.append("<option value=\"%s\">%s</option>".formatted(a.name(), esc(a.anzeige())));
         return seitenkopf("Protokoll",
-                "Jede Handlung des Roboters ist hier nachvollziehbar. Protokolliert werden "
-                + "Zustandsänderungen und Handlungen — keine Abfragen.", null) + """
+                "Jede Handlung des Roboters ist hier nachvollziehbar.",
+                null, "protokoll-filtern") + """
                 <div class="tafel">
                   <div class="filter">
                     <label class="nurLeser" for="f-art">Ereignisart</label>
@@ -3084,12 +3088,26 @@ public class Zentrale {
      * ansagen. Ein Rahmen erscheint dabei nicht — sie ist kein Bedienelement.
      */
     static String seitenkopf(String titel, String unterzeile, String rechts) {
+        return seitenkopf(titel, unterzeile, rechts, null);
+    }
+
+    /**
+     * Seitenkopf mit Verweis ins Handbuch (FA-DOK-020).
+     *
+     * <p>Für Seiten, die <b>keine Tafelüberschrift</b> haben, an der ein
+     * Info-Knopf hängen könnte — das Protokoll etwa besteht aus Filterleiste
+     * und Tabelle. Ohne diesen Weg bliebe eine Hauptfunktion ohne Erklärung.
+     *
+     * @param hilfe Kennung eines Abschnitts im Handbuch, oder {@code null}
+     */
+    static String seitenkopf(String titel, String unterzeile, String rechts, String hilfe) {
         return """
                 <div class="seitenkopf">
                   <div><h2 tabindex="-1">%s</h2>%s</div>
                   %s
                 </div>"""
-                .formatted(esc(titel),
+                .formatted(esc(titel) + (hilfe == null ? ""
+                                : " " + Bedienelemente.info(hilfe, titel)),
                         unterzeile == null ? "" : "<p class=\"unterzeile\">" + unterzeile + "</p>",
                         rechts == null || rechts.isBlank() ? ""
                                 : "<div class=\"kopf-rechts\">" + rechts + "</div>");

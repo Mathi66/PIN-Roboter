@@ -45,7 +45,7 @@ final class Verlaufsseiten {
                 "Verlauf von <code>" + esc(terminalId) + "</code>", null));
 
         s.append("<div class=\"tafel\"><h3>Zeitstrahl <span class=\"zaehler\">")
-         .append(seite.gesamt()).append("</span></h3>");
+         .append(seite.gesamt()).append("</span>" + Bedienelemente.info("zeitstrahl", "den Zeitstrahl") + "</h3>");
         s.append(filterleiste(terminalId, zeitraum, sicht, feinauswahl));
 
         if (seite.eintraege().isEmpty()) {
@@ -300,7 +300,7 @@ final class Verlaufsseiten {
         s.append("<div class=\"tafel\"")
          .append(laeuft ? " hx-get=\"/teil/vorgang/" + esc(vorgangsnummer)
                         + "\" hx-trigger=\"every 5s\" hx-swap=\"outerHTML\"" : "")
-         .append("><h3>Verlauf</h3><div class=\"baum\">");
+         .append("><h3>Verlauf" + Bedienelemente.info("zeitstrahl", "die Vorgangsansicht") + "</h3><div class=\"baum\">");
         for (var e : seite.eintraege()) s.append(eintrag(e));
         return s.append("</div></div>").toString();
     }

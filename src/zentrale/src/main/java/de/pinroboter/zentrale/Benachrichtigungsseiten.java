@@ -41,7 +41,7 @@ final class Benachrichtigungsseiten {
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Mailserver");
         s.append(e == null ? " <span class=\"marke warnung\">nicht eingerichtet</span>"
                            : " <span class=\"marke ok\"><span class=\"sym\">✓</span>eingerichtet</span>");
-        s.append("</h3>");
+        s.append("" + Bedienelemente.info("mailserver", "den Mailserver") + "</h3>");
 
         if (!darf) {
             return s.append("""
@@ -119,7 +119,7 @@ final class Benachrichtigungsseiten {
                                      List<Bestandsseiten.Organisationsauswahl> organisationen,
                                      boolean darf) {
         StringBuilder s = new StringBuilder("<div class=\"tafel\"><h3>Wer wird benachrichtigt");
-        s.append(" <span class=\"zaehler\">").append(regeln.size()).append("</span></h3>");
+        s.append(" <span class=\"zaehler\">").append(regeln.size()).append("</span>" + Bedienelemente.info("benachrichtigungsregeln", "die Regeln") + "</h3>");
 
         if (regeln.isEmpty()) {
             s.append("""

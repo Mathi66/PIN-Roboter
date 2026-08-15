@@ -63,6 +63,8 @@ final class HandbuchInhalt {
                 "Konnektoren, Kartenterminals, Firmware", O, "🗄", BESTAND));
         ziel.add(new Handbuch.Kapitel("agenten", "Standort-Agenten betreiben",
                 "Einrichten, überwachen, aktualisieren", O, "📡", AGENTEN));
+        ziel.add(new Handbuch.Kapitel("konten", "Konten und Rollen",
+                "Wer darf was — und wie jemand dazukommt", O, "👥", KONTEN));
         ziel.add(new Handbuch.Kapitel("sicherung", "Datensicherung",
                 "Sichern, prüfen, wiederherstellen", O, "💾", SICHERUNG));
         ziel.add(new Handbuch.Kapitel("stoerungen", "Störungen beheben",
@@ -467,6 +469,39 @@ final class HandbuchInhalt {
             </div>
             </section>
 
+            <h2>Eine Einheit ändern oder umhängen</h2>
+            <section data-hilfe="einheit-aendern">
+            <p>Bezeichnung, Art und die übergeordnete Einheit lassen sich ändern.
+            Zwei Regeln begrenzen das (ADR-0012):</p>
+
+            <ul class="hb-liste">
+              <li>Eine Einheit lässt sich <b>nicht unter sich selbst</b> hängen — auch
+                  nicht über Umwege. Sonst entstünde ein Kreis, in dem keine Abfrage
+                  mehr endet.</li>
+              <li>Ein <b>Fachbereich</b> steht nur unterhalb einer Betriebsstätte.</li>
+            </ul>
+
+            <div class="hb-merke">
+              <b>Was am Namen hängt, hängt am Text.</b>
+              <p>Standort-Agenten merken sich ihre Einrichtung als Namen, nicht als
+              Verweis. Wird eine Einrichtung umbenannt, meldet der Agent ins Leere —
+              die Agentenliste kennzeichnet das als „Einrichtung unbekannt“, und die
+              Zuordnung lässt sich dort in einem Zug korrigieren.</p>
+            </div>
+            </section>
+
+            <h2>Was zu einer Einheit gehört</h2>
+            <section data-hilfe="einheit-inhalt">
+            <p>Die Detailseite einer Einheit zeigt, was an ihr hängt: untergeordnete
+            Einheiten, Konnektoren, Kartenterminals, Benutzerkonten.</p>
+
+            <p>Das ist die Antwort auf die Frage <b>„was passiert, wenn ich das
+            lösche?“</b> — und der Grund, warum eine Einheit mit Inhalt nicht
+            gelöscht werden kann, ohne dass klar ist, was mit dem Inhalt geschieht.</p>
+
+            <p>Bei einer Betriebsstätte stehen hier zusätzlich BSNR und Telematik-ID.</p>
+            </section>
+
             <h2>Rollen</h2>
 
             <table class="hb-tabelle">
@@ -645,6 +680,35 @@ final class HandbuchInhalt {
             <p>Alle vier Fälle stehen als Alarm mit Handlungsanweisung darunter. Sie
             müssen nicht raten.</p>
 
+            <h2>Was zu tun ist</h2>
+            <section data-hilfe="was-zu-tun-ist">
+            <p>Diese Tafel führt zusammen, was <b>Aufmerksamkeit braucht</b> — Geräte
+            mit Handlungsbedarf, gesperrte Karten, angehaltene Automatik. Steht dort
+            nichts, ist auch nichts zu tun.</p>
+
+            <div class="hb-merke">
+              <b>Sie ist nach Dringlichkeit sortiert, nicht nach Gerätename.</b>
+              <p>Oben steht, was den TI-Zugang bedroht; darunter, was auffällig ist,
+              aber laufen kann. Wer die Liste von oben abarbeitet, arbeitet richtig.</p>
+            </div>
+
+            <p>Jeder Eintrag nennt das Gerät, den Zustand und <b>was zu tun ist</b>.
+            Ein Klick führt zur Detailseite des Geräts.</p>
+            </section>
+
+            <h2>Geräte live</h2>
+            <section data-hilfe="geraete-live">
+            <p>Die Tafel zeigt den <b>aktuellen</b> Zustand aller Kartenterminals und
+            aktualisiert sich von selbst. Sie ist für den Blick zwischendurch gedacht —
+            etwa während man an einem Gerät arbeitet und sehen will, ob die Änderung
+            angekommen ist.</p>
+
+            <p>Was hier steht, kommt aus den Meldungen der Standort-Agenten. Ein Gerät,
+            dessen Agent verstummt ist, behält seinen letzten bekannten Zustand — die
+            Lage-Übersicht weist dann oben darauf hin, dass ein Standort nicht mehr
+            meldet.</p>
+            </section>
+
             <h2>Die Seitenleiste</h2>
             <p>Oben links steht, wie viele Agenten sich gerade melden — etwa „3 von 3
             verbunden“. Steht dort eine kleinere Zahl, ist ein Standort abgehängt und
@@ -661,6 +725,35 @@ final class HandbuchInhalt {
             weggeräumt. Dann bedeutet ein offener Alarm nichts mehr. Hier gilt:
             <strong>Ein offener Alarm heißt, dass der Zustand jetzt gerade
             vorliegt.</strong></p>
+
+            <h2>Die Alarmtafel</h2>
+            <section data-hilfe="alarme-bearbeiten">
+            <p>Sie listet alle <b>offenen</b> Alarme des Geltungsbereichs, den
+            schwersten zuerst. Jeder Eintrag nennt Gerät, Zustand, Dauer — und was zu
+            tun ist.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>Quittieren</b></td>
+                  <td>„Ich habe es gesehen und kümmere mich.“ Der Alarm bleibt offen,
+                      ist aber als in Arbeit erkennbar — mit Name und Zeitpunkt.</td></tr>
+              <tr><td><b>Schließen</b></td>
+                  <td>„Erledigt.“ Besteht die Ursache weiter, entsteht der Alarm im
+                      nächsten Takt neu.</td></tr>
+              <tr><td><b>Alle schließen</b></td>
+                  <td>Sammelaktion mit Rückfrage und Anzahl. Für die Lage nach einer
+                      behobenen Störung.</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>Ein Alarm, dessen Ursache verschwindet, schließt sich von selbst.</b>
+              <p>Deshalb bedeutet ein offener Alarm immer: Der Zustand liegt
+              <em>jetzt</em> vor. Alarme, die man von Hand wegräumen muss, werden
+              irgendwann pauschal weggeräumt — dann sagt ein offener Alarm nichts
+              mehr.</p>
+            </div>
+            </section>
 
             <h2>Die Arten</h2>
             <table class="hb-tabelle">
@@ -712,6 +805,44 @@ final class HandbuchInhalt {
             wiederkehrender Alarm desselben Zustands erzeugt keine zweite Mail.</p>
             <p>In keiner Mail steht eine PIN, ein Zugangsdatum oder ein
             Personenbezug.</p>
+            </section>
+
+            <h2>Den Mailserver einrichten</h2>
+            <section data-hilfe="mailserver">
+            <p>Damit Benachrichtigungen überhaupt hinausgehen, braucht der PIN-Roboter
+            einen Mailserver: Adresse, Port, Absender und — falls verlangt —
+            Zugangsdaten.</p>
+
+            <p>Das <b>Kennwort wird verschlüsselt gespeichert</b> (ADR-0008) und nie
+            wieder angezeigt. Ein leeres Feld beim Speichern lässt das hinterlegte
+            unverändert.</p>
+
+            <div class="hb-merke">
+              <b>Prüfen Sie mit einem Testversand.</b>
+              <p>Eine falsche Einstellung fällt sonst erst auf, wenn die erste
+              Störungsmeldung nicht ankommt — also genau dann, wenn man sie braucht.
+              Der Testversand sagt im Klartext, woran es lag.</p>
+            </div>
+            </section>
+
+            <h2>Wer wird benachrichtigt</h2>
+            <section data-hilfe="benachrichtigungsregeln">
+            <p>Je Einrichtung eine Regel: <b>welche Empfänger</b> ab <b>welchem
+            Schweregrad</b>, mit <b>welchem Sammelfenster</b>.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td>nur Kritisches</td><td>gesperrte Karte, Konnektor weg, Agent
+                  stumm — Dinge, die den TI-Zugang unterbrechen</td></tr>
+              <tr><td>Warnungen und Kritisches</td><td>zusätzlich das, was Aufmerksamkeit
+                  braucht, aber läuft. Der übliche Fall.</td></tr>
+              <tr><td>alles</td><td>zusätzlich Hinweise. Sinnvoll in der Einführung,
+                  auf Dauer meist zu viel.</td></tr>
+              </tbody>
+            </table>
+
+            <p>Eine Regel lässt sich <b>abschalten, ohne sie zu löschen</b> — etwa für
+            die Dauer einer geplanten Wartung.</p>
             </section>
 
             <h2>Verschlüsselter Mailversand</h2>
@@ -793,10 +924,23 @@ final class HandbuchInhalt {
             </section>
 
             <h2>Nach einer Wiederherstellung</h2>
-            <p>PINs sind für den Schlüssel eines bestimmten Agenten verschlüsselt. Wird
-            ein Agent neu eingerichtet, sind die alten Chiffrate wertlos. Die Zentrale
-            führt dann eine Liste <b>„PINs neu zu hinterlegen“</b> — sie erscheint nur,
-            wenn wirklich etwas fehlt.</p>
+            <section data-hilfe="pins-neu-hinterlegen">
+            <p>PINs sind für den Schlüssel eines <b>bestimmten</b> Agenten
+            verschlüsselt. Wird ein Agent neu eingerichtet — nach einem Rechnertausch,
+            einer Wiederherstellung oder einem verlorenen Datenverzeichnis —, sind die
+            alten Chiffrate wertlos. Niemand kann sie mehr lesen, auch wir nicht.</p>
+
+            <p>Die Zentrale führt dann unter <b>Instanz</b> eine Liste der betroffenen
+            Karten. Sie <b>erscheint nur, wenn wirklich etwas fehlt</b>; eine dauerhaft
+            leere Tafel „alles in Ordnung“ erzieht dazu, sie zu übersehen.</p>
+
+            <div class="hb-merke">
+              <b>Bis die PIN neu hinterlegt ist, wird dort nicht freigeschaltet.</b>
+              <p>Das ist der Preis dafür, dass die Zentrale keine lesbare PIN hält. Die
+              betroffenen Karten bleiben in ihrem Zustand — bereits freigeschaltete
+              bleiben frei, bis das Terminal neu startet.</p>
+            </div>
+            </section>
 
             """;
 
@@ -804,6 +948,25 @@ final class HandbuchInhalt {
             <p class="anriss">Gerätegruppen sind das Werkzeug, mit dem Last und
             Zuständigkeit steuerbar bleiben. Bei fünf Geräten braucht man sie nicht.
             Bei fünftausend entscheiden sie über die Bedienbarkeit.</p>
+
+            <h2>Gruppen anlegen und verwalten</h2>
+            <section data-hilfe="geraetegruppen">
+            <p>Eine Gruppe braucht drei Angaben: <b>Bezeichnung</b>,
+            <b>Einrichtung</b> und <b>Prüfintervall</b>. Die Einrichtung lässt sich
+            danach nicht mehr ändern.</p>
+
+            <p>Die Übersicht zeigt je Gruppe die Zahl ihrer Geräte, das Intervall und
+            ob sie die Vorgabegruppe ihrer Einrichtung ist. Die Suche reagiert beim
+            Tippen.</p>
+
+            <p><b>Löschen</b> geht nur, wenn die Gruppe leer ist und nicht die
+            Vorgabegruppe. Beides ist keine Schikane: Eine gelöschte Gruppe mit Geräten
+            würde diese aus jeder Überwachung nehmen, und ohne Vorgabegruppe hätte ein
+            neu erkanntes Gerät keinen Platz.</p>
+
+            <p>Auf der Detailseite steht auch, <b>welche Geräte</b> in der Gruppe
+            liegen — zugeordnet werden sie im Bestand, nicht hier.</p>
+            </section>
 
             <h2>Das Prüfintervall</h2>
             <p>Jede Gruppe hat ein eigenes Intervall. Warum das zählt:</p>
@@ -905,6 +1068,52 @@ final class HandbuchInhalt {
                   Beteiligten.</li>
               <li><b>Protokoll</b> — die filterbare Gesamtliste mit Export.</li>
             </ul>
+
+            <h2>Filtern und ausgeben</h2>
+            <section data-hilfe="protokoll-filtern">
+            <p>Das Fachprotokoll lässt sich nach <b>Ereignisart</b>, <b>Ergebnis</b>,
+            <b>Zeitraum</b> und <b>Gerät</b> einschränken. Die Filter wirken
+            zusammen und lassen sich frei kombinieren.</p>
+
+            <p>Was übrig bleibt, geht als <b>Excel-Datei</b> heraus — mit denselben
+            Filtern. Das ist der Weg für eine Rückfrage vom Hersteller, für eine
+            Prüfung oder für die eigene Nachschau.</p>
+
+            <div class="hb-merke">
+              <b>Das Protokoll wächst weiter, während Sie es ansehen.</b>
+              <p>Neue Einträge erscheinen oben; wer zurückblättert, sieht Einträge
+              langsam nach hinten wandern. Für einen belastbaren Auszug also erst den
+              Zeitraum eingrenzen, dann exportieren.</p>
+            </div>
+
+            <p>Im Export steht dasselbe wie auf dem Schirm — <b>keine PINs, keine
+            Zugangsdaten</b>. Das ist zentral erzwungen und nicht abschaltbar.</p>
+            </section>
+
+            <h2>Zeitstrahl und Vorgang</h2>
+            <section data-hilfe="zeitstrahl">
+            <p>Zwei Sichten auf dieselben Einträge, für zwei verschiedene Fragen.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>Geräte-Zeitstrahl</b></td>
+                  <td>„Was ist an <em>diesem</em> Gerät passiert?“ Alle Einträge eines
+                      Kartenterminals in zeitlicher Folge — für die Frage, seit wann
+                      etwas klemmt.</td></tr>
+              <tr><td><b>Vorgangsansicht</b></td>
+                  <td>„Wie lief <em>dieser eine</em> Vorgang ab?“ Eine PIN-Übergabe
+                      berührt Zentrale, Agent, Konnektor und Terminal; die Ansicht
+                      führt die Einträge aller Beteiligten zusammen.</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>Der Zeitstrahl wächst weiter, während Sie ihn ansehen.</b>
+              <p>Neue Einträge erscheinen oben. Wer zurückblättert, sieht Einträge
+              deshalb langsam nach hinten wandern — unvermeidbar bei einer Live-Ansicht,
+              aber gut zu wissen, bevor man sich wundert.</p>
+            </div>
+            </section>
 
             <h2>Fehlermeldungen</h2>
             <p>Technische Codes wie <code>4078</code> werden übersetzt. Der Klartext
@@ -1174,6 +1383,80 @@ final class HandbuchInhalt {
             nachtragen. Ab dann läuft es mit.</p>
             </section>
 
+            <h2>Die Listen</h2>
+            <section data-hilfe="bestandslisten">
+            <p>Zwei Listen, beide serverseitig gefiltert und geblättert — bei 5.000
+            Geräten geht es nicht anders.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>Konnektoren</b></td>
+                  <td>Konnektoren und Hochleistungskonnektoren, mit Betreiber und
+                      Erreichbarkeit. Ein Klick öffnet die Detailseite mit
+                      Aufrufkontext und mitnutzenden Einrichtungen.</td></tr>
+              <tr><td><b>Kartenterminals</b></td>
+                  <td>Alle Geräte mit Zustand, Gruppe und Einrichtung. Die Suche
+                      reagiert beim Tippen; sortiert wird nach Praxis, damit
+                      gleichnamige Geräte auseinanderzuhalten sind.</td></tr>
+              </tbody>
+            </table>
+
+            <p>Was hier steht, hat der Standort-Agent gemeldet oder jemand von Hand
+            erfasst. <b>Geändert wird hier nichts an den Geräten selbst</b> — der
+            PIN-Roboter führt Buch, er konfiguriert keine Hardware.</p>
+            </section>
+
+            <h2>Der Abgleich mit dem Bestand</h2>
+            <section data-hilfe="bestandsabgleich">
+            <p>Der Standort-Agent meldet, was er am Konnektor vorfindet. Weicht das
+            vom erfassten Bestand ab, erscheint der Unterschied hier: neu gefundene
+            Geräte, verschwundene, geänderte Angaben.</p>
+
+            <div class="hb-merke">
+              <b>Hier wird nichts selbsttätig geändert.</b>
+              <p>Der Roboter zeigt den Unterschied und wartet. Ein Gerät, das über
+              Nacht aus der Liste verschwindet, weil es einmal nicht geantwortet hat,
+              wäre schlimmer als eine Liste, die jemand bestätigen muss.</p>
+            </div>
+
+            <p>Jeder Fund lässt sich einzeln übernehmen. Was übernommen wird, landet in
+            der Vorgabegruppe seiner Einrichtung und wird ab dann überwacht.</p>
+            </section>
+
+            <h2>Zugangsdaten eines Geräts</h2>
+            <section data-hilfe="geraetezugang">
+            <p>Manche Kartenterminals verlangen für ihre Verwaltungsschnittstelle ein
+            Kennwort. Es wird verschlüsselt gespeichert (ADR-0008) und
+            <b>nie wieder angezeigt</b> — auch nicht gekürzt.</p>
+
+            <p>Zum Entfernen gibt es einen eigenen Knopf. Das ist bewusst getrennt vom
+            Ändern: Ein leeres Feld beim Speichern lässt das hinterlegte Kennwort
+            unverändert, sonst würde jedes versehentliche Speichern es löschen.</p>
+
+            <p>Wie die PIN erscheint es in keinem Protokoll, keiner Sicherung und
+            keiner Fehlermeldung.</p>
+            </section>
+
+            <h2>Karten im Terminal</h2>
+            <section data-hilfe="karten-im-terminal">
+            <p>Je Kartenterminal listet der PIN-Roboter, welche Karten der Konnektor
+            dort sieht — <b>alle</b>, nicht nur die SMC-B.</p>
+
+            <table class="hb-tabelle">
+              <tbody>
+              <tr><td><b>SMC-B</b></td><td>Der Praxisausweis. Nur diese Karte wird
+                  automatisch freigeschaltet.</td></tr>
+              <tr><td>eGK, HBA</td><td>Werden angezeigt, damit der Bestand vollständig
+                  ist — angefasst werden sie nie.</td></tr>
+              </tbody>
+            </table>
+
+            <p>Zu jeder Karte stehen Kartentyp, Kennung (ICCSN) und die Gültigkeit des
+            Zertifikats. Ein ablaufendes Zertifikat ist der zweithäufigste Grund, warum
+            ein Standort plötzlich keinen TI-Zugang mehr hat — der häufigste ist die
+            nicht freigeschaltete Karte.</p>
+            </section>
+
             <h2>Firmware-Stände im Blick</h2>
             <section data-hilfe="firmwarestand">
             <p>Der PIN-Roboter zeigt je Gerät den gemeldeten Firmware-Stand und
@@ -1408,17 +1691,105 @@ final class HandbuchInhalt {
             korrigieren, ohne den Agenten neu einzurichten.</p>
             """;
 
+    private static final String KONTEN = """
+            <p class="anriss">Anmeldung nur mit Benutzername, Passwort und einem
+            Einmalkennwort aus der Authenticator-App. Das ist nicht abschaltbar — hier
+            wird eine PIN verwaltet, die einen ganzen Standort öffnet.</p>
+
+            <h2>Die Kontenliste</h2>
+            <section data-hilfe="konten">
+            <p>Sie zeigt alle Konten des Geltungsbereichs mit Rolle, Einrichtung und
+            letzter Anmeldung. Bei tausend Benutzern hilft die Suche; sortiert und
+            geblättert wird serverseitig.</p>
+
+            <table class="hb-tabelle">
+              <thead><tr><th>Rolle</th><th>darf zusätzlich</th></tr></thead>
+              <tbody>
+              <tr><td>Betrachter</td><td>Zustand sehen, Protokoll lesen</td></tr>
+              <tr><td>Anwender</td><td>Alarme quittieren und schließen</td></tr>
+              <tr><td>Bestandspflege</td><td>Geräte, Gruppen und PINs pflegen</td></tr>
+              <tr><td>Administrator</td><td>Konten, Organisation, Instanz verwalten</td></tr>
+              </tbody>
+            </table>
+
+            <div class="hb-merke">
+              <b>Jede Rolle gilt innerhalb eines Geltungsbereichs.</b>
+              <p>Ein Administrator einer Praxis ist kein Administrator der
+              Nachbarpraxis. Wer eine Einrichtung sieht, sieht ihre Geräte, ihre Alarme
+              und ihr Protokoll — sonst nichts.</p>
+            </div>
+
+            <p>Ein Konto lässt sich <b>sperren statt löschen</b>. Das ist der Regelfall
+            beim Ausscheiden: Die Protokolleinträge behalten ihren Bezug, aber niemand
+            kann sich mehr anmelden.</p>
+            </section>
+
+            <h2>Jemanden einladen</h2>
+            <section data-hilfe="einladungen">
+            <p>Ein neues Konto entsteht über eine <b>Einladung</b>. Sie enthält einen
+            einmaligen Zugangslink; der Eingeladene setzt sein Passwort selbst und
+            richtet dabei den zweiten Faktor ein.</p>
+
+            <div class="hb-merke">
+              <b>Niemand vergibt ein Passwort für jemand anderen.</b>
+              <p>Ein Passwort, das zwei Menschen kennen, ist keines. Über die Einladung
+              kennt es nur der, dem das Konto gehört — und im Protokoll steht trotzdem,
+              wer eingeladen hat.</p>
+            </div>
+
+            <p>Die Einladung gilt <b>begrenzt</b> und lässt sich zurückziehen, solange
+            sie offen ist. Unter „Offene Einladungen“ steht, wer noch nicht
+            angenommen hat.</p>
+            </section>
+
+            <h2>Was nur einmal zu sehen ist</h2>
+            <section data-hilfe="einmalige-anzeige">
+            <p>Manche Angaben zeigt der PIN-Roboter <b>genau einmal</b>: den Zugangslink
+            einer Einladung, das TOTP-Geheimnis bei der Ersteinrichtung, die Kennwörter
+            frisch angelegter Demo-Konten.</p>
+
+            <p>Wer die Seite verlässt, bekommt sie nicht wieder — sie sind nirgends
+            gespeichert, sondern nur berechnet worden. Schreiben Sie sie auf oder geben
+            Sie sie weiter, <b>bevor</b> Sie weiterklicken.</p>
+
+            <p>Das ist kein Versehen, sondern derselbe Grundsatz wie bei der PIN: Was
+            man nicht speichert, kann auch nicht gestohlen werden. Verloren heißt hier
+            nicht gesperrt — eine neue Einladung ist in zwei Klicks erzeugt.</p>
+            </section>
+
+            <h2>Wenn der zweite Faktor verloren geht</h2>
+            <section data-hilfe="totp-verlust">
+            <p>Ein neues Handy, ein gelöschter Authenticator — das kommt vor. Ein
+            anderer Administrator setzt den zweiten Faktor zurück; beim nächsten
+            Anmelden wird er neu eingerichtet.</p>
+
+            <p>Gibt es <b>keinen</b> anderen Administrator mehr, hilft das in der
+            Konfiguration hinterlegte Startkonto. Es übersteht auch einen vollständigen
+            Datenverlust und ist der einzige Weg zurück, wenn sich alle ausgesperrt
+            haben.</p>
+
+            <p class="hb-fussnote">Häufigste Ursache fürs Aussperren ist nicht der
+            verlorene Faktor, sondern derselbe Code zweimal: Ein bereits benutztes
+            Einmalkennwort wird abgelehnt und zählt als Fehlversuch. Fünf davon sperren
+            das Konto. Warten Sie auf den nächsten Code.</p>
+            </section>
+            """;
+
     private static final String SICHERUNG = """
             <p class="anriss">Eine ausgebliebene Sicherung merkt man erst, wenn man sie
             braucht. Deshalb ist ein Fehlschlag hier ein Alarm und keine Logzeile.</p>
 
             <h2>Automatisch</h2>
+            <section data-hilfe="sicherung-erstellen">
             <p>Drei Pläne laufen parallel: täglich (7 Stände), wöchentlich (5),
             monatlich (12). Die Fälligkeit wird stündlich geprüft, die Rotation
             entfernt den jeweils ältesten Stand. Die Sicherungen liegen in einem
             eigenen Speicherbereich, getrennt von den Betriebsdaten.</p>
 
+            </section>
+
             <h2>Herunterladen</h2>
+            <section data-hilfe="sicherung-wiederherstellen">
             <p>Eine Sicherung zum Mitnehmen wird mit einer Passphrase verschlüsselt,
             die Sie beim Herunterladen vergeben. <strong>Diese Passphrase wird nirgends
             gespeichert.</strong> Ohne sie ist die Datei unbrauchbar — auch für uns.</p>
@@ -1439,6 +1810,8 @@ final class HandbuchInhalt {
             welche fehlen — PINs sind für den Schlüssel eines bestimmten Agenten
             verschlüsselt und lassen sich nicht aus einer Sicherung
             wiederbeleben, wenn dieser Agent neu eingerichtet wurde.</p>
+
+            </section>
 
             <h2>Was Sie einmal getan haben sollten</h2>
             <p>Eine Wiederherstellung ausprobieren — auf einer Testinstanz, bevor Sie
@@ -1504,6 +1877,23 @@ final class HandbuchInhalt {
             <p class="hb-fussnote">Häufigste Ursache: derselbe TOTP-Code zweimal
             gesendet. Ein bereits benutzter Code wird abgelehnt und zählt als
             Fehlversuch. Warten Sie auf den nächsten.</p>
+
+            <h2>Der Systemtest</h2>
+            <section data-hilfe="systemtest">
+            <p>Unter <b>Einstellungen</b> prüft der Systemtest auf Knopfdruck, ob die
+            Teile zusammenspielen: Datenbank erreichbar, Speicherplatz vorhanden,
+            Agenten melden sich, Mailversand funktioniert.</p>
+
+            <p>Er ist für zwei Momente gedacht — <b>nach der Einrichtung</b>, um zu
+            sehen, dass alles steht, und <b>bei einer Störung</b>, um schnell
+            einzugrenzen, wo sie liegt.</p>
+
+            <div class="hb-merke">
+              <b>Er ändert nichts.</b>
+              <p>Der Test liest und misst, er repariert nicht. Was er findet, steht in
+              Klartext da — samt dem, was zu tun ist.</p>
+            </div>
+            </section>
 
             <h2>Wenn nichts hilft</h2>
             <p>Exportieren Sie das Protokoll für den betroffenen Zeitraum

@@ -1,6 +1,7 @@
 # 38 — Hilfe kommt aus dem Handbuch
 
-**Stand:** umgesetzt (14.08.2026), Oberfläche vollständig umgestellt (15.08.2026)
+**Stand:** umgesetzt (14.08.2026), Oberfläche vollständig umgestellt und
+Handbuchabdeckung gemessen (15.08.2026)
 · **Anforderung:** `FA-DOK-020` · **Vorgabe:** PO, 14.08.2026
 · baut auf [Umsetzung 37](37-handbuch.md)
 
@@ -169,6 +170,62 @@ sind es elf.
 Das Handbuch ist dadurch nicht nur Nachschlagewerk, sondern die **einzige**
 Stelle, an der das Produkt sich erklärt.
 
+## Der Info-Knopf als Vollständigkeitsprüfer
+
+> „Jetzt bitte noch an allen Funktionen, Konfigurationen und Statusfenstern ein
+> „i" mit Handbucheintrag. Damit kannst du prüfen, ob auch alles im Projekt eine
+> Entsprechung und Beschreibung im Handbuch hat." — PO, 15.08.2026
+
+Das dreht die Funktion um. Der Knopf ist nicht mehr nur eine Bequemlichkeit für
+den Anwender, sondern ein **Messwerkzeug**: Wo kein Abschnitt existiert, lässt
+sich kein Knopf setzen — und die Lücke im Handbuch fällt sofort auf, statt
+jahrelang niemandem zu begegnen.
+
+`pruefungen/handbuchabdeckung.py` misst das. Es liest die Tafelüberschriften
+aus dem Quelltext, sucht je Tafel ein `Bedienelemente.info(…)` und prüft jede
+gefundene Kennung gegen das Handbuch:
+
+```
+pruefungen/handbuchabdeckung.py            Bericht
+pruefungen/handbuchabdeckung.py --offen    nur die Lücken, für die Arbeit
+```
+
+**Warum die Überschrift und nicht das Feld:** Ein Knopf je Eingabefeld wäre eine
+Nadelwand. Die Tafel ist die Einheit, in der ein Mensch denkt — „was ist
+Datensicherung", nicht „was bedeutet dieses eine Feld".
+
+Zwei Dinge misst das Skript neben der Quote mit:
+
+- **Dubletten.** Dieselbe Tafel erscheint oft zweimal im Code — mit Daten und
+  ohne. Sie zählt als erledigt nur, wenn **beide** Fassungen den Knopf tragen.
+- **Tote Knöpfe.** Eine Kennung, die es im Handbuch nicht gibt, ist ein Fehler
+  und lässt den Lauf scheitern (Rückgabewert 1).
+
+Auch **Seitenköpfe** zählen mit. Nicht jede Hauptfunktion hat eine Tafel: Das
+Protokoll besteht aus Filterleiste und Tabelle. Dafür nimmt `seitenkopf(…)` eine
+vierte Angabe, die Hilfe-Kennung — sonst bliebe eine Hauptfunktion ohne
+Erklärung.
+
+### Was die Messung gefunden hat
+
+**Stand: 42 von 42 Tafeln (100 %), 51 Handbuchabschnitte.** Der Weg dahin hat
+zwei echte Lücken aufgedeckt:
+
+| Lücke | Was fehlte |
+|---|---|
+| **Kapitel „Konten und Rollen"** | Die gesamte Benutzerverwaltung war im Handbuch nicht beschrieben — Rollen, Einladungen, die einmalige Anzeige des Einladungslinks, der Verlust des zweiten Faktors. |
+| **Abschnitt „Filtern und ausgeben"** | Das Protokoll hatte kein Kapitel zu seiner eigenen Bedienung, obwohl es die Sicht ist, die bei einer Rückfrage zuerst gebraucht wird. |
+
+Dazu 21 weitere Abschnitte für Tafeln, die zwar erklärt waren, aber nur
+mündlich in der Oberfläche: `was-zu-tun-ist`, `geraete-live`,
+`alarme-bearbeiten`, `bestandslisten`, `bestandsabgleich`, `geraetezugang`,
+`karten-im-terminal`, `zeitstrahl`, `mailserver`, `benachrichtigungsregeln`,
+`einheit-aendern`, `einheit-inhalt`, `geraetegruppen`, `pins-neu-hinterlegen`,
+`systemtest`, `sicherung-erstellen`, `sicherung-wiederherstellen` und weitere.
+
+**Nicht mitgezählt:** Das Handbuch erklärt sich nicht selbst, und die
+Anmeldeseite steht vor jeder Anmeldung — dort gibt es kein Handbuch.
+
 ## Nachgewiesen
 
 `HandbuchTest` (21 Prüfungen, davon 5 neu):
@@ -191,4 +248,10 @@ Seiten abgerufen und einzeln geprüft; derselbe Satz im Fenster und im Kapitel;
 ohne JavaScript liefert derselbe Pfad die Handbuchseite; eine unbekannte
 Kennung führt trotzdem ins Handbuch.
 
-axe-core über 24 Seiten ohne Befund, Kontraste bestanden.
+**Abdeckungsprüfung durch Sabotage gegengeprüft** (15.08.2026): Kennung am
+Seitenkopf des Protokolls auf `gibt-es-nicht` geändert — das Skript meldet
+„Protokoll: Kennung „gibt-es-nicht" gibt es im Handbuch nicht" und endet mit 1.
+
+axe-core über 26 Seiten ohne Befund, Kontraste bestanden (15.08.2026). Der
+Zeitstrahl ist im Prüfaufbau nicht erreichbar — er braucht ein Gerät mit
+Verlauf; das meldet der Bericht als „nicht geprüft", nicht als bestanden.

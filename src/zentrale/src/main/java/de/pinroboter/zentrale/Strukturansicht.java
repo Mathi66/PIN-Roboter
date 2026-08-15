@@ -157,7 +157,7 @@ final class Strukturansicht {
                         Map<Long, List<Konnektor>> konnektoren) {
         if (baum.isEmpty()) {
             return """
-                    <div class="tafel"><h3>Struktur</h3>
+                    <div class="tafel"><h3>Struktur" + Bedienelemente.info("organisationsebenen", "die Struktur") + "</h3>
                     <p class="leer">Ihnen ist keine Organisationseinheit zugeordnet.
                        Wenden Sie sich an den Betreiber dieser Instanz.</p></div>""";
         }
@@ -175,7 +175,7 @@ final class Strukturansicht {
 
         StringBuilder s = new StringBuilder();
         s.append("<div class=\"tafel\"><h3>Struktur <span class=\"zaehler\">")
-         .append(baum.size()).append("</span></h3>");
+         .append(baum.size()).append("</span>" + Bedienelemente.info("organisationsebenen", "die Struktur") + "</h3>");
         s.append(legende());
         s.append("<div class=\"strukturfeld\"><ul class=\"strukturbaum wurzel\">");
         for (var w : wurzeln) s.append(knoten(w, kinder, bilanzen, geraete, konnektoren, 0));

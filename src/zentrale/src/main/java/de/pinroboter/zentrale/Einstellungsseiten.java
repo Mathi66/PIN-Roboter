@@ -32,7 +32,7 @@ final class Einstellungsseiten {
         s.append(ueberblick(sicherung));
         s.append(standListe(staende));
         s.append(hochladen());
-        s.append("<div class=\"tafel\"><h3>Systemtest</h3><div class=\"karte-leib\">"
+        s.append("<div class=\"tafel\"><h3>Systemtest" + Bedienelemente.info("systemtest", "den Systemtest") + "</h3><div class=\"karte-leib\">"
                + "<p class=\"hilfe\">Werkzeuge für Vorführung und Messung. In einer "
                + "produktiven Installation werden sie nicht gebraucht.</p></div></div>");
         s.append(systemtest);
@@ -81,7 +81,7 @@ final class Einstellungsseiten {
 
         return """
                 <div class="tafel"><h3>Datensicherung
-                  <span class="zaehler">%s belegt</span></h3>
+                  <span class="zaehler">%s belegt</span>" + Bedienelemente.info("sicherung-erstellen", "die Datensicherung") + "</h3>
                   <div class="karte-leib">
                     <div class="lage">%s</div>
                     %s
@@ -101,7 +101,7 @@ final class Einstellungsseiten {
     private static String standListe(List<Sicherungsverwaltung.Stand> staende) {
         if (staende.isEmpty()) {
             return """
-                    <div class="tafel"><h3>Vorhandene Stände</h3>
+                    <div class="tafel"><h3>Vorhandene Stände" + Bedienelemente.info("sicherung-wiederherstellen", "die Wiederherstellung") + "</h3>
                       <p class="leer">Noch keine Sicherung vorhanden. Die erste entsteht
                          automatisch, sobald der Zeitplan das erste Mal greift.</p>
                     </div>""";
@@ -137,7 +137,7 @@ final class Einstellungsseiten {
                             esc(st.dateiname()), esc(st.anzeige())));
         }
         return """
-                <div class="tafel"><h3>Vorhandene Stände <span class="zaehler">%d</span></h3>
+                <div class="tafel"><h3>Vorhandene Stände <span class="zaehler">%d</span>" + Bedienelemente.info("sicherung-wiederherstellen", "die Wiederherstellung") + "</h3>
                   <div class="rollbar"><table>
                     <caption class="nurLeser">Vorhandene Sicherungen</caption>
                     <thead><tr>
@@ -151,7 +151,7 @@ final class Einstellungsseiten {
     /** Eine Sicherung von außen einlesen. */
     private static String hochladen() {
         return """
-                <div class="tafel"><h3>Sicherung hochladen</h3>
+                <div class="tafel"><h3>Sicherung hochladen" + Bedienelemente.info("sicherung-wiederherstellen", "das Hochladen") + "</h3>
                   <form method="post" action="/einstellungen/sicherung/hochladen"
                         enctype="multipart/form-data" class="karte-leib">
                     <div class="hinweis"><strong>Nur Dateien, die hier heruntergeladen wurden</strong>
