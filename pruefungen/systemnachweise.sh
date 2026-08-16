@@ -4369,6 +4369,22 @@ ANZ=$(grep -oE "alle [0-9]+ Diagramme" /tmp/pr-diag.txt | grep -oE "[0-9]+" || e
 ergebnis "alle Diagramme der Dokumentation rendern ($ANZ)" "$DG"
 [ "$DG" = "nein" ] && sed 's/\x1b\[[0-9;]*m//g' /tmp/pr-diag.txt | tail -8
 
+# Die Shell-Bloecke der Veroeffentlichungslaeufe. Am 14.08.2026 sind beide
+# Laeufe fuer 0.4.0 nach zehn Sekunden an einem Anfuehrungszeichen gescheitert;
+# der Server blieb deshalb zwei Tage auf 0.3.0. Bei einem gewoehnlichen Commit
+# laeuft nichts — der Fehler faellt erst beim Tag auf, also zu spaet.
+if python3 pruefungen/workflows-pruefen.py >/tmp/pr-wf.txt 2>&1; then WF=ja; else WF=nein; fi
+ANZ=$(grep -oE "[0-9]+ Bloecke|[0-9]+ Blöcke" /tmp/pr-wf.txt | grep -oE "[0-9]+" | head -1 || echo "?")
+ergebnis "Shell-Bloecke der Workflows syntaktisch heil ($ANZ)" "$WF"
+[ "$WF" = "nein" ] && sed 's/\x1b\[[0-9;]*m//g' /tmp/pr-wf.txt | tail -6
+
+# Fuehrt jede Tafel der Oberflaeche ins Handbuch? Der Info-Knopf ist zugleich
+# das Mass dafuer, ob eine Funktion ueberhaupt beschrieben ist (PO, 15.08.2026).
+if python3 pruefungen/handbuchabdeckung.py >/tmp/pr-hb.txt 2>&1; then HB=ja; else HB=nein; fi
+QUOTE=$(grep -oE "[0-9]+ von [0-9]+ Tafeln" /tmp/pr-hb.txt | head -1 || echo "?")
+ergebnis "jede Tafel der Oberflaeche fuehrt ins Handbuch ($QUOTE)" "$HB"
+[ "$HB" = "nein" ] && sed 's/\x1b\[[0-9;]*m//g' /tmp/pr-hb.txt | tail -6
+
 docker rm -f pr-sim pr-zen pr-agt pr-db >/dev/null 2>&1
 docker volume rm pr-testdaten pr-agentdaten pr-sicherungen >/dev/null 2>&1
 rm -f /tmp/pr-totp.txt /tmp/pr-letzter-code.txt "$KEKSE"

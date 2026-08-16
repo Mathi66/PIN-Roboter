@@ -52,13 +52,13 @@ jobs:
             VERSION="${{ inputs.version }}"
             BAUSTEIN="${{ inputs.baustein }}"
           else
-            # Aus „zentrale-0.4.0" wird Baustein=zentrale, Version=0.4.0
+            # Aus „zentrale-0.4.0“ wird Baustein=zentrale, Version=0.4.0
             BAUSTEIN="${GITHUB_REF_NAME%%-*}"
             VERSION="${GITHUB_REF_NAME#*-}"
           fi
           case "$BAUSTEIN" in
             zentrale|agent|beide) ;;
-            *) echo "::error::Unbekannter Baustein „$BAUSTEIN". Erwartet: zentrale-X.Y.Z oder agent-X.Y.Z."; exit 1 ;;
+            *) echo "::error::Unbekannter Baustein „$BAUSTEIN“. Erwartet: zentrale-X.Y.Z oder agent-X.Y.Z."; exit 1 ;;
           esac
           echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
           echo "baustein=$BAUSTEIN" >> "$GITHUB_OUTPUT"
