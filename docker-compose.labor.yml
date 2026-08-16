@@ -1,0 +1,189 @@
+# PIN-Roboter — Laborumgebung (labs)
+# ============================================================================
+#
+# Für DevOps. Unterschied zur docker-compose.yml im Wurzelverzeichnis: Diese
+# Datei BAUT NICHTS. Sie holt fertige, geprüfte Abbilder von GHCR — dieselben,
+# die auch beim Kunden laufen würden.
+#
+#   docker compose -f docker-compose.labor.yml up -d
+#
+# WAS HIER ANDERS IST ALS BEIM KUNDEN
+# -----------------------------------
+# Der SIMULATOR gehört nicht zum Produkt. Er bildet Konnektor und
+# Kartenterminals nach, damit die Zentrale auf dem Laborserver überhaupt etwas
+# zu überwachen hat. In einer Praxis oder Klinik hat er nichts zu suchen; dort
+# stehen echte Geräte im Netz.
+#
+# Er hat deshalb KEINEN einzigen Port nach außen. Erreichbar ist er nur für
+# Agent und Zentrale im internen Netz dieses Stapels. Das ist kein Beiwerk:
+# Er hält Test-SMC-B samt PIN vor und nimmt jede Anfrage ohne Rückfrage an.
+#
+# WAS VOR DEM ERSTEN START ZU TUN IST
+# -----------------------------------
+# Eine Datei `.env` neben diese legen — Vorlage: `.env.labor.beispiel`.
+# Ohne Schlüssel läuft der Stapel, kann aber keine Zugangsdaten und keine PIN
+# dauerhaft speichern; die Oberfläche sagt das deutlich.
+#
+# TLS UND ERREICHBARKEIT
+# ----------------------
+# Die Zentrale hört nur auf 127.0.0.1. Davor steht Caddy und bringt das
+# Zertifikat mit — die Anwendung selbst spricht bewusst kein TLS nach außen.
+#
+# SELBSTTÄTIGE AKTUALISIERUNG DES AGENTEN
+# ---------------------------------------
+# Steht hier absichtlich NICHT. Die dafür nötigen Dienste und das Skript
+# erzeugt die Zentrale unter „Instanz → Standort-Agenten“ als
+# Einrichtungspaket. Sie hier ein zweites Mal zu hinterlegen hieße, dasselbe
+# an zwei Stellen zu pflegen — und die zweite Fassung altert unbemerkt.
+# Wer die Aktualisierung auf labs erproben will, nimmt das Paket.
+
+name: pin-roboter
+
+services:
+
+  datenbank:
+    image: postgres:17-alpine
+    container_name: pinroboter-datenbank
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pinroboter
+      POSTGRES_USER: pinroboter
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD fehlt — siehe .env.labor.beispiel}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pinroboter -d pinroboter"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - betriebsdaten:/var/lib/postgresql/data
+    # Keine Ports. Die Datenbank ist nur für die Zentrale da.
+
+  zentrale:
+    image: ghcr.io/mathi66/pin-roboter:${VERSION_ZENTRALE:-0.4.0}
+    container_name: pinroboter-zentrale
+    restart: unless-stopped
+    environment:
+      PORT: "8090"
+      DB_URL: "jdbc:postgresql://datenbank:5432/pinroboter"
+      DB_USER: "pinroboter"
+      DB_PASSWORD: ${DB_PASSWORD}
+      # Verschlüsselt die hinterlegten Geräte-Zugangsdaten (FA-GER-010/020).
+      # Geht er verloren, sind sie unbrauchbar und müssen neu hinterlegt
+      # werden. Er gehört in die Sicherung — aber NICHT in dieselbe Datei wie
+      # der Datenbankauszug, sonst schützt die Verschlüsselung vor nichts.
+      GEHEIMNIS_SCHLUESSEL: ${GEHEIMNIS_SCHLUESSEL:-}
+      SICHERUNG_ABLAGE: /sicherungen
+      SICHERUNG_PLAN: ${SICHERUNG_PLAN:-an}
+      # Erster Administrator (FA-BEN-035). Nur beim allerersten Start
+      # ausgewertet und nur, wenn das Konto fehlt. Danach aus der .env
+      # entfernen: Wer die Datei lesen kann, kennt sonst beide Faktoren.
+      START_ADMIN_BENUTZER: ${START_ADMIN_BENUTZER:-}
+      START_ADMIN_NAME: ${START_ADMIN_NAME:-}
+      START_ADMIN_PASSWORT: ${START_ADMIN_PASSWORT:-}
+      START_ADMIN_TOTP: ${START_ADMIN_TOTP:-}
+    ports:
+      # Nur auf die Loopback-Adresse. Nach außen führt allein Caddy.
+      - "127.0.0.1:8090:8090"
+    depends_on:
+      datenbank: { condition: service_healthy }
+    volumes:
+      - sicherungen:/sicherungen
+    # Kein healthcheck-Eintrag: Der im Abbild fragt /health und prüft damit
+    # auch die Datenbank. Ein Eintrag hier würde ihn überschreiben.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ── Laborwerkzeug, kein Produktbestandteil ────────────────────────────────
+  simulator:
+    image: ghcr.io/mathi66/pin-roboter-simulator:${VERSION_SIMULATOR:-0.4.0}
+    container_name: pinroboter-simulator
+    restart: unless-stopped
+    environment:
+      # Neun Betriebsstätten eines MVZ mit je einem Empfangsterminal samt
+      # SMC-B und ein bis fünf Behandlungsräumen.
+      DEMO_TERMINALS: "an"
+    # KEINE ports. Der Simulator ist ausschließlich im internen Netz
+    # erreichbar — er hält Test-SMC-B samt PIN vor und nimmt jede Anfrage
+    # ohne Rückfrage an. Wer ihn veröffentlicht, veröffentlicht eine
+    # Kartenumgebung ohne Zugangsschutz.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://localhost:8480/ca.pem || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  agent:
+    image: ghcr.io/mathi66/pin-roboter-agent:${VERSION_AGENT:-0.4.0}
+    container_name: pinroboter-agent
+    restart: unless-stopped
+    environment:
+      KONNEKTOR_URL: "https://simulator:8443/"
+      TERMINAL_URL:  "https://simulator:8444/"
+      # Am echten Kartenterminal liegt die Remote SMCB API auf demselben Port
+      # wie die Verwaltungsschnittstelle; dann entfällt dieser Eintrag
+      # (ADR-0011).
+      TERMINAL_SMCB_URL: "https://simulator:8445/"
+      ZENTRALE_URL:  "http://zentrale:8090/"
+      CA_URL:        "http://simulator:8480/ca.pem"
+      PRUEFINTERVALL_SEKUNDEN: "60"
+      # FA-AGT-010: Einmalig gültiges Geheimnis, in der Zentrale unter
+      # „Instanz → Standort-Agenten“ erzeugt. Nach der Registrierung kann der
+      # Eintrag entfallen — der Agent hat dann sein dauerhaftes Token.
+      REGISTRIERUNG: ${REGISTRIERUNG:-}
+      TOKEN_DATEI: "/daten/agent-token"
+      MANDANT_ID: "Mandant1"
+      CLIENTSYSTEM_ID: "PIN-Roboter"
+      ARBEITSPLATZ_ID: "Arbeitsplatz1"
+      SCHLUESSEL_DATEI: "/daten/agent-schluessel"
+      PIN_ABLAGE: "/daten/pins"
+      # ADR-0009: eigener Schlüssel für die PIN-Ablage des Agenten, getrennt
+      # vom GEHEIMNIS_SCHLUESSEL der Zentrale. Wer den einen hat, bekommt
+      # damit nicht auch den anderen.
+      PIN_ABLAGE_SCHLUESSEL: ${PIN_ABLAGE_SCHLUESSEL:-}
+      # Der Agent bleibt unter 512 MB (NFA-LEI-030).
+      JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC -Xss512k"
+      OBERFLAECHE_ADRESSE: "0.0.0.0"
+      AUFTRAG_VERZEICHNIS: "/auftrag"
+    ports:
+      # Die Anzeige des Agenten, nur lokal. Der Agent baut Verbindungen sonst
+      # ausschließlich nach außen auf (ADR-0002); eine im Netz erreichbare
+      # Anzeige weichte das auf.
+      - "127.0.0.1:8091:8091"
+    volumes:
+      # Token, Schlüsselpaar und PIN-Ablage (NFA-BET-020). Im Container-Layer
+      # wären sie nach jedem Neustart weg: Der Agent müsste sich neu
+      # registrieren, und jede hinterlegte PIN wäre unbrauchbar.
+      - agentdaten:/daten
+      # Briefkasten für Aktualisierungsaufträge — eigenes Volume, damit ein
+      # Aktualisierungsdienst nicht an Token, Schlüssel und PINs kommt.
+      - auftrag:/auftrag
+    depends_on:
+      simulator: { condition: service_healthy }
+      zentrale:  { condition: service_healthy }
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 512
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  betriebsdaten:
+  agentdaten:
+  auftrag:
+  # Sicherungen liegen NICHT bei den Betriebsdaten (ADR-0010): Der häufigste
+  # Verlustfall ist ein versehentliches „docker compose down -v“.
+  sicherungen:

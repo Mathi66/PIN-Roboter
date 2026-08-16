@@ -29,8 +29,9 @@
   </modules>
 
   <properties>
-    <!-- Version der internen Bausteine (gemeinsam, simulator). Sie werden nicht
-         ausgeliefert und folgen deshalb der Bauklammer. -->
+    <!-- Version des internen Bausteins „gemeinsam". Er wird nie fuer sich
+         ausgeliefert und folgt deshalb der Bauklammer. Zentrale, Agent und
+         Simulator tragen eigene Produktversionen (ADR-0013). -->
     <bauklammer.version>1</bauklammer.version>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

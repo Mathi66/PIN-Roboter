@@ -17,14 +17,14 @@ name: Veröffentlichen
 # Ein Tag veröffentlicht NUR seinen Baustein. Wer beide will, setzt zwei Tags.
 on:
   push:
-    tags: ["zentrale-*.*.*", "agent-*.*.*"]
+    tags: ["zentrale-*.*.*", "agent-*.*.*", "simulator-*.*.*"]
   workflow_dispatch:
     inputs:
       baustein:
         description: "Welcher Baustein"
         required: true
         type: choice
-        options: [zentrale, agent, beide]
+        options: [zentrale, agent, simulator, alle]
       version:
         description: "Version ohne Präfix, z. B. 0.4.0"
         required: true
@@ -57,13 +57,19 @@ jobs:
             VERSION="${GITHUB_REF_NAME#*-}"
           fi
           case "$BAUSTEIN" in
-            zentrale|agent|beide) ;;
-            *) echo "::error::Unbekannter Baustein „$BAUSTEIN“. Erwartet: zentrale-X.Y.Z oder agent-X.Y.Z."; exit 1 ;;
+            zentrale|agent|simulator|alle) ;;
+            *) echo "::error::Unbekannter Baustein $BAUSTEIN. Erwartet: zentrale-X.Y.Z, agent-X.Y.Z oder simulator-X.Y.Z."; exit 1 ;;
           esac
           echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
           echo "baustein=$BAUSTEIN" >> "$GITHUB_OUTPUT"
-          [ "$BAUSTEIN" = "beide" ] || [ "$BAUSTEIN" = "zentrale" ] && echo "zentrale=ja" >> "$GITHUB_OUTPUT" || true
-          [ "$BAUSTEIN" = "beide" ] || [ "$BAUSTEIN" = "agent" ]    && echo "agent=ja"    >> "$GITHUB_OUTPUT" || true
+          # Je Baustein ein eigenes Ja/Nein. Bewusst ohne die Kurzform
+          # `[ … ] && echo … || true`: Sie ist in einem `set -e`-Kontext eine
+          # Falle, weil der letzte Rueckgabewert den Schritt bestimmt.
+          for B in zentrale agent simulator; do
+            if [ "$BAUSTEIN" = "alle" ] || [ "$BAUSTEIN" = "$B" ]; then
+              echo "$B=ja" >> "$GITHUB_OUTPUT"
+            fi
+          done
           echo "Baustein: $BAUSTEIN, Version: $VERSION"
 
       # Die Version im Manifest MUSS zum Image-Tag passen: Das Deploy-Skript
@@ -73,9 +79,9 @@ jobs:
         run: |
           # Je Baustein sein eigenes pom (ADR-0013). Die Bauklammer oben trägt
           # keine Produktversion mehr.
-          for B in zentrale agent; do
+          for B in zentrale agent simulator; do
             case "${{ steps.version.outputs.baustein }}" in
-              "$B"|beide) ;;
+              "$B"|alle) ;;
               *) continue ;;
             esac
             POM=$(sed -n '/<artifactId>'"$B"'<\/artifactId>/,/<\/version>/p' "src/$B/pom.xml" \
@@ -91,11 +97,21 @@ jobs:
       # Unveränderliche Tags: Was einmal veröffentlicht wurde, bleibt.
       - name: Tag darf nicht schon existieren
         run: |
-          if docker manifest inspect "$IMAGE:${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
-            echo "::error::$IMAGE:${{ steps.version.outputs.version }} gibt es bereits."
-            echo "Tags sind unveränderlich. Bitte eine neue Versionsnummer vergeben."
-            exit 1
-          fi
+          # Je Baustein sein eigenes Abbild. Bis zum 16.08.2026 wurde hier
+          # immer nur das Abbild der Zentrale geprueft — ein reiner Agent-Tag
+          # waere an einem fremden Abbild gescheitert, und ein bereits
+          # vorhandenes Agent-Abbild waere unbemerkt ueberschrieben worden.
+          pruefe() {
+            [ "$2" = "ja" ] || return 0
+            if docker manifest inspect "$1:${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+              echo "::error::$1:${{ steps.version.outputs.version }} gibt es bereits."
+              echo "Tags sind unveraenderlich. Bitte eine neue Versionsnummer vergeben."
+              exit 1
+            fi
+          }
+          pruefe "$IMAGE"           "${{ steps.version.outputs.zentrale }}"
+          pruefe "$IMAGE-agent"     "${{ steps.version.outputs.agent }}"
+          pruefe "$IMAGE-simulator" "${{ steps.version.outputs.simulator }}"
         env:
           DOCKER_CONFIG: ${{ runner.temp }}/docker-anon
 
@@ -110,7 +126,11 @@ jobs:
 
       # Erst lokal bauen, testen, dann veröffentlichen. Ein Image, das nicht
       # startet, darf die Registry nie erreichen.
+      # Nur wenn die Zentrale veroeffentlicht wird: Ein reiner Agent- oder
+      # Simulator-Tag hat sie bisher trotzdem gebaut — mehrere Minuten fuer
+      # ein Abbild, das niemand verwendet.
       - name: Image bauen (noch nicht veröffentlichen)
+        if: steps.version.outputs.zentrale == 'ja'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -213,14 +233,78 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
+      # LABORWERKZEUG, kein Produktbestandteil. Der Simulator bildet Konnektor
+      # und Kartenterminals nach; auf dem Laborserver hat die Zentrale sonst
+      # nichts zu ueberwachen. In einer Praxis oder Klinik hat er nichts zu
+      # suchen — die Compose-Datei fuer das Labor haelt ihn deshalb im
+      # internen Netz, ohne einen einzigen Port nach aussen.
+      - name: Simulator bauen und pruefen
+        if: steps.version.outputs.simulator == 'ja'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: BAUSTEIN=simulator
+          platforms: linux/amd64
+          load: true
+          tags: pin-roboter-sim-pruef:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-Test Simulator — startet er und gibt er den Vertrauensanker heraus?
+        if: steps.version.outputs.simulator == 'ja'
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke-sim -p 8480:8480 \
+            --security-opt no-new-privileges:true --cap-drop ALL --pids-limit 512 \
+            pin-roboter-sim-pruef:${{ steps.version.outputs.version }}
+
+          for i in $(seq 40); do
+            ZUSTAND=$(docker inspect -f '{{.State.Health.Status}}' smoke-sim 2>/dev/null || echo start)
+            [ "$ZUSTAND" = "healthy" ] && break
+            [ "$ZUSTAND" = "unhealthy" ] && { docker logs smoke-sim; exit 1; }
+            sleep 3
+          done
+          [ "$ZUSTAND" = "healthy" ] || { echo "::error::Simulator wurde nicht healthy"; docker logs smoke-sim; exit 1; }
+
+          # Der Vertrauensanker ist das, was Agent und Zentrale von ihm holen.
+          # Kommt er nicht heraus, ist das Abbild fuer das Labor wertlos.
+          curl -sf http://localhost:8480/ca.pem | grep -q "BEGIN CERTIFICATE" \
+            || { echo "::error::/ca.pem liefert kein Zertifikat"; exit 1; }
+
+          UID_IST=$(docker exec smoke-sim id -u)
+          [ "$UID_IST" = "10001" ] || { echo "::error::laeuft als UID $UID_IST, erwartet 10001"; exit 1; }
+          docker stop -t 15 smoke-sim >/dev/null
+
+      - name: Simulator veröffentlichen
+        if: steps.version.outputs.simulator == 'ja'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          build-args: BAUSTEIN=simulator
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}-simulator:${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
       - name: Zusammenfassung
         run: |
           {
             echo "### ${{ steps.version.outputs.baustein }} ${{ steps.version.outputs.version }} veröffentlicht"
             echo ""
             echo "\`\`\`"
-            echo "Zentrale: $IMAGE:${{ steps.version.outputs.version }}"
-            echo "Agent:    $IMAGE-agent:${{ steps.version.outputs.version }}"
+            V="${{ steps.version.outputs.version }}"
+            # Kein `[ … ] && echo …`: Trifft die letzte Bedingung nicht zu,
+            # ist der Rueckgabewert des Blocks 1 — und der Schritt scheitert,
+            # obwohl alles gut ging. Die Shell laeuft hier mit `bash -e`.
+            if [ "${{ steps.version.outputs.zentrale }}"  = "ja" ]; then echo "Zentrale:  $IMAGE:$V"; fi
+            if [ "${{ steps.version.outputs.agent }}"     = "ja" ]; then echo "Agent:     $IMAGE-agent:$V"; fi
+            if [ "${{ steps.version.outputs.simulator }}" = "ja" ]; then echo "Simulator: $IMAGE-simulator:$V"; fi
             echo "\`\`\`"
             echo ""
             echo "Smoke-Test bestanden: startet gehärtet (read_only, cap_drop ALL),"

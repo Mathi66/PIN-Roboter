@@ -8,6 +8,10 @@
 .env
 .env.*
 !.env.example
+# Vorlagen sind ausdrücklich erwünscht — sie enthalten nur leere Felder und
+# die Befehle zum Erzeugen der Schlüssel. Ohne diese Ausnahme fällt eine neue
+# Vorlage still unter `.env.*` und landet nie im Repository.
+!.env.*.beispiel
 *.pem
 *.key
 *.p12

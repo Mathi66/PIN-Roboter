@@ -54,6 +54,23 @@ def main():
         print("  Kein Verzeichnis .github/workflows — nichts zu prüfen.")
         return 0
 
+    # Zuerst das YAML selbst. Ohne diesen Schritt hätte eine kaputte Datei
+    # einen blinden Fleck: Der Ausdruck unten fände dann gar keine Blöcke und
+    # meldete „alle heil". Ruby bringt einen YAML-Parser mit und ist auf den
+    # Runnern wie auf dem Arbeitsplatz vorhanden; fehlt er, sagen wir es.
+    if subprocess.run(["which", "ruby"], capture_output=True).returncode == 0:
+        lauf = subprocess.run(
+            ["ruby", "-ryaml", "-e",
+             'Dir[".github/workflows/*.yml"].each { |f| YAML.load_file(f) }'],
+            capture_output=True, text=True)
+        if lauf.returncode != 0:
+            print("\n\033[1mWorkflows\033[0m")
+            print(f"  \033[31m✗\033[0m Kein gültiges YAML: "
+                  f"{lauf.stderr.strip().splitlines()[0] if lauf.stderr.strip() else '?'}")
+            return 1
+    else:
+        print("  Hinweis: kein Ruby gefunden — das YAML selbst bleibt ungeprüft.")
+
     geprueft, kaputt = 0, []
     for datei in sorted(WORKFLOWS.glob("*.yml")):
         for zeile, code in bloecke(datei.read_text()):
