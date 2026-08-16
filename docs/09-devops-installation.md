@@ -253,6 +253,46 @@ Der Code gilt **einmalig** und läuft nach 24 Stunden ab. Ein zweiter Versuch mi
 demselben Code wird abgewiesen und im Fachprotokoll als Angriffshinweis
 vermerkt.
 
+### 6a. Laborumgebung: Agent und Simulator auf demselben Rechner
+
+Auf dem **Laborserver** gibt es keine echten Kartenterminals. Damit die
+Zentrale dort etwas zu überwachen hat, laufen Agent und **Simulator** mit —
+letzterer bildet Konnektor und Kartenterminals nach.
+
+Dafür liegt eine eigene Datei bereit, die **nichts baut**, sondern die
+geprüften Abbilder von GHCR holt:
+
+```bash
+cp .env.labor.beispiel .env    # ausfüllen: DB_PASSWORD und die zwei Schlüssel
+docker compose -f docker-compose.labor.yml up -d
+```
+
+| Dienst | Abbild | Erreichbar |
+|---|---|---|
+| Zentrale | `ghcr.io/mathi66/pin-roboter:0.4.0` | `127.0.0.1:8090`, davor Caddy |
+| Agent | `ghcr.io/mathi66/pin-roboter-agent:0.4.0` | Anzeige auf `127.0.0.1:8091` |
+| Simulator | `ghcr.io/mathi66/pin-roboter-simulator:0.4.0` | **nur im internen Netz** |
+| Datenbank | `postgres:17-alpine` | nur im internen Netz |
+
+> **Der Simulator bekommt keinen Port nach außen — das ist keine Nachlässigkeit
+> in der Konfiguration, sondern Absicht.** Er hält Test-SMC-B samt PIN vor und
+> nimmt jede Anfrage ohne Rückfrage an. Wer ihn veröffentlicht, veröffentlicht
+> eine Kartenumgebung ohne Zugangsschutz.
+
+> **In einer Praxis oder Klinik hat der Simulator nichts zu suchen.** Dort
+> stehen echte Geräte im Netz; die Datei für den Kundenbetrieb enthält ihn
+> nicht.
+
+Die **selbsttätige Aktualisierung des Agenten** steht bewusst nicht in dieser
+Datei. Ihre Dienste und ihr Skript erzeugt die Zentrale unter
+*Instanz → Standort-Agenten* als Einrichtungspaket — eine zweite Fassung im
+Repository würde unbemerkt altern.
+
+**Nachgewiesen am 16.08.2026:** Stapel aus dieser Datei gestartet, alle vier
+Dienste `healthy`, `/health` meldet `0.4.0`, der Simulator zeigt kein einziges
+Port-Mapping, alle drei Dienste laufen als UID 10001 ohne Capabilities, und
+die Zentrale weist einen Schreibversuch auf ihr Dateisystem ab.
+
 ---
 
 ## 7. TLS und Reverse-Proxy
