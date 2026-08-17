@@ -8,7 +8,7 @@
   <!-- Produktversion der ZENTRALE. Sie wird unabhängig vom Agenten erhöht
        (ADR-0013). Der Vertrag zwischen beiden ist nicht diese Nummer, sondern
        die Protokollversion. -->
-  <version>0.4.0</version>
+  <version>0.4.1</version>
   <dependencies>
     <dependency><groupId>de.pinroboter</groupId><artifactId>gemeinsam</artifactId></dependency>
     <dependency><groupId>io.javalin</groupId><artifactId>javalin</artifactId></dependency>

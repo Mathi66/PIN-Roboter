@@ -57,6 +57,65 @@ Welche, und bis zu welchem Punkt sie noch trägt.
 
 ---
 
+# Übergabe Zentrale 0.4.1 — 17.08.2026
+
+**Nur die Zentrale.** Agent und Simulator bleiben unverändert auf 0.4.0 — am
+Quelltext beider hat sich seit dem Tag nichts geändert (ADR-0013: getrennte
+Versionierung, damit nicht ein Baustein den anderen mitzieht).
+
+## Abbild
+
+```
+ghcr.io/mathi66/pin-roboter:0.4.1
+```
+
+## Was behoben ist
+
+Auf einer Installation **ohne registrierten Agenten** zeigte die Tafel
+„Standort-Agenten" nur den Hinweis, dass keiner registriert sei — das
+Anlegeformular darunter fehlte. Es ließ sich also kein Agent anlegen, genau in
+dem Moment, in dem man das Formular braucht. Der Hinweistext verwies zudem auf
+„Bestand"; dort war das Formular nie.
+
+Auf labs am 17.08.2026 aufgefallen. Lokal nicht sichtbar, weil dort längst ein
+Agent registriert ist.
+
+## Schema-Änderungen
+
+**Keine.** Migrationsstand bleibt 33.
+
+## Neue oder geänderte Umgebungsvariablen
+
+**Keine.**
+
+## Neue Volumes, geänderte Rechte, geänderte Namen
+
+**Keine.**
+
+## Prüfschritte nach dem Rollout
+
+```bash
+# 1. Version
+curl -s https://<host>/health
+#    erwartet: {"status":"ok","db":true,"version":"0.4.1"}
+
+# 2. Der eigentliche Punkt: Auf „Instanz“ muss unter „Standort-Agenten“
+#    das Anlegeformular stehen, auch wenn noch kein Agent registriert ist.
+#    Sichtbar sind dann die Felder „Bezeichnung“ und „Einrichtung“ sowie
+#    die Knöpfe „Einrichtungspaket herunterladen“ und „Nur Zugangscode“.
+```
+
+> Steht dort stattdessen „Zuerst eine Einrichtung anlegen", fehlt eine
+> Organisationseinheit — das ist richtiges Verhalten, kein Fehler: Ohne
+> Einrichtung wäre der Agent niemandem zuzuordnen.
+
+## Rückfall-Version
+
+**0.4.0.** Ohne Einschränkung — es gibt keine Migration zwischen den beiden
+Fassungen. `VERSION_ZENTRALE=0.4.0` und neu starten genügt.
+
+---
+
 # Übergabe Zentrale / Agent / Simulator 0.4.0 — 16.08.2026
 
 ## Abbilder
