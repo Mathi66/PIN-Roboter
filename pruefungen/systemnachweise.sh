@@ -235,6 +235,31 @@ stack_starten() {      # stack_starten <pin-fuer-card-smcb-001> <intervall>
     "INSERT INTO organisation (bezeichnung, art, ist_demo)
      SELECT 'Pruefpraxis', 'VERBUND', FALSE
      WHERE NOT EXISTS (SELECT 1 FROM organisation WHERE bezeichnung = 'Pruefpraxis')" >/dev/null
+  # Bietet die Oberflaeche ueberhaupt einen Weg, einen Agenten anzulegen?
+  # Bis zum 17.08.2026 nicht, solange keiner registriert war: Die Agententafel
+  # kehrte im Leerzustand vorzeitig zurueck und schnitt das Formular darunter
+  # ab — genau in dem einen Moment, in dem man es braucht.
+  #
+  # Aufgefallen ist es auf labs, nicht hier: Alle Nachweise rufen
+  # /agenten/geheimnis direkt auf und sehen die Oberflaeche nie. Ein Weg, den
+  # niemand findet, ist so gut wie nicht vorhanden.
+  #
+  # NUR BEIM ERSTEN DURCHLAUF. stack_starten laeuft fuenfmal, die Datenbank
+  # bleibt dabei stehen — ab dem zweiten Mal ist der Agent registriert und die
+  # Leermeldung waere zu Recht weg.
+  if [ -z "${AGENTFORM_GEPRUEFT:-}" ]; then
+    AGENTFORM_GEPRUEFT=ja
+    curl -s -b "$KEKSE" "$BASIS/verwaltung" -o /tmp/pr-agt-leer.html
+    if [ "$(enthaelt /tmp/pr-agt-leer.html 'action="/agenten/geheimnis"')" = "ja" ] \
+       && [ "$(enthaelt /tmp/pr-agt-leer.html "Nur Zugangscode")" = "ja" ] \
+       && [ "$(enthaelt /tmp/pr-agt-leer.html "Noch kein Agent registriert")" = "ja" ]; then
+      AGL=ja
+    else
+      AGL=nein
+    fi
+    ergebnis "ohne Agenten fuehrt die Oberflaeche zum Anlegeformular" "$AGL"
+  fi
+
   GEHEIMNIS=$(curl -s -b "$KEKSE" -X POST $BASIS/agenten/geheimnis \
     -d "bezeichnung=Pruefagent" --data-urlencode "einrichtung=Pruefpraxis" \
     | grep -oE '<code>[A-Za-z0-9_-]{40,}</code>' | sed 's/<[^>]*>//g')

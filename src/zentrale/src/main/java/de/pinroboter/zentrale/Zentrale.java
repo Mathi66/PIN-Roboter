@@ -1467,76 +1467,85 @@ public class Zentrale {
                 + Bedienelemente.info("protokollversion", "Protokollversionen")
                 + "</h3>");
         if (liste.isEmpty()) {
-            return s.append("""
-                    <p class="leer">Noch kein Agent registriert. Unter „Bestand" lässt sich ein
-                       Registrierungsgeheimnis erzeugen.</p></div>""").toString();
-        }
-        s.append("<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
-                + "Registrierte Standort-Agenten mit Protokollversion</caption><thead><tr>"
-                + "<th scope=\"col\">Agent</th><th scope=\"col\">Einrichtung</th>"
-                + "<th scope=\"col\">Protokoll</th>"
-                + "<th scope=\"col\">Version &amp; Aktualisierung</th>"
-                + "<th scope=\"col\">Zuletzt gesehen</th>"
-                + "<th scope=\"col\">Zuordnung ändern</th></tr></thead><tbody>");
-        for (var a : liste) {
-            String bewertung = a.versionsbewertung();
-            s.append("<tr><td class=\"geraet\">").append(esc(a.bezeichnung())).append("</td>")
-             .append("<td>").append(esc(nz(a.einrichtung())))
-             // Der Agent speichert den NAMEN der Einrichtung. Wird sie
-             // umbenannt oder geloescht, meldet er ins Leere: Seine Geraete
-             // landen in keiner Gruppe. Bis zum 12.08.2026 stand das nur im
-             // technischen Protokoll - in der Oberflaeche sah alles normal aus.
-             .append(a.einrichtungBekannt() ? "" : """
-                     <div class="handlung"><span class="marke warnung">Einrichtung unbekannt</span>
-                       <div>Es gibt keine Organisationseinheit dieses Namens. Dieser Agent kann
-                          seine Geräte keiner Gruppe zuordnen. Bitte unten die richtige
-                          Einrichtung wählen.</div></div>""")
-             .append("</td><td>")
-             .append(a.protokollversion() == null
-                     ? "<span class=\"marke unbekannt\">noch nicht gemeldet</span>"
-                     : a.versionUnterstuetzt() && bewertung == null
-                        ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>Version "
-                          + a.protokollversion() + "</span>"
-                        : "<span class=\"marke warnung\">Version " + a.protokollversion() + "</span>")
-             .append(bewertung == null ? ""
-                     : "<div class=\"handlung\">" + esc(bewertung) + "</div>")
-             .append("</td><td>").append(aktualisierungszelle(a, agentversionen, darfAktualisieren))
-             .append("</td>")
-             .append("<td class=\"zeit\">")
-             .append(a.zuletztGesehen() == null ? "nie"
-                     : esc(java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm")
-                            .withZone(java.time.ZoneId.systemDefault())
-                            .format(a.zuletztGesehen())))
-             .append("</td><td>")
-             .append("""
-                     <form method="post" action="/agenten/%d/einrichtung" class="inlineform">
-                       <label class="nurLeser" for="ag-e-%d">Einrichtung von %s</label>
-                       <select id="ag-e-%d" name="einrichtung" required>%s</select>
-                       <button class="knopf klein" type="submit"
-                               title="Ordnet diesen Standort-Agenten einer anderen Einrichtung zu"
-                               aria-label="Einrichtung von %s ändern">Zuordnen</button>
-                     </form>"""
-                     .formatted(a.id(), a.id(), esc(a.bezeichnung()), a.id(),
-                             einrichtungsoptionen(bereich, a.einrichtung()),
-                             esc(a.bezeichnung())))
-             .append("</td></tr>");
-        }
-        s.append("</tbody></table></div>");
+            // WICHTIG: Hier NICHT vorzeitig zurückkehren. Bis zum 17.08.2026
+            // tat diese Stelle genau das — und schnitt damit das
+            // Anlegeformular ab, das direkt darunter steht. Auf einer frischen
+            // Installation ließ sich deshalb kein Agent anlegen: genau der
+            // eine Moment, in dem man das Formular braucht. Auf labs
+            // aufgefallen, lokal nie, weil dort längst ein Agent registriert
+            // ist. Der Text verwies zudem auf „Bestand“ — dort war das
+            // Formular nie.
+            s.append("""
+                    <p class="leer">Noch kein Agent registriert. Unten lässt sich ein
+                       Zugangscode erzeugen.</p>""");
+        } else {
+            s.append("<div class=\"rollbar\"><table><caption class=\"nurLeser\">"
+                    + "Registrierte Standort-Agenten mit Protokollversion</caption><thead><tr>"
+                    + "<th scope=\"col\">Agent</th><th scope=\"col\">Einrichtung</th>"
+                    + "<th scope=\"col\">Protokoll</th>"
+                    + "<th scope=\"col\">Version &amp; Aktualisierung</th>"
+                    + "<th scope=\"col\">Zuletzt gesehen</th>"
+                    + "<th scope=\"col\">Zuordnung ändern</th></tr></thead><tbody>");
+            for (var a : liste) {
+                String bewertung = a.versionsbewertung();
+                s.append("<tr><td class=\"geraet\">").append(esc(a.bezeichnung())).append("</td>")
+                 .append("<td>").append(esc(nz(a.einrichtung())))
+                 // Der Agent speichert den NAMEN der Einrichtung. Wird sie
+                 // umbenannt oder geloescht, meldet er ins Leere: Seine Geraete
+                 // landen in keiner Gruppe. Bis zum 12.08.2026 stand das nur im
+                 // technischen Protokoll - in der Oberflaeche sah alles normal aus.
+                 .append(a.einrichtungBekannt() ? "" : """
+                         <div class="handlung"><span class="marke warnung">Einrichtung unbekannt</span>
+                           <div>Es gibt keine Organisationseinheit dieses Namens. Dieser Agent kann
+                              seine Geräte keiner Gruppe zuordnen. Bitte unten die richtige
+                              Einrichtung wählen.</div></div>""")
+                 .append("</td><td>")
+                 .append(a.protokollversion() == null
+                         ? "<span class=\"marke unbekannt\">noch nicht gemeldet</span>"
+                         : a.versionUnterstuetzt() && bewertung == null
+                            ? "<span class=\"marke ok\"><span class=\"sym\">✓</span>Version "
+                              + a.protokollversion() + "</span>"
+                            : "<span class=\"marke warnung\">Version " + a.protokollversion() + "</span>")
+                 .append(bewertung == null ? ""
+                         : "<div class=\"handlung\">" + esc(bewertung) + "</div>")
+                 .append("</td><td>").append(aktualisierungszelle(a, agentversionen, darfAktualisieren))
+                 .append("</td>")
+                 .append("<td class=\"zeit\">")
+                 .append(a.zuletztGesehen() == null ? "nie"
+                         : esc(java.time.format.DateTimeFormatter.ofPattern("dd.MM. HH:mm")
+                                .withZone(java.time.ZoneId.systemDefault())
+                                .format(a.zuletztGesehen())))
+                 .append("</td><td>")
+                 .append("""
+                         <form method="post" action="/agenten/%d/einrichtung" class="inlineform">
+                           <label class="nurLeser" for="ag-e-%d">Einrichtung von %s</label>
+                           <select id="ag-e-%d" name="einrichtung" required>%s</select>
+                           <button class="knopf klein" type="submit"
+                                   title="Ordnet diesen Standort-Agenten einer anderen Einrichtung zu"
+                                   aria-label="Einrichtung von %s ändern">Zuordnen</button>
+                         </form>"""
+                         .formatted(a.id(), a.id(), esc(a.bezeichnung()), a.id(),
+                                 einrichtungsoptionen(bereich, a.einrichtung()),
+                                 esc(a.bezeichnung())))
+                 .append("</td></tr>");
+            }
+            s.append("</tbody></table></div>");
 
-        // Direkt unter die Tabelle, nicht hinter das Anlegeformular: Der
-        // Hinweis erklärt, warum in der Spalte nebenan nichts zur Auswahl
-        // steht. Zwischen Befund und Erklärung gehört nichts.
-        String agentfehler = versionen.agentfehler();
-        if (agentversionen.isEmpty()) {
-            s.append("<div class=\"karte-leib\"><div class=\"hinweis\"><div>")
-             .append("<strong>Für die Agenten sind keine Versionen bekannt.</strong> ")
-             .append(agentfehler == null
-                     ? "Hinterlegen Sie oben unter „Produktversion“ einen Zugang zur "
-                       + "Programmablage. Danach steht in der Spalte „Version &amp; "
-                       + "Aktualisierung“, was zur Verfügung steht, und die "
-                       + "Aktualisierung lässt sich je Standort anstoßen."
-                     : esc(agentfehler))
-             .append("</div></div></div>");
+            // Direkt unter die Tabelle, nicht hinter das Anlegeformular: Der
+            // Hinweis erklärt, warum in der Spalte nebenan nichts zur Auswahl
+            // steht. Zwischen Befund und Erklärung gehört nichts.
+            String agentfehler = versionen.agentfehler();
+            if (agentversionen.isEmpty()) {
+                s.append("<div class=\"karte-leib\"><div class=\"hinweis\"><div>")
+                 .append("<strong>Für die Agenten sind keine Versionen bekannt.</strong> ")
+                 .append(agentfehler == null
+                         ? "Hinterlegen Sie oben unter „Produktversion“ einen Zugang zur "
+                           + "Programmablage. Danach steht in der Spalte „Version &amp; "
+                           + "Aktualisierung“, was zur Verfügung steht, und die "
+                           + "Aktualisierung lässt sich je Standort anstoßen."
+                         : esc(agentfehler))
+                 .append("</div></div></div>");
+            }
         }
 
         s.append(agentAnlegenFormular(bereich));
