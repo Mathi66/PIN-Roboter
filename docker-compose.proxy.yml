@@ -1,0 +1,33 @@
+# Zusatz: Die Zentrale in ein vorhandenes Reverse-Proxy-Netz hängen
+# ============================================================================
+#
+#   docker compose -f docker-compose.labor.yml -f docker-compose.proxy.yml up -d
+#
+# WOZU: Ein Reverse Proxy in einem eigenen Netz erreicht die Zentrale über
+# ihren Containernamen — nicht über das veröffentlichte 127.0.0.1:8090. In
+# Caddys eigenem Container ist 127.0.0.1 Caddy selbst. Ohne gemeinsames Netz
+# sieht lokal alles gesund aus, während von außen nichts ankommt.
+#
+# Gemeldet von DevOps am 16.08.2026 beim Rollout auf labs.
+#
+# VORAUSSETZUNG: Das Netz muss bereits existieren — es gehört dem Proxy, nicht
+# uns. Anlegen tut es der Proxy-Stapel; wir hängen uns nur hinein:
+#
+#   docker network ls | grep edge
+#
+# Name über die Umgebung setzbar, weil er von Umgebung zu Umgebung abweicht:
+#
+#   PROXY_NETZ=edge
+#
+# Der Proxy spricht die Zentrale dann als `pinroboter-zentrale:8090` an.
+# Bewusst NICHT in docker-compose.labor.yml aufgenommen: Wer keinen Proxy
+# betreibt, hätte sonst einen Startfehler wegen eines fehlenden Netzes.
+
+services:
+  zentrale:
+    networks: [default, proxy]
+
+networks:
+  proxy:
+    name: ${PROXY_NETZ:?PROXY_NETZ fehlt — Name des vorhandenen Proxy-Netzes, z. B. edge}
+    external: true

@@ -283,6 +283,73 @@ docker compose -f docker-compose.labor.yml up -d
 > stehen echte Geräte im Netz; die Datei für den Kundenbetrieb enthält ihn
 > nicht.
 
+#### Hinter einem Reverse Proxy
+
+Ein Proxy in einem eigenen Netz erreicht die Zentrale über ihren
+**Containernamen**, nicht über `127.0.0.1:8090` — in seinem eigenen Container
+ist `127.0.0.1` er selbst. Dafür gibt es einen Zusatz:
+
+```bash
+PROXY_NETZ=edge docker compose \
+  -f docker-compose.labor.yml -f docker-compose.proxy.yml up -d
+```
+
+Der Proxy spricht die Zentrale dann als `pinroboter-zentrale:8090` an. Das Netz
+muss bereits bestehen — es gehört dem Proxy-Stapel.
+
+Bewusst nicht fest eingebaut: Wer keinen Proxy betreibt, bekäme sonst einen
+Startfehler wegen eines fehlenden Netzes.
+
+> **Ohne gemeinsames Netz sieht lokal alles gesund aus, während von außen
+> nichts ankommt.** Gemessen am 17.08.2026: Mit dem Zusatz beantwortet die
+> Zentrale eine Anfrage aus dem Proxy-Netz mit `{"status":"ok",…}`; nimmt man
+> sie aus dem Netz, meldet derselbe Aufruf `bad address`.
+
+#### Umstieg von einer selbst gebauten Compose-Datei
+
+**Das ist ein Migrationsschritt, kein Dateiwechsel.** Wer bisher eine eigene
+Compose-Datei betrieben hat, ändert mit dem Umstieg vier Dinge auf einmal:
+
+| Was sich ändert | Folge, wenn übersehen |
+|---|---|
+| **PostgreSQL-Fassung** | Diese Datei nutzt `postgres:17-alpine`. PostgreSQL 17 **verweigert den Start** auf einem Datenverzeichnis von 16 — Umhängen oder Umbenennen des Volumes hilft nicht. |
+| **Volume-Namen** | Der Projektname lautet `pin-roboter`, die Volumes heißen `pin-roboter_betriebsdaten`, `_sicherungen`, `_agentdaten`, `_auftrag`. |
+| **Containernamen** | `pinroboter-zentrale`, `-agent`, `-simulator`, `-datenbank`. Zeigt ein Proxy auf einen anderen Namen, kommt von außen nichts an, während lokal alles gesund aussieht. |
+| **Netze** | Siehe oben. |
+
+Der Weg über einen Datenauszug, von DevOps am 16.08.2026 auf labs gegangen und
+hier als verbindlicher Ablauf festgehalten:
+
+```bash
+# 1. Auszug aus dem LAUFENDEN alten Container
+docker exec <alter-db-container> pg_dump -U pinroboter pinroboter > auszug.sql
+
+# 2. Alten Stapel anhalten — OHNE -v, die alten Volumes bleiben stehen
+docker compose -f <alte-datei> down
+
+# 3. Nur die Datenbank aus der neuen Datei starten (legt ein frisches
+#    Volume mit PostgreSQL 17 an)
+docker compose -f docker-compose.labor.yml up -d datenbank
+
+# 4. Auszug einspielen
+docker exec -i pinroboter-datenbank psql -U pinroboter pinroboter < auszug.sql
+
+# 5. Zeilenzahl JE TABELLE gegen vorher vergleichen, nicht nur „läuft"
+docker exec pinroboter-datenbank psql -U pinroboter -d pinroboter -c \
+  "SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY relname;"
+
+# 6. Rest starten
+docker compose -f docker-compose.labor.yml up -d
+```
+
+> **Die alten Volumes stehen lassen, bis die neue Installation abgenommen ist.**
+> Sie sind der einzige Rückweg, sobald die erste 0.4.0-Migration gelaufen ist.
+
+> **Nicht gleichzeitig mit dem Entwicklerstapel auf demselben Rechner.**
+> `docker-compose.yml` und `docker-compose.labor.yml` verwenden dieselben
+> Containernamen — der Proxy braucht feste Namen. Zwei Stapel auf einem Host
+> greifen sich gegenseitig die Container weg.
+
 Die **selbsttätige Aktualisierung des Agenten** steht bewusst nicht in dieser
 Datei. Ihre Dienste und ihr Skript erzeugt die Zentrale unter
 *Instanz → Standort-Agenten* als Einrichtungspaket — eine zweite Fassung im
@@ -459,9 +526,27 @@ docker compose up -d
 Migrationen laufen automatisch und idempotent. **Vor jeder Aktualisierung eine
 Sicherung ziehen** — eine Migration lässt sich nicht zurücknehmen.
 
-Rückkehr zur vorherigen Version: gewünschten Tag in `.env` eintragen und erneut
-`docker compose up -d`. Das funktioniert nur, solange keine Migration lief, die
-das Schema unvereinbar geändert hat; die Freigabemitteilung sagt es je Version.
+### Rückweg
+
+Die Rückkehr über den Tag in der `.env` und ein erneutes `docker compose up -d`
+trägt **nur, solange die neue Fassung noch keine Migration ausgeführt hat** —
+also praktisch nur, wenn der Container gar nicht erst hochkam. Sobald sie
+einmal gestartet ist, hat sie das Schema angehoben; eine ältere Fassung
+erkennt den höheren Stand und startet nicht.
+
+Danach führt der Rückweg **ausschließlich über das alte Volume oder die
+Sicherung**. Deshalb:
+
+1. Vor jeder Aktualisierung eine Sicherung ziehen und **herunterladen**.
+2. Beim Umstieg auf eine neue Compose-Datei die alten Volumes stehen lassen,
+   bis die neue Installation abgenommen ist.
+
+Welche Migrationen eine Version mitbringt, steht in der Übergabenotiz
+(`docs/03-umsetzung/40-uebergabe-an-devops.md`).
+
+> Von DevOps am 16.08.2026 auf labs bestätigt: Nach den Migrationen 28 bis 33
+> trug der Weg über `VERSION_ZENTRALE=0.3.0` nicht mehr. Zurück ging es nur
+> über das bewusst stehen gelassene alte Volume.
 
 **Kein `:latest` in Produktion.** Ein unbeabsichtigtes Update legt im
 ungünstigen Fall den TI-Zugang ohne Vorwarnung lahm.
