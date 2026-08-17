@@ -137,6 +137,29 @@ done
 
 ANZ=$(ls "$SEITEN" | wc -l | tr -d ' ')
 
+# Ist die Sitzung ueberhaupt gueltig? Ohne Anmeldung antwortet die Zentrale auf
+# jede geschuetzte Seite mit einer Umleitung; in den Dateien steht dann kein
+# HTML, und axe meldet fuer jede einzelne „kein <title>" und „kein lang".
+#
+# Das sieht nach zwoelf schweren Barrieren aus und ist in Wahrheit eine
+# abgelaufene Keksdatei. Am 17.08.2026 genau so passiert — die Suche nach der
+# angeblichen Ursache kostete mehr Zeit als der Umbau davor. Ein Nachweis, der
+# auf das Falsche zeigt, ist schlimmer als keiner.
+KEIN_HTML=$(grep -Li "<html" "$SEITEN"/*.html 2>/dev/null | tr '\n' ' ')
+if [ -n "$KEIN_HTML" ]; then
+  ergebnis "alle abgerufenen Seiten sind HTML" "nein"
+  echo "  Diese Dateien enthalten kein HTML, sondern die Antwort einer Umleitung:"
+  for f in $KEIN_HTML; do
+    printf '    %-34s %s\n' "$(basename "$f")" "$(head -c 40 "$f" | tr -d '\n')"
+  done
+  echo "  Das ist KEINE Barriere. axe meldet dafuer „kein <title>\" und „kein lang\","
+  echo "  je Datei zwei schwere Befunde — die Ursache ist aber eine fehlende oder"
+  echo "  abgelaufene Anmeldung. Die Zentrale leitet ohne Sitzung auf /anmelden um."
+  echo "  Abhilfe: frische Keksdatei erzeugen und als Argument uebergeben —"
+  echo "    bash pruefungen/barrierefreiheit-pruefen.sh /pfad/zu/kekse.txt"
+  exit 1
+fi
+
 if docker run --rm -v "$PWD/pruefungen/barrierefreiheit":/p -v "$SEITEN":/seiten:ro \
      -w /p node:22-alpine node pruefen.mjs /seiten > /tmp/pr-a11y.txt 2>&1; then
   ergebnis "$ANZ Seiten ohne Befund" "ja"

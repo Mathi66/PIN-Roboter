@@ -529,7 +529,20 @@ td.zahl-zelle, th.zahl-zelle { text-align:right; font-variant-numeric:tabular-nu
 .beziehungsliste li { display:flex; align-items:center; justify-content:space-between;
   gap:var(--r3); padding:var(--r2) var(--r3); border:1px solid var(--rand);
   border-radius:var(--radius-klein); }
-.inlineform { margin:0; }
+/* Auswahlfeld und Knopf gehören zusammen, dürfen aber nicht aneinanderkleben.
+   Passt der Knopf daneben, steht er daneben; sonst rutscht er darunter — mit
+   Abstand in beiden Fällen. Vorher lag er ohne jeden Zwischenraum unter dem
+   Feld und sah aus, als hinge er dort fest. */
+.inlineform {
+  margin:0;
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--r2);
+  /* Rutscht der Knopf unter das Feld, endet er an derselben Kante wie das
+     Feld darüber. Linksbündig stand er sonst allein unter einem doppelt so
+     breiten Element und wirkte verloren. */
+  justify-content:flex-end;
+}
+.inlineform select { flex:1 1 10rem; }
+.inlineform .knopf { flex:0 0 auto; }
 
 .beziehungen {
   display:grid; grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr)); gap:var(--r3);
@@ -680,7 +693,11 @@ tr > th:last-child,  tr > td:last-child  { padding-right:var(--karte-x); }
    Ein Knopf ist so breit wie seine Beschriftung. Und er steht auf der
    Grundlinie des Feldes, zu dem er gehört — nicht auf Höhe von dessen
    Beschriftung. */
-.feldaktion { display:flex; align-items:flex-end; flex:0 0 auto; }
+/* Stehen hier zwei Knöpfe — etwa „Einrichtungspaket herunterladen" und
+   „Nur Zugangscode" —, brauchen sie Luft dazwischen. Ohne gap stoßen sie
+   aneinander und lesen sich wie ein einziges, sehr langes Bedienelement.
+   Am 17.08.2026 vom PO gemeldet; gemessen waren es 0 px. */
+.feldaktion { display:flex; align-items:flex-end; flex:0 0 auto; gap:var(--r2); }
 .feldaktion .knopf { white-space:nowrap; }
 /* Ein Hilfetext unter einer Feldreihe nimmt die ganze Breite ein — sonst
    klebt er neben dem Knopf und wirkt wie dessen Beschriftung. */
