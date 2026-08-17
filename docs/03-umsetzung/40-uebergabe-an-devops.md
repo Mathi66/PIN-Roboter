@@ -66,7 +66,7 @@ Versionierung, damit nicht ein Baustein den anderen mitzieht).
 ## Abbild
 
 ```
-ghcr.io/mathi66/pin-roboter:0.4.1
+ghcr.io/mathi66/pin-roboter:0.4.1   sha256:87504833f7aa…
 ```
 
 ## Was behoben ist
